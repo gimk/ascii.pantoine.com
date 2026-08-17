@@ -24,8 +24,7 @@ import {
 } from './engine/particles';
 
 import { AsciiViewport } from './components/AsciiViewport';
-import { ParamControls } from './components/ParamControls';
-import { FormulaEditor } from './components/FormulaEditor';
+import { SynthControls } from './components/SynthControls';
 import { PresetSelector } from './components/PresetSelector';
 import { ParticleControls } from './components/ParticleControls';
 import { OptimizeControls } from './components/OptimizeControls';
@@ -34,7 +33,6 @@ import { ExportModal } from './components/ExportModal';
 
 import {
   Sliders,
-  Code2,
   Sparkles,
   Palette,
   Share2,
@@ -95,7 +93,7 @@ export const App: React.FC = () => {
   const [asciiOutput, setAsciiOutput] = useState<string>('');
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'presets' | 'params' | 'code' | 'particles' | 'optimize' | 'visuals'>('presets');
+  const [activeTab, setActiveTab] = useState<'presets' | 'synth' | 'particles' | 'optimize' | 'visuals'>('presets');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [userPresets, setUserPresets] = useState<Preset[]>([]);
 
@@ -259,27 +257,13 @@ export const App: React.FC = () => {
     }, 600);
   };
 
-  const handleRemoveCustomFormula = () => {
+  const handleOverrideFormulaWithSliders = () => {
     const pureFormula = generateFormulaCode(waveParams);
     setCustomCode(pureFormula);
     setCustomPrepare('');
     setPresetType('parametric');
     recompileCustomCode(pureFormula, '');
     pushHistorySnapshot(waveParams, pureFormula, activePreset.name);
-  };
-
-  const handleOpenFormulaTab = () => {
-    if (presetType === 'parametric') {
-      const formula = generateFormulaCode(waveParams);
-      setCustomCode(formula);
-      setCustomPrepare('');
-      recompileCustomCode(formula, '');
-    }
-    setActiveTab('code');
-  };
-
-  const handleOpenSynthTab = () => {
-    setActiveTab('params');
   };
 
   // Save Custom User Preset
@@ -598,20 +582,12 @@ export const App: React.FC = () => {
               PRESETS
             </button>
             <button
-              className={`tab-btn ${activeTab === 'params' ? 'active' : ''}`}
-              onClick={handleOpenSynthTab}
-              title="Parametric Wave Synthesizer"
+              className={`tab-btn ${activeTab === 'synth' ? 'active' : ''}`}
+              onClick={() => setActiveTab('synth')}
+              title="Wave Synthesizer & Advanced Formula Code"
             >
               <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
               SYNTH
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'code' ? 'active' : ''}`}
-              onClick={handleOpenFormulaTab}
-              title="Live Formula Code Editor"
-            >
-              <Code2 size={11} style={{ display: 'inline', marginRight: '4px' }} />
-              FORMULA
             </button>
             <button
               className={`tab-btn ${activeTab === 'particles' ? 'active' : ''}`}
@@ -650,27 +626,17 @@ export const App: React.FC = () => {
             />
           )}
 
-          {activeTab === 'params' && (
-            <ParamControls
+          {activeTab === 'synth' && (
+            <SynthControls
               params={waveParams}
-              onChange={handleParamChange}
-              onReset={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
-              hasCustomFormula={presetType === 'custom'}
-              onGoToFormula={() => setActiveTab('code')}
-              onRemoveCustomFormula={handleRemoveCustomFormula}
-            />
-          )}
-
-          {activeTab === 'code' && (
-            <FormulaEditor
+              onChangeParams={handleParamChange}
+              onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
               code={customCode}
               prepareCode={customPrepare}
-              error={compileError}
-              onChange={handleFormulaCodeChange}
-              onResetToSynth={() => {
-                const formula = generateFormulaCode(waveParams);
-                handleFormulaCodeChange(formula, '');
-              }}
+              compileError={compileError}
+              onChangeFormula={handleFormulaCodeChange}
+              isFormulaDivergent={presetType === 'custom'}
+              onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
             />
           )}
 
