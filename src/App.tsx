@@ -685,7 +685,7 @@ export const App: React.FC = () => {
       <ExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
-        name={activePreset.name}
+        name={isEdited ? `${activePreset.name} (Edited)` : activePreset.name}
         type={presetType}
         params={waveParams}
         customCode={customCode}

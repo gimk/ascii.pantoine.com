@@ -166,7 +166,7 @@ export const AsciiViewport: React.FC<AsciiViewportProps> = ({
 
         <div className="status-group">
           <span className="status-tag mode-tag">
-            MODE: <strong>{presetName}{isEdited ? ' <edited>' : ''}</strong>
+            PRESET: <strong>{presetName}{isEdited ? ' <edited>' : ''}</strong>
           </span>
 
           <div className="btn-group">
