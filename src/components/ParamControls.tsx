@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { WaveParams } from '../types/ascii';
 import { DEFAULT_WAVE_PARAMS } from '../engine/math';
+import { AlertTriangle, Code2, Trash2 } from 'lucide-react';
 
 interface ParamControlsProps {
   params: WaveParams;
   onChange: (updated: WaveParams) => void;
   onReset: () => void;
+  hasCustomFormula?: boolean;
+  onGoToFormula?: () => void;
+  onRemoveCustomFormula?: () => void;
 }
 
 const NumberField: React.FC<{
@@ -88,6 +92,9 @@ export const ParamControls: React.FC<ParamControlsProps> = ({
   params,
   onChange,
   onReset,
+  hasCustomFormula,
+  onGoToFormula,
+  onRemoveCustomFormula,
 }) => {
   const update = <K extends keyof WaveParams>(key: K, value: WaveParams[K]) => {
     onChange({
@@ -132,6 +139,78 @@ export const ParamControls: React.FC<ParamControlsProps> = ({
 
   return (
     <div className="tab-content">
+      {/* Custom Formula Active Banner */}
+      {hasCustomFormula && (
+        <div
+          style={{
+            background: 'rgba(255, 176, 0, 0.08)',
+            border: '1px solid rgba(255, 176, 0, 0.35)',
+            borderRadius: '4px',
+            padding: '8px 10px',
+            marginBottom: '12px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: '#ffb000',
+              fontWeight: 700,
+              fontSize: '11px',
+              marginBottom: '3px',
+            }}
+          >
+            <AlertTriangle size={12} />
+            <span>CUSTOM FORMULA ACTIVE</span>
+          </div>
+          <p
+            style={{
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              lineHeight: 1.35,
+              margin: '0 0 8px 0',
+            }}
+          >
+            Some custom formula code is applied and not directly editable here.
+          </p>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              className="btn btn-sm"
+              style={{
+                color: 'var(--accent)',
+                borderColor: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '3px 8px',
+                fontSize: '10px',
+              }}
+              onClick={onGoToFormula}
+              title="Open Formula tab to view and edit custom math code"
+            >
+              <Code2 size={11} /> EDIT
+            </button>
+            <button
+              className="btn btn-sm"
+              style={{
+                color: '#ff3344',
+                borderColor: '#ff3344',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '3px 8px',
+                fontSize: '10px',
+              }}
+              onClick={onRemoveCustomFormula}
+              title="Strip custom formula expressions and synchronize strictly to Synth sliders"
+            >
+              <Trash2 size={11} /> REMOVE
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Global & Matrix Settings */}
       <div className="control-section">
         <div className="section-header">

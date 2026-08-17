@@ -259,19 +259,26 @@ export const App: React.FC = () => {
     }, 600);
   };
 
-  const handleOpenFormulaTab = () => {
-    const formula = generateFormulaCode(waveParams);
-    setCustomCode(formula);
+  const handleRemoveCustomFormula = () => {
+    const pureFormula = generateFormulaCode(waveParams);
+    setCustomCode(pureFormula);
     setCustomPrepare('');
-    recompileCustomCode(formula, '');
-    setPresetType('custom');
+    setPresetType('parametric');
+    recompileCustomCode(pureFormula, '');
+    pushHistorySnapshot(waveParams, pureFormula, activePreset.name);
+  };
+
+  const handleOpenFormulaTab = () => {
+    if (presetType === 'parametric') {
+      const formula = generateFormulaCode(waveParams);
+      setCustomCode(formula);
+      setCustomPrepare('');
+      recompileCustomCode(formula, '');
+    }
     setActiveTab('code');
   };
 
   const handleOpenSynthTab = () => {
-    const parsed = parseFormulaCodeToParams(customCode, waveParams);
-    setWaveParams(parsed);
-    setPresetType('parametric');
     setActiveTab('params');
   };
 
@@ -648,6 +655,9 @@ export const App: React.FC = () => {
               params={waveParams}
               onChange={handleParamChange}
               onReset={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
+              hasCustomFormula={presetType === 'custom'}
+              onGoToFormula={() => setActiveTab('code')}
+              onRemoveCustomFormula={handleRemoveCustomFormula}
             />
           )}
 
