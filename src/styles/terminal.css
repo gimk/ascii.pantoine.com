@@ -257,11 +257,31 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   background-color: var(--bg-panel);
-  overflow: hidden;
+  overflow-y: auto !important;
+  overflow-x: hidden;
   flex-shrink: 0;
   height: 100%;
-  min-height: 0;
   max-height: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sidebar-pane::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 3px;
+}
+
+.sidebar-pane::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
 }
 
 @media (max-width: 1100px) {
@@ -276,12 +296,14 @@ html, body, #root {
   }
 }
 
-/* Tab Navigation */
+/* Tab Navigation (Pinned Sticky Top) */
 .tab-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   border-bottom: 1px solid var(--border-color);
   background-color: var(--bg-primary);
-  overflow-x: auto;
   flex-shrink: 0;
 }
 
@@ -320,34 +342,13 @@ html, body, #root {
   border-bottom: 2px solid var(--accent);
 }
 
-/* Tab Content Scroll Area */
+/* Tab Content */
 .tab-content {
-  flex: 1 1 0%;
-  min-height: 0;
-  max-height: 100%;
-  overflow-y: auto !important;
-  overflow-x: hidden;
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-color) transparent;
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-.tab-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.tab-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.tab-content::-webkit-scrollbar-thumb {
-  background-color: var(--border-color);
-  border-radius: 3px;
+  min-height: min-content;
 }
 
 .tab-content::-webkit-scrollbar-thumb:hover {

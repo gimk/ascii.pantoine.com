@@ -13,6 +13,7 @@ import {
   evaluateParametricWave,
   generateFormulaCode,
   parseFormulaCodeToParams,
+  checkFormulaDivergence,
 } from './engine/math';
 import { PRESETS } from './engine/presets';
 import { CHARSETS, renderAsciiFrame } from './engine/renderer';
@@ -245,15 +246,17 @@ export const App: React.FC = () => {
   const handleFormulaCodeChange = (newCode: string, newPrepare?: string) => {
     setCustomCode(newCode);
     setCustomPrepare(newPrepare || '');
-    setPresetType('custom');
-    recompileCustomCode(newCode, newPrepare);
 
     const parsed = parseFormulaCodeToParams(newCode, waveParams);
     setWaveParams(parsed);
 
+    const isDivergent = checkFormulaDivergence(newCode, newPrepare || '', parsed);
+    setPresetType(isDivergent ? 'custom' : 'parametric');
+    recompileCustomCode(newCode, newPrepare);
+
     clearTimeout(historyDebounceTimer.current);
     historyDebounceTimer.current = setTimeout(() => {
-      pushHistorySnapshot(parsed, newCode, 'Custom Formula');
+      pushHistorySnapshot(parsed, newCode, isDivergent ? 'Custom Formula' : activePreset.name);
     }, 600);
   };
 

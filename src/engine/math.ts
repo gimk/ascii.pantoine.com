@@ -319,6 +319,31 @@ export function parseFormulaCodeToParams(code: string, baseParams: WaveParams): 
   return p;
 }
 
+/**
+ * Determines whether the formula code contains custom non-parametric logic
+ * that does not map to available WaveParams sliders.
+ */
+export function checkFormulaDivergence(
+  code: string,
+  prepareCode: string = '',
+  params: WaveParams
+): boolean {
+  if (prepareCode && prepareCode.trim().length > 0) return true;
+
+  const normalize = (str: string) =>
+    str
+      .replace(/\/\/[^\n]*/g, '')
+      .replace(/\s+/g, '')
+      .replace(/;+/g, ';')
+      .replace(/\.0+\b/g, '')
+      .trim();
+
+  const cleanUser = normalize(code || '');
+  const generated = normalize(generateFormulaCode(params));
+
+  return cleanUser !== generated;
+}
+
 export interface CompileResult {
   fn: (
     x: number,
