@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  CheckCircle2,
   RotateCcw,
   Plus,
   RefreshCw,
@@ -476,8 +475,8 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Code2 size={13} style={{ color: 'var(--accent)' }} />
-            <span>ADVANCED (FORMULA CODE)</span>
-            {compileError ? (
+            <span>ADVANCED FORMULA</span>
+            {compileError && (
               <span
                 style={{
                   fontSize: '9px',
@@ -489,19 +488,6 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 }}
               >
                 <AlertTriangle size={10} /> SYNTAX ERROR
-              </span>
-            ) : (
-              <span
-                style={{
-                  fontSize: '9px',
-                  color: 'var(--accent)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                  marginLeft: '4px',
-                }}
-              >
-                <CheckCircle2 size={10} /> LIVE SYNC
               </span>
             )}
           </div>
