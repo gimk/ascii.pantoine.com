@@ -296,6 +296,37 @@ html, body, #root {
   }
 }
 
+@media (max-width: 768px) {
+  .main-workspace {
+    flex-direction: column;
+    height: auto;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .viewport-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    height: 42vh;
+    min-height: 240px;
+    flex-shrink: 0;
+  }
+
+  .sidebar-pane {
+    width: 100%;
+    height: auto;
+    min-height: 58vh;
+    flex: 1;
+    overflow-y: visible !important;
+  }
+
+  .tab-nav {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+}
+
 /* Tab Navigation (Pinned Sticky Top) */
 .tab-nav {
   position: sticky;
