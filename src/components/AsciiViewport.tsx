@@ -159,7 +159,7 @@ export const AsciiViewport: React.FC<AsciiViewportProps> = ({
           <span className="status-tag">
             T: <strong>{time.toFixed(2)}s</strong>
           </span>
-          <span className="status-tag">
+          <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
           </span>
         </div>

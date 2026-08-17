@@ -213,18 +213,22 @@ html, body, #root {
   background-color: var(--bg-panel);
   border-top: 1px solid var(--border-color);
   font-size: 11px;
-  gap: 12px;
+  gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .status-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .status-tag {
   color: var(--text-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 .status-tag strong {
   color: var(--text-primary);
@@ -234,18 +238,48 @@ html, body, #root {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 420px;
+  max-width: 320px;
 }
 
 @media (max-width: 950px) {
   .mode-tag {
-    max-width: 220px;
+    max-width: 180px;
   }
 }
 
-@media (max-width: 650px) {
+@media (max-width: 768px) {
+  .viewport-bottom-bar {
+    padding: 5px 8px;
+    gap: 6px;
+    justify-content: space-between;
+  }
+
+  .status-group {
+    gap: 6px;
+  }
+
+  .status-tag {
+    font-size: 9.5px;
+  }
+
   .mode-tag {
-    max-width: 120px;
+    display: none; /* Hide verbose mode text on small mobile screens to keep vital controls visible */
+  }
+
+  .viewport-bottom-bar .btn-sm {
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .viewport-bottom-bar {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  .status-tag.res-tag {
+    display: none;
   }
 }
 
