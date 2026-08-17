@@ -316,7 +316,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               }}
             >
               {/* Global & Matrix Settings */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>Global Dynamics</span>
                   <button className="btn btn-sm" onClick={onResetParams} disabled={isFormulaDivergent}>
@@ -341,7 +341,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 1. Primary Radial Wave */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>1. Primary Radial Wave</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(dist)</span>
@@ -354,7 +354,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 2. Secondary Harmonic Ripple */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>2. Secondary Harmonic Ripple</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Cell Interference</span>
@@ -365,7 +365,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 3. Directional Waves */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>3. Directional Waves (X, Y, Diagonal)</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span>
@@ -384,7 +384,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 4. Spiral / Vortex */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>4. Angular Spiral Vortex</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(θ * arms)</span>
@@ -396,7 +396,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 5. Depth / Tunnel Warp */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>5. Wormhole Tunnel [1 / dist]</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>3D Perspective</span>
@@ -407,7 +407,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 6. Concentric Rings */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>6. Concentric Rings</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Harmonic Bands</span>
@@ -419,7 +419,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 7. Dual Interference */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>7. Dual Interference Moiré</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Dual Emitters</span>
@@ -431,7 +431,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </div>
 
               {/* 8. Starfield & Sparkle */}
-              <div className="control-section" style={{ padding: 0 }}>
+              <div className="control-section">
                 <div className="section-header">
                   <span>8. Starfield / Sparkle Texture</span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Noise Matrix</span>
