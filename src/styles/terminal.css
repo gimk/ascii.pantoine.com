@@ -150,6 +150,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .brand-badge {
@@ -158,6 +159,50 @@ html, body, #root {
   background: var(--accent);
   color: var(--bg-primary);
   font-weight: bold;
+}
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .app-header {
+    padding: 6px 10px;
+    height: 42px;
+  }
+
+  .brand-title {
+    font-size: 11px;
+    gap: 5px;
+  }
+
+  .brand-text {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-actions {
+    gap: 4px;
+  }
+
+  .header-actions .btn {
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 400px) {
+  .brand-text {
+    max-width: 110px;
+  }
+
+  .brand-badge {
+    display: none;
+  }
 }
 
 /* Main Split View */
@@ -227,7 +272,7 @@ html, body, #root {
 
 .status-tag {
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 11px;
   white-space: nowrap;
 }
 .status-tag strong {
@@ -249,8 +294,9 @@ html, body, #root {
 
 @media (max-width: 768px) {
   .viewport-bottom-bar {
-    padding: 5px 8px;
-    gap: 6px;
+    padding: 6px 10px;
+    gap: 8px;
+    row-gap: 6px;
     justify-content: space-between;
   }
 
@@ -259,23 +305,33 @@ html, body, #root {
   }
 
   .status-tag {
-    font-size: 9.5px;
+    font-size: 10.5px;
   }
 
   .mode-tag {
-    display: none; /* Hide verbose mode text on small mobile screens to keep vital controls visible */
+    display: none;
   }
 
   .viewport-bottom-bar .btn-sm {
-    padding: 3px 6px;
-    font-size: 10px;
+    padding: 6px 10px;
+    font-size: 11px;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
 @media (max-width: 480px) {
   .viewport-bottom-bar {
-    padding: 4px 6px;
-    gap: 4px;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+
+  .viewport-bottom-bar .btn-sm {
+    padding: 5px 8px;
+    font-size: 10.5px;
+    min-height: 28px;
   }
 
   .status-tag.res-tag {

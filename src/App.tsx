@@ -507,14 +507,14 @@ export const App: React.FC = () => {
       <header className="app-header">
         <div className="brand-title">
           <span style={{ color: 'var(--accent)' }}>▓▒░</span>
-          <span>ASCII ANIMATION BUILDER</span>
+          <span className="brand-text">ASCII ANIMATION BUILDER</span>
           <span className="brand-badge">v1.0</span>
         </div>
 
         {/* Header Tools: Undo, Redo, Export */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        <div className="header-actions">
           <button
-            className="btn btn-sm"
+            className="btn btn-sm header-btn-undo"
             onClick={handleUndo}
             disabled={!canUndo}
             style={{ opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'not-allowed' }}
