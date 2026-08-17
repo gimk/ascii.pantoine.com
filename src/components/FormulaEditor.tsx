@@ -1,5 +1,5 @@
 import React from 'react';
-import { RotateCcw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { RotateCcw, AlertTriangle, CheckCircle2, Plus } from 'lucide-react';
 
 interface FormulaEditorProps {
   code: string;
@@ -17,7 +17,33 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
   onResetToSynth,
 }) => {
   const insertSnippet = (snippet: string) => {
-    onChange(`${code}\n${snippet}`, prepareCode);
+    const clean = (code || '').trim();
+
+    if (!clean) {
+      onChange(`let val = 0;\n\n${snippet}\n\nreturn val;`, prepareCode);
+      return;
+    }
+
+    // Match the return statement or final output comment block
+    const returnRegex = /(?:\/\/\s*Final Output\s*\n)?\s*return\b/i;
+    const match = clean.match(returnRegex);
+
+    if (match && match.index !== undefined) {
+      const insertPos = match.index;
+      const before = clean.slice(0, insertPos).trimEnd();
+      const after = clean.slice(insertPos).trimStart();
+
+      const needsValInit = !before.includes('let val') && !before.includes('var val');
+      const prefix = needsValInit ? 'let val = 0;\n\n' : '';
+
+      const newCode = `${prefix}${before}\n\n${snippet}\n\n${after}`;
+      onChange(newCode, prepareCode);
+    } else {
+      const needsValInit = !clean.includes('let val') && !clean.includes('var val');
+      const prefix = needsValInit ? 'let val = 0;\n\n' : '';
+      const newCode = `${prefix}${clean}\n\n${snippet}\n\nreturn val;`;
+      onChange(newCode, prepareCode);
+    }
   };
 
   return (
@@ -73,22 +99,61 @@ export const FormulaEditor: React.FC<FormulaEditorProps> = ({
         )}
 
         {/* Quick math helper buttons */}
-        <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
-          <button className="btn btn-sm" onClick={() => insertSnippet('Math.sin(dist * 0.15 - time * 2)')}>
-            + sin(dist)
-          </button>
-          <button className="btn btn-sm" onClick={() => insertSnippet('Math.cos(dx * 0.08 + time)')}>
-            + cos(dx)
-          </button>
-          <button className="btn btn-sm" onClick={() => insertSnippet('Math.sin(dy * 0.08 + time)')}>
-            + sin(dy)
-          </button>
-          <button className="btn btn-sm" onClick={() => insertSnippet('Math.sin(angle * 3 - time * 2)')}>
-            + sin(angle)
-          </button>
-          <button className="btn btn-sm" onClick={() => insertSnippet('Math.hypot(dx, dy)')}>
-            + hypot
-          </button>
+        <div style={{ marginTop: '8px' }}>
+          <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Insert Wave Component
+          </div>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(dist * 0.15 - time * 1.5) * 0.5;')}
+              title="Insert Radial Sine Wave"
+            >
+              <Plus size={10} /> sin(dist)
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.cos(dx * 0.10 + time * 1.0) * 0.4;')}
+              title="Insert Horizontal Swell"
+            >
+              <Plus size={10} /> cos(dx)
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(dy * 0.10 + time * 1.0) * 0.4;')}
+              title="Insert Vertical Swell"
+            >
+              <Plus size={10} /> sin(dy)
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(angle * 4.0 - time * 2.0) * 0.4;')}
+              title="Insert Spiral Arms"
+            >
+              <Plus size={10} /> sin(angle)
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(Math.hypot(dx - 15, dy - 8) * 0.2 - time * 2.0) * 0.5;')}
+              title="Insert Offset Emitter Interference"
+            >
+              <Plus size={10} /> hypot
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(35 / Math.max(0.1, dist + 2) - time * 2.0) * 0.6;')}
+              title="Insert 3D Depth Tunnel"
+            >
+              <Plus size={10} /> tunnel
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += (1 / (Math.abs(dist - 25) + 1)) * 0.8;')}
+              title="Insert Concentric Harmonic Ring"
+            >
+              <Plus size={10} /> rings
+            </button>
+          </div>
         </div>
       </div>
 
