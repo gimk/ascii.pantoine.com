@@ -506,8 +506,12 @@ export const App: React.FC = () => {
       {/* Top Header */}
       <header className="app-header">
         <div className="brand-title">
-          <span style={{ color: 'var(--accent)' }}>▓▒░</span>
-          <span className="brand-text">ASCII ANIMATION BUILDER</span>
+          <span className="brand-logo" style={{ color: 'var(--accent)' }}>▓▒░</span>
+          <div className="brand-text-block">
+            <div className="brand-main">
+              <span className="brand-word">ASCII</span> <span className="brand-sub">ANIMATION BUILDER</span>
+            </div>
+          </div>
           <span className="brand-badge">v1.0</span>
         </div>
 
