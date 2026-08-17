@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  RotateCcw,
   Plus,
   RefreshCw,
 } from 'lucide-react';
@@ -497,18 +496,10 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         {/* Formula Editor Content */}
         {isFormulaOpen && (
           <div style={{ padding: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <div style={{ marginBottom: '6px' }}>
               <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                 Inputs: <code>x, y, time, dist, dx, dy, cols, rows, angle, ctx</code>
               </span>
-              <button
-                className="btn btn-sm"
-                onClick={onOverrideFormulaWithSliders}
-                title="Reset formula to match current Synth sliders"
-                style={{ fontSize: '9.5px', padding: '2px 6px' }}
-              >
-                <RotateCcw size={10} /> RESET TO SLIDERS
-              </button>
             </div>
 
             {/* Main Render Code Editor */}
