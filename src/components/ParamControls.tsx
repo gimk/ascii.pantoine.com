@@ -173,6 +173,8 @@ export const ParamControls: React.FC<ParamControlsProps> = ({
             }}
           >
             Some custom formula code is applied and not directly editable here.
+            <br />
+            Editing the parameters here will remove the custom code.
           </p>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button
