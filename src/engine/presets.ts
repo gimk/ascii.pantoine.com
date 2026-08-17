@@ -104,7 +104,7 @@ export const PRESETS: Preset[] = [
   {
     id: 'hero-plasma',
     name: 'Classic Plasma',
-    description: 'Organic flowing 4-component trigonometric field from HeroAscii',
+    description: 'Organic flowing 4-component trigonometric field from portfolio hero',
     type: 'parametric',
     params: {
       ...DEFAULT_WAVE_PARAMS,

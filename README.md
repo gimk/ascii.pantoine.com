@@ -1,6 +1,6 @@
 # ASCII Animation Builder
 
-> An interactive, brutalist terminal-styled ASCII animation synthesizer and live formula sandbox. Inspired by the wave mathematics of `HeroAscii.astro`.
+> An interactive, brutalist terminal-styled ASCII animation synthesizer and live formula sandbox. Inspired by my previous work on my portfolio ([pantoine.com](https://pantoine.com)) hero animations.
 
 ---
 
