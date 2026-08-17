@@ -75,7 +75,7 @@ export function generateAstroComponent(cfg: ExportConfig): string {
   <pre
     id="ascii-hero"
     aria-hidden="true"
-    class="font-mono text-emerald-400 font-normal leading-none tracking-tight text-[8px] md:text-[11px] whitespace-pre"
+    class="font-mono text-emerald-400 font-normal leading-none tracking-normal text-[8px] md:text-[11px] whitespace-pre [font-variant-ligatures:none] [font-feature-settings:'liga'_0,'calt'_0]"
   ></pre>
 </div>
 
@@ -327,6 +327,9 @@ export function generateStandaloneHtml(cfg: ExportConfig): string {
       letter-spacing: 0px;
       user-select: none;
       white-space: pre;
+      font-variant-ligatures: none;
+      -webkit-font-variant-ligatures: none;
+      font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
     }
   </style>
 </head>

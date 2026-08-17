@@ -120,6 +120,9 @@ html, body, #root {
   font-size: 12px;
   line-height: 1.4;
   user-select: none;
+  font-variant-ligatures: none;
+  -webkit-font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
 }
 
 /* App Container */
@@ -263,6 +266,9 @@ html, body, #root {
   transform-origin: center center;
   transition: transform 0.05s ease;
   pointer-events: none;
+  font-variant-ligatures: none;
+  -webkit-font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
 }
 
 /* Viewport Controls Bar */
