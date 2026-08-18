@@ -55,6 +55,9 @@ export const DEFAULT_WAVE_PARAMS: WaveParams = {
   dualEmitterSpeed: 2.0,
 
   starfieldIntensity: 0.0,
+  starfieldDensity: 1.0,
+  starfieldSpeed: 2.0,
+  starfieldScale: 80.0,
 };
 
 /**
@@ -124,10 +127,23 @@ export function evaluateParametricWave(
     val += ((wave1 + wave2) * 0.5) * p.dualEmitterAmp;
   }
 
-  // 8. Starfield / Sparkle Texture
+  // 8. Starfield / Cosmic Sparkle Matrix
   if (p.starfieldIntensity !== 0) {
-    if (Math.sin(x * 123.45) * Math.cos(y * 543.21) > 0.985) {
-      val += p.starfieldIntensity;
+    const scale = p.starfieldScale || 80.0;
+    const density = p.starfieldDensity !== undefined ? p.starfieldDensity : 1.0;
+    const speed = p.starfieldSpeed !== undefined ? p.starfieldSpeed : 2.0;
+
+    const sx = Math.floor(x * scale);
+    const sy = Math.floor(y * scale);
+    const hash = Math.sin(sx * 12.9898 + sy * 78.233) * 43758.5453;
+    const rand = hash - Math.floor(hash);
+
+    const threshold = Math.max(0.7, 1.0 - density * 0.035);
+    if (rand > threshold) {
+      const phase = rand * 6.28318 + time * speed;
+      const sparkle = Math.max(0, Math.sin(phase));
+      const starBrightness = sparkle * sparkle * ((rand - threshold) / (1.0 - threshold));
+      val += starBrightness * p.starfieldIntensity;
     }
   }
 
@@ -196,11 +212,17 @@ export function generateFormulaCode(p: WaveParams): string {
     lines.push(`const d1 = Math.hypot(dx - ${p.dualEmitterSpacing}, dy - ${p.dualEmitterSpacing * 0.4});`);
     lines.push(`const d2 = Math.hypot(dx + ${p.dualEmitterSpacing}, dy + ${p.dualEmitterSpacing * 0.4});`);
     lines.push(`val += ((Math.sin(d1 * ${p.dualEmitterFreq} - time * ${p.dualEmitterSpeed}) + Math.sin(d2 * ${p.dualEmitterFreq} - time * ${p.dualEmitterSpeed})) * 0.5) * ${p.dualEmitterAmp};\n`);
-  }
-
-  if (p.starfieldIntensity !== 0) {
-    lines.push(`// Starfield Background`);
-    lines.push(`if (Math.sin(x * 123.45) * Math.cos(y * 543.21) > 0.985) val += ${p.starfieldIntensity};\n`);
+  }  if (p.starfieldIntensity !== 0) {
+    lines.push(`// Starfield & Cosmic Sparkle Matrix`);
+    lines.push(`const sScale = ${p.starfieldScale || 80.0};`);
+    lines.push(`const sHash = Math.sin(Math.floor(x * sScale) * 12.9898 + Math.floor(y * sScale) * 78.233) * 43758.5453;`);
+    lines.push(`const sRand = sHash - Math.floor(sHash);`);
+    const thresh = Number(Math.max(0.7, 1.0 - (p.starfieldDensity !== undefined ? p.starfieldDensity : 1.0) * 0.035).toFixed(4));
+    lines.push(`const sThreshold = ${thresh};`);
+    lines.push(`if (sRand > sThreshold) {`);
+    lines.push(`  const sSparkle = Math.max(0, Math.sin(sRand * 6.28318 + time * ${p.starfieldSpeed !== undefined ? p.starfieldSpeed : 2.0}));`);
+    lines.push(`  val += sSparkle * sSparkle * ((sRand - sThreshold) / (1.0 - sThreshold)) * ${p.starfieldIntensity};`);
+    lines.push(`}\n`);
   }
 
   const contrastStr = p.contrast !== 1.0 ? ` * ${p.contrast}` : '';
@@ -241,7 +263,7 @@ export function parseFormulaCodeToParams(code: string, baseParams: WaveParams): 
       p.radial2Amp = safeParseFloat(radial2Match[3], p.radial2Amp);
     }
 
-    // 3. Directional X Wave
+    // 3. Directional X
     const xMatch = code.match(/Math\.cos\(dx\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
     if (xMatch) {
       p.xFreq = safeParseFloat(xMatch[1], p.xFreq);
@@ -249,7 +271,7 @@ export function parseFormulaCodeToParams(code: string, baseParams: WaveParams): 
       p.xAmp = safeParseFloat(xMatch[3], p.xAmp);
     }
 
-    // 4. Directional Y Wave
+    // 4. Directional Y
     const yMatch = code.match(/Math\.sin\(dy\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
     if (yMatch) {
       p.yFreq = safeParseFloat(yMatch[1], p.yFreq);
@@ -257,7 +279,7 @@ export function parseFormulaCodeToParams(code: string, baseParams: WaveParams): 
       p.yAmp = safeParseFloat(yMatch[3], p.yAmp);
     }
 
-    // 5. Diagonal Wave (X+Y)
+    // 5. Diagonal (X + Y)
     const diagMatch = code.match(/Math\.sin\(\(dx\s*\+\s*dy\)\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
     if (diagMatch) {
       p.diagFreq = safeParseFloat(diagMatch[1], p.diagFreq);
@@ -265,28 +287,43 @@ export function parseFormulaCodeToParams(code: string, baseParams: WaveParams): 
       p.diagAmp = safeParseFloat(diagMatch[3], p.diagAmp);
     }
 
-    // 6. Spiral / Vortex (Angular)
-    const spiralMatch = code.match(/Math\.sin\(angle\s*\*\s*([\d.]+)\s*-\s*time\s*\*\s*([\d.-]+)(?:\s*\+\s*dist\s*\*\s*([\d.]+))?\)\s*\*\s*([\d.]+)/);
-    if (spiralMatch) {
-      p.spiralArms = safeParseFloat(spiralMatch[1], p.spiralArms);
-      p.spiralSpeed = safeParseFloat(spiralMatch[2], p.spiralSpeed);
-      if (spiralMatch[3]) p.spiralTwist = safeParseFloat(spiralMatch[3], p.spiralTwist);
-      p.spiralAmp = safeParseFloat(spiralMatch[4], p.spiralAmp);
+    // 6. Angular Spiral Vortex
+    const spiralArmsMatch = code.match(/Math\.sin\(angle\s*\*\s*([\d.]+)/);
+    if (spiralArmsMatch) {
+      p.spiralArms = safeParseFloat(spiralArmsMatch[1], p.spiralArms);
+    }
+    const spiralSpeedMatch = code.match(/-\s*time\s*\*\s*([\d.-]+)/);
+    if (spiralSpeedMatch) {
+      p.spiralSpeed = safeParseFloat(spiralSpeedMatch[1], p.spiralSpeed);
+    }
+    const spiralTwistMatch = code.match(/dist\s*\*\s*([\d.]+)/);
+    if (spiralTwistMatch) {
+      p.spiralTwist = safeParseFloat(spiralTwistMatch[1], p.spiralTwist);
+    }
+    const spiralAmpMatch = code.match(/\)\s*\*\s*([\d.]+);[\s\S]*?(?:Depth|Concentric|Dual|Starfield|Final)/);
+    if (spiralAmpMatch) {
+      p.spiralAmp = safeParseFloat(spiralAmpMatch[1], p.spiralAmp);
     }
 
-    // 7. Tunnel / Depth Inverse Distance
-    const tunnelMatch = code.match(/Math\.sin\(([\d.]+)\s*\/\s*(?:Math\.max\(0\.01,\s*)?dist(?:\s*\+\s*[\d.]+)?\)?\s*-\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
-    if (tunnelMatch) {
-      p.tunnelPower = safeParseFloat(tunnelMatch[1], p.tunnelPower);
-      p.tunnelSpeed = safeParseFloat(tunnelMatch[2], p.tunnelSpeed);
-      p.tunnelAmp = safeParseFloat(tunnelMatch[3], p.tunnelAmp);
+    // 7. Depth / Wormhole Tunnel
+    const tunnelPowerMatch = code.match(/Math\.sin\(([\d.]+)\s*\/\s*Math\.max/);
+    if (tunnelPowerMatch) {
+      p.tunnelPower = safeParseFloat(tunnelPowerMatch[1], p.tunnelPower);
+    }
+    const tunnelSpeedMatch = code.match(/-\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+);/);
+    if (tunnelSpeedMatch) {
+      p.tunnelSpeed = safeParseFloat(tunnelSpeedMatch[1], p.tunnelSpeed);
+      p.tunnelAmp = safeParseFloat(tunnelSpeedMatch[2], p.tunnelAmp);
     }
 
     // 8. Concentric Rings
-    const ringsModMatch = code.match(/rDistMod\s*=\s*Math\.abs\(dist\s*-\s*\(([\d.]+)\s*\+\s*Math\.sin\(time\s*\*\s*([\d.-]+)\)/);
-    if (ringsModMatch) {
-      p.ringsRadius = safeParseFloat(ringsModMatch[1], p.ringsRadius);
-      p.ringsSpeed = safeParseFloat(ringsModMatch[2], p.ringsSpeed);
+    const ringsRadiusMatch = code.match(/Math\.abs\(dist\s*-\s*\(([\d.]+)/);
+    if (ringsRadiusMatch) {
+      p.ringsRadius = safeParseFloat(ringsRadiusMatch[1], p.ringsRadius);
+    }
+    const ringsSpeedMatch = code.match(/Math\.sin\(time\s*\*\s*([\d.-]+)\)\s*\*\s*5\)\);/);
+    if (ringsSpeedMatch) {
+      p.ringsSpeed = safeParseFloat(ringsSpeedMatch[1], p.ringsSpeed);
     }
     const ringsAmpMatch = code.match(/Math\.sin\(angle\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*[\d.-]+\)\s*\*\s*0\.5\s*\+\s*0\.5\)\s*\*\s*([\d.]+)/);
     if (ringsAmpMatch) {
@@ -307,10 +344,19 @@ export function parseFormulaCodeToParams(code: string, baseParams: WaveParams): 
     }
 
     // 10. Starfield Sparkle
-    const starMatch = code.match(/Math\.sin\(x\s*\*\s*123\.45\)[\s\S]*?val\s*\+=\s*([\d.]+);/);
-    if (starMatch) {
-      p.starfieldIntensity = safeParseFloat(starMatch[1], p.starfieldIntensity);
-    }
+    const newStarMatch = code.match(/sScale\s*=\s*([\d.]+);[\s\S]*?sThreshold\s*=\s*([\d.]+);[\s\S]*?time\s*\*\s*([\d.-]+)[\s\S]*?\*\s*([\d.]+);/);
+    if (newStarMatch) {
+      p.starfieldScale = safeParseFloat(newStarMatch[1], p.starfieldScale);
+      const thresh = safeParseFloat(newStarMatch[2], 0.965);
+      p.starfieldDensity = Math.max(0, Number(((1.0 - thresh) / 0.035).toFixed(1)));
+      p.starfieldSpeed = safeParseFloat(newStarMatch[3], p.starfieldSpeed);
+      p.starfieldIntensity = safeParseFloat(newStarMatch[4], p.starfieldIntensity);
+    } else {
+      const legacyStarMatch = code.match(/Math\.sin\(x\s*\*\s*123\.45\)[\s\S]*?val\s*\+=\s*([\d.]+);/);
+      if (legacyStarMatch) {
+        p.starfieldIntensity = safeParseFloat(legacyStarMatch[1], p.starfieldIntensity);
+      }
+    } 
 
     // 11. Final Return Contrast and Bias
     const returnMatch = code.match(/return\s+val(?:\s*\*\s*([\d.]+))?(?:\s*\+\s*([-\d.]+))?/);

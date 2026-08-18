@@ -8,6 +8,7 @@
 }
 
 :root {
+  color-scheme: dark;
   --bg-primary: #080808;
   --bg-panel: #0d0d0d;
   --bg-control: #141414;
@@ -96,6 +97,7 @@ body.theme-blood {
 }
 
 body.theme-paper {
+  color-scheme: light;
   --bg-primary: #f0eee6;
   --bg-panel: #e6e2d6;
   --bg-control: #dcd7c6;
@@ -707,6 +709,11 @@ html, body, #root {
   flex: 1;
   accent-color: var(--accent);
   cursor: pointer;
+  color-scheme: dark;
+}
+
+body.theme-paper .range-slider {
+  color-scheme: light;
 }
 
 .number-input {

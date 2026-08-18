@@ -87,6 +87,9 @@ export interface WaveParams {
 
   // 8. Starfield / Sparkle Texture
   starfieldIntensity: number;
+  starfieldDensity: number;
+  starfieldSpeed: number;
+  starfieldScale: number;
 }
 
 export interface PhosphorGradient {

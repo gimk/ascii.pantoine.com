@@ -506,7 +506,7 @@ Parameter breakdown:
 - Depth Tunnel: Amp=${cfg.params?.tunnelAmp ?? 0}, Power=${cfg.params?.tunnelPower ?? 0}, Speed=${cfg.params?.tunnelSpeed ?? 0}
 - Concentric Rings: Amp=${cfg.params?.ringsAmp ?? 0}, Radius=${cfg.params?.ringsRadius ?? 0}, Speed=${cfg.params?.ringsSpeed ?? 0}, Count=${cfg.params?.ringsCount ?? 0}
 - Dual Emitters: Amp=${cfg.params?.dualEmitterAmp ?? 0}, Spacing=${cfg.params?.dualEmitterSpacing ?? 0}, Freq=${cfg.params?.dualEmitterFreq ?? 0}, Speed=${cfg.params?.dualEmitterSpeed ?? 0}
-- Starfield Sparkle: Intensity=${cfg.params?.starfieldIntensity ?? 0}
+- Starfield Sparkle: Intensity=${cfg.params?.starfieldIntensity ?? 0}, Density=${cfg.params?.starfieldDensity ?? 1.0}, Speed=${cfg.params?.starfieldSpeed ?? 2.0}, Scale=${cfg.params?.starfieldScale ?? 80}
 
 ================================================================================
 3. PARTICLE PHYSICS & MOUSE TRAIL

@@ -428,13 +428,16 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 {renderSlider('Wave Speed', 'dualEmitterSpeed', -4.0, 4.0, 0.1)}
               </div>
 
-              {/* 8. Starfield & Sparkle */}
+              {/* 8. Starfield & Cosmic Sparkle */}
               <div className="control-section">
                 <div className="section-header">
-                  <span>8. Starfield / Sparkle Texture</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Noise Matrix</span>
+                  <span>8. Starfield & Cosmic Sparkle</span>
+                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Procedural Sky</span>
                 </div>
-                {renderSlider('Starfield Sparkle', 'starfieldIntensity', 0.0, 1.0, 0.05)}
+                {renderSlider('Star Brightness', 'starfieldIntensity', 0.0, 2.0, 0.05)}
+                {renderSlider('Star Quantity', 'starfieldDensity', 0.1, 5.0, 0.1)}
+                {renderSlider('Sparkle Frequency', 'starfieldSpeed', 0.0, 8.0, 0.1)}
+                {renderSlider('Star Dispersion', 'starfieldScale', 15, 200, 5, 0)}
               </div>
             </div>
           </div>

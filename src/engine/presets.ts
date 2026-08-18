@@ -264,4 +264,30 @@ export const PRESETS: Preset[] = [
       spiralSpeed: 1.0,
     },
   },
+
+  // 11. Cosmic Starfield
+  {
+    id: 'cosmic-starfield',
+    name: 'Cosmic Starfield',
+    description: 'Drifting interstellar nebula illuminated by glittering procedural starfields',
+    type: 'parametric',
+    params: {
+      ...DEFAULT_WAVE_PARAMS,
+      timeSpeed: 1.0,
+      aspectRatio: 0.55,
+      contrast: 1.15,
+      bias: -0.05,
+      radialAmp: 0.35,
+      radialFreq: 0.08,
+      radialSpeed: 0.8,
+      spiralAmp: 0.25,
+      spiralArms: 2,
+      spiralSpeed: 0.6,
+      spiralTwist: 0.12,
+      starfieldIntensity: 0.9,
+      starfieldDensity: 2.2,
+      starfieldSpeed: 3.5,
+      starfieldScale: 75,
+    },
+  },
 ];

@@ -62,7 +62,10 @@ export function generateRandomAnimation(): RandomizedPreset {
       params.radialFreq = rand(0.08, 0.2, 2);
       params.radialSpeed = rand(0.8, 1.8, 2);
       if (Math.random() > 0.4) {
-        params.starfieldIntensity = rand(0.2, 0.5, 2);
+        params.starfieldIntensity = rand(0.2, 0.6, 2);
+        params.starfieldDensity = rand(0.6, 2.5, 1);
+        params.starfieldSpeed = rand(1.0, 4.0, 1);
+        params.starfieldScale = Math.floor(rand(50, 120, 0));
       }
       break;
 
@@ -111,7 +114,10 @@ export function generateRandomAnimation(): RandomizedPreset {
       params.radialAmp = rand(0.2, 0.4, 2);
       params.radialFreq = rand(0.06, 0.15, 2);
       params.radialSpeed = rand(0.8, 1.5, 2);
-      params.starfieldIntensity = rand(0.15, 0.4, 2);
+      params.starfieldIntensity = rand(0.2, 0.5, 2);
+      params.starfieldDensity = rand(0.8, 2.0, 1);
+      params.starfieldSpeed = rand(1.5, 3.5, 1);
+      params.starfieldScale = Math.floor(rand(60, 100, 0));
       break;
 
     // 5. Classic Complex Plasma
