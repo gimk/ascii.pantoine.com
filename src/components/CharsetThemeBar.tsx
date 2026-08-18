@@ -51,45 +51,7 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
 
   return (
     <div className="tab-content">
-      {/* 1. CRT & Display Effects */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>CRT & Display Effects</span>
-          <Tv size={12} style={{ color: 'var(--accent)' }} />
-        </div>
-
-        <div className="control-row">
-          <span className="control-label">CRT Scanlines</span>
-          <button
-            className={`btn btn-sm ${crtConfig.scanlines ? 'btn-primary' : ''}`}
-            onClick={() => updateCrt('scanlines', !crtConfig.scanlines)}
-          >
-            {crtConfig.scanlines ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
-          </button>
-        </div>
-
-        <div className="control-row">
-          <span className="control-label">Phosphor Glow Bloom</span>
-          <button
-            className={`btn btn-sm ${crtConfig.glow ? 'btn-primary' : ''}`}
-            onClick={() => updateCrt('glow', !crtConfig.glow)}
-          >
-            {crtConfig.glow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
-          </button>
-        </div>
-
-        <div className="control-row">
-          <span className="control-label">CRT Corner Vignette</span>
-          <button
-            className={`btn btn-sm ${crtConfig.vignette ? 'btn-primary' : ''}`}
-            onClick={() => updateCrt('vignette', !crtConfig.vignette)}
-          >
-            {crtConfig.vignette ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Phosphor Theme */}
+      {/* 1. Phosphor Theme */}
       <div className="control-section">
         <div className="section-header">
           <span>Phosphor Color Theme</span>
@@ -161,7 +123,7 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
         </div>
       </div>
 
-      {/* 3. Character Density Ramp */}
+      {/* 2. Character Density Ramp */}
       <div className="control-section">
         <div className="section-header">
           <span>Character Density Presets</span>
@@ -195,6 +157,44 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
           onChange={(e) => onChangeCharset(e.target.value || ' ')}
           placeholder="e.g.  .:-=+*#%@"
         />
+      </div>
+
+      {/* 3. CRT & Display Effects */}
+      <div className="control-section">
+        <div className="section-header">
+          <span>CRT & Display Effects</span>
+          <Tv size={12} style={{ color: 'var(--accent)' }} />
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">CRT Scanlines</span>
+          <button
+            className={`btn btn-sm ${crtConfig.scanlines ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('scanlines', !crtConfig.scanlines)}
+          >
+            {crtConfig.scanlines ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Phosphor Glow Bloom</span>
+          <button
+            className={`btn btn-sm ${crtConfig.glow ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('glow', !crtConfig.glow)}
+          >
+            {crtConfig.glow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">CRT Corner Vignette</span>
+          <button
+            className={`btn btn-sm ${crtConfig.vignette ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('vignette', !crtConfig.vignette)}
+          >
+            {crtConfig.vignette ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
       </div>
     </div>
   );
