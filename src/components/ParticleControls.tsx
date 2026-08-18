@@ -9,15 +9,6 @@ interface ParticleControlsProps {
   onClearParticles: () => void;
 }
 
-const TRAIL_CHAR_PRESETS = [
-  { label: 'Classic ASCII', chars: '@#%*+=-:. ' },
-  { label: 'Binary', chars: '10' },
-  { label: 'Sparkles', chars: '✦✧★*·.' },
-  { label: 'Blocks', chars: '█▓▒░' },
-  { label: 'Braille', chars: '⠁⠃⠇⠗⠷⠿' },
-  { label: 'Math Glyphs', chars: '+-*/=%' },
-];
-
 export const ParticleControls: React.FC<ParticleControlsProps> = ({
   config,
   onChange,
@@ -206,37 +197,6 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
               {config.burstSpeed.toFixed(1)}x
             </span>
           </div>
-        </div>
-      </div>
-
-      {/* Trail Characters */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Particle Characters</span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', marginBottom: '8px' }}>
-          {TRAIL_CHAR_PRESETS.map((p) => (
-            <button
-              key={p.label}
-              className={`btn btn-sm ${config.trailChars === p.chars ? 'btn-primary' : ''}`}
-              style={{ justifyContent: 'flex-start', fontSize: '10px' }}
-              onClick={() => update('trailChars', p.chars)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="control-row">
-          <span className="control-label">Custom Trail Chars</span>
-          <input
-            type="text"
-            className="number-input"
-            style={{ width: '130px', textAlign: 'left', padding: '3px 6px' }}
-            value={config.trailChars}
-            onChange={(e) => update('trailChars', e.target.value)}
-          />
         </div>
       </div>
     </div>
