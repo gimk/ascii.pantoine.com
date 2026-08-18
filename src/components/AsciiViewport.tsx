@@ -1,9 +1,11 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3 } from 'lucide-react';
 
 export interface AsciiViewportHandle {
   setFrame: (frameText: string, time: number, fps: number) => void;
   getFrameText: () => string;
+  autoFit: () => void;
+  getOptimalResolution: () => { cols: number; rows: number } | null;
 }
 
 interface AsciiViewportProps {
@@ -19,6 +21,8 @@ interface AsciiViewportProps {
   presetName: string;
   isEdited?: boolean;
   targetFps?: number;
+  viewMode?: 'editor' | 'fullscreen';
+  onToggleViewMode?: () => void;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -34,6 +38,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   presetName,
   isEdited,
   targetFps,
+  viewMode = 'editor',
+  onToggleViewMode,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -44,7 +50,53 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
   const [zoom, setZoom] = useState<number>(1.0);
   const [copied, setCopied] = useState<boolean>(false);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  const getOptimalResolution = useCallback((): { cols: number; rows: number } | null => {
+    if (!containerRef.current) return null;
+    const { clientWidth, clientHeight } = containerRef.current;
+    if (clientWidth <= 0 || clientHeight <= 0) return null;
+
+    const charWidth = 6.015;
+    const charHeight = 10.0;
+    const pad = 20;
+    const availableWidth = Math.max(80, clientWidth - pad);
+    const availableHeight = Math.max(60, clientHeight - pad);
+    const windowRatio = availableWidth / availableHeight;
+    const charAspectCompensation = charHeight / charWidth; // ~1.6625
+
+    const targetCells = Math.max(2000, Math.min(7500, Math.round((availableWidth * availableHeight) / 95)));
+
+    let bestCols = 100;
+    let bestRows = 50;
+    let minScore = Infinity;
+
+    const minRows = Math.max(20, Math.min(35, Math.floor(availableHeight / 20)));
+    const maxRows = Math.min(80, Math.max(45, Math.floor(availableHeight / 8)));
+
+    for (let r = minRows; r <= maxRows; r++) {
+      let c = Math.round(r * windowRatio * charAspectCompensation);
+      if (c % 2 !== 0) c += 1;
+      if (c < 36 || c > 180) continue;
+
+      const gridVisualWidth = c * charWidth;
+      const gridVisualHeight = r * charHeight;
+      const gridRatio = gridVisualWidth / gridVisualHeight;
+
+      const ratioMismatch = Math.abs(gridRatio - windowRatio) / windowRatio;
+      const cellCount = c * r;
+      const densityPenalty = (Math.abs(cellCount - targetCells) / targetCells) * 0.08;
+
+      const score = ratioMismatch + densityPenalty;
+
+      if (score < minScore) {
+        minScore = score;
+        bestCols = c;
+        bestRows = r;
+      }
+    }
+
+    return { cols: bestCols, rows: bestRows };
+  }, []);
 
   useImperativeHandle(ref, () => ({
     setFrame: (frameText: string, time: number, fps: number) => {
@@ -60,6 +112,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
     },
     getFrameText: () => latestFrameTextRef.current || '',
+    autoFit,
+    getOptimalResolution,
   }));
 
   // Auto-fit zoom on demand based on current cols and rows
@@ -84,6 +138,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     setZoom(Number(fitScale.toFixed(2)));
   }, [cols, rows]);
 
+  // Trigger autoFit when switching view mode
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      autoFit();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [viewMode, autoFit]);
+
   // Once on page load: inspect the viewfinder ratio, find the best matching
   // (cols, rows) pair that matches that aspect ratio, and zoom to fit the space
   useEffect(() => {
@@ -98,6 +160,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
 
       hasInitializedResolution.current = true;
+
+      if (!onInitResolution) {
+        // When onInitResolution is omitted (e.g. shared animation with specific size),
+        // preserve the specified cols and rows and only auto-fit the zoom.
+        autoFit();
+        return;
+      }
 
       const charWidth = 6.015;
       const charHeight = 10.0;
@@ -186,17 +255,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
-    }
-  };
-
   return (
     <div className="viewport-pane">
       {/* Visual Canvas Container */}
@@ -283,13 +341,22 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             {copied ? 'COPIED!' : 'SNAP'}
           </button>
 
-          <button
-            className={`btn btn-sm ${isFullscreen ? 'btn-primary' : ''}`}
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen View'}
-          >
-            <Maximize2 size={12} />
-          </button>
+          {onToggleViewMode && (
+            <button
+              className={`btn btn-sm ${viewMode === 'fullscreen' ? 'btn-primary' : ''}`}
+              onClick={onToggleViewMode}
+              title={viewMode === 'fullscreen' ? 'Return to Edit Mode' : 'Fullscreen Viewfinder'}
+            >
+              {viewMode === 'fullscreen' ? (
+                <>
+                  <Edit3 size={12} />
+                  <span className="btn-label-sm">EDIT</span>
+                </>
+              ) : (
+                <Maximize2 size={12} />
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

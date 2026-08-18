@@ -289,6 +289,11 @@ html, body, #root {
   overflow: hidden;
 }
 
+.main-workspace.workspace-fullscreen {
+  height: calc(100vh - 44px) !important;
+  max-height: calc(100vh - 44px) !important;
+}
+
 /* Viewport Section */
 .viewport-pane {
   flex: 1;
@@ -298,6 +303,13 @@ html, body, #root {
   position: relative;
   overflow: hidden;
   background-color: var(--bg-primary);
+}
+
+.workspace-fullscreen .viewport-pane {
+  border-right: none !important;
+  border-bottom: none !important;
+  height: 100% !important;
+  min-height: 100% !important;
 }
 
 .viewport-canvas-container {
@@ -704,6 +716,13 @@ input[type="number"] {
 .btn-sm {
   padding: 3px 8px;
   font-size: 10px;
+}
+
+.btn-label-sm {
+  margin-left: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .btn-group {

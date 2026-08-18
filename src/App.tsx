@@ -31,13 +31,20 @@ import { ParticleControls } from './components/ParticleControls';
 import { OptimizeControls } from './components/OptimizeControls';
 import { CharsetThemeBar } from './components/CharsetThemeBar';
 import { ExportModal } from './components/ExportModal';
+import { ShareModal } from './components/ShareModal';
 import { generateRandomAnimation } from './engine/randomizer';
+import {
+  FullAnimationState,
+  decodeShareFromUrl,
+  updateUrlMode,
+} from './engine/share';
 
 import {
   Sliders,
   Sparkles,
   Palette,
   Share2,
+  Download,
   Layers,
   Undo2,
   Redo2,
@@ -55,40 +62,75 @@ interface HistorySnapshot {
 }
 
 export const App: React.FC = () => {
+  // Decode URL state on initialization if present
+  const initialUrlData = useMemo(() => decodeShareFromUrl(), []);
+  const sharedState = initialUrlData.state;
+
   // Preset & Configuration State
-  const [activePreset, setActivePreset] = useState<Preset>(PRESETS[0]);
-  const [presetType, setPresetType] = useState<'parametric' | 'custom'>('parametric');
-  const [waveParams, setWaveParams] = useState<WaveParams>({
-    ...DEFAULT_WAVE_PARAMS,
-    ...(PRESETS[0].params || {}),
+  const [activePreset, setActivePreset] = useState<Preset>(() => {
+    if (sharedState?.name) {
+      const match = PRESETS.find((p) => p.name.toLowerCase() === sharedState.name.toLowerCase());
+      if (match) return match;
+      return {
+        id: `shared-${Date.now()}`,
+        name: sharedState.name,
+        description: 'Shared ASCII animation',
+        type: sharedState.type || 'parametric',
+        params: sharedState.params,
+        customCode: sharedState.customCode,
+        customPrepare: sharedState.customPrepare,
+        densityCharset: sharedState.density,
+      };
+    }
+    return PRESETS[0];
   });
 
-  // Custom Code State
-  const [customCode, setCustomCode] = useState<string>(
-    generateFormulaCode({ ...DEFAULT_WAVE_PARAMS, ...(PRESETS[0].params || {}) })
+  const [presetType, setPresetType] = useState<'parametric' | 'custom'>(
+    sharedState?.type || 'parametric'
   );
-  const [customPrepare, setCustomPrepare] = useState<string>('');
+
+  const [waveParams, setWaveParams] = useState<WaveParams>(() => ({
+    ...DEFAULT_WAVE_PARAMS,
+    ...(sharedState?.params || PRESETS[0].params || {}),
+  }));
+
+  // Custom Code State
+  const [customCode, setCustomCode] = useState<string>(() => {
+    if (sharedState?.customCode) return sharedState.customCode;
+    return generateFormulaCode({ ...DEFAULT_WAVE_PARAMS, ...(PRESETS[0].params || {}) });
+  });
+  const [customPrepare, setCustomPrepare] = useState<string>(sharedState?.customPrepare || '');
   const [compileError, setCompileError] = useState<string | null>(null);
   const compiledFnRef = useRef<any>(null);
   const prepareFnRef = useRef<any>(null);
   const customContextRef = useRef<Record<string, any>>({});
 
   // Display & Resolution
-  const [cols, setCols] = useState<number>(100);
-  const [rows, setRows] = useState<number>(50);
-  const [density, setDensity] = useState<string>(CHARSETS[0].chars);
-  const [theme, setTheme] = useState<PhosphorTheme>('green');
+  const [cols, setCols] = useState<number>(sharedState?.cols || 100);
+  const [rows, setRows] = useState<number>(sharedState?.rows || 50);
+  const [density, setDensity] = useState<string>(sharedState?.density || CHARSETS[0].chars);
+  const [theme, setTheme] = useState<PhosphorTheme>(sharedState?.theme || 'green');
 
   // Particles & Interaction
-  const [particleConfig, setParticleConfig] = useState<ParticleConfig>(DEFAULT_PARTICLE_CONFIG);
+  const [particleConfig, setParticleConfig] = useState<ParticleConfig>(
+    sharedState?.particleConfig || DEFAULT_PARTICLE_CONFIG
+  );
   const trailPointsRef = useRef<TrailPoint[]>([]);
 
   // Optimization & Performance Config
-  const [optimizeConfig, setOptimizeConfig] = useState<OptimizeConfig>({
-    targetFps: 60,
-    pauseWhenHidden: true,
-    idleThrottle: false,
-  });
+  const [optimizeConfig, setOptimizeConfig] = useState<OptimizeConfig>(
+    sharedState?.optimizeConfig || {
+      targetFps: 60,
+      pauseWhenHidden: true,
+      idleThrottle: false,
+    }
+  );
+
+  // View Mode: 'editor' or 'fullscreen'
+  const [viewMode, setViewMode] = useState<'editor' | 'fullscreen'>(
+    initialUrlData.mode === 'fullscreen' ? 'fullscreen' : 'editor'
+  );
+  const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
@@ -205,6 +247,13 @@ export const App: React.FC = () => {
       prepareFnRef.current = res.prepareFn;
     }
   }, []);
+
+  // If shared state had custom code on load, compile it immediately
+  useEffect(() => {
+    if (sharedState?.customCode) {
+      recompileCustomCode(sharedState.customCode, sharedState.customPrepare);
+    }
+  }, [recompileCustomCode, sharedState]);
 
   // Handle Preset Selection
   const handleSelectPreset = (preset: Preset) => {
@@ -538,8 +587,60 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo, handleRandomize]);
 
+  // Toggle between editor and fullscreen viewfinder
+  const handleToggleViewMode = useCallback(() => {
+    setViewMode((prev) => {
+      const next = prev === 'editor' ? 'fullscreen' : 'editor';
+      updateUrlMode(next);
+      return next;
+    });
+  }, []);
+
+  // Complete snapshot of the current animation state for sharing / deep-linking
+  const currentFullState: FullAnimationState = useMemo(
+    () => ({
+      name: isEdited ? `${activePreset.name} (Edited)` : activePreset.name,
+      type: presetType,
+      params: waveParams,
+      customCode: presetType === 'custom' ? customCode : undefined,
+      customPrepare: presetType === 'custom' ? customPrepare : undefined,
+      density,
+      theme,
+      cols,
+      rows,
+      particleConfig,
+      optimizeConfig,
+    }),
+    [
+      activePreset.name,
+      isEdited,
+      presetType,
+      waveParams,
+      customCode,
+      customPrepare,
+      density,
+      theme,
+      cols,
+      rows,
+      particleConfig,
+      optimizeConfig,
+    ]
+  );
+
+  // Match viewport aspect ratio to optimal grid dimensions
+  const handleMatchViewfinderRatio = useCallback(() => {
+    const optimal = viewportRef.current?.getOptimalResolution();
+    if (optimal) {
+      setCols(optimal.cols);
+      setRows(optimal.rows);
+      setTimeout(() => {
+        viewportRef.current?.autoFit();
+      }, 50);
+    }
+  }, []);
+
   return (
-    <div className="app-container">
+    <div className={`app-container ${viewMode === 'fullscreen' ? 'app-fullscreen' : ''}`}>
       {/* Top Header */}
       <header className="app-header">
         <div className="brand-title">
@@ -555,7 +656,7 @@ export const App: React.FC = () => {
           <span className="brand-badge">v1.1</span>
         </div>
 
-        {/* Header Tools: Randomize, Undo, Redo, Export */}
+        {/* Header Tools: Randomize, Undo, Redo, AI Prompt, Export, Share */}
         <div className="header-actions">
           <button
             className="btn btn-randomize btn-sm"
@@ -566,26 +667,30 @@ export const App: React.FC = () => {
             <span className="btn-label">RANDOMIZE</span>
           </button>
 
-          <button
-            className="btn btn-sm header-btn-undo"
-            onClick={handleUndo}
-            disabled={!canUndo}
-            style={{ opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'not-allowed' }}
-            title="Undo (Ctrl+Z)"
-          >
-            <Undo2 size={13} className="header-btn-icon" />
-            <span className="btn-label">UNDO</span>
-          </button>
-          <button
-            className="btn btn-sm header-btn-redo"
-            onClick={handleRedo}
-            disabled={!canRedo}
-            style={{ opacity: canRedo ? 1 : 0.4, cursor: canRedo ? 'pointer' : 'not-allowed' }}
-            title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
-          >
-            <Redo2 size={13} className="header-btn-icon" />
-            <span className="btn-label">REDO</span>
-          </button>
+          {viewMode === 'editor' && (
+            <>
+              <button
+                className="btn btn-sm header-btn-undo"
+                onClick={handleUndo}
+                disabled={!canUndo}
+                style={{ opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'not-allowed' }}
+                title="Undo (Ctrl+Z)"
+              >
+                <Undo2 size={13} className="header-btn-icon" />
+                <span className="btn-label">UNDO</span>
+              </button>
+              <button
+                className="btn btn-sm header-btn-redo"
+                onClick={handleRedo}
+                disabled={!canRedo}
+                style={{ opacity: canRedo ? 1 : 0.4, cursor: canRedo ? 'pointer' : 'not-allowed' }}
+                title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
+              >
+                <Redo2 size={13} className="header-btn-icon" />
+                <span className="btn-label">REDO</span>
+              </button>
+            </>
+          )}
 
           <button
             className="btn btn-sm"
@@ -600,30 +705,43 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            className="btn btn-primary btn-sm"
+            className="btn btn-sm"
             onClick={() => {
               setExportInitialTab('astro');
               setIsExportOpen(true);
             }}
-            title="Export to Astro or Standalone HTML"
+            title="Download or Export Code (Astro / HTML / JSON / Frame)"
+          >
+            <Download size={13} className="header-btn-icon" />
+            <span className="btn-label">EXPORT</span>
+          </button>
+
+          <button
+            className="btn btn-sm"
+            onClick={() => setIsShareOpen(true)}
+            title="Share Fullscreen Viewfinder link"
           >
             <Share2 size={13} className="header-btn-icon" />
-            <span className="btn-label">EXPORT CODE</span>
+            <span className="btn-label">SHARE</span>
           </button>
         </div>
       </header>
 
       {/* Main Workspace */}
-      <div className="main-workspace">
+      <div className={`main-workspace ${viewMode === 'fullscreen' ? 'workspace-fullscreen' : ''}`}>
         {/* Left / Center Viewport */}
         <AsciiViewport
           ref={viewportRef}
           cols={cols}
           rows={rows}
-          onInitResolution={(initCols, initRows) => {
-            setCols(initCols);
-            setRows(initRows);
-          }}
+          onInitResolution={
+            sharedState?.cols && sharedState?.rows && sharedState.lockResolution !== false
+              ? undefined
+              : (initCols, initRows) => {
+                  setCols(initCols);
+                  setRows(initRows);
+                }
+          }
           isPlaying={isPlaying}
           onTogglePlay={() => setIsPlaying((p) => !p)}
           onResetTime={() => {
@@ -637,111 +755,116 @@ export const App: React.FC = () => {
           presetName={activePreset.name}
           isEdited={isEdited}
           targetFps={optimizeConfig.targetFps}
+          viewMode={viewMode}
+          onToggleViewMode={handleToggleViewMode}
         />
 
         {/* Right Sidebar Control Panel */}
-        <div className="sidebar-pane">
-          {/* Tabs */}
-          <div className="tab-nav">
-            <button
-              className={`tab-btn ${activeTab === 'presets' ? 'active' : ''}`}
-              onClick={() => setActiveTab('presets')}
-              title="Presets Library"
-            >
-              <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
-              PRESETS
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'synth' ? 'active' : ''}`}
-              onClick={() => setActiveTab('synth')}
-              title="Wave Synthesizer & Advanced Formula Code"
-            >
-              <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
-              SYNTH
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'particles' ? 'active' : ''}`}
-              onClick={() => setActiveTab('particles')}
-              title="Particle Physics & Mouse Trail"
-            >
-              <Sparkles size={11} style={{ display: 'inline', marginRight: '4px' }} />
-              PARTICLES
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'optimize' ? 'active' : ''}`}
-              onClick={() => setActiveTab('optimize')}
-              title="Performance Profiles & CPU Optimization"
-            >
-              <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
-              OPTIMIZE
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'visuals' ? 'active' : ''}`}
-              onClick={() => setActiveTab('visuals')}
-              title="Charsets & Color Themes"
-            >
-              <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
-              THEME
-            </button>
+        {viewMode === 'editor' && (
+          <div className="sidebar-pane">
+            {/* Tabs */}
+            <div className="tab-nav">
+              <button
+                className={`tab-btn ${activeTab === 'presets' ? 'active' : ''}`}
+                onClick={() => setActiveTab('presets')}
+                title="Presets Library"
+              >
+                <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                PRESETS
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'synth' ? 'active' : ''}`}
+                onClick={() => setActiveTab('synth')}
+                title="Wave Synthesizer & Advanced Formula Code"
+              >
+                <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                SYNTH
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'particles' ? 'active' : ''}`}
+                onClick={() => setActiveTab('particles')}
+                title="Particle Physics & Mouse Trail"
+              >
+                <Sparkles size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                PARTICLES
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'optimize' ? 'active' : ''}`}
+                onClick={() => setActiveTab('optimize')}
+                title="Performance Profiles & CPU Optimization"
+              >
+                <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                OPTIMIZE
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'visuals' ? 'active' : ''}`}
+                onClick={() => setActiveTab('visuals')}
+                title="Charsets & Color Themes"
+              >
+                <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                THEME
+              </button>
+            </div>
+
+            {/* Active Tab View */}
+            {activeTab === 'presets' && (
+              <PresetSelector
+                activePresetId={activePreset.id}
+                onSelectPreset={handleSelectPreset}
+                onSaveCustomPreset={handleSaveCustomPreset}
+                userPresets={userPresets}
+                onDeleteUserPreset={handleDeleteUserPreset}
+              />
+            )}
+
+            {activeTab === 'synth' && (
+              <SynthControls
+                params={waveParams}
+                onChangeParams={handleParamChange}
+                onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
+                code={customCode}
+                prepareCode={customPrepare}
+                compileError={compileError}
+                onChangeFormula={handleFormulaCodeChange}
+                isFormulaDivergent={presetType === 'custom'}
+                onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
+              />
+            )}
+
+            {activeTab === 'particles' && (
+              <ParticleControls
+                config={particleConfig}
+                onChange={setParticleConfig}
+                onClearParticles={() => {
+                  trailPointsRef.current = [];
+                }}
+              />
+            )}
+
+            {activeTab === 'optimize' && (
+              <OptimizeControls
+                config={optimizeConfig}
+                onChangeConfig={setOptimizeConfig}
+                cols={cols}
+                rows={rows}
+                onChangeResolution={(c, r) => {
+                  setCols(c);
+                  setRows(r);
+                }}
+                onMatchViewfinderRatio={handleMatchViewfinderRatio}
+              />
+            )}
+
+            {activeTab === 'visuals' && (
+              <CharsetThemeBar
+                currentCharset={density}
+                onChangeCharset={setDensity}
+                currentTheme={theme}
+                onChangeTheme={setTheme}
+              />
+            )}
           </div>
-
-          {/* Active Tab View */}
-          {activeTab === 'presets' && (
-            <PresetSelector
-              activePresetId={activePreset.id}
-              onSelectPreset={handleSelectPreset}
-              onSaveCustomPreset={handleSaveCustomPreset}
-              userPresets={userPresets}
-              onDeleteUserPreset={handleDeleteUserPreset}
-            />
-          )}
-
-          {activeTab === 'synth' && (
-            <SynthControls
-              params={waveParams}
-              onChangeParams={handleParamChange}
-              onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
-              code={customCode}
-              prepareCode={customPrepare}
-              compileError={compileError}
-              onChangeFormula={handleFormulaCodeChange}
-              isFormulaDivergent={presetType === 'custom'}
-              onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
-            />
-          )}
-
-          {activeTab === 'particles' && (
-            <ParticleControls
-              config={particleConfig}
-              onChange={setParticleConfig}
-              onClearParticles={() => {
-                trailPointsRef.current = [];
-              }}
-            />
-          )}
-
-          {activeTab === 'optimize' && (
-            <OptimizeControls
-              config={optimizeConfig}
-              onChangeConfig={setOptimizeConfig}
-              cols={cols}
-              rows={rows}
-              onChangeResolution={(c, r) => {
-                setCols(c);
-                setRows(r);
-              }}
-            />
-          )}
-
-          {activeTab === 'visuals' && (
-            <CharsetThemeBar
-              currentCharset={density}
-              onChangeCharset={setDensity}
-              currentTheme={theme}
-              onChangeTheme={setTheme}
-            />
-          )}
-        </div>
+        )}
       </div>
 
       {/* Export Modal */}
@@ -760,6 +883,13 @@ export const App: React.FC = () => {
         density={density}
         currentAsciiFrame={viewportRef.current?.getFrameText() || ''}
         initialTab={exportInitialTab}
+      />
+
+      {/* Share Modal */}
+      <ShareModal
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        state={currentFullState}
       />
     </div>
   );

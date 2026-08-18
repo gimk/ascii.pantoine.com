@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { OptimizeConfig } from '../types/ascii';
-import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay } from 'lucide-react';
+import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Maximize2, AlertTriangle } from 'lucide-react';
 
 interface OptimizeControlsProps {
   config: OptimizeConfig;
@@ -8,7 +8,66 @@ interface OptimizeControlsProps {
   cols: number;
   rows: number;
   onChangeResolution: (cols: number, rows: number) => void;
+  onMatchViewfinderRatio?: () => void;
 }
+
+const NumberInput: React.FC<{
+  value: number;
+  min?: number;
+  step?: number;
+  onChange: (val: number) => void;
+}> = ({ value, min = 1, step = 1, onChange }) => {
+  const [text, setText] = useState<string>(value.toString());
+  const [isFocused, setIsFocused] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setText(value.toString());
+    }
+  }, [value, isFocused]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setText(raw);
+    const parsed = parseInt(raw, 10);
+    if (!isNaN(parsed) && parsed >= min) {
+      onChange(parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    const parsed = parseInt(text, 10);
+    if (isNaN(parsed)) {
+      setText(value.toString());
+    } else {
+      const validVal = Math.max(min, parsed);
+      setText(validVal.toString());
+      onChange(validVal);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      className="number-input"
+      style={{ width: '56px', padding: '2px 4px', fontSize: '11px', textAlign: 'right' }}
+      min={min}
+      step={step}
+      value={text}
+      onFocus={() => setIsFocused(true)}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+    />
+  );
+};
 
 export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   config,
@@ -16,7 +75,38 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   cols,
   rows,
   onChangeResolution,
+  onMatchViewfinderRatio,
 }) => {
+  const [draftCols, setDraftCols] = useState<number>(cols);
+  const [draftRows, setDraftRows] = useState<number>(rows);
+
+  useEffect(() => {
+    setDraftCols(cols);
+    setDraftRows(rows);
+  }, [cols, rows]);
+
+  const handleColsChange = (newCols: number) => {
+    setDraftCols(newCols);
+    if (newCols <= 240 && draftRows <= 120) {
+      onChangeResolution(newCols, draftRows);
+    }
+  };
+
+  const handleRowsChange = (newRows: number) => {
+    setDraftRows(newRows);
+    if (draftCols <= 240 && newRows <= 120) {
+      onChangeResolution(draftCols, newRows);
+    }
+  };
+
+  const isPendingHighRes =
+    (draftCols > 240 || draftRows > 120) &&
+    (draftCols !== cols || draftRows !== rows);
+
+  const handleApplyPendingResolution = () => {
+    onChangeResolution(draftCols, draftRows);
+  };
+
   const update = <K extends keyof OptimizeConfig>(key: K, val: OptimizeConfig[K]) => {
     onChangeConfig({
       ...config,
@@ -146,6 +236,25 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
           ))}
         </div>
 
+        {onMatchViewfinderRatio && (
+          <button
+            className="btn btn-sm"
+            style={{
+              width: '100%',
+              marginBottom: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+            onClick={onMatchViewfinderRatio}
+            title="Automatically compute columns and rows to match the viewfinder aspect ratio"
+          >
+            <Maximize2 size={11} color="var(--accent)" />
+            MATCH VIEWFINDER RATIO
+          </button>
+        )}
+
         <div className="control-row">
           <span className="control-label">Columns (Width)</span>
           <div className="control-input-wrapper">
@@ -153,12 +262,17 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               type="range"
               className="range-slider"
               min={30}
-              max={180}
+              max={Math.max(180, draftCols)}
               step={2}
-              value={cols}
-              onChange={(e) => onChangeResolution(parseInt(e.target.value) || 100, rows)}
+              value={draftCols}
+              onChange={(e) => handleColsChange(parseInt(e.target.value) || 100)}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>{cols}</span>
+            <NumberInput
+              value={draftCols}
+              min={10}
+              step={2}
+              onChange={handleColsChange}
+            />
           </div>
         </div>
 
@@ -169,14 +283,50 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               type="range"
               className="range-slider"
               min={15}
-              max={90}
+              max={Math.max(90, draftRows)}
               step={1}
-              value={rows}
-              onChange={(e) => onChangeResolution(cols, parseInt(e.target.value) || 50)}
+              value={draftRows}
+              onChange={(e) => handleRowsChange(parseInt(e.target.value) || 50)}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>{rows}</span>
+            <NumberInput
+              value={draftRows}
+              min={5}
+              step={1}
+              onChange={handleRowsChange}
+            />
           </div>
         </div>
+
+        {/* High Resolution Confirmation Warning */}
+        {isPendingHighRes && (
+          <div
+            style={{
+              marginTop: '10px',
+              padding: '8px 10px',
+              background: 'rgba(255, 176, 0, 0.1)',
+              border: '1px solid #ffb000',
+              borderRadius: '3px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#ffb000', fontWeight: 700, fontSize: '10.5px' }}>
+              <AlertTriangle size={12} />
+              <span>High Resolution Warning</span>
+            </div>
+            <p style={{ fontSize: '9.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+              {draftCols}x{draftRows} ({(draftCols * draftRows).toLocaleString()} characters) exceeds standard 240x120. Rendering high cell counts may reduce framerate on lower-powered devices.
+            </p>
+            <button
+              className="btn btn-primary btn-sm"
+              style={{ width: '100%', marginTop: '2px', fontWeight: 700 }}
+              onClick={handleApplyPendingResolution}
+            >
+              APPLY RESOLUTION ({draftCols}x{draftRows})
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 3. Framerate Limiter */}
