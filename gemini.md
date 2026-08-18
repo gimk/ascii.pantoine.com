@@ -124,3 +124,7 @@ npm run preview
    - User presets stored in `localStorage` under `ascii_builder_user_presets` must remain backward compatible.
 4. **Keyboard Accessibility**:
    - Global hotkeys (`Space`, `F`, `R`, `Cmd+Z`, `Cmd+Shift+Z`) must not trigger when the user is actively typing in text inputs or code editors.
+5. **Git & Push Constraint**:
+   - When creating commits, stage and commit changes locally only.
+   - **NEVER push to remote** (`git push`) unless explicitly requested by the user.
+
