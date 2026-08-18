@@ -1,4 +1,4 @@
-import { WaveParams, PhosphorTheme, CustomRenderContext } from '../types/ascii';
+import { WaveParams, PhosphorTheme, CustomRenderContext, CrtConfig } from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
 
 export interface VideoExportOptions {
@@ -12,7 +12,7 @@ export interface VideoExportOptions {
   rows: number;
   theme: PhosphorTheme;
   customThemeColor?: string;
-  scanlines?: boolean;
+  crtConfig?: CrtConfig;
   duration?: number; // Duration in seconds (default: 3.0s)
   fps?: number; // Framerate (default: 30 fps)
   scale?: number; // Render resolution multiplier (1.0, 1.5, 2.0)
@@ -107,12 +107,16 @@ export async function exportVideoAnimation(
     type,
     theme,
     customThemeColor,
-    scanlines = false,
+    crtConfig,
     duration = 3.0,
     fps = 30,
     scale = 1.5,
     preferredFormat = 'auto',
   } = opts;
+
+  const showScanlines = crtConfig ? crtConfig.scanlines : true;
+  const showGlow = crtConfig ? crtConfig.glow : false;
+  const showVignette = crtConfig ? crtConfig.vignette : false;
 
   if (typeof document !== 'undefined' && document.fonts) {
     try {
@@ -211,11 +215,18 @@ export async function exportVideoAnimation(
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. Draw ASCII Text Lines
+    // 2. Draw ASCII Text Lines (with CRT glow if enabled)
     ctx.fillStyle = text;
     ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', monospace`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
+
+    if (showGlow) {
+      ctx.shadowColor = text;
+      ctx.shadowBlur = Math.round(4 * scale);
+    } else {
+      ctx.shadowBlur = 0;
+    }
 
     for (let row = 0; row < lines.length && row < rows; row++) {
       const line = lines[row];
@@ -224,13 +235,27 @@ export async function exportVideoAnimation(
       }
     }
 
+    ctx.shadowBlur = 0;
+
     // 3. Optional CRT scanlines
-    if (scanlines) {
+    if (showScanlines) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
       const step = Math.max(2, Math.round(3 * scale));
       for (let y = 0; y < height; y += step) {
         ctx.fillRect(0, y, width, 1);
       }
+    }
+
+    // 4. Optional CRT Corner Vignette
+    if (showVignette) {
+      const grad = ctx.createRadialGradient(
+        width / 2, height / 2, Math.min(width, height) * 0.35,
+        width / 2, height / 2, Math.max(width, height) * 0.7
+      );
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.7)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
     }
 
     if (onProgress) {

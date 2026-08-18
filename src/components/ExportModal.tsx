@@ -62,7 +62,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [gifDuration, setGifDuration] = useState<number>(2.0);
   const [gifFps, setGifFps] = useState<number>(15);
   const [gifScale, setGifScale] = useState<number>(1.0);
-  const [gifScanlines, setGifScanlines] = useState<boolean>(crtConfig?.scanlines ?? true);
   const [isRecordingGif, setIsRecordingGif] = useState<boolean>(false);
   const [recordProgressGif, setRecordProgressGif] = useState<number>(0);
   const [recordStatusGif, setRecordStatusGif] = useState<string>('');
@@ -75,7 +74,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [videoFps, setVideoFps] = useState<number>(30);
   const [videoScale, setVideoScale] = useState<number>(1.5);
   const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'auto'>('auto');
-  const [videoScanlines, setVideoScanlines] = useState<boolean>(crtConfig?.scanlines ?? true);
   const [isRecordingVideo, setIsRecordingVideo] = useState<boolean>(false);
   const [recordProgressVideo, setRecordProgressVideo] = useState<number>(0);
   const [recordStatusVideo, setRecordStatusVideo] = useState<string>('');
@@ -169,7 +167,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           rows,
           theme,
           customThemeColor,
-          scanlines: gifScanlines,
+          crtConfig,
           duration: gifDuration,
           fps: gifFps,
           scale: gifScale,
@@ -211,7 +209,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           rows,
           theme,
           customThemeColor,
-          scanlines: videoScanlines,
+          crtConfig,
           duration: videoDuration,
           fps: videoFps,
           scale: videoScale,
@@ -521,18 +519,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     ))}
                   </div>
                 </div>
-
-                <div className="gif-config-item">
-                  <span className="gif-config-label">CRT Scanlines</span>
-                  <button
-                    disabled={isRecordingGif}
-                    className={`btn ${gifScanlines ? 'btn-primary' : ''}`}
-                    style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={() => setGifScanlines(!gifScanlines)}
-                  >
-                    {gifScanlines ? 'SCANLINES [ON]' : 'SCANLINES [OFF]'}
-                  </button>
-                </div>
               </div>
 
               {/* Progress Box */}
@@ -640,18 +626,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       </button>
                     ))}
                   </div>
-                </div>
-
-                <div className="gif-config-item">
-                  <span className="gif-config-label">CRT Scanlines</span>
-                  <button
-                    disabled={isRecordingVideo}
-                    className={`btn ${videoScanlines ? 'btn-primary' : ''}`}
-                    style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={() => setVideoScanlines(!videoScanlines)}
-                  >
-                    {videoScanlines ? 'SCANLINES [ON]' : 'SCANLINES [OFF]'}
-                  </button>
                 </div>
               </div>
 

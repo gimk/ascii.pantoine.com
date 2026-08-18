@@ -1,5 +1,5 @@
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
-import { WaveParams, PhosphorTheme, CustomRenderContext } from '../types/ascii';
+import { WaveParams, PhosphorTheme, CustomRenderContext, CrtConfig } from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
 
 export interface GifExportOptions {
@@ -13,7 +13,7 @@ export interface GifExportOptions {
   rows: number;
   theme: PhosphorTheme;
   customThemeColor?: string;
-  scanlines?: boolean;
+  crtConfig?: CrtConfig;
   duration?: number; // Duration in seconds (default: 2.0s)
   fps?: number; // Framerate (default: 15 fps)
   scale?: number; // Render resolution multiplier (1.0 or 1.5)
@@ -67,11 +67,15 @@ export async function exportAnimatedGif(
     type,
     theme,
     customThemeColor,
-    scanlines = false,
+    crtConfig,
     duration = 2.0,
     fps = 15,
     scale = 1.0,
   } = opts;
+
+  const showScanlines = crtConfig ? crtConfig.scanlines : true;
+  const showGlow = crtConfig ? crtConfig.glow : false;
+  const showVignette = crtConfig ? crtConfig.vignette : false;
 
   // Wait for fonts to be ready so canvas typography is crisp
   if (typeof document !== 'undefined' && document.fonts) {
@@ -140,11 +144,18 @@ export async function exportAnimatedGif(
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. Draw ASCII Text Lines
+    // 2. Draw ASCII Text Lines (with CRT glow if enabled)
     ctx.fillStyle = text;
     ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', monospace`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
+
+    if (showGlow) {
+      ctx.shadowColor = text;
+      ctx.shadowBlur = Math.round(3 * scale);
+    } else {
+      ctx.shadowBlur = 0;
+    }
 
     for (let row = 0; row < lines.length && row < rows; row++) {
       const line = lines[row];
@@ -153,13 +164,27 @@ export async function exportAnimatedGif(
       }
     }
 
+    ctx.shadowBlur = 0;
+
     // 3. Optional CRT scanlines
-    if (scanlines) {
+    if (showScanlines) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
       const step = Math.max(2, Math.round(3 * scale));
       for (let y = 0; y < height; y += step) {
         ctx.fillRect(0, y, width, 1);
       }
+    }
+
+    // 4. Optional CRT Corner Vignette
+    if (showVignette) {
+      const grad = ctx.createRadialGradient(
+        width / 2, height / 2, Math.min(width, height) * 0.35,
+        width / 2, height / 2, Math.max(width, height) * 0.7
+      );
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.7)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
     }
 
     // 4. Quantize and write frame
