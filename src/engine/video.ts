@@ -1,4 +1,4 @@
-import { WaveParams, PhosphorTheme, CustomRenderContext, CrtConfig } from '../types/ascii';
+import { WaveParams, PhosphorTheme, CustomRenderContext, CrtConfig, PhosphorGradient } from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
 
 export interface VideoExportOptions {
@@ -12,6 +12,7 @@ export interface VideoExportOptions {
   rows: number;
   theme: PhosphorTheme;
   customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
   crtConfig?: CrtConfig;
   duration?: number; // Duration in seconds (default: 3.0s)
   fps?: number; // Framerate (default: 30 fps)
@@ -35,9 +36,14 @@ const THEME_COLORS: Record<PhosphorTheme, { bg: string; text: string }> = {
   matrix: { bg: '#040905', text: '#00ff66' },
 };
 
-function getThemeColors(theme: PhosphorTheme, customColor?: string): { bg: string; text: string } {
-  if (customColor) {
-    let cleaned = customColor.replace('#', '').trim();
+function getThemeColors(
+  theme: PhosphorTheme,
+  customColor?: string,
+  gradientConfig?: PhosphorGradient | null
+): { bg: string; text: string } {
+  const targetColor = gradientConfig ? gradientConfig.color1 : customColor;
+  if (targetColor) {
+    let cleaned = targetColor.replace('#', '').trim();
     if (cleaned.length === 3) cleaned = cleaned.split('').map((c) => c + c).join('');
     const num = parseInt(cleaned, 16);
     const [r, g, b] = Number.isNaN(num) ? [0, 255, 102] : [(num >> 16) & 255, (num >> 8) & 255, num & 255];
@@ -107,6 +113,7 @@ export async function exportVideoAnimation(
     type,
     theme,
     customThemeColor,
+    gradientConfig,
     crtConfig,
     duration = 3.0,
     fps = 30,
@@ -140,7 +147,19 @@ export async function exportVideoAnimation(
   const ctx = canvas.getContext('2d', { willReadFrequently: false });
   if (!ctx) throw new Error('Could not create 2D canvas context');
 
-  const { bg, text } = getThemeColors(theme, customThemeColor);
+  const { bg, text } = getThemeColors(theme, customThemeColor, gradientConfig);
+
+  // Pre-generate linear gradient for text if active
+  let textFillStyle: string | CanvasGradient = text;
+  if (gradientConfig) {
+    const rad = (gradientConfig.angle * Math.PI) / 180;
+    const x2 = Math.cos(rad) * width;
+    const y2 = Math.sin(rad) * height;
+    const grad = ctx.createLinearGradient(0, 0, Math.abs(x2) || width, Math.abs(y2) || height);
+    grad.addColorStop(0, gradientConfig.color1);
+    grad.addColorStop(1, gradientConfig.color2);
+    textFillStyle = grad;
+  }
 
   // Compile custom code if needed
   let customRenderFn: any;
@@ -216,7 +235,7 @@ export async function exportVideoAnimation(
     ctx.fillRect(0, 0, width, height);
 
     // 2. Draw ASCII Text Lines (with CRT glow if enabled)
-    ctx.fillStyle = text;
+    ctx.fillStyle = textFillStyle;
     ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', monospace`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';

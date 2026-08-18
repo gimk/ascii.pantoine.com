@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop } from 'lucide-react';
-import { CrtConfig } from '../types/ascii';
+import { CrtConfig, PhosphorGradient } from '../types/ascii';
 
 export interface AsciiViewportHandle {
   setFrame: (frameText: string, time: number, fps: number) => void;
@@ -27,6 +27,7 @@ interface AsciiViewportProps {
   onToggleAutoRes?: () => void;
   onAutoResolutionChange?: (cols: number, rows: number) => void;
   crtConfig?: CrtConfig;
+  gradientConfig?: PhosphorGradient | null;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -47,6 +48,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onToggleAutoRes,
   onAutoResolutionChange,
   crtConfig,
+  gradientConfig,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -228,10 +230,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         {showVignette && <div className="crt-vignette-overlay" />}
         <pre
           ref={preRef}
-          className={`ascii-pre ${showGlow ? 'glow-enabled' : 'glow-disabled'}`}
+          className={`ascii-pre ${showGlow ? 'glow-enabled' : 'glow-disabled'} ${gradientConfig ? 'gradient-enabled' : ''}`}
           style={{
             transform: `scale(${zoom})`,
             fontSize: '10px',
+            ...(gradientConfig ? ({ '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})` } as React.CSSProperties) : {}),
           }}
         />
       </div>

@@ -87,6 +87,14 @@ export interface WaveParams {
   starfieldIntensity: number;
 }
 
+export interface PhosphorGradient {
+  id?: string;
+  name?: string;
+  color1: string;
+  color2: string;
+  angle: number; // in degrees (0, 45, 90, 135, 180, etc.)
+}
+
 export interface Preset {
   id: string;
   name: string;
@@ -97,6 +105,7 @@ export interface Preset {
   customPrepare?: string;
   theme?: PhosphorTheme;
   customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
   densityCharset?: string;
   particleConfig?: ParticleConfig;
   optimizeConfig?: OptimizeConfig;

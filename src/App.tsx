@@ -7,6 +7,7 @@ import {
   ParticleConfig,
   OptimizeConfig,
   CrtConfig,
+  PhosphorGradient,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -114,6 +115,7 @@ export const App: React.FC = () => {
   const [density, setDensity] = useState<string>(sharedState?.density || CHARSETS[0].chars);
   const [theme, setTheme] = useState<PhosphorTheme>(sharedState?.theme || 'green');
   const [customThemeColor, setCustomThemeColor] = useState<string>(sharedState?.customThemeColor || '');
+  const [gradientConfig, setGradientConfig] = useState<PhosphorGradient | null>(sharedState?.gradientConfig || null);
 
   // CRT Display Effects
   const [crtConfig, setCrtConfig] = useState<CrtConfig>(() => ({
@@ -278,7 +280,40 @@ export const App: React.FC = () => {
 
   // Update theme class and custom color CSS variables on body
   useEffect(() => {
-    if (customThemeColor) {
+    if (gradientConfig) {
+      let cleaned = gradientConfig.color1.replace('#', '').trim();
+      if (cleaned.length === 3) {
+        cleaned = cleaned.split('').map((c) => c + c).join('');
+      }
+      const num = parseInt(cleaned, 16);
+      const [r, g, b] = (Number.isNaN(num) || cleaned.length !== 6)
+        ? [0, 255, 102]
+        : [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+
+      document.body.className = 'theme-custom';
+
+      const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(b * 0.035 + 2))})`;
+      const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(b * 0.06 + 5))})`;
+      const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))})`;
+      const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(b * 0.16 + 14))})`;
+      const borderColor = `rgb(${Math.max(24, Math.round(r * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))})`;
+      const textMuted = `rgb(${Math.round(r * 0.65 + 30)}, ${Math.round(g * 0.65 + 30)}, ${Math.round(b * 0.65 + 30)})`;
+      const textDim = `rgb(${Math.round(r * 0.35 + 15)}, ${Math.round(g * 0.35 + 15)}, ${Math.round(b * 0.35 + 15)})`;
+
+      document.body.style.setProperty('--bg-primary', bgPrimary);
+      document.body.style.setProperty('--bg-panel', bgPanel);
+      document.body.style.setProperty('--bg-control', bgControl);
+      document.body.style.setProperty('--bg-control-hover', bgControlHover);
+      document.body.style.setProperty('--border-color', borderColor);
+      document.body.style.setProperty('--border-active', gradientConfig.color1);
+      document.body.style.setProperty('--text-primary', gradientConfig.color1);
+      document.body.style.setProperty('--text-muted', textMuted);
+      document.body.style.setProperty('--text-dim', textDim);
+      document.body.style.setProperty('--accent', gradientConfig.color1);
+      document.body.style.setProperty('--accent-glow', `${gradientConfig.color1}33`);
+      document.body.style.setProperty('--text-gradient', `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`);
+    } else if (customThemeColor) {
+      document.body.style.removeProperty('--text-gradient');
       let cleaned = customThemeColor.replace('#', '').trim();
       if (cleaned.length === 3) {
         cleaned = cleaned.split('').map((c) => c + c).join('');
@@ -350,10 +385,11 @@ export const App: React.FC = () => {
         '--text-dim',
         '--accent',
         '--accent-glow',
+        '--text-gradient',
       ];
       vars.forEach((v) => document.body.style.removeProperty(v));
     }
-  }, [theme, customThemeColor]);
+  }, [theme, customThemeColor, gradientConfig]);
 
   // If shared state had custom code on load, compile it immediately
   useEffect(() => {
@@ -377,6 +413,12 @@ export const App: React.FC = () => {
       setCustomThemeColor(preset.customThemeColor || '');
     } else {
       setCustomThemeColor('');
+    }
+
+    if (preset.gradientConfig !== undefined) {
+      setGradientConfig(preset.gradientConfig || null);
+    } else {
+      setGradientConfig(null);
     }
 
     if (preset.crtConfig) {
@@ -753,6 +795,7 @@ export const App: React.FC = () => {
       density,
       theme,
       customThemeColor: customThemeColor || undefined,
+      gradientConfig,
       cols,
       rows,
       autoRes,
@@ -770,6 +813,7 @@ export const App: React.FC = () => {
       density,
       theme,
       customThemeColor,
+      gradientConfig,
       cols,
       rows,
       autoRes,
@@ -924,6 +968,7 @@ export const App: React.FC = () => {
             setRows(r);
           }}
           crtConfig={crtConfig}
+          gradientConfig={gradientConfig}
         />
 
         {/* Right Sidebar Control Panel */}
@@ -1027,10 +1072,19 @@ export const App: React.FC = () => {
                 currentTheme={theme}
                 onChangeTheme={(t) => {
                   setCustomThemeColor('');
+                  setGradientConfig(null);
                   setTheme(t);
                 }}
                 customThemeColor={customThemeColor}
-                onChangeCustomColor={setCustomThemeColor}
+                onChangeCustomColor={(c) => {
+                  setGradientConfig(null);
+                  setCustomThemeColor(c);
+                }}
+                gradientConfig={gradientConfig}
+                onChangeGradient={(g) => {
+                  setCustomThemeColor('');
+                  setGradientConfig(g);
+                }}
                 crtConfig={crtConfig}
                 onChangeCrtConfig={setCrtConfig}
               />
@@ -1056,6 +1110,7 @@ export const App: React.FC = () => {
         currentAsciiFrame={viewportRef.current?.getFrameText() || ''}
         theme={theme}
         customThemeColor={customThemeColor}
+        gradientConfig={gradientConfig}
         crtConfig={crtConfig}
         initialTab={exportInitialTab}
       />

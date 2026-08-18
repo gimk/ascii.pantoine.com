@@ -3,7 +3,7 @@ import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw, C
 import { generateAstroComponent, generateStandaloneHtml, generateAiPrompt } from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
-import { WaveParams, ParticleConfig, OptimizeConfig, PhosphorTheme, CrtConfig } from '../types/ascii';
+import { WaveParams, ParticleConfig, OptimizeConfig, PhosphorTheme, CrtConfig, PhosphorGradient } from '../types/ascii';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -21,6 +21,7 @@ interface ExportModalProps {
   currentAsciiFrame: string;
   theme?: PhosphorTheme;
   customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
   crtConfig?: CrtConfig;
   initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
 }
@@ -50,6 +51,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   currentAsciiFrame,
   theme = 'green',
   customThemeColor,
+  gradientConfig,
   crtConfig,
   initialTab = 'prompt',
 }) => {
@@ -167,6 +169,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           rows,
           theme,
           customThemeColor,
+          gradientConfig,
           crtConfig,
           duration: gifDuration,
           fps: gifFps,
@@ -209,6 +212,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           rows,
           theme,
           customThemeColor,
+          gradientConfig,
           crtConfig,
           duration: videoDuration,
           fps: videoFps,

@@ -4,6 +4,7 @@ import {
   ParticleConfig,
   OptimizeConfig,
   CrtConfig,
+  PhosphorGradient,
 } from '../types/ascii';
 
 export interface FullAnimationState {
@@ -15,6 +16,7 @@ export interface FullAnimationState {
   density: string;
   theme: PhosphorTheme;
   customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
   cols: number;
   rows: number;
   autoRes?: boolean;

@@ -353,6 +353,13 @@ html, body, #root {
   text-shadow: 0 0 3px var(--accent), 0 0 8px var(--accent-glow) !important;
 }
 
+.ascii-pre.gradient-enabled {
+  background: var(--text-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent !important;
+}
+
 .ascii-pre.glow-disabled {
   text-shadow: none !important;
 }
