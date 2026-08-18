@@ -546,10 +546,13 @@ export const App: React.FC = () => {
           <span className="brand-logo" style={{ color: 'var(--accent)' }}>▓▒░</span>
           <div className="brand-text-block">
             <div className="brand-main">
-              <span className="brand-word">ASCII</span> <span className="brand-sub">ANIMATION BUILDER</span>
+              <span className="brand-full">
+                <span className="brand-word">ASCII</span> <span className="brand-sub">ANIMATION BUILDER</span>
+              </span>
+              <span className="brand-short">A.A.B</span>
             </div>
           </div>
-          <span className="brand-badge">v1.0</span>
+          <span className="brand-badge">v1.1</span>
         </div>
 
         {/* Header Tools: Randomize, Undo, Redo, Export */}

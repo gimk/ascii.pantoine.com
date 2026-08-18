@@ -165,6 +165,16 @@ html, body, #root {
   white-space: nowrap;
 }
 
+.brand-full {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.brand-short {
+  display: none;
+}
+
 .brand-logo {
   font-size: 14px;
 }
@@ -227,20 +237,25 @@ html, body, #root {
     gap: 5px;
   }
 
-  .brand-sub,
-  .brand-badge {
+  .brand-full {
     display: none;
   }
 
-  .brand-logo {
-    font-size: 13px;
-  }
-
-  .brand-word {
+  .brand-short {
+    display: inline;
     font-size: 12px;
     font-weight: 800;
     color: var(--accent);
     letter-spacing: 0.5px;
+  }
+
+  .brand-badge {
+    font-size: 8px;
+    padding: 1px 4px;
+  }
+
+  .brand-logo {
+    font-size: 12px;
   }
 
   .header-actions {
