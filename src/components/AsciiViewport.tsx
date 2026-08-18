@@ -23,7 +23,9 @@ interface AsciiViewportProps {
   targetFps?: number;
   viewMode?: 'editor' | 'fullscreen';
   onToggleViewMode?: () => void;
-  onMatchViewfinderRatio?: () => void;
+  autoRes?: boolean;
+  onToggleAutoRes?: () => void;
+  onAutoResolutionChange?: (cols: number, rows: number) => void;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -41,7 +43,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   targetFps,
   viewMode = 'editor',
   onToggleViewMode,
-  onMatchViewfinderRatio,
+  autoRes = false,
+  onToggleAutoRes,
+  onAutoResolutionChange,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -147,6 +151,30 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     }, 50);
     return () => clearTimeout(timer);
   }, [viewMode, autoFit]);
+
+  // When autoRes is enabled, continuously adapt grid resolution on container resize
+  useEffect(() => {
+    if (!autoRes || !containerRef.current || !onAutoResolutionChange) return;
+    const el = containerRef.current;
+    let resizeTimer: any;
+
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const optimal = getOptimalResolution();
+        if (optimal) {
+          onAutoResolutionChange(optimal.cols, optimal.rows);
+          autoFit();
+        }
+      }, 120);
+    });
+
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimer);
+    };
+  }, [autoRes, getOptimalResolution, onAutoResolutionChange, autoFit]);
 
   // Once on page load: inspect the viewfinder ratio, find the best matching
   // (cols, rows) pair that matches that aspect ratio, and zoom to fit the space
@@ -307,14 +335,18 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
           </span>
-          {onMatchViewfinderRatio && (
+          {onToggleAutoRes && (
             <button
-              className="btn btn-sm"
-              onClick={onMatchViewfinderRatio}
-              title="Automatically calculate optimal grid resolution matching the viewfinder aspect ratio"
+              className={`btn btn-sm ${autoRes ? 'btn-primary' : ''}`}
+              onClick={onToggleAutoRes}
+              title={
+                autoRes
+                  ? 'Auto Resolution is ON (adapts to window/viewfinder size). Click to lock current resolution.'
+                  : 'Auto Resolution is OFF (fixed size). Click to toggle Auto Resolution.'
+              }
             >
               <Wand2 size={11} />
-              <span className="btn-label-sm">AUTO RES</span>
+              <span className="btn-label-sm">{autoRes ? 'AUTO RES [ON]' : 'AUTO RES'}</span>
             </button>
           )}
         </div>

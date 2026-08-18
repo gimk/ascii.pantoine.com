@@ -627,6 +627,8 @@ export const App: React.FC = () => {
     ]
   );
 
+  const [autoRes, setAutoRes] = useState<boolean>(!sharedState || sharedState.lockResolution === false);
+
   // Match viewport aspect ratio to optimal grid dimensions
   const handleMatchViewfinderRatio = useCallback(() => {
     const optimal = viewportRef.current?.getOptimalResolution();
@@ -637,6 +639,22 @@ export const App: React.FC = () => {
         viewportRef.current?.autoFit();
       }, 50);
     }
+  }, []);
+
+  const handleToggleAutoRes = useCallback(() => {
+    setAutoRes((prev) => {
+      const next = !prev;
+      if (next) {
+        handleMatchViewfinderRatio();
+      }
+      return next;
+    });
+  }, [handleMatchViewfinderRatio]);
+
+  const handleManualResolutionChange = useCallback((c: number, r: number) => {
+    setAutoRes(false);
+    setCols(c);
+    setRows(r);
   }, []);
 
   return (
@@ -757,7 +775,12 @@ export const App: React.FC = () => {
           targetFps={optimizeConfig.targetFps}
           viewMode={viewMode}
           onToggleViewMode={handleToggleViewMode}
-          onMatchViewfinderRatio={handleMatchViewfinderRatio}
+          autoRes={autoRes}
+          onToggleAutoRes={handleToggleAutoRes}
+          onAutoResolutionChange={(c, r) => {
+            setCols(c);
+            setRows(r);
+          }}
         />
 
         {/* Right Sidebar Control Panel */}
@@ -848,11 +871,9 @@ export const App: React.FC = () => {
                 onChangeConfig={setOptimizeConfig}
                 cols={cols}
                 rows={rows}
-                onChangeResolution={(c, r) => {
-                  setCols(c);
-                  setRows(r);
-                }}
-                onMatchViewfinderRatio={handleMatchViewfinderRatio}
+                onChangeResolution={handleManualResolutionChange}
+                autoRes={autoRes}
+                onToggleAutoRes={handleToggleAutoRes}
               />
             )}
 

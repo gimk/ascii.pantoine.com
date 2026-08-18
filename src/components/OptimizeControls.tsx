@@ -9,6 +9,8 @@ interface OptimizeControlsProps {
   rows: number;
   onChangeResolution: (cols: number, rows: number) => void;
   onMatchViewfinderRatio?: () => void;
+  autoRes?: boolean;
+  onToggleAutoRes?: () => void;
 }
 
 const NumberInput: React.FC<{
@@ -76,6 +78,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   rows,
   onChangeResolution,
   onMatchViewfinderRatio,
+  autoRes = false,
+  onToggleAutoRes,
 }) => {
   const [draftCols, setDraftCols] = useState<number>(cols);
   const [draftRows, setDraftRows] = useState<number>(rows);
@@ -236,9 +240,9 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
           ))}
         </div>
 
-        {onMatchViewfinderRatio && (
+        {(onToggleAutoRes || onMatchViewfinderRatio) && (
           <button
-            className="btn btn-sm"
+            className={`btn btn-sm ${autoRes ? 'btn-primary' : ''}`}
             style={{
               width: '100%',
               marginBottom: '10px',
@@ -247,11 +251,15 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               justifyContent: 'center',
               gap: '6px',
             }}
-            onClick={onMatchViewfinderRatio}
-            title="Automatically compute columns and rows to match the viewfinder resolution"
+            onClick={onToggleAutoRes || onMatchViewfinderRatio}
+            title={
+              autoRes
+                ? 'Auto Resolution is ON (adapts to window/viewfinder size). Click to lock current resolution.'
+                : 'Auto Resolution is OFF (fixed size). Click to toggle Auto Resolution.'
+            }
           >
-            <Wand2 size={11} color="var(--accent)" />
-            AUTO RES (MATCH VIEWFINDER)
+            <Wand2 size={11} color={autoRes ? 'var(--bg-primary)' : 'var(--accent)'} />
+            AUTO RES {autoRes ? '[ENABLED]' : '[DISABLED]'}
           </button>
         )}
 
