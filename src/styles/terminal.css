@@ -166,9 +166,7 @@ html, body, #root {
 }
 
 .brand-full {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
+  display: inline;
 }
 
 .brand-short {

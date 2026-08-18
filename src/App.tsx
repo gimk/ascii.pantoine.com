@@ -899,9 +899,7 @@ export const App: React.FC = () => {
           <span className="brand-logo" style={{ color: 'var(--accent)' }}>▓▒░</span>
           <div className="brand-text-block">
             <div className="brand-main">
-              <span className="brand-full">
-                <span className="brand-word">ASCII</span> <span className="brand-sub">WAVE GENERATOR</span>
-              </span>
+              <span className="brand-full">ASCII WAVE GENERATOR</span>
               <span className="brand-short">A.W.G</span>
             </div>
           </div>
