@@ -118,7 +118,7 @@ export const App: React.FC = () => {
   // CRT Display Effects
   const [crtConfig, setCrtConfig] = useState<CrtConfig>(() => ({
     scanlines: sharedState?.crtConfig?.scanlines ?? true,
-    glow: sharedState?.crtConfig?.glow ?? true,
+    glow: sharedState?.crtConfig?.glow ?? false,
     vignette: sharedState?.crtConfig?.vignette ?? false,
   }));
 

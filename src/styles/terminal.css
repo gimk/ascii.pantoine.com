@@ -318,8 +318,12 @@ html, body, #root {
   overflow: hidden;
   position: relative;
   cursor: crosshair;
-  background: radial-gradient(circle at center, var(--accent-glow) 0%, transparent 70%);
+  background: transparent;
   transition: background 0.15s ease;
+}
+
+.viewport-canvas-container:not(.glow-disabled) {
+  background: radial-gradient(circle at center, var(--accent-glow) 0%, transparent 70%);
 }
 
 .viewport-canvas-container.glow-disabled {
@@ -333,7 +337,7 @@ html, body, #root {
   letter-spacing: 0px;
   word-spacing: 0px;
   color: var(--text-primary);
-  text-shadow: 0 0 3px var(--accent), 0 0 8px var(--accent-glow);
+  text-shadow: none;
   transform-origin: center center;
   transition: transform 0.05s ease, text-shadow 0.15s ease;
   pointer-events: none;
@@ -343,6 +347,14 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
   font-variant-east-asian: normal;
   text-rendering: geometricPrecision;
+}
+
+.ascii-pre.glow-enabled {
+  text-shadow: 0 0 3px var(--accent), 0 0 8px var(--accent-glow) !important;
+}
+
+.ascii-pre.glow-disabled {
+  text-shadow: none !important;
 }
 
 /* Viewport Controls Bar */

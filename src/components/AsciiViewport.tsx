@@ -212,7 +212,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   const showScanlines = crtConfig ? crtConfig.scanlines : true;
-  const showGlow = crtConfig ? crtConfig.glow : true;
+  const showGlow = crtConfig ? crtConfig.glow : false;
   const showVignette = crtConfig ? crtConfig.vignette : false;
 
   return (
@@ -228,7 +228,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         {showVignette && <div className="crt-vignette-overlay" />}
         <pre
           ref={preRef}
-          className={`ascii-pre ${!showGlow ? 'glow-disabled' : ''}`}
+          className={`ascii-pre ${showGlow ? 'glow-enabled' : 'glow-disabled'}`}
           style={{
             transform: `scale(${zoom})`,
             fontSize: '10px',
