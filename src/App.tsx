@@ -58,7 +58,9 @@ const LOCAL_STORAGE_PRESETS_KEY = 'ascii_builder_user_presets';
 interface HistorySnapshot {
   waveParams: WaveParams;
   customCode: string;
+  customPrepare?: string;
   presetName: string;
+  presetType?: 'parametric' | 'custom';
 }
 
 export const App: React.FC = () => {
@@ -154,44 +156,76 @@ export const App: React.FC = () => {
   // Check if current parameters or formula differ from the active preset
   const isEdited = useMemo(() => {
     if (!activePreset) return false;
+    if (presetType !== activePreset.type) return true;
+    if (presetType === 'custom') {
+      if (customCode !== activePreset.customCode) return true;
+      if ((customPrepare || '') !== (activePreset.customPrepare || '')) return true;
+    }
     const base = activePreset.params || DEFAULT_WAVE_PARAMS;
     const keys = Object.keys(DEFAULT_WAVE_PARAMS) as (keyof WaveParams)[];
     for (const k of keys) {
       if (waveParams[k] !== base[k]) return true;
     }
     return false;
-  }, [activePreset, waveParams]);
+  }, [activePreset, presetType, customCode, customPrepare, waveParams]);
 
   const updateHistoryButtons = () => {
     setCanUndo(historyIndexRef.current > 0);
     setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
   };
 
-  const pushHistorySnapshot = useCallback((params: WaveParams, code: string, name: string) => {
-    const nextIndex = historyIndexRef.current + 1;
-    const newHistory = historyRef.current.slice(0, nextIndex);
-    newHistory.push({
-      waveParams: { ...params },
-      customCode: code,
-      presetName: name,
-    });
-    if (newHistory.length > 50) newHistory.shift();
-    historyRef.current = newHistory;
-    historyIndexRef.current = newHistory.length - 1;
-    updateHistoryButtons();
-  }, []);
+  const pushHistorySnapshot = useCallback(
+    (
+      params: WaveParams,
+      code: string,
+      name: string,
+      prepare?: string,
+      type?: 'parametric' | 'custom'
+    ) => {
+      const nextIndex = historyIndexRef.current + 1;
+      const newHistory = historyRef.current.slice(0, nextIndex);
+      newHistory.push({
+        waveParams: { ...params },
+        customCode: code,
+        customPrepare: prepare || '',
+        presetName: name,
+        presetType: type || 'parametric',
+      });
+      if (newHistory.length > 50) newHistory.shift();
+      historyRef.current = newHistory;
+      historyIndexRef.current = newHistory.length - 1;
+      updateHistoryButtons();
+    },
+    []
+  );
 
   // Initialize first history entry
   useEffect(() => {
     if (historyRef.current.length === 0) {
       const initialCode = generateFormulaCode(DEFAULT_WAVE_PARAMS);
-      historyRef.current = [{
-        waveParams: { ...DEFAULT_WAVE_PARAMS },
-        customCode: initialCode,
-        presetName: PRESETS[0].name,
-      }];
+      historyRef.current = [
+        {
+          waveParams: { ...DEFAULT_WAVE_PARAMS },
+          customCode: initialCode,
+          customPrepare: '',
+          presetName: PRESETS[0].name,
+          presetType: 'parametric',
+        },
+      ];
       historyIndexRef.current = 0;
       updateHistoryButtons();
+    }
+  }, []);
+
+  // Compile custom code when changed
+  const recompileCustomCode = useCallback((code: string, prepare?: string) => {
+    const res = compileCustomCode(code, prepare);
+    if (res.error) {
+      setCompileError(res.error);
+    } else {
+      setCompileError(null);
+      compiledFnRef.current = res.fn;
+      prepareFnRef.current = res.prepareFn;
     }
   }, []);
 
@@ -201,11 +235,12 @@ export const App: React.FC = () => {
       const snapshot = historyRef.current[historyIndexRef.current];
       setWaveParams({ ...snapshot.waveParams });
       setCustomCode(snapshot.customCode);
-      const res = compileCustomCode(snapshot.customCode, '');
-      compiledFnRef.current = res.fn;
+      setCustomPrepare(snapshot.customPrepare || '');
+      setPresetType(snapshot.presetType || 'parametric');
+      recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
       updateHistoryButtons();
     }
-  }, []);
+  }, [recompileCustomCode]);
 
   const handleRedo = useCallback(() => {
     if (historyIndexRef.current < historyRef.current.length - 1) {
@@ -213,11 +248,12 @@ export const App: React.FC = () => {
       const snapshot = historyRef.current[historyIndexRef.current];
       setWaveParams({ ...snapshot.waveParams });
       setCustomCode(snapshot.customCode);
-      const res = compileCustomCode(snapshot.customCode, '');
-      compiledFnRef.current = res.fn;
+      setCustomPrepare(snapshot.customPrepare || '');
+      setPresetType(snapshot.presetType || 'parametric');
+      recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
       updateHistoryButtons();
     }
-  }, []);
+  }, [recompileCustomCode]);
 
   // Load user presets from localStorage
   useEffect(() => {
@@ -236,18 +272,6 @@ export const App: React.FC = () => {
     document.body.className = `theme-${theme}`;
   }, [theme]);
 
-  // Compile custom code when changed
-  const recompileCustomCode = useCallback((code: string, prepare?: string) => {
-    const res = compileCustomCode(code, prepare);
-    if (res.error) {
-      setCompileError(res.error);
-    } else {
-      setCompileError(null);
-      compiledFnRef.current = res.fn;
-      prepareFnRef.current = res.prepareFn;
-    }
-  }, []);
-
   // If shared state had custom code on load, compile it immediately
   useEffect(() => {
     if (sharedState?.customCode) {
@@ -258,10 +282,24 @@ export const App: React.FC = () => {
   // Handle Preset Selection
   const handleSelectPreset = (preset: Preset) => {
     setActivePreset(preset);
-    setPresetType('parametric');
+
+    const isCustom = preset.type === 'custom' || Boolean(preset.customCode && checkFormulaDivergence(preset.customCode, preset.customPrepare || '', preset.params));
+    setPresetType(isCustom ? 'custom' : 'parametric');
+
+    if (preset.theme) {
+      setTheme(preset.theme);
+    }
 
     if (preset.densityCharset) {
       setDensity(preset.densityCharset);
+    }
+
+    if (preset.particleConfig) {
+      setParticleConfig({ ...preset.particleConfig });
+    }
+
+    if (preset.optimizeConfig) {
+      setOptimizeConfig({ ...preset.optimizeConfig });
     }
 
     const newParams: WaveParams = {
@@ -270,12 +308,13 @@ export const App: React.FC = () => {
     };
     setWaveParams(newParams);
 
-    const formula = generateFormulaCode(newParams);
+    const formula = preset.customCode || generateFormulaCode(newParams);
+    const prepare = preset.customPrepare || '';
     setCustomCode(formula);
-    setCustomPrepare('');
-    recompileCustomCode(formula, '');
+    setCustomPrepare(prepare);
+    recompileCustomCode(formula, prepare);
 
-    pushHistorySnapshot(newParams, formula, preset.name);
+    pushHistorySnapshot(newParams, formula, preset.name, prepare, isCustom ? 'custom' : 'parametric');
   };
 
   // When tweaking sliders in Synth tab
@@ -291,7 +330,7 @@ export const App: React.FC = () => {
 
     clearTimeout(historyDebounceTimer.current);
     historyDebounceTimer.current = setTimeout(() => {
-      pushHistorySnapshot(updated, formula, activePreset.name);
+      pushHistorySnapshot(updated, formula, activePreset.name, customPrepare, 'parametric');
     }, 400);
   };
 
@@ -309,7 +348,7 @@ export const App: React.FC = () => {
 
     clearTimeout(historyDebounceTimer.current);
     historyDebounceTimer.current = setTimeout(() => {
-      pushHistorySnapshot(parsed, newCode, isDivergent ? 'Custom Formula' : activePreset.name);
+      pushHistorySnapshot(parsed, newCode, isDivergent ? 'Custom Formula' : activePreset.name, newPrepare, isDivergent ? 'custom' : 'parametric');
     }, 600);
   };
 
@@ -319,7 +358,7 @@ export const App: React.FC = () => {
     setCustomPrepare('');
     setPresetType('parametric');
     recompileCustomCode(pureFormula, '');
-    pushHistorySnapshot(waveParams, pureFormula, activePreset.name);
+    pushHistorySnapshot(waveParams, pureFormula, activePreset.name, '', 'parametric');
   };
 
   // Fun Randomizer Handler
@@ -345,9 +384,10 @@ export const App: React.FC = () => {
       type: 'parametric',
       params: { ...randomized.params },
       densityCharset: randomized.density,
+      theme: randomized.theme,
     };
     setActivePreset(randomPreset);
-    pushHistorySnapshot(randomized.params, formula, randomized.name);
+    pushHistorySnapshot(randomized.params, formula, randomized.name, '', 'parametric');
   }, [recompileCustomCode, pushHistorySnapshot]);
 
   // Save Custom User Preset
@@ -355,16 +395,23 @@ export const App: React.FC = () => {
     const newPreset: Preset = {
       id: `user-${Date.now()}`,
       name,
-      description: `Custom preset created on ${new Date().toLocaleDateString()}`,
+      description:
+        presetType === 'custom'
+          ? `Custom formula preset created on ${new Date().toLocaleDateString()}`
+          : `Custom preset created on ${new Date().toLocaleDateString()}`,
       type: presetType,
       params: { ...waveParams },
-      customCode: presetType === 'custom' ? customCode : undefined,
-      customPrepare: presetType === 'custom' ? customPrepare : undefined,
+      customCode: customCode,
+      customPrepare: customPrepare || undefined,
+      theme,
       densityCharset: density,
+      particleConfig: { ...particleConfig },
+      optimizeConfig: { ...optimizeConfig },
     };
 
     const updated = [newPreset, ...userPresets];
     setUserPresets(updated);
+    setActivePreset(newPreset);
     try {
       localStorage.setItem(LOCAL_STORAGE_PRESETS_KEY, JSON.stringify(updated));
     } catch {}

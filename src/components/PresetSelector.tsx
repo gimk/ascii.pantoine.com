@@ -94,7 +94,14 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
                   style={{ position: 'relative' }}
                   onClick={() => onSelectPreset(preset)}
                 >
-                  <div className="preset-card-title">{preset.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '22px', marginBottom: '2px' }}>
+                    <div className="preset-card-title">{preset.name}</div>
+                    {preset.type === 'custom' && (
+                      <span style={{ fontSize: '8px', background: 'var(--accent)', color: 'var(--bg-primary)', padding: '1px 4px', borderRadius: '2px', fontWeight: 700 }}>
+                        CODE
+                      </span>
+                    )}
+                  </div>
                   <div className="preset-card-desc">{preset.description}</div>
                   <button
                     className="btn btn-sm"

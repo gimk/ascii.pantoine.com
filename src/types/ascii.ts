@@ -89,7 +89,10 @@ export interface Preset {
   params: WaveParams;
   customCode?: string;
   customPrepare?: string;
+  theme?: PhosphorTheme;
   densityCharset?: string;
+  particleConfig?: ParticleConfig;
+  optimizeConfig?: OptimizeConfig;
   author?: string;
 }
 
