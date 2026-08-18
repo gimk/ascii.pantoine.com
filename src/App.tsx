@@ -821,7 +821,7 @@ export const App: React.FC = () => {
               <span className="brand-short">A.A.B</span>
             </div>
           </div>
-          <span className="brand-badge">v1.1</span>
+          <span className="brand-badge">v1.2</span>
         </div>
 
         {/* Header Tools: Randomize, Undo, Redo, AI Prompt, Export, Share */}
