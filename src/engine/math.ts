@@ -140,10 +140,15 @@ export function evaluateParametricWave(
 
     const threshold = Math.max(0.7, 1.0 - density * 0.035);
     if (rand > threshold) {
-      const phase = rand * 6.28318 + time * speed;
-      const sparkle = Math.max(0, Math.sin(phase));
-      const starBrightness = sparkle * sparkle * ((rand - threshold) / (1.0 - threshold));
-      val += starBrightness * p.starfieldIntensity;
+      // Relative star magnitude (0.0 to 1.0)
+      const starMag = (rand - threshold) / (1.0 - threshold);
+      // Persistent baseline luminance (stars are always 45%-80% visible)
+      const baseLuminance = 0.45 + 0.35 * starMag;
+      // Gentle atmospheric twinkle shimmer (modulates smoothly between 0.70 and 1.0)
+      const twinkle = speed > 0
+        ? 0.70 + 0.30 * Math.sin(rand * 6.28318 + time * speed)
+        : 1.0;
+      val += baseLuminance * twinkle * p.starfieldIntensity;
     }
   }
 
@@ -212,7 +217,9 @@ export function generateFormulaCode(p: WaveParams): string {
     lines.push(`const d1 = Math.hypot(dx - ${p.dualEmitterSpacing}, dy - ${p.dualEmitterSpacing * 0.4});`);
     lines.push(`const d2 = Math.hypot(dx + ${p.dualEmitterSpacing}, dy + ${p.dualEmitterSpacing * 0.4});`);
     lines.push(`val += ((Math.sin(d1 * ${p.dualEmitterFreq} - time * ${p.dualEmitterSpeed}) + Math.sin(d2 * ${p.dualEmitterFreq} - time * ${p.dualEmitterSpeed})) * 0.5) * ${p.dualEmitterAmp};\n`);
-  }  if (p.starfieldIntensity !== 0) {
+  }
+
+  if (p.starfieldIntensity !== 0) {
     lines.push(`// Starfield & Cosmic Sparkle Matrix`);
     lines.push(`const sScale = ${p.starfieldScale || 80.0};`);
     lines.push(`const sHash = Math.sin(Math.floor(x * sScale) * 12.9898 + Math.floor(y * sScale) * 78.233) * 43758.5453;`);
@@ -220,8 +227,9 @@ export function generateFormulaCode(p: WaveParams): string {
     const thresh = Number(Math.max(0.7, 1.0 - (p.starfieldDensity !== undefined ? p.starfieldDensity : 1.0) * 0.035).toFixed(4));
     lines.push(`const sThreshold = ${thresh};`);
     lines.push(`if (sRand > sThreshold) {`);
-    lines.push(`  const sSparkle = Math.max(0, Math.sin(sRand * 6.28318 + time * ${p.starfieldSpeed !== undefined ? p.starfieldSpeed : 2.0}));`);
-    lines.push(`  val += sSparkle * sSparkle * ((sRand - sThreshold) / (1.0 - sThreshold)) * ${p.starfieldIntensity};`);
+    lines.push(`  const sMag = (sRand - sThreshold) / (1.0 - sThreshold);`);
+    lines.push(`  const sTwinkle = 0.70 + 0.30 * Math.sin(sRand * 6.28318 + time * ${p.starfieldSpeed !== undefined ? p.starfieldSpeed : 2.0});`);
+    lines.push(`  val += (0.45 + 0.35 * sMag) * sTwinkle * ${p.starfieldIntensity};`);
     lines.push(`}\n`);
   }
 
