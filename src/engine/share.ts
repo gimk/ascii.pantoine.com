@@ -15,6 +15,7 @@ export interface FullAnimationState {
   theme: PhosphorTheme;
   cols: number;
   rows: number;
+  autoRes?: boolean;
   lockResolution?: boolean;
   particleConfig: ParticleConfig;
   optimizeConfig: OptimizeConfig;
@@ -87,6 +88,10 @@ export function decodeShareFromUrl(): {
 
     const jsonStr = base64ToUtf8(dataParam);
     const parsed = JSON.parse(jsonStr) as FullAnimationState;
+
+    if (parsed.autoRes === undefined && parsed.lockResolution !== undefined) {
+      parsed.autoRes = !parsed.lockResolution;
+    }
 
     return {
       state: parsed,

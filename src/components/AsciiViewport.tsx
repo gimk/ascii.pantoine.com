@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Wand2 } from 'lucide-react';
+import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop } from 'lucide-react';
 
 export interface AsciiViewportHandle {
   setFrame: (frameText: string, time: number, fps: number) => void;
@@ -11,7 +11,6 @@ export interface AsciiViewportHandle {
 interface AsciiViewportProps {
   cols: number;
   rows: number;
-  onInitResolution?: (cols: number, rows: number, zoom: number) => void;
   isPlaying: boolean;
   onTogglePlay: () => void;
   onResetTime: () => void;
@@ -31,7 +30,6 @@ interface AsciiViewportProps {
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
   cols,
   rows,
-  onInitResolution,
   isPlaying,
   onTogglePlay,
   onResetTime,
@@ -52,7 +50,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
   const latestFrameTextRef = useRef<string>('');
-  const hasInitializedResolution = useRef<boolean>(false);
 
   const [zoom, setZoom] = useState<number>(1.0);
   const [copied, setCopied] = useState<boolean>(false);
@@ -104,6 +101,27 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return { cols: bestCols, rows: bestRows };
   }, []);
 
+  // Auto-fit zoom on demand based on current cols and rows
+  const autoFit = useCallback(() => {
+    if (!containerRef.current) return;
+    const { clientWidth, clientHeight } = containerRef.current;
+    if (clientWidth <= 0 || clientHeight <= 0) return;
+
+    const charWidth = 6.015;
+    const charHeight = 10.0;
+    const unscaledWidth = cols * charWidth;
+    const unscaledHeight = rows * charHeight;
+
+    const pad = 16;
+    const availableWidth = Math.max(10, clientWidth - pad);
+    const availableHeight = Math.max(10, clientHeight - pad);
+
+    const scaleX = availableWidth / unscaledWidth;
+    const scaleY = availableHeight / unscaledHeight;
+    const fitScale = Math.max(0.2, Math.min(5.0, Math.min(scaleX, scaleY)));
+    setZoom(Number(fitScale.toFixed(2)));
+  }, [cols, rows]);
+
   useImperativeHandle(ref, () => ({
     setFrame: (frameText: string, time: number, fps: number) => {
       latestFrameTextRef.current = frameText;
@@ -122,29 +140,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     getOptimalResolution,
   }));
 
-  // Auto-fit zoom on demand based on current cols and rows
-  const autoFit = useCallback(() => {
-    if (!containerRef.current) return;
-    const { clientWidth, clientHeight } = containerRef.current;
-    if (clientWidth <= 0 || clientHeight <= 0) return;
-
-    // Font character metrics at 10px font-size with 1.0 line-height:
-    const charWidth = 6.015;
-    const charHeight = 10.0;
-    const unscaledWidth = cols * charWidth;
-    const unscaledHeight = rows * charHeight;
-
-    const pad = 16;
-    const availableWidth = Math.max(10, clientWidth - pad);
-    const availableHeight = Math.max(10, clientHeight - pad);
-
-    const scaleX = availableWidth / unscaledWidth;
-    const scaleY = availableHeight / unscaledHeight;
-    const fitScale = Math.max(0.2, Math.min(5.0, Math.min(scaleX, scaleY)));
-    setZoom(Number(fitScale.toFixed(2)));
-  }, [cols, rows]);
-
-  // Trigger autoFit when switching view mode
+  // Initial layout & viewMode autoFit
   useEffect(() => {
     const timer = setTimeout(() => {
       autoFit();
@@ -152,20 +148,27 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return () => clearTimeout(timer);
   }, [viewMode, autoFit]);
 
-  // When autoRes is enabled, continuously adapt grid resolution on container resize
+  // When autoRes is enabled, continuously adapt grid resolution on container resize / layout
   useEffect(() => {
     if (!autoRes || !containerRef.current || !onAutoResolutionChange) return;
     const el = containerRef.current;
     let resizeTimer: any;
 
+    const runAutoRes = () => {
+      const optimal = getOptimalResolution();
+      if (optimal) {
+        onAutoResolutionChange(optimal.cols, optimal.rows);
+        autoFit();
+      }
+    };
+
+    // Run once on mount / activation
+    runAutoRes();
+
     const observer = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        const optimal = getOptimalResolution();
-        if (optimal) {
-          onAutoResolutionChange(optimal.cols, optimal.rows);
-          autoFit();
-        }
+        runAutoRes();
       }, 120);
     });
 
@@ -175,86 +178,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       clearTimeout(resizeTimer);
     };
   }, [autoRes, getOptimalResolution, onAutoResolutionChange, autoFit]);
-
-  // Once on page load: inspect the viewfinder ratio, find the best matching
-  // (cols, rows) pair that matches that aspect ratio, and zoom to fit the space
-  useEffect(() => {
-    if (hasInitializedResolution.current) return;
-
-    const measureAndInit = () => {
-      if (hasInitializedResolution.current || !containerRef.current) return;
-      const { clientWidth, clientHeight } = containerRef.current;
-      if (clientWidth <= 0 || clientHeight <= 0) {
-        requestAnimationFrame(measureAndInit);
-        return;
-      }
-
-      hasInitializedResolution.current = true;
-
-      if (!onInitResolution) {
-        // When onInitResolution is omitted (e.g. shared animation with specific size),
-        // preserve the specified cols and rows and only auto-fit the zoom.
-        autoFit();
-        return;
-      }
-
-      const charWidth = 6.015;
-      const charHeight = 10.0;
-      const pad = 20;
-      const availableWidth = Math.max(80, clientWidth - pad);
-      const availableHeight = Math.max(60, clientHeight - pad);
-      const windowRatio = availableWidth / availableHeight;
-      const charAspectCompensation = charHeight / charWidth; // ~1.6625
-
-      // Target density based on container dimensions
-      const targetCells = Math.max(2000, Math.min(7500, Math.round((availableWidth * availableHeight) / 95)));
-
-      let bestCols = 100;
-      let bestRows = 50;
-      let minScore = Infinity;
-
-      // Candidate row counts to explore
-      const minRows = Math.max(20, Math.min(35, Math.floor(availableHeight / 20)));
-      const maxRows = Math.min(80, Math.max(45, Math.floor(availableHeight / 8)));
-
-      for (let r = minRows; r <= maxRows; r++) {
-        let c = Math.round(r * windowRatio * charAspectCompensation);
-        if (c % 2 !== 0) c += 1;
-        if (c < 36 || c > 180) continue;
-
-        const gridVisualWidth = c * charWidth;
-        const gridVisualHeight = r * charHeight;
-        const gridRatio = gridVisualWidth / gridVisualHeight;
-
-        // Ratio error relative to available window ratio
-        const ratioMismatch = Math.abs(gridRatio - windowRatio) / windowRatio;
-
-        // Density preference (steers towards comfortable visual cell density)
-        const cellCount = c * r;
-        const densityPenalty = Math.abs(cellCount - targetCells) / targetCells * 0.08;
-
-        const score = ratioMismatch + densityPenalty;
-
-        if (score < minScore) {
-          minScore = score;
-          bestCols = c;
-          bestRows = r;
-        }
-      }
-
-      // Calculate the zoom factor to fit the entire space
-      const scaleX = availableWidth / (bestCols * charWidth);
-      const scaleY = availableHeight / (bestRows * charHeight);
-      const fitZoom = Number(Math.max(0.3, Math.min(3.5, Math.min(scaleX, scaleY))).toFixed(2));
-
-      setZoom(fitZoom);
-      if (onInitResolution) {
-        onInitResolution(bestCols, bestRows, fitZoom);
-      }
-    };
-
-    measureAndInit();
-  }, [onInitResolution]);
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const targetElement = preRef.current || containerRef.current;
@@ -345,7 +268,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
                   : 'Auto Resolution is OFF (fixed size). Click to toggle Auto Resolution.'
               }
             >
-              <Wand2 size={11} />
+              <Crop size={11} />
               <span className="btn-label-sm">{autoRes ? 'AUTO RES [ON]' : 'AUTO RES'}</span>
             </button>
           )}

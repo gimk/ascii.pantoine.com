@@ -596,6 +596,10 @@ export const App: React.FC = () => {
     });
   }, []);
 
+  const [autoRes, setAutoRes] = useState<boolean>(
+    sharedState?.autoRes !== undefined ? sharedState.autoRes : true
+  );
+
   // Complete snapshot of the current animation state for sharing / deep-linking
   const currentFullState: FullAnimationState = useMemo(
     () => ({
@@ -608,6 +612,7 @@ export const App: React.FC = () => {
       theme,
       cols,
       rows,
+      autoRes,
       particleConfig,
       optimizeConfig,
     }),
@@ -622,12 +627,11 @@ export const App: React.FC = () => {
       theme,
       cols,
       rows,
+      autoRes,
       particleConfig,
       optimizeConfig,
     ]
   );
-
-  const [autoRes, setAutoRes] = useState<boolean>(!sharedState || sharedState.lockResolution === false);
 
   // Match viewport aspect ratio to optimal grid dimensions
   const handleMatchViewfinderRatio = useCallback(() => {
@@ -752,14 +756,6 @@ export const App: React.FC = () => {
           ref={viewportRef}
           cols={cols}
           rows={rows}
-          onInitResolution={
-            sharedState?.cols && sharedState?.rows && sharedState.lockResolution !== false
-              ? undefined
-              : (initCols, initRows) => {
-                  setCols(initCols);
-                  setRows(initRows);
-                }
-          }
           isPlaying={isPlaying}
           onTogglePlay={() => setIsPlaying((p) => !p)}
           onResetTime={() => {

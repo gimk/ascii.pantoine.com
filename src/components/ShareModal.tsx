@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, ExternalLink, Sparkles, Sliders, Palette, Cpu } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, Sparkles, Sliders, Palette, Cpu, Crop } from 'lucide-react';
 import { encodeShareUrl, FullAnimationState } from '../engine/share';
 
 interface ShareModalProps {
@@ -14,14 +14,14 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   state,
 }) => {
   const [copied, setCopied] = useState<boolean>(false);
-  const [lockResolution, setLockResolution] = useState<boolean>(true);
+  const [shareAutoRes, setShareAutoRes] = useState<boolean>(state.autoRes ?? false);
 
   if (!isOpen) return null;
 
   const shareUrl = encodeShareUrl(
     {
       ...state,
-      lockResolution,
+      autoRes: shareAutoRes,
     },
     'fullscreen'
   );
@@ -94,7 +94,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             </div>
           </div>
 
-          {/* Fixed Resolution Switch */}
+          {/* Auto Resolution Switch */}
           <div
             style={{
               display: 'flex',
@@ -109,20 +109,21 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Share with fixed resolution ({state.cols}x{state.rows})
+                Share with Auto Resolution
               </span>
               <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                {lockResolution
-                  ? 'Preserves your exact grid size on the recipient’s screen.'
-                  : 'Allows recipient’s device to auto-fit grid resolution to their screen ratio.'}
+                {shareAutoRes
+                  ? 'Recipient’s screen will automatically adapt grid resolution to match their device size.'
+                  : `Preserves fixed grid resolution (${state.cols}x${state.rows}) on the recipient’s screen.`}
               </span>
             </div>
             <button
-              className={`btn btn-sm ${lockResolution ? 'btn-primary' : ''}`}
-              onClick={() => setLockResolution((v) => !v)}
-              style={{ whiteSpace: 'nowrap', minWidth: '95px' }}
+              className={`btn btn-sm ${shareAutoRes ? 'btn-primary' : ''}`}
+              onClick={() => setShareAutoRes((v) => !v)}
+              style={{ whiteSpace: 'nowrap', minWidth: '105px' }}
             >
-              {lockResolution ? 'FIXED [ON]' : 'AUTO-FIT'}
+              <Crop size={11} style={{ marginRight: '4px' }} />
+              {shareAutoRes ? 'AUTO RES [ON]' : 'AUTO RES [OFF]'}
             </button>
           </div>
 

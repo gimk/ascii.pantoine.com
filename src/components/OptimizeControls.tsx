@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { OptimizeConfig } from '../types/ascii';
-import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Wand2, AlertTriangle } from 'lucide-react';
+import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Crop, AlertTriangle } from 'lucide-react';
 
 interface OptimizeControlsProps {
   config: OptimizeConfig;
@@ -17,8 +17,9 @@ const NumberInput: React.FC<{
   value: number;
   min?: number;
   step?: number;
+  disabled?: boolean;
   onChange: (val: number) => void;
-}> = ({ value, min = 1, step = 1, onChange }) => {
+}> = ({ value, min = 1, step = 1, disabled = false, onChange }) => {
   const [text, setText] = useState<string>(value.toString());
   const [isFocused, setIsFocused] = useState<boolean>(false);
 
@@ -29,6 +30,7 @@ const NumberInput: React.FC<{
   }, [value, isFocused]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const raw = e.target.value;
     setText(raw);
     const parsed = parseInt(raw, 10);
@@ -38,6 +40,7 @@ const NumberInput: React.FC<{
   };
 
   const handleBlur = () => {
+    if (disabled) return;
     setIsFocused(false);
     const parsed = parseInt(text, 10);
     if (isNaN(parsed)) {
@@ -59,11 +62,19 @@ const NumberInput: React.FC<{
     <input
       type="number"
       className="number-input"
-      style={{ width: '56px', padding: '2px 4px', fontSize: '11px', textAlign: 'right' }}
+      style={{
+        width: '56px',
+        padding: '2px 4px',
+        fontSize: '11px',
+        textAlign: 'right',
+        opacity: disabled ? 0.45 : 1,
+        cursor: disabled ? 'not-allowed' : 'text',
+      }}
+      disabled={disabled}
       min={min}
       step={step}
       value={text}
-      onFocus={() => setIsFocused(true)}
+      onFocus={() => !disabled && setIsFocused(true)}
       onChange={handleChange}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
@@ -222,7 +233,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
         </div>
 
         {/* Quick Resolution buttons */}
-        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px', opacity: autoRes ? 0.45 : 1 }}>
           {[
             { label: '50x25', c: 50, r: 25 },
             { label: '70x35', c: 70, r: 35 },
@@ -232,6 +243,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
           ].map((preset) => (
             <button
               key={preset.label}
+              disabled={autoRes}
+              style={{ cursor: autoRes ? 'not-allowed' : 'pointer' }}
               className={`btn btn-sm ${cols === preset.c && rows === preset.r ? 'btn-primary' : ''}`}
               onClick={() => onChangeResolution(preset.c, preset.r)}
             >
@@ -258,12 +271,12 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 : 'Auto Resolution is OFF (fixed size). Click to toggle Auto Resolution.'
             }
           >
-            <Wand2 size={11} color={autoRes ? 'var(--bg-primary)' : 'var(--accent)'} />
+            <Crop size={11} color={autoRes ? 'var(--bg-primary)' : 'var(--accent)'} />
             AUTO RES {autoRes ? '[ENABLED]' : '[DISABLED]'}
           </button>
         )}
 
-        <div className="control-row">
+        <div className="control-row" style={{ opacity: autoRes ? 0.45 : 1 }}>
           <span className="control-label">Columns (Width)</span>
           <div className="control-input-wrapper">
             <input
@@ -273,18 +286,21 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               max={Math.max(180, draftCols)}
               step={2}
               value={draftCols}
+              disabled={autoRes}
+              style={{ cursor: autoRes ? 'not-allowed' : 'pointer' }}
               onChange={(e) => handleColsChange(parseInt(e.target.value) || 100)}
             />
             <NumberInput
               value={draftCols}
               min={10}
               step={2}
+              disabled={autoRes}
               onChange={handleColsChange}
             />
           </div>
         </div>
 
-        <div className="control-row">
+        <div className="control-row" style={{ opacity: autoRes ? 0.45 : 1 }}>
           <span className="control-label">Rows (Height)</span>
           <div className="control-input-wrapper">
             <input
@@ -294,12 +310,15 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               max={Math.max(90, draftRows)}
               step={1}
               value={draftRows}
+              disabled={autoRes}
+              style={{ cursor: autoRes ? 'not-allowed' : 'pointer' }}
               onChange={(e) => handleRowsChange(parseInt(e.target.value) || 50)}
             />
             <NumberInput
               value={draftRows}
               min={5}
               step={1}
+              disabled={autoRes}
               onChange={handleRowsChange}
             />
           </div>
