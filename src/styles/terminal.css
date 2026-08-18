@@ -184,43 +184,13 @@ html, body, #root {
   flex-shrink: 0;
 }
 
-@media (max-width: 600px) {
-  .app-header {
-    padding: 6px 10px;
-    height: 46px;
-  }
+.header-btn-icon {
+  flex-shrink: 0;
+}
 
-  .brand-title {
-    gap: 6px;
-  }
-
-  .brand-logo {
-    font-size: 12px;
-  }
-
-  .brand-main {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.1;
-  }
-
-  .brand-word {
-    font-size: 11px;
-    font-weight: 800;
-    color: var(--accent);
-    letter-spacing: 0.5px;
-  }
-
-  .brand-sub {
-    font-size: 8.5px;
-    font-weight: 600;
-    color: var(--text-muted);
-    letter-spacing: 0.2px;
-  }
-
-  .brand-badge {
-    font-size: 8px;
-    padding: 1px 4px;
+@media (max-width: 820px) {
+  .header-actions .btn .btn-label {
+    display: none;
   }
 
   .header-actions {
@@ -228,8 +198,69 @@ html, body, #root {
   }
 
   .header-actions .btn {
-    padding: 5px 8px;
-    font-size: 10.5px;
+    padding: 6px 8px;
+    min-width: 32px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .header-actions .header-btn-icon {
+    width: 15px;
+    height: 15px;
+  }
+
+  .header-actions .btn-randomize .header-btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (max-width: 500px) {
+  .app-header {
+    padding: 6px 8px;
+    height: 44px;
+  }
+
+  .brand-title {
+    gap: 5px;
+  }
+
+  .brand-sub,
+  .brand-badge {
+    display: none;
+  }
+
+  .brand-logo {
+    font-size: 13px;
+  }
+
+  .brand-word {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+
+  .header-actions {
+    gap: 3px;
+  }
+
+  .header-actions .btn {
+    padding: 4px 6px;
+    min-width: 29px;
+    height: 29px;
+  }
+
+  .header-actions .header-btn-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .header-actions .btn-randomize .header-btn-icon {
+    width: 15px;
+    height: 15px;
   }
 }
 

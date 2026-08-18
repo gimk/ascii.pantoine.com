@@ -559,8 +559,8 @@ export const App: React.FC = () => {
             onClick={handleRandomize}
             title="Randomize animation, theme & charset (Press R)"
           >
-            <Dices size={13} className={isRandomizing ? 'dice-spin' : ''} />
-            <span>RANDOMIZE</span>
+            <Dices size={14} className={`header-btn-icon ${isRandomizing ? 'dice-spin' : ''}`} />
+            <span className="btn-label">RANDOMIZE</span>
           </button>
 
           <button
@@ -570,18 +570,18 @@ export const App: React.FC = () => {
             style={{ opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'not-allowed' }}
             title="Undo (Ctrl+Z)"
           >
-            <Undo2 size={12} />
-            UNDO
+            <Undo2 size={13} className="header-btn-icon" />
+            <span className="btn-label">UNDO</span>
           </button>
           <button
-            className="btn btn-sm"
+            className="btn btn-sm header-btn-redo"
             onClick={handleRedo}
             disabled={!canRedo}
             style={{ opacity: canRedo ? 1 : 0.4, cursor: canRedo ? 'pointer' : 'not-allowed' }}
             title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
           >
-            <Redo2 size={12} />
-            REDO
+            <Redo2 size={13} className="header-btn-icon" />
+            <span className="btn-label">REDO</span>
           </button>
 
           <button
@@ -591,10 +591,9 @@ export const App: React.FC = () => {
               setIsExportOpen(true);
             }}
             title="Export as standardized prompt for AI (Claude, ChatGPT, Gemini, etc.)"
-            style={{ marginLeft: '4px' }}
           >
-            <Bot size={12} />
-            AI PROMPT
+            <Bot size={13} className="header-btn-icon" />
+            <span className="btn-label">AI PROMPT</span>
           </button>
 
           <button
@@ -605,8 +604,8 @@ export const App: React.FC = () => {
             }}
             title="Export to Astro or Standalone HTML"
           >
-            <Share2 size={12} />
-            EXPORT CODE
+            <Share2 size={13} className="header-btn-icon" />
+            <span className="btn-label">EXPORT CODE</span>
           </button>
         </div>
       </header>
