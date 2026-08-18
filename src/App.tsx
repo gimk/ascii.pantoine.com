@@ -1054,6 +1054,9 @@ export const App: React.FC = () => {
         rows={rows}
         density={density}
         currentAsciiFrame={viewportRef.current?.getFrameText() || ''}
+        theme={theme}
+        customThemeColor={customThemeColor}
+        crtConfig={crtConfig}
         initialTab={exportInitialTab}
       />
 
