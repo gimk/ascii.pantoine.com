@@ -335,7 +335,7 @@ export const App: React.FC = () => {
   const handleMouseMove = (x: number, y: number) => {
     lastInteractionTimeRef.current = Date.now();
     if (!particleConfig.enabled) return;
-    const pt = createTrailPoint(x, y, 1.0, 0, 0, particleConfig.trailChars);
+    const pt = createTrailPoint(x, y, 1.0, 0, 0, density);
     trailPointsRef.current.push(pt);
     if (trailPointsRef.current.length > 250) {
       trailPointsRef.current.shift();
@@ -350,7 +350,7 @@ export const App: React.FC = () => {
       y,
       particleConfig.burstCount,
       particleConfig.burstSpeed,
-      particleConfig.trailChars
+      density
     );
     particles.forEach((p) => trailPointsRef.current.push(p));
     if (trailPointsRef.current.length > 350) {

@@ -116,15 +116,21 @@ export function renderAsciiFrame(ctx: RenderContext): string {
 
       let cellChar = density[charIndex] || ' ';
 
-      // Stamp active trail point characters on top
+      // Stamp active trail point characters deterministically (no 60fps random flickering)
       if (interactiveInfluence && numTrails > 0) {
+        let bestChar: string | null = null;
+        let maxAge = 0;
         for (let i = 0; i < numTrails; i++) {
           const pt = trailPoints[i];
           if (Math.floor(pt.x) === x && Math.floor(pt.y) === y) {
-            if (Math.random() < pt.age * 0.6) {
-              cellChar = pt.char;
+            if (pt.age > maxAge) {
+              maxAge = pt.age;
+              bestChar = pt.char;
             }
           }
+        }
+        if (bestChar && maxAge > 0.05) {
+          cellChar = bestChar;
         }
       }
 

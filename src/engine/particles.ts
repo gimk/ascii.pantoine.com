@@ -24,7 +24,10 @@ export function createTrailPoint(
   chars: string = DEFAULT_TRAIL_CHARS
 ): TrailPoint {
   const charList = chars.length > 0 ? chars : DEFAULT_TRAIL_CHARS;
-  const randomChar = charList[Math.floor(Math.random() * charList.length)] || '*';
+  // Pick from the upper / brighter 60% of the active charset so particles stand out
+  const minIdx = Math.max(0, Math.floor(charList.length * 0.4));
+  const activeSlice = charList.slice(minIdx).trim() || charList;
+  const randomChar = activeSlice[Math.floor(Math.random() * activeSlice.length)] || charList[charList.length - 1] || '*';
   return {
     x,
     y,
@@ -95,6 +98,8 @@ export function generateClickParticles(
 ): TrailPoint[] {
   const particles: TrailPoint[] = [];
   const charList = chars.length > 0 ? chars : DEFAULT_TRAIL_CHARS;
+  const minIdx = Math.max(0, Math.floor(charList.length * 0.3));
+  const activeSlice = charList.slice(minIdx).trim() || charList;
 
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
@@ -104,7 +109,7 @@ export function generateClickParticles(
       y,
       age: 1.0,
       initialAge: 1.0,
-      char: charList[Math.floor(Math.random() * charList.length)] || '+',
+      char: activeSlice[Math.floor(Math.random() * activeSlice.length)] || charList[charList.length - 1] || '+',
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
     });
