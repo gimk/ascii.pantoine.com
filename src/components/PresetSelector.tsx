@@ -32,7 +32,7 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
       {/* Built-in Presets */}
       <div className="control-section">
         <div className="section-header">
-          <span>Portfolio & Wave Presets</span>
+          <span>Example wave presets</span>
           <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
             {PRESETS.length} presets
           </span>
