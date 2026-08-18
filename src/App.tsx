@@ -900,12 +900,12 @@ export const App: React.FC = () => {
           <div className="brand-text-block">
             <div className="brand-main">
               <span className="brand-full">
-                <span className="brand-word">ASCII</span> <span className="brand-sub">ANIMATION BUILDER</span>
+                <span className="brand-word">ASCII</span> <span className="brand-sub">WAVE GENERATOR</span>
               </span>
-              <span className="brand-short">A.A.B</span>
+              <span className="brand-short">A.W.G</span>
             </div>
           </div>
-          <span className="brand-badge">v1.2</span>
+          <span className="brand-badge">v1.3</span>
         </div>
 
         {/* Header Tools: Randomize, Undo, Redo, AI Prompt, Export, Share */}

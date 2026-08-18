@@ -1,15 +1,15 @@
-# ASCII Animation Builder — Developer & AI Reference (`gemini.md`)
+# ASCII Wave Generator — Developer & AI Reference (`gemini.md`)
 
-> **Project**: [ASCII Animation Builder](https://ascii.pantoine.com)  
+> **Project**: [ASCII Wave Generator](https://ascii.pantoine.com)  
 > **Repository**: [github.com/gimk/ascii.pantoine.com](https://github.com/gimk/ascii.pantoine.com)  
 > **Live Web App**: [ascii.pantoine.com](https://ascii.pantoine.com)  
-> **Tech Stack**: React 19, TypeScript 5, Vite 6, Lucide React, Monospace Fonts (JetBrains Mono, JuliaMono)
+> **Tech Stack**: React 19, TypeScript 5, Vite 6, gifenc, Lucide React, Monospace Fonts (JetBrains Mono, JuliaMono)
 
 ---
 
 ## 1. Executive Overview
 
-**ASCII Animation Builder** is an interactive, brutalist terminal-styled ASCII animation synthesizer, particle physics simulator, and live formula sandbox. It allows users to design, manipulate, code, and export complex, real-time procedural ASCII field animations directly in the browser without any software installation.
+**ASCII Wave Generator** (`A.W.G`) is an interactive, brutalist terminal-styled ASCII animation synthesizer, particle physics simulator, and live formula sandbox. It allows users to design, manipulate, code, and export complex, real-time procedural ASCII field animations, animated GIFs, and HD videos directly in the browser without any software installation.
 
 ---
 
@@ -23,8 +23,8 @@ ascii.pantoine.com/
 ├── src/
 │   ├── components/        # React UI components
 │   │   ├── AsciiViewport.tsx     # Canvas/Text ASCII viewport & Fullscreen Viewfinder
-│   │   ├── CharsetThemeBar.tsx   # Phosphor themes, scanlines, density ramp selector
-│   │   ├── ExportModal.tsx       # Multi-format code exporters (Astro, HTML, JSON, TXT)
+│   │   ├── CharsetThemeBar.tsx   # Phosphor themes, gradient builder, rotary dial, scanlines
+│   │   ├── ExportModal.tsx       # Multi-format media & code exporters (GIF, MP4, WebM, Astro, HTML, JSON, TXT)
 │   │   ├── OptimizeControls.tsx  # Framerate limiter, auto-res toggle, resolution presets
 │   │   ├── ParticleControls.tsx  # Vector field & particle physics controls
 │   │   ├── PresetSelector.tsx    # Preset selector & custom preset management
@@ -32,6 +32,8 @@ ascii.pantoine.com/
 │   │   └── SynthControls.tsx     # 8-channel parametric wave sliders & formula editor
 │   ├── engine/            # Pure TypeScript computational engine (zero React deps)
 │   │   ├── exporter.ts    # Code generator for .astro, .html, .json, .txt
+│   │   ├── gif.ts         # High-performance client-side animated GIF rendering via gifenc
+│   │   ├── video.ts       # Canvas MediaRecorder / WebCodecs video capture (.webm / .mp4)
 │   │   ├── math.ts        # Parametric wave equations, AST/code parser & live JS compiler
 │   │   ├── particles.ts   # Vector-field particle physics & curl flow advection
 │   │   ├── presets.ts     # Built-in curated parametric & custom formula presets
@@ -39,7 +41,7 @@ ascii.pantoine.com/
 │   │   ├── renderer.ts    # Character ramp density mapping & ASCII frame rendering
 │   │   └── share.ts       # UTF-8 Base64 state serialization/deserialization
 │   ├── styles/
-│   │   └── terminal.css   # Brutalist terminal theme, CRT scanlines, phosphor glow
+│   │   └── terminal.css   # Brutalist terminal theme, CRT scanlines, phosphor glow & bloom
 │   ├── types/
 │   │   └── ascii.ts       # Central TypeScript interface & type definitions
 │   ├── App.tsx            # Main state manager, undo/redo history, keyboard bindings
@@ -62,6 +64,7 @@ Calculates a normalized scalar intensity field $I(x, y, t) \in [0, 1]$ over an a
 - **Spiral Vortex**: $A \cdot \sin(\theta \cdot \text{arms} + \text{twist} \cdot \text{dist} - t \cdot s)$ where $\theta = \operatorname{atan2}(y', x)$
 - **Depth / Tunnel**: $A \cdot \left(\frac{k}{\text{dist}^\gamma}\right) \cdot \sin(t \cdot s)$
 - **Moiré Dual Emitter**: Interference between two focal emitters offset horizontally by $\Delta x$
+- **Starfield & Cosmic Sparkle Matrix**: Procedural spatial hash with density thresholding, persistent base luminosity ($45\%-80\%$), and atmospheric sinusoidal twinkle scintillation.
 - **Contrast & Bias Normalization**: $I_{\text{final}} = \operatorname{clamp}((I - 0.5) \cdot \text{contrast} + 0.5 + \text{bias}, 0, 1)$
 
 ### 3.2. Vector-Field Particle Advection (`src/engine/particles.ts`)
