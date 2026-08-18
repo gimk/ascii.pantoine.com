@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Scaling } from 'lucide-react';
+import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Wand2 } from 'lucide-react';
 
 export interface AsciiViewportHandle {
   setFrame: (frameText: string, time: number, fps: number) => void;
@@ -307,14 +307,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
           </span>
-          {viewMode === 'fullscreen' && onMatchViewfinderRatio && (
+          {onMatchViewfinderRatio && (
             <button
               className="btn btn-sm"
               onClick={onMatchViewfinderRatio}
-              title="Match grid resolution (cols x rows) to fullscreen viewfinder resolution"
+              title="Automatically calculate optimal grid resolution matching the viewfinder aspect ratio"
             >
-              <Scaling size={12} />
-              <span className="btn-label-sm">MATCH VIEWFINDER RES</span>
+              <Wand2 size={11} />
+              <span className="btn-label-sm">AUTO RES</span>
             </button>
           )}
         </div>

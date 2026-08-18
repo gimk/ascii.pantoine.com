@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { OptimizeConfig } from '../types/ascii';
-import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Maximize2, AlertTriangle } from 'lucide-react';
+import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Wand2, AlertTriangle } from 'lucide-react';
 
 interface OptimizeControlsProps {
   config: OptimizeConfig;
@@ -250,8 +250,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             onClick={onMatchViewfinderRatio}
             title="Automatically compute columns and rows to match the viewfinder resolution"
           >
-            <Maximize2 size={11} color="var(--accent)" />
-            MATCH VIEWFINDER RES
+            <Wand2 size={11} color="var(--accent)" />
+            AUTO RES (MATCH VIEWFINDER)
           </button>
         )}
 
