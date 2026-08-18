@@ -364,6 +364,61 @@ html, body, #root {
   text-shadow: none !important;
 }
 
+/* Angle Dial Knob */
+.angle-dial-knob {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 2px solid var(--border-active);
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.6), 0 0 4px var(--accent-glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.angle-dial-knob:active {
+  cursor: grabbing;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.8), 0 0 8px var(--accent);
+}
+
+.angle-dial-needle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  transform-origin: center center;
+}
+
+.angle-dial-needle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: calc(50% - 1.5px);
+  width: 3px;
+  height: 11px;
+  background: var(--accent);
+  border-radius: 1.5px;
+  box-shadow: 0 0 4px var(--accent);
+}
+
+.angle-dial-center-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  pointer-events: none;
+  z-index: 2;
+}
+
 /* Viewport Controls Bar */
 .viewport-bottom-bar {
   display: flex;

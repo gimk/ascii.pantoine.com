@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { CHARSETS } from '../engine/renderer';
 import { PhosphorTheme, CrtConfig, PhosphorGradient } from '../types/ascii';
-import { Tv, Sparkles, Pipette, Palette, Sliders } from 'lucide-react';
+import { Tv, Sparkles, Pipette, Palette, Sliders, Compass } from 'lucide-react';
 
 interface CharsetThemeBarProps {
   currentCharset: string;
@@ -36,6 +36,87 @@ export const GRADIENT_PRESETS: PhosphorGradient[] = [
   { id: 'matrix-forest', name: 'Matrix Forest', color1: '#00ff88', color2: '#004d25', angle: 180 },
 ];
 
+/**
+ * Interactive rotative knob / dial to smoothly adjust the gradient angle (0°–360°).
+ */
+const AngleDial: React.FC<{
+  value: number;
+  onChange: (deg: number) => void;
+}> = ({ value, onChange }) => {
+  const dialRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const calculateAngle = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!dialRef.current) return;
+      const rect = dialRef.current.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      // Angle in degrees clockwise from 12 o'clock (UP) matching CSS linear-gradient
+      let deg = Math.round((Math.atan2(dx, -dy) * 180) / Math.PI);
+      if (deg < 0) deg += 360;
+      onChange(deg);
+    },
+    [onChange]
+  );
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    calculateAngle(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    calculateAngle(e.clientX, e.clientY);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div
+        ref={dialRef}
+        className="angle-dial-knob"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        title="Click & drag around center to rotate angle"
+      >
+        <div
+          className="angle-dial-needle"
+          style={{ transform: `rotate(${value}deg)` }}
+        />
+        <div className="angle-dial-center-dot" />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+        <input
+          type="number"
+          min={0}
+          max={360}
+          className="number-input"
+          style={{ width: '42px', textAlign: 'center', padding: '2px 4px', fontSize: '10.5px' }}
+          value={value}
+          onChange={(e) => {
+            const v = (parseInt(e.target.value, 10) || 0) % 360;
+            onChange(v < 0 ? v + 360 : v);
+          }}
+        />
+        <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>°</span>
+      </div>
+    </div>
+  );
+};
+
 export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   currentCharset,
   onChangeCharset,
@@ -55,6 +136,15 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   const [customGradColor1, setCustomGradColor1] = useState<string>(gradientConfig?.color1 || '#ff007f');
   const [customGradColor2, setCustomGradColor2] = useState<string>(gradientConfig?.color2 || '#00f0ff');
   const [customGradAngle, setCustomGradAngle] = useState<number>(gradientConfig?.angle || 135);
+
+  useEffect(() => {
+    if (gradientConfig) {
+      setCustomGradColor1(gradientConfig.color1);
+      setCustomGradColor2(gradientConfig.color2);
+      setCustomGradAngle(gradientConfig.angle);
+      setThemeMode('gradient');
+    }
+  }, [gradientConfig]);
 
   const updateCrt = <K extends keyof CrtConfig>(key: K, val: CrtConfig[K]) => {
     onChangeCrtConfig({
@@ -273,20 +363,28 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
                 </div>
               </div>
 
-              {/* Angle Buttons */}
+              {/* Rotative Angle Dial + Presets */}
               <div className="control-row">
-                <span className="control-label">Angle</span>
-                <div style={{ display: 'flex', gap: '3px' }}>
-                  {[45, 90, 135, 180, 225, 270].map((deg) => (
-                    <button
-                      key={deg}
-                      className={`btn btn-sm ${customGradAngle === deg ? 'btn-primary' : ''}`}
-                      style={{ padding: '2px 5px', fontSize: '9.5px' }}
-                      onClick={() => handleCustomGradientChange(customGradColor1, customGradColor2, deg)}
-                    >
-                      {deg}°
-                    </button>
-                  ))}
+                <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Compass size={11} /> Angle Dial
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AngleDial
+                    value={customGradAngle}
+                    onChange={(deg) => handleCustomGradientChange(customGradColor1, customGradColor2, deg)}
+                  />
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    {[0, 90, 135, 180, 270].map((deg) => (
+                      <button
+                        key={deg}
+                        className={`btn btn-sm ${customGradAngle === deg ? 'btn-primary' : ''}`}
+                        style={{ padding: '2px 4px', fontSize: '9px' }}
+                        onClick={() => handleCustomGradientChange(customGradColor1, customGradColor2, deg)}
+                      >
+                        {deg}°
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

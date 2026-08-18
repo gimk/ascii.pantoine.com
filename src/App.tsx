@@ -290,27 +290,55 @@ export const App: React.FC = () => {
         ? [0, 255, 102]
         : [(num >> 16) & 255, (num >> 8) & 255, num & 255];
 
-      document.body.className = 'theme-custom';
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+      const isLightMode = luminance < 80;
 
-      const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(b * 0.035 + 2))})`;
-      const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(b * 0.06 + 5))})`;
-      const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))})`;
-      const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(b * 0.16 + 14))})`;
-      const borderColor = `rgb(${Math.max(24, Math.round(r * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))})`;
-      const textMuted = `rgb(${Math.round(r * 0.65 + 30)}, ${Math.round(g * 0.65 + 30)}, ${Math.round(b * 0.65 + 30)})`;
-      const textDim = `rgb(${Math.round(r * 0.35 + 15)}, ${Math.round(g * 0.35 + 15)}, ${Math.round(b * 0.35 + 15)})`;
+      document.body.className = isLightMode ? 'theme-custom theme-paper' : 'theme-custom';
 
-      document.body.style.setProperty('--bg-primary', bgPrimary);
-      document.body.style.setProperty('--bg-panel', bgPanel);
-      document.body.style.setProperty('--bg-control', bgControl);
-      document.body.style.setProperty('--bg-control-hover', bgControlHover);
-      document.body.style.setProperty('--border-color', borderColor);
-      document.body.style.setProperty('--border-active', gradientConfig.color1);
-      document.body.style.setProperty('--text-primary', gradientConfig.color1);
-      document.body.style.setProperty('--text-muted', textMuted);
-      document.body.style.setProperty('--text-dim', textDim);
-      document.body.style.setProperty('--accent', gradientConfig.color1);
-      document.body.style.setProperty('--accent-glow', `${gradientConfig.color1}33`);
+      if (!isLightMode) {
+        // Dark CRT mode: very dark tint of color1
+        const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(b * 0.035 + 2))})`;
+        const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(b * 0.06 + 5))})`;
+        const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))})`;
+        const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))})`;
+        const borderColor = `rgb(${Math.max(24, Math.round(r * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))})`;
+        const textMuted = `rgb(${Math.round(r * 0.65 + 30)}, ${Math.round(g * 0.65 + 30)}, ${Math.round(b * 0.65 + 30)})`;
+        const textDim = `rgb(${Math.round(r * 0.35 + 15)}, ${Math.round(g * 0.35 + 15)}, ${Math.round(b * 0.35 + 15)})`;
+
+        document.body.style.setProperty('--bg-primary', bgPrimary);
+        document.body.style.setProperty('--bg-panel', bgPanel);
+        document.body.style.setProperty('--bg-control', bgControl);
+        document.body.style.setProperty('--bg-control-hover', bgControlHover);
+        document.body.style.setProperty('--border-color', borderColor);
+        document.body.style.setProperty('--border-active', gradientConfig.color1);
+        document.body.style.setProperty('--text-primary', gradientConfig.color1);
+        document.body.style.setProperty('--text-muted', textMuted);
+        document.body.style.setProperty('--text-dim', textDim);
+        document.body.style.setProperty('--accent', gradientConfig.color1);
+        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.2)`);
+      } else {
+        // Light / White mode: background is a very light tint of color1
+        const bgPrimary = `rgb(${Math.round(244 - (255 - r) * 0.05)}, ${Math.round(242 - (255 - g) * 0.05)}, ${Math.round(236 - (255 - b) * 0.05)})`;
+        const bgPanel = `rgb(${Math.round(234 - (255 - r) * 0.08)}, ${Math.round(232 - (255 - g) * 0.08)}, ${Math.round(224 - (255 - b) * 0.08)})`;
+        const bgControl = `rgb(${Math.round(224 - (255 - r) * 0.12)}, ${Math.round(220 - (255 - g) * 0.12)}, ${Math.round(210 - (255 - b) * 0.12)})`;
+        const bgControlHover = `rgb(${Math.round(212 - (255 - r) * 0.16)}, ${Math.round(207 - (255 - g) * 0.16)}, ${Math.round(197 - (255 - b) * 0.16)})`;
+        const borderColor = `rgb(${Math.round(186 - (255 - r) * 0.22)}, ${Math.round(182 - (255 - g) * 0.22)}, ${Math.round(172 - (255 - b) * 0.22)})`;
+        const textMuted = `rgb(${Math.round(r * 0.6 + 65)}, ${Math.round(g * 0.6 + 65)}, ${Math.round(b * 0.6 + 65)})`;
+        const textDim = `rgb(${Math.round(r * 0.4 + 115)}, ${Math.round(g * 0.4 + 115)}, ${Math.round(b * 0.4 + 115)})`;
+
+        document.body.style.setProperty('--bg-primary', bgPrimary);
+        document.body.style.setProperty('--bg-panel', bgPanel);
+        document.body.style.setProperty('--bg-control', bgControl);
+        document.body.style.setProperty('--bg-control-hover', bgControlHover);
+        document.body.style.setProperty('--border-color', borderColor);
+        document.body.style.setProperty('--border-active', gradientConfig.color1);
+        document.body.style.setProperty('--text-primary', gradientConfig.color1);
+        document.body.style.setProperty('--text-muted', textMuted);
+        document.body.style.setProperty('--text-dim', textDim);
+        document.body.style.setProperty('--accent', gradientConfig.color1);
+        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.12)`);
+      }
+
       document.body.style.setProperty('--text-gradient', `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`);
     } else if (customThemeColor) {
       document.body.style.removeProperty('--text-gradient');
