@@ -120,7 +120,7 @@ export const App: React.FC = () => {
   // CRT Display Effects
   const [crtConfig, setCrtConfig] = useState<CrtConfig>(() => ({
     scanlines: sharedState?.crtConfig?.scanlines ?? true,
-    crtGlow: sharedState?.crtConfig?.crtGlow ?? false,
+    crtGlow: sharedState?.crtConfig?.crtGlow ?? true,
     vignette: sharedState?.crtConfig?.vignette ?? false,
     phosphorBloom: sharedState?.crtConfig?.phosphorBloom ?? false,
   }));
@@ -316,7 +316,7 @@ export const App: React.FC = () => {
         document.body.style.setProperty('--text-muted', textMuted);
         document.body.style.setProperty('--text-dim', textDim);
         document.body.style.setProperty('--accent', gradientConfig.color1);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.2)`);
+        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.11)`);
       } else {
         // Light / White mode: background is a very light tint of color1
         const bgPrimary = `rgb(${Math.round(244 - (255 - r) * 0.05)}, ${Math.round(242 - (255 - g) * 0.05)}, ${Math.round(236 - (255 - b) * 0.05)})`;
@@ -337,7 +337,7 @@ export const App: React.FC = () => {
         document.body.style.setProperty('--text-muted', textMuted);
         document.body.style.setProperty('--text-dim', textDim);
         document.body.style.setProperty('--accent', gradientConfig.color1);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.12)`);
+        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.05)`);
       }
 
       document.body.style.setProperty('--text-gradient', `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`);
@@ -381,7 +381,7 @@ export const App: React.FC = () => {
         document.body.style.setProperty('--text-muted', textMuted);
         document.body.style.setProperty('--text-dim', textDim);
         document.body.style.setProperty('--accent', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.2)`);
+        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.11)`);
       } else {
         // Light / White mode: background is a very light tint of the selected color, dark text
         const bgPrimary = `rgb(${Math.round(244 - (255 - r) * 0.05)}, ${Math.round(242 - (255 - g) * 0.05)}, ${Math.round(236 - (255 - b) * 0.05)})`;
@@ -402,7 +402,7 @@ export const App: React.FC = () => {
         document.body.style.setProperty('--text-muted', textMuted);
         document.body.style.setProperty('--text-dim', textDim);
         document.body.style.setProperty('--accent', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.12)`);
+        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.05)`);
       }
     } else {
       document.body.className = `theme-${theme}`;
