@@ -858,6 +858,24 @@ input[type="number"] {
   opacity: 0.6;
 }
 
+.scanline-overlay.scanlines-disabled {
+  display: none;
+}
+
+/* CRT Corner Vignette */
+.crt-vignette-overlay {
+  pointer-events: none;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at center, transparent 55%, rgba(0, 0, 0, 0.8) 100%);
+  z-index: 12;
+}
+
+/* CRT Glow Bloom disable option */
+.ascii-pre.glow-disabled {
+  text-shadow: none !important;
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

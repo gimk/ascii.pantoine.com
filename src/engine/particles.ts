@@ -13,6 +13,8 @@ export const DEFAULT_PARTICLE_CONFIG: ParticleConfig = {
   swirlStrength: 0.6, // Tangential / contour swirl force
   drag: 0.93, // Inertial drag
   luminanceBoost: 0.5, // Glow influence on surrounding matrix
+  ripplesEnabled: true,
+  rippleStrength: 1.0,
 };
 
 export function createTrailPoint(

@@ -63,6 +63,10 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
           </span>
         </div>
 
+        <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
+          Presets are stored locally in your browser and will be cleared if cookies or website storage are deleted.
+        </p>
+
         {/* Save Current Preset Form */}
         <form onSubmit={handleSave} style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
           <input

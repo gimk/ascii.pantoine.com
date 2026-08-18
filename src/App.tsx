@@ -4,8 +4,10 @@ import {
   Preset,
   PhosphorTheme,
   TrailPoint,
+  RippleImpulse,
   ParticleConfig,
   OptimizeConfig,
+  CrtConfig,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -112,12 +114,21 @@ export const App: React.FC = () => {
   const [rows, setRows] = useState<number>(sharedState?.rows || 50);
   const [density, setDensity] = useState<string>(sharedState?.density || CHARSETS[0].chars);
   const [theme, setTheme] = useState<PhosphorTheme>(sharedState?.theme || 'green');
+  const [customThemeColor, setCustomThemeColor] = useState<string>(sharedState?.customThemeColor || '');
 
-  // Particles & Interaction
+  // CRT Display Effects
+  const [crtConfig, setCrtConfig] = useState<CrtConfig>(() => ({
+    scanlines: sharedState?.crtConfig?.scanlines ?? true,
+    glow: sharedState?.crtConfig?.glow ?? true,
+    vignette: sharedState?.crtConfig?.vignette ?? false,
+  }));
+
+  // Particles, Ripples & Interaction
   const [particleConfig, setParticleConfig] = useState<ParticleConfig>(
     sharedState?.particleConfig || DEFAULT_PARTICLE_CONFIG
   );
   const trailPointsRef = useRef<TrailPoint[]>([]);
+  const ripplesRef = useRef<RippleImpulse[]>([]);
 
   // Optimization & Performance Config
   const [optimizeConfig, setOptimizeConfig] = useState<OptimizeConfig>(
@@ -267,10 +278,24 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Update theme class on body
+  // Update theme class and custom color CSS variables on body
   useEffect(() => {
-    document.body.className = `theme-${theme}`;
-  }, [theme]);
+    if (customThemeColor) {
+      document.body.className = 'theme-custom';
+      document.body.style.setProperty('--accent', customThemeColor);
+      document.body.style.setProperty('--border-active', customThemeColor);
+      document.body.style.setProperty('--text-primary', customThemeColor);
+      document.body.style.setProperty('--accent-glow', `${customThemeColor}33`);
+      document.body.style.setProperty('--text-muted', `${customThemeColor}aa`);
+    } else {
+      document.body.className = `theme-${theme}`;
+      document.body.style.removeProperty('--accent');
+      document.body.style.removeProperty('--border-active');
+      document.body.style.removeProperty('--text-primary');
+      document.body.style.removeProperty('--accent-glow');
+      document.body.style.removeProperty('--text-muted');
+    }
+  }, [theme, customThemeColor]);
 
   // If shared state had custom code on load, compile it immediately
   useEffect(() => {
@@ -288,6 +313,16 @@ export const App: React.FC = () => {
 
     if (preset.theme) {
       setTheme(preset.theme);
+    }
+
+    if (preset.customThemeColor !== undefined) {
+      setCustomThemeColor(preset.customThemeColor || '');
+    } else {
+      setCustomThemeColor('');
+    }
+
+    if (preset.crtConfig) {
+      setCrtConfig({ ...preset.crtConfig });
     }
 
     if (preset.densityCharset) {
@@ -404,9 +439,11 @@ export const App: React.FC = () => {
       customCode: customCode,
       customPrepare: customPrepare || undefined,
       theme,
+      customThemeColor: customThemeColor || undefined,
       densityCharset: density,
       particleConfig: { ...particleConfig },
       optimizeConfig: { ...optimizeConfig },
+      crtConfig: { ...crtConfig },
     };
 
     const updated = [newPreset, ...userPresets];
@@ -440,6 +477,23 @@ export const App: React.FC = () => {
 
   const handleClick = (x: number, y: number) => {
     lastInteractionTimeRef.current = Date.now();
+
+    // Spawn interactive fluid wave ripple
+    if (particleConfig.ripplesEnabled !== false) {
+      ripplesRef.current.push({
+        x,
+        y,
+        startTime: timeRef.current,
+        maxAge: 2.2,
+        amplitude: (particleConfig.rippleStrength ?? 1.0) * 0.85,
+        frequency: 0.28,
+        speed: 7.5,
+      });
+      if (ripplesRef.current.length > 8) {
+        ripplesRef.current.shift();
+      }
+    }
+
     if (!particleConfig.enabled) return;
     const particles = generateClickParticles(
       x,
@@ -566,6 +620,12 @@ export const App: React.FC = () => {
           }
           pts.length = aliveCount;
         }
+
+        // Prune expired fluid ripples
+        if (ripplesRef.current.length > 0) {
+          const nowT = timeRef.current;
+          ripplesRef.current = ripplesRef.current.filter((r) => nowT - r.startTime < r.maxAge);
+        }
       } else {
         lastTimeRef.current = timestamp;
       }
@@ -577,6 +637,7 @@ export const App: React.FC = () => {
         time: timeRef.current,
         density,
         trailPoints: trailPointsRef.current,
+        ripples: ripplesRef.current,
         waveParams,
         customRenderFn: presetType === 'custom' ? compiledFnRef.current : undefined,
         prepareFn: presetType === 'custom' ? prepareFnRef.current : undefined,
@@ -657,11 +718,13 @@ export const App: React.FC = () => {
       customPrepare: presetType === 'custom' ? customPrepare : undefined,
       density,
       theme,
+      customThemeColor: customThemeColor || undefined,
       cols,
       rows,
       autoRes,
       particleConfig,
       optimizeConfig,
+      crtConfig,
     }),
     [
       activePreset.name,
@@ -672,11 +735,13 @@ export const App: React.FC = () => {
       customPrepare,
       density,
       theme,
+      customThemeColor,
       cols,
       rows,
       autoRes,
       particleConfig,
       optimizeConfig,
+      crtConfig,
     ]
   );
 
@@ -743,7 +808,7 @@ export const App: React.FC = () => {
                 onClick={handleUndo}
                 disabled={!canUndo}
                 style={{ opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'not-allowed' }}
-                title="Undo (Ctrl+Z)"
+                title={typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)'}
               >
                 <Undo2 size={13} className="header-btn-icon" />
                 <span className="btn-label">UNDO</span>
@@ -753,7 +818,7 @@ export const App: React.FC = () => {
                 onClick={handleRedo}
                 disabled={!canRedo}
                 style={{ opacity: canRedo ? 1 : 0.4, cursor: canRedo ? 'pointer' : 'not-allowed' }}
-                title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
+                title={typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? 'Redo (⇧⌘Z)' : 'Redo (Ctrl+Shift+Z / Ctrl+Y)'}
               >
                 <Redo2 size={13} className="header-btn-icon" />
                 <span className="btn-label">REDO</span>
@@ -824,6 +889,7 @@ export const App: React.FC = () => {
             setCols(c);
             setRows(r);
           }}
+          crtConfig={crtConfig}
         />
 
         {/* Right Sidebar Control Panel */}
@@ -904,6 +970,7 @@ export const App: React.FC = () => {
                 onChange={setParticleConfig}
                 onClearParticles={() => {
                   trailPointsRef.current = [];
+                  ripplesRef.current = [];
                 }}
               />
             )}
@@ -925,7 +992,14 @@ export const App: React.FC = () => {
                 currentCharset={density}
                 onChangeCharset={setDensity}
                 currentTheme={theme}
-                onChangeTheme={setTheme}
+                onChangeTheme={(t) => {
+                  setCustomThemeColor('');
+                  setTheme(t);
+                }}
+                customThemeColor={customThemeColor}
+                onChangeCustomColor={setCustomThemeColor}
+                crtConfig={crtConfig}
+                onChangeCrtConfig={setCrtConfig}
               />
             )}
           </div>

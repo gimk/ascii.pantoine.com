@@ -3,6 +3,7 @@ import {
   PhosphorTheme,
   ParticleConfig,
   OptimizeConfig,
+  CrtConfig,
 } from '../types/ascii';
 
 export interface FullAnimationState {
@@ -13,12 +14,14 @@ export interface FullAnimationState {
   customPrepare?: string;
   density: string;
   theme: PhosphorTheme;
+  customThemeColor?: string;
   cols: number;
   rows: number;
   autoRes?: boolean;
   lockResolution?: boolean;
   particleConfig: ParticleConfig;
   optimizeConfig: OptimizeConfig;
+  crtConfig?: CrtConfig;
 }
 
 // UTF-8 safe base64 encoding/decoding helper

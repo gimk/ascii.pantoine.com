@@ -1,12 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CHARSETS } from '../engine/renderer';
-import { PhosphorTheme } from '../types/ascii';
+import { PhosphorTheme, CrtConfig } from '../types/ascii';
+import { Tv, Sparkles, Pipette } from 'lucide-react';
 
 interface CharsetThemeBarProps {
   currentCharset: string;
   onChangeCharset: (chars: string) => void;
   currentTheme: PhosphorTheme;
   onChangeTheme: (theme: PhosphorTheme) => void;
+  customThemeColor?: string;
+  onChangeCustomColor?: (color: string) => void;
+  crtConfig: CrtConfig;
+  onChangeCrtConfig: (cfg: CrtConfig) => void;
 }
 
 const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
@@ -23,17 +28,76 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   onChangeCharset,
   currentTheme,
   onChangeTheme,
+  customThemeColor = '',
+  onChangeCustomColor,
+  crtConfig,
+  onChangeCrtConfig,
 }) => {
+  const [customHex, setCustomHex] = useState<string>(customThemeColor || '#00ff66');
+
+  const updateCrt = <K extends keyof CrtConfig>(key: K, val: CrtConfig[K]) => {
+    onChangeCrtConfig({
+      ...crtConfig,
+      [key]: val,
+    });
+  };
+
+  const handleCustomColorChange = (hex: string) => {
+    setCustomHex(hex);
+    if (onChangeCustomColor) {
+      onChangeCustomColor(hex);
+    }
+  };
+
   return (
     <div className="tab-content">
-      {/* Phosphor Theme */}
+      {/* 1. CRT & Display Effects */}
+      <div className="control-section">
+        <div className="section-header">
+          <span>CRT & Display Effects</span>
+          <Tv size={12} style={{ color: 'var(--accent)' }} />
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">CRT Scanlines</span>
+          <button
+            className={`btn btn-sm ${crtConfig.scanlines ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('scanlines', !crtConfig.scanlines)}
+          >
+            {crtConfig.scanlines ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Phosphor Glow Bloom</span>
+          <button
+            className={`btn btn-sm ${crtConfig.glow ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('glow', !crtConfig.glow)}
+          >
+            {crtConfig.glow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">CRT Corner Vignette</span>
+          <button
+            className={`btn btn-sm ${crtConfig.vignette ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('vignette', !crtConfig.vignette)}
+          >
+            {crtConfig.vignette ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Phosphor Theme */}
       <div className="control-section">
         <div className="section-header">
           <span>Phosphor Color Theme</span>
+          <Sparkles size={12} style={{ color: 'var(--accent)' }} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', marginBottom: '10px' }}>
           {THEMES.map((t) => {
-            const isSelected = currentTheme === t.id;
+            const isSelected = !customThemeColor && currentTheme === t.id;
             return (
               <button
                 key={t.id}
@@ -42,16 +106,62 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
                   justifyContent: 'flex-start',
                   borderLeft: `4px solid ${t.color}`,
                 }}
-                onClick={() => onChangeTheme(t.id)}
+                onClick={() => {
+                  if (onChangeCustomColor) onChangeCustomColor('');
+                  onChangeTheme(t.id);
+                }}
               >
                 {t.name}
               </button>
             );
           })}
         </div>
+
+        {/* Custom Phosphor Accent Color */}
+        <div className="control-row" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Pipette size={11} /> Custom Phosphor Color
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <input
+              type="color"
+              style={{
+                width: '28px',
+                height: '24px',
+                padding: 0,
+                border: '1px solid var(--border-color)',
+                background: 'transparent',
+                cursor: 'pointer',
+                borderRadius: '2px',
+              }}
+              value={customHex}
+              onChange={(e) => handleCustomColorChange(e.target.value)}
+              title="Pick a custom phosphor color"
+            />
+            <input
+              type="text"
+              className="number-input"
+              style={{ width: '68px', textAlign: 'center', padding: '2px 4px', fontSize: '10.5px' }}
+              value={customHex}
+              onChange={(e) => handleCustomColorChange(e.target.value)}
+              placeholder="#00ff66"
+            />
+            {customThemeColor && (
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  if (onChangeCustomColor) onChangeCustomColor('');
+                }}
+                title="Reset to default theme"
+              >
+                RESET
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Character Density Ramp */}
+      {/* 3. Character Density Ramp */}
       <div className="control-section">
         <div className="section-header">
           <span>Character Density Presets</span>

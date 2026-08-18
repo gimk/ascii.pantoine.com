@@ -8,6 +8,22 @@ export interface TrailPoint {
   vy?: number;
 }
 
+export interface RippleImpulse {
+  x: number;
+  y: number;
+  startTime: number;
+  maxAge: number;
+  amplitude: number;
+  frequency: number;
+  speed: number;
+}
+
+export interface CrtConfig {
+  scanlines: boolean;
+  glow: boolean;
+  vignette: boolean;
+}
+
 export interface ParticleConfig {
   enabled: boolean;
   lifespan: number;
@@ -19,6 +35,8 @@ export interface ParticleConfig {
   swirlStrength: number;
   drag: number;
   luminanceBoost: number;
+  ripplesEnabled?: boolean;
+  rippleStrength?: number;
 }
 
 export interface WaveParams {
@@ -90,9 +108,11 @@ export interface Preset {
   customCode?: string;
   customPrepare?: string;
   theme?: PhosphorTheme;
+  customThemeColor?: string;
   densityCharset?: string;
   particleConfig?: ParticleConfig;
   optimizeConfig?: OptimizeConfig;
+  crtConfig?: CrtConfig;
   author?: string;
 }
 
@@ -121,6 +141,7 @@ export interface RenderContext {
   time: number;
   density: string;
   trailPoints: TrailPoint[];
+  ripples?: RippleImpulse[];
   waveParams: WaveParams;
   customRenderFn?: (
     x: number,

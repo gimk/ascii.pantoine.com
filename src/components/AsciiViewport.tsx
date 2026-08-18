@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop } from 'lucide-react';
+import { CrtConfig } from '../types/ascii';
 
 export interface AsciiViewportHandle {
   setFrame: (frameText: string, time: number, fps: number) => void;
@@ -25,6 +26,7 @@ interface AsciiViewportProps {
   autoRes?: boolean;
   onToggleAutoRes?: () => void;
   onAutoResolutionChange?: (cols: number, rows: number) => void;
+  crtConfig?: CrtConfig;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -44,6 +46,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   autoRes = false,
   onToggleAutoRes,
   onAutoResolutionChange,
+  crtConfig,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -208,6 +211,10 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const showScanlines = crtConfig ? crtConfig.scanlines : true;
+  const showGlow = crtConfig ? crtConfig.glow : true;
+  const showVignette = crtConfig ? crtConfig.vignette : false;
+
   return (
     <div className="viewport-pane">
       {/* Visual Canvas Container */}
@@ -217,10 +224,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
       >
-        <div className="scanline-overlay" />
+        {showScanlines && <div className="scanline-overlay" />}
+        {showVignette && <div className="crt-vignette-overlay" />}
         <pre
           ref={preRef}
-          className="ascii-pre"
+          className={`ascii-pre ${!showGlow ? 'glow-disabled' : ''}`}
           style={{
             transform: `scale(${zoom})`,
             fontSize: '10px',

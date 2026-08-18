@@ -199,6 +199,46 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Interactive Fluid Wave Ripples */}
+      <div className="control-section">
+        <div className="section-header">
+          <span>Interactive Fluid Wave Ripples</span>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Click Wave Ripples</span>
+          <button
+            className={`btn btn-sm ${config.ripplesEnabled !== false ? 'btn-primary' : ''}`}
+            onClick={() => update('ripplesEnabled', config.ripplesEnabled === false)}
+          >
+            {config.ripplesEnabled !== false ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
+
+        <div className="control-row" style={{ marginTop: '6px' }}>
+          <span className="control-label">Ripple Impulse Strength</span>
+          <div className="control-input-wrapper">
+            <input
+              type="range"
+              className="range-slider"
+              min={0.0}
+              max={2.5}
+              step={0.1}
+              value={config.rippleStrength !== undefined ? config.rippleStrength : 1.0}
+              disabled={config.ripplesEnabled === false}
+              onChange={(e) => update('rippleStrength', parseFloat(e.target.value))}
+            />
+            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+              {(config.rippleStrength !== undefined ? config.rippleStrength : 1.0).toFixed(1)}x
+            </span>
+          </div>
+        </div>
+
+        <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.35 }}>
+          Clicking or dragging on the canvas injects propagating circular wave impulses directly into the wave field.
+        </p>
+      </div>
     </div>
   );
 };
