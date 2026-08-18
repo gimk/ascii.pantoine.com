@@ -562,15 +562,18 @@ return val;`;q(mt,S)}};return s.jsxs("div",{className:"tab-content",style:{gap:"
       cursor: crosshair;
     }
     pre {
-      font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+      font-family: 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
       font-size: 10px;
       line-height: 10px;
       letter-spacing: 0px;
+      word-spacing: 0px;
       user-select: none;
       white-space: pre;
       font-variant-ligatures: none;
       -webkit-font-variant-ligatures: none;
-      font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
+      font-feature-settings: "liga" 0, "calt" 0, "dlig" 0, "tnum" 1;
+      font-variant-numeric: tabular-nums;
+      text-rendering: geometricPrecision;
     }
   </style>
 </head>
@@ -717,15 +720,18 @@ Gradient-based vector forces on particle (px, py) at time t:
    - Resulting glyph: charset[charIndex]
 
 3. Font & CSS Rules (MANDATORY):
-   - Font stack: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace
+   - Font stack: 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, SFMono-Regular, monospace
    - Mandatory CSS properties:
      white-space: pre;
      line-height: 1.0;
      letter-spacing: 0px;
+     word-spacing: 0px;
      font-variant-ligatures: none;
      -webkit-font-variant-ligatures: none;
-     font-feature-settings: "liga" 0, "calt" 0;
-   - Disabling ligatures is strictly required so combinations like '->', '==', or '//' do NOT merge into single glyphs and ruin column alignment.
+     font-feature-settings: "liga" 0, "calt" 0, "dlig" 0, "tnum" 1;
+     font-variant-numeric: tabular-nums;
+     text-rendering: geometricPrecision;
+   - Disabling ligatures and using tabular-nums is strictly required so combinations like '->', '==', or '//' do NOT merge into single glyphs and all Unicode symbols preserve identical advance widths.
 
 4. Performance & Runtime Optimization:
    - Target Framerate: Implement FPS limiter for ${O}.
