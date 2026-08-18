@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Copy, Download, Check, Bot, Film, Loader2, Play, RotateCcw } from 'lucide-react';
+import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw } from 'lucide-react';
 import { generateAstroComponent, generateStandaloneHtml, generateAiPrompt } from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
+import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
 import { WaveParams, ParticleConfig, OptimizeConfig, PhosphorTheme, CrtConfig } from '../types/ascii';
 
 interface ExportModalProps {
@@ -21,10 +22,10 @@ interface ExportModalProps {
   theme?: PhosphorTheme;
   customThemeColor?: string;
   crtConfig?: CrtConfig;
-  initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif';
+  initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
 }
 
-type ExportTab = 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif';
+type ExportTab = 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
@@ -54,11 +55,25 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [gifFps, setGifFps] = useState<number>(15);
   const [gifScale, setGifScale] = useState<number>(1.0);
   const [gifScanlines, setGifScanlines] = useState<boolean>(crtConfig?.scanlines ?? true);
-  const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [recordProgress, setRecordProgress] = useState<number>(0);
-  const [recordStatus, setRecordStatus] = useState<string>('');
+  const [isRecordingGif, setIsRecordingGif] = useState<boolean>(false);
+  const [recordProgressGif, setRecordProgressGif] = useState<number>(0);
+  const [recordStatusGif, setRecordStatusGif] = useState<string>('');
   const [gifUrl, setGifUrl] = useState<string | null>(null);
   const [gifBlob, setGifBlob] = useState<Blob | null>(null);
+
+  // Video Recording States
+  const supportedDefault = getSupportedVideoMimeType('auto');
+  const [videoDuration, setVideoDuration] = useState<number>(3.0);
+  const [videoFps, setVideoFps] = useState<number>(30);
+  const [videoScale, setVideoScale] = useState<number>(1.5);
+  const [videoFormat, setVideoFormat] = useState<'mp4' | 'webm' | 'auto'>('auto');
+  const [videoScanlines, setVideoScanlines] = useState<boolean>(crtConfig?.scanlines ?? true);
+  const [isRecordingVideo, setIsRecordingVideo] = useState<boolean>(false);
+  const [recordProgressVideo, setRecordProgressVideo] = useState<number>(0);
+  const [recordStatusVideo, setRecordStatusVideo] = useState<string>('');
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
+  const [videoExtension, setVideoExtension] = useState<'.mp4' | '.webm'>(supportedDefault.extension);
 
   const defaultBaseName = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'ascii-wave';
 
@@ -71,11 +86,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     if (isOpen && initialTab) {
       setActiveTab(initialTab);
     }
-    if (!isOpen && gifUrl) {
-      URL.revokeObjectURL(gifUrl);
-      setGifUrl(null);
-      setGifBlob(null);
-      setIsRecording(false);
+    if (!isOpen) {
+      if (gifUrl) {
+        URL.revokeObjectURL(gifUrl);
+        setGifUrl(null);
+        setGifBlob(null);
+        setIsRecordingGif(false);
+      }
+      if (videoUrl) {
+        URL.revokeObjectURL(videoUrl);
+        setVideoUrl(null);
+        setVideoBlob(null);
+        setIsRecordingVideo(false);
+      }
     }
   }, [isOpen, initialTab]);
 
@@ -103,15 +126,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       case 'json': return '.json';
       case 'ascii': return '-frame.txt';
       case 'gif': return '.gif';
+      case 'video': return videoExtension;
     }
   };
 
   const effectiveFileName = `${(customBaseName.trim() || defaultBaseName).replace(/\.[^/.]+$/, '')}${getExtension()}`;
 
   const handleRecordGif = async () => {
-    setIsRecording(true);
-    setRecordProgress(0);
-    setRecordStatus('Preparing frames...');
+    setIsRecordingGif(true);
+    setRecordProgressGif(0);
+    setRecordStatusGif('Preparing frames...');
     try {
       const blob = await exportAnimatedGif(
         {
@@ -131,11 +155,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           scale: gifScale,
         },
         (progress, frame, total) => {
-          setRecordProgress(progress);
+          setRecordProgressGif(progress);
           if (progress < 80) {
-            setRecordStatus(`Rendering frame ${frame} of ${total} (${progress}%)...`);
+            setRecordStatusGif(`Rendering frame ${frame} of ${total} (${progress}%)...`);
           } else {
-            setRecordStatus(`Encoding GIF binary stream (${progress}%)...`);
+            setRecordStatusGif(`Encoding GIF binary stream (${progress}%)...`);
           }
         }
       );
@@ -146,7 +170,47 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     } catch (err: any) {
       alert(`GIF Export Error: ${err?.message || 'Failed to render GIF'}`);
     } finally {
-      setIsRecording(false);
+      setIsRecordingGif(false);
+    }
+  };
+
+  const handleRecordVideo = async () => {
+    setIsRecordingVideo(true);
+    setRecordProgressVideo(0);
+    setRecordStatusVideo('Recording video stream in real-time...');
+    try {
+      const result = await exportVideoAnimation(
+        {
+          name,
+          type,
+          params,
+          customCode,
+          customPrepare,
+          density,
+          cols,
+          rows,
+          theme,
+          customThemeColor,
+          scanlines: videoScanlines,
+          duration: videoDuration,
+          fps: videoFps,
+          scale: videoScale,
+          preferredFormat: videoFormat,
+        },
+        (progress, frame, total) => {
+          setRecordProgressVideo(progress);
+          setRecordStatusVideo(`Recording frame ${frame} of ${total} (${progress}%)...`);
+        }
+      );
+
+      const url = URL.createObjectURL(result.blob);
+      setVideoBlob(result.blob);
+      setVideoUrl(url);
+      setVideoExtension(result.extension);
+    } catch (err: any) {
+      alert(`Video Export Error: ${err?.message || 'Failed to record video'}`);
+    } finally {
+      setIsRecordingVideo(false);
     }
   };
 
@@ -196,13 +260,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           text: '',
           mimeType: 'image/gif',
         };
+      case 'video':
+        return {
+          text: '',
+          mimeType: videoExtension === '.mp4' ? 'video/mp4' : 'video/webm',
+        };
     }
   };
 
   const { text, mimeType } = getExportContent();
 
   const handleCopy = () => {
-    if (activeTab === 'gif') return;
+    if (activeTab === 'gif' || activeTab === 'video') return;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
@@ -212,6 +281,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     if (activeTab === 'gif') {
       if (!gifBlob) return;
       const url = URL.createObjectURL(gifBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = effectiveFileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    if (activeTab === 'video') {
+      if (!videoBlob) return;
+      const url = URL.createObjectURL(videoBlob);
       const a = document.createElement('a');
       a.href = url;
       a.download = effectiveFileName;
@@ -247,6 +326,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           >
             <Film size={11} style={{ display: 'inline', marginRight: '3px' }} />
             GIF (.gif)
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
+            onClick={() => setActiveTab('video')}
+            title="Record and export WebM / MP4 Video clip"
+          >
+            <Video size={11} style={{ display: 'inline', marginRight: '3px' }} />
+            Video (.mp4/.webm)
           </button>
           <button
             className={`tab-btn ${activeTab === 'prompt' ? 'active' : ''}`}
@@ -330,7 +417,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     {[1.0, 2.0, 3.0, 4.0, 6.0].map((d) => (
                       <button
                         key={d}
-                        disabled={isRecording}
+                        disabled={isRecordingGif}
                         className={`btn ${gifDuration === d ? 'btn-primary' : ''}`}
                         onClick={() => setGifDuration(d)}
                       >
@@ -346,7 +433,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     {[12, 15, 20, 24].map((f) => (
                       <button
                         key={f}
-                        disabled={isRecording}
+                        disabled={isRecordingGif}
                         className={`btn ${gifFps === f ? 'btn-primary' : ''}`}
                         onClick={() => setGifFps(f)}
                       >
@@ -365,7 +452,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     ].map((s) => (
                       <button
                         key={s.val}
-                        disabled={isRecording}
+                        disabled={isRecordingGif}
                         className={`btn ${gifScale === s.val ? 'btn-primary' : ''}`}
                         onClick={() => setGifScale(s.val)}
                       >
@@ -378,7 +465,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <div className="gif-config-item">
                   <span className="gif-config-label">CRT Scanlines</span>
                   <button
-                    disabled={isRecording}
+                    disabled={isRecordingGif}
                     className={`btn ${gifScanlines ? 'btn-primary' : ''}`}
                     style={{ width: '100%', justifyContent: 'center' }}
                     onClick={() => setGifScanlines(!gifScanlines)}
@@ -389,17 +476,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </div>
 
               {/* Progress Box */}
-              {isRecording && (
+              {isRecordingGif && (
                 <div className="gif-progress-box">
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
                       <Loader2 size={12} className="dice-spin" />
-                      {recordStatus}
+                      {recordStatusGif}
                     </span>
-                    <span>{recordProgress}%</span>
+                    <span>{recordProgressGif}%</span>
                   </div>
                   <div className="gif-progress-track">
-                    <div className="gif-progress-bar" style={{ width: `${recordProgress}%` }} />
+                    <div className="gif-progress-bar" style={{ width: `${recordProgressGif}%` }} />
                   </div>
                 </div>
               )}
@@ -412,10 +499,138 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     Loop: {gifDuration}s @ {gifFps}fps • Size: {(gifBlob ? (gifBlob.size / 1024).toFixed(1) : 0)} KB
                   </div>
                 </div>
-              ) : !isRecording && (
+              ) : !isRecordingGif && (
                 <div className="gif-preview-card" style={{ color: 'var(--text-dim)', fontSize: '11px', textAlign: 'center' }}>
                   <Film size={28} style={{ opacity: 0.3, marginBottom: '6px' }} />
-                  <div>Click "RECORD GIF" below to generate a seamless animated loop.</div>
+                  <div>Click "START RECORDING GIF" below to generate a seamless animated loop.</div>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'video' ? (
+            <div>
+              {/* Video Configuration */}
+              <div className="gif-config-grid">
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Video Duration</span>
+                  <div className="gif-btn-group">
+                    {[2.0, 3.0, 5.0, 8.0, 10.0].map((d) => (
+                      <button
+                        key={d}
+                        disabled={isRecordingVideo}
+                        className={`btn ${videoDuration === d ? 'btn-primary' : ''}`}
+                        onClick={() => setVideoDuration(d)}
+                      >
+                        {d}s
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Smooth Frame Rate</span>
+                  <div className="gif-btn-group">
+                    {[24, 30, 60].map((f) => (
+                      <button
+                        key={f}
+                        disabled={isRecordingVideo}
+                        className={`btn ${videoFps === f ? 'btn-primary' : ''}`}
+                        onClick={() => setVideoFps(f)}
+                      >
+                        {f}fps
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Resolution Quality</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { val: 1.0, label: '1.0x (SD)' },
+                      { val: 1.5, label: '1.5x (HD)' },
+                      { val: 2.0, label: '2.0x (4K)' },
+                    ].map((s) => (
+                      <button
+                        key={s.val}
+                        disabled={isRecordingVideo}
+                        className={`btn ${videoScale === s.val ? 'btn-primary' : ''}`}
+                        onClick={() => setVideoScale(s.val)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Preferred Format</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { id: 'auto', label: 'Auto' },
+                      { id: 'mp4', label: 'MP4' },
+                      { id: 'webm', label: 'WebM' },
+                    ].map((fmt) => (
+                      <button
+                        key={fmt.id}
+                        disabled={isRecordingVideo}
+                        className={`btn ${videoFormat === fmt.id ? 'btn-primary' : ''}`}
+                        onClick={() => setVideoFormat(fmt.id as any)}
+                      >
+                        {fmt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="gif-config-item">
+                  <span className="gif-config-label">CRT Scanlines</span>
+                  <button
+                    disabled={isRecordingVideo}
+                    className={`btn ${videoScanlines ? 'btn-primary' : ''}`}
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={() => setVideoScanlines(!videoScanlines)}
+                  >
+                    {videoScanlines ? 'SCANLINES [ON]' : 'SCANLINES [OFF]'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Progress Box */}
+              {isRecordingVideo && (
+                <div className="gif-progress-box">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
+                      <Loader2 size={12} className="dice-spin" />
+                      {recordStatusVideo}
+                    </span>
+                    <span>{recordProgressVideo}%</span>
+                  </div>
+                  <div className="gif-progress-track">
+                    <div className="gif-progress-bar" style={{ width: `${recordProgressVideo}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Video Preview */}
+              {videoUrl ? (
+                <div className="gif-preview-card">
+                  <video
+                    src={videoUrl}
+                    autoPlay
+                    loop
+                    controls
+                    playsInline
+                    className="gif-preview-img"
+                    style={{ maxHeight: '220px', width: 'auto' }}
+                  />
+                  <div style={{ marginTop: '8px', fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                    Video: {videoDuration}s @ {videoFps}fps • Format: {videoExtension.toUpperCase().replace('.', '')} • Size: {(videoBlob ? (videoBlob.size / 1024).toFixed(1) : 0)} KB
+                  </div>
+                </div>
+              ) : !isRecordingVideo && (
+                <div className="gif-preview-card" style={{ color: 'var(--text-dim)', fontSize: '11px', textAlign: 'center' }}>
+                  <Video size={28} style={{ opacity: 0.3, marginBottom: '6px' }} />
+                  <div>Click "START RECORDING VIDEO" to generate a smooth {videoDuration}s video clip.</div>
                 </div>
               )}
             </div>
@@ -443,7 +658,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <button
                   className="btn"
                   onClick={handleRecordGif}
-                  disabled={isRecording}
+                  disabled={isRecordingGif}
                 >
                   <RotateCcw size={12} />
                   RE-RECORD
@@ -453,10 +668,41 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <button
                   className="btn btn-primary"
                   onClick={handleRecordGif}
-                  disabled={isRecording}
+                  disabled={isRecordingGif}
                 >
-                  {isRecording ? <Loader2 size={12} className="dice-spin" /> : <Play size={12} />}
-                  {isRecording ? 'RECORDING GIF...' : 'START RECORDING GIF'}
+                  {isRecordingGif ? <Loader2 size={12} className="dice-spin" /> : <Play size={12} />}
+                  {isRecordingGif ? 'RECORDING GIF...' : 'START RECORDING GIF'}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleDownload}
+                >
+                  <Download size={12} />
+                  DOWNLOAD {effectiveFileName}
+                </button>
+              )}
+            </>
+          ) : activeTab === 'video' ? (
+            <>
+              {videoUrl && (
+                <button
+                  className="btn"
+                  onClick={handleRecordVideo}
+                  disabled={isRecordingVideo}
+                >
+                  <RotateCcw size={12} />
+                  RE-RECORD
+                </button>
+              )}
+              {!videoUrl ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRecordVideo}
+                  disabled={isRecordingVideo}
+                >
+                  {isRecordingVideo ? <Loader2 size={12} className="dice-spin" /> : <Play size={12} />}
+                  {isRecordingVideo ? 'RECORDING VIDEO...' : 'START RECORDING VIDEO'}
                 </button>
               ) : (
                 <button
