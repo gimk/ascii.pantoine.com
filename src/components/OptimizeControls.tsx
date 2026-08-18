@@ -248,10 +248,10 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               gap: '6px',
             }}
             onClick={onMatchViewfinderRatio}
-            title="Automatically compute columns and rows to match the viewfinder aspect ratio"
+            title="Automatically compute columns and rows to match the viewfinder resolution"
           >
             <Maximize2 size={11} color="var(--accent)" />
-            MATCH VIEWFINDER RATIO
+            MATCH VIEWFINDER RES
           </button>
         )}
 

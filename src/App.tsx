@@ -757,6 +757,7 @@ export const App: React.FC = () => {
           targetFps={optimizeConfig.targetFps}
           viewMode={viewMode}
           onToggleViewMode={handleToggleViewMode}
+          onMatchViewfinderRatio={handleMatchViewfinderRatio}
         />
 
         {/* Right Sidebar Control Panel */}

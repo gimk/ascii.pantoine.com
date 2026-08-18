@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3 } from 'lucide-react';
+import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Scaling } from 'lucide-react';
 
 export interface AsciiViewportHandle {
   setFrame: (frameText: string, time: number, fps: number) => void;
@@ -23,6 +23,7 @@ interface AsciiViewportProps {
   targetFps?: number;
   viewMode?: 'editor' | 'fullscreen';
   onToggleViewMode?: () => void;
+  onMatchViewfinderRatio?: () => void;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -40,6 +41,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   targetFps,
   viewMode = 'editor',
   onToggleViewMode,
+  onMatchViewfinderRatio,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -305,6 +307,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
           </span>
+          {viewMode === 'fullscreen' && onMatchViewfinderRatio && (
+            <button
+              className="btn btn-sm"
+              onClick={onMatchViewfinderRatio}
+              title="Match grid resolution (cols x rows) to fullscreen viewfinder resolution"
+            >
+              <Scaling size={12} />
+              <span className="btn-label-sm">MATCH VIEWFINDER RES</span>
+            </button>
+          )}
         </div>
 
         <div className="status-group">
