@@ -13,9 +13,14 @@ export const CHARSETS = [
 ];
 
 let cachedLines: string[] = [];
+let lineBuffer: string[] = [];
+let trailInfluenceBuffer = new Float32Array(0);
+let trailCharAgeBuffer = new Float32Array(0);
+let trailCharBuffer: string[] = [];
 
 /**
  * Computes a single full ASCII frame with zero per-row array allocations
+ * and O(W*H + 25N) spatial particle rasterization.
  */
 export function renderAsciiFrame(ctx: RenderContext): string {
   const {
@@ -39,6 +44,7 @@ export function renderAsciiFrame(ctx: RenderContext): string {
   const radiusSq = 2.5 * 2.5;
   const densityLength = density.length;
   const sharedCtx = customContext || {};
+  const totalCells = cols * rows;
 
   if (prepareFn) {
     try {
@@ -48,15 +54,82 @@ export function renderAsciiFrame(ctx: RenderContext): string {
     }
   }
 
+  // Ensure line caches match current grid dimensions
   if (cachedLines.length !== rows) {
     cachedLines = new Array(rows);
   }
+  if (lineBuffer.length !== cols) {
+    lineBuffer = new Array(cols);
+  }
 
   const numTrails = trailPoints.length;
+  const hasTrails = interactiveInfluence && numTrails > 0;
+
+  // Spatial Particle Pre-Rasterization Buffer
+  if (hasTrails) {
+    if (trailInfluenceBuffer.length !== totalCells) {
+      trailInfluenceBuffer = new Float32Array(totalCells);
+      trailCharAgeBuffer = new Float32Array(totalCells);
+      trailCharBuffer = new Array(totalCells).fill('');
+    } else {
+      trailInfluenceBuffer.fill(0);
+      trailCharAgeBuffer.fill(0);
+      trailCharBuffer.fill('');
+    }
+
+    const boost = ctx.luminanceBoost !== undefined ? ctx.luminanceBoost : 0.5;
+    const rx = Math.ceil(2.5 / Math.max(0.1, aspectRatio));
+    const ry = 3;
+
+    for (let i = 0; i < numTrails; i++) {
+      const pt = trailPoints[i];
+      const px = pt.x;
+      const py = pt.y;
+      const age = pt.age;
+
+      if (age <= 0) continue;
+
+      // 1. Direct character stamp at integer cell coordinate
+      const ix = Math.floor(px);
+      const iy = Math.floor(py);
+      if (ix >= 0 && ix < cols && iy >= 0 && iy < rows && age > 0.05) {
+        const cellIdx = iy * cols + ix;
+        if (age > trailCharAgeBuffer[cellIdx]) {
+          trailCharAgeBuffer[cellIdx] = age;
+          trailCharBuffer[cellIdx] = pt.char;
+        }
+      }
+
+      // 2. Localized bounding box for luminance glow influence
+      if (boost > 0) {
+        const minX = Math.max(0, Math.floor(px - rx));
+        const maxX = Math.min(cols - 1, Math.ceil(px + rx));
+        const minY = Math.max(0, Math.floor(py - ry));
+        const maxY = Math.min(rows - 1, Math.ceil(py + ry));
+
+        for (let y = minY; y <= maxY; y++) {
+          const ady = Math.abs(y - py);
+          if (ady >= 2.5) continue;
+          const rowOffset = y * cols;
+
+          for (let x = minX; x <= maxX; x++) {
+            const adx = Math.abs(x - px) * aspectRatio;
+            if (adx >= 2.5) continue;
+
+            const tdistSq = adx * adx + ady * ady;
+            if (tdistSq < radiusSq) {
+              const inf = (1 - Math.sqrt(tdistSq) / 2.5) * age * boost;
+              trailInfluenceBuffer[rowOffset + x] += inf;
+            }
+          }
+        }
+      }
+    }
+  }
 
   for (let y = 0; y < rows; y++) {
     const dy = y - cy;
-    let rowStr = '';
+    const rowOffset = y * cols;
 
     for (let x = 0; x < cols; x++) {
       const dx = (x - cx) * aspectRatio;
@@ -81,26 +154,9 @@ export function renderAsciiFrame(ctx: RenderContext): string {
         );
       }
 
-      // Trail proximity luminance boost
-      let trailInfluence = 0;
-      if (interactiveInfluence && numTrails > 0) {
-        const boost = ctx.luminanceBoost !== undefined ? ctx.luminanceBoost : 0.5;
-        if (boost > 0) {
-          for (let i = 0; i < numTrails; i++) {
-            const pt = trailPoints[i];
-            const adx = Math.abs(x - pt.x) * aspectRatio;
-            const ady = Math.abs(y - pt.y);
-
-            if (adx < 2.5 && ady < 2.5) {
-              const tdistSq = adx * adx + ady * ady;
-              if (tdistSq < radiusSq) {
-                trailInfluence +=
-                  (1 - Math.sqrt(tdistSq) / 2.5) * pt.age * boost;
-              }
-            }
-          }
-        }
-      }
+      // O(1) particle influence lookup from pre-rasterized spatial buffer
+      const cellIdx = rowOffset + x;
+      const trailInfluence = hasTrails ? trailInfluenceBuffer[cellIdx] : 0;
 
       // Normalize into [0, 1]
       let normalized = (animValue + 1) * 0.5 + trailInfluence;
@@ -116,27 +172,14 @@ export function renderAsciiFrame(ctx: RenderContext): string {
 
       let cellChar = density[charIndex] || ' ';
 
-      // Stamp active trail point characters deterministically (no 60fps random flickering)
-      if (interactiveInfluence && numTrails > 0) {
-        let bestChar: string | null = null;
-        let maxAge = 0;
-        for (let i = 0; i < numTrails; i++) {
-          const pt = trailPoints[i];
-          if (Math.floor(pt.x) === x && Math.floor(pt.y) === y) {
-            if (pt.age > maxAge) {
-              maxAge = pt.age;
-              bestChar = pt.char;
-            }
-          }
-        }
-        if (bestChar && maxAge > 0.05) {
-          cellChar = bestChar;
-        }
+      // O(1) character stamp lookup
+      if (hasTrails && trailCharBuffer[cellIdx]) {
+        cellChar = trailCharBuffer[cellIdx];
       }
 
-      rowStr += cellChar;
+      lineBuffer[x] = cellChar;
     }
-    cachedLines[y] = rowStr;
+    cachedLines[y] = lineBuffer.join('');
   }
 
   return cachedLines.join('\n');

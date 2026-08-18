@@ -111,6 +111,10 @@ export interface CharsetOption {
   chars: string;
 }
 
+export interface CustomRenderContext {
+  [key: string]: any;
+}
+
 export interface RenderContext {
   cols: number;
   rows: number;
@@ -128,10 +132,10 @@ export interface RenderContext {
     cols: number,
     rows: number,
     angle: number,
-    ctx?: any
+    ctx?: CustomRenderContext
   ) => number;
-  prepareFn?: (time: number, cols: number, rows: number, ctx?: any) => void;
-  customContext?: Record<string, any>;
+  prepareFn?: (time: number, cols: number, rows: number, ctx?: CustomRenderContext) => void;
+  customContext?: CustomRenderContext;
   interactiveInfluence: boolean;
   luminanceBoost?: number;
 }

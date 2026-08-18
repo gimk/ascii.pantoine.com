@@ -166,11 +166,19 @@ export function generateAstroComponent(cfg: ExportConfig): string {
     const aspectRatio = ${cfg.params?.aspectRatio ?? 0.55};
     let time = 0;
     let isVisible = true;
+    let observer: IntersectionObserver | null = null;
 
     const trailPoints: TrailPoint[] = [];
     const trailChars = ${JSON.stringify(trailChars)};
 
-    const observer = new IntersectionObserver(([entry]) => {
+    const lines = new Array(rows);
+    const lineBuffer = new Array(cols);
+    const totalCells = cols * rows;
+    const trailInfluenceBuffer = new Float32Array(totalCells);
+    const trailCharAgeBuffer = new Float32Array(totalCells);
+    const trailCharBuffer = new Array(totalCells).fill('');
+
+    observer = new IntersectionObserver(([entry]) => {
       isVisible = entry.isIntersecting;
     }, { threshold: 0 });
     observer.observe(container);
@@ -233,52 +241,81 @@ export function generateAstroComponent(cfg: ExportConfig): string {
         trailPoints.shift();
       }
 
-      const grid: string[][] = [];
       const radiusSq = 2.5 * 2.5;
+      const hasTrails = trailPoints.length > 0;
+
+      // Spatial particle pre-rasterization
+      if (hasTrails) {
+        trailInfluenceBuffer.fill(0);
+        trailCharAgeBuffer.fill(0);
+        trailCharBuffer.fill('');
+
+        const rx = Math.ceil(2.5 / Math.max(0.1, aspectRatio));
+        for (let i = 0; i < trailPoints.length; i++) {
+          const pt = trailPoints[i];
+          if (pt.age <= 0) continue;
+
+          const ix = Math.floor(pt.x);
+          const iy = Math.floor(pt.y);
+          if (ix >= 0 && ix < cols && iy >= 0 && iy < rows && pt.age > 0.05) {
+            const cellIdx = iy * cols + ix;
+            if (pt.age > trailCharAgeBuffer[cellIdx]) {
+              trailCharAgeBuffer[cellIdx] = pt.age;
+              trailCharBuffer[cellIdx] = pt.char;
+            }
+          }
+
+          const minX = Math.max(0, Math.floor(pt.x - rx));
+          const maxX = Math.min(cols - 1, Math.ceil(pt.x + rx));
+          const minY = Math.max(0, Math.floor(pt.y - 3));
+          const maxY = Math.min(rows - 1, Math.ceil(pt.y + 3));
+
+          for (let y = minY; y <= maxY; y++) {
+            const ady = Math.abs(y - pt.y);
+            if (ady >= 2.5) continue;
+            const rOffset = y * cols;
+
+            for (let x = minX; x <= maxX; x++) {
+              const adx = Math.abs(x - pt.x) * aspectRatio;
+              if (adx >= 2.5) continue;
+              const tdistSq = adx * adx + ady * ady;
+              if (tdistSq < radiusSq) {
+                trailInfluenceBuffer[rOffset + x] += (1 - Math.sqrt(tdistSq) / 2.5) * pt.age * 0.5;
+              }
+            }
+          }
+        }
+      }
 
       for (let y = 0; y < rows; y++) {
-        grid[y] = [];
         const dy = y - cy;
+        const rowOffset = y * cols;
+
         for (let x = 0; x < cols; x++) {
           const dx = (x - cx) * aspectRatio;
           const dist = Math.hypot(dx, dy);
           const angle = Math.atan2(dy, dx);
 
           const animVal = animation.render(x, y, time, dist, dx, dy, cols, rows, angle, animationContext);
-
-          let trailInf = 0;
-          for (let p = 0; p < trailPoints.length; p++) {
-            const pt = trailPoints[p];
-            const adx = Math.abs(x - pt.x) * aspectRatio;
-            const ady = Math.abs(y - pt.y);
-            if (adx < 2.5 && ady < 2.5) {
-              const tdistSq = adx * adx + ady * ady;
-              if (tdistSq < radiusSq) {
-                trailInf += (1 - Math.sqrt(tdistSq) / 2.5) * pt.age * 0.5;
-              }
-            }
-          }
+          const cellIdx = rowOffset + x;
+          const trailInf = hasTrails ? trailInfluenceBuffer[cellIdx] : 0;
 
           let normalized = (animVal + 1) * 0.5 + trailInf;
           let charIndex = Math.floor(normalized * density.length);
           charIndex = Math.max(0, Math.min(density.length - 1, charIndex));
-          grid[y][x] = density[charIndex];
-        }
-      }
 
-      for (let p = 0; p < trailPoints.length; p++) {
-        const pt = trailPoints[p];
-        const px = Math.floor(pt.x);
-        const py = Math.floor(pt.y);
-        if (px >= 0 && px < cols && py >= 0 && py < rows) {
-          if (Math.random() < pt.age * 0.5) {
-            grid[py][px] = pt.char;
+          let char = density[charIndex];
+          if (hasTrails && trailCharBuffer[cellIdx]) {
+            char = trailCharBuffer[cellIdx];
           }
+
+          lineBuffer[x] = char;
         }
+        lines[y] = lineBuffer.join('');
       }
 
       if (canvas) {
-        canvas.textContent = grid.map((r) => r.join("")).join("\\n");
+        canvas.textContent = lines.join('\\n');
       }
 
       time += 0.02 * ${(cfg.params?.timeSpeed ?? 1.0).toFixed(2)};
@@ -286,10 +323,24 @@ export function generateAstroComponent(cfg: ExportConfig): string {
     }
 
     frameId = requestAnimationFrame(render);
+
+    return () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      if (observer) observer.disconnect();
+    };
   }
 
-  initAsciiAnimation();
-  document.addEventListener("astro:after-swap", initAsciiAnimation);
+  let cleanup: (() => void) | undefined;
+  function start() {
+    if (cleanup) cleanup();
+    cleanup = initAsciiAnimation();
+  }
+
+  start();
+  document.addEventListener("astro:before-swap", () => {
+    if (cleanup) cleanup();
+  });
+  document.addEventListener("astro:after-swap", start);
 </script>
 `;
 }

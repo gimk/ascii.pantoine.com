@@ -1,4 +1,10 @@
-import { WaveParams } from '../types/ascii';
+import { WaveParams, CustomRenderContext } from '../types/ascii';
+
+function safeParseFloat(val: string | undefined, fallback: number): number {
+  if (!val) return fallback;
+  const parsed = parseFloat(val);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 export const DEFAULT_WAVE_PARAMS: WaveParams = {
   timeSpeed: 1.0,
@@ -215,102 +221,102 @@ export function parseFormulaCodeToParams(code: string, baseParams: WaveParams): 
     // 1. Primary Radial Wave
     const radialMatch = code.match(/Math\.sin\(\s*(?:rDist|dist)\s*\*\s*([\d.]+)\s*-\s*time\s*\*\s*([\d.-]+)\s*\)\s*\*\s*([\d.]+)/);
     if (radialMatch) {
-      p.radialFreq = parseFloat(radialMatch[1]) ?? p.radialFreq;
-      p.radialSpeed = parseFloat(radialMatch[2]) ?? p.radialSpeed;
-      p.radialAmp = parseFloat(radialMatch[3]) ?? p.radialAmp;
+      p.radialFreq = safeParseFloat(radialMatch[1], p.radialFreq);
+      p.radialSpeed = safeParseFloat(radialMatch[2], p.radialSpeed);
+      p.radialAmp = safeParseFloat(radialMatch[3], p.radialAmp);
     }
 
     // Offset Center
     const offsetMatch = code.match(/Math\.hypot\(dx\s*-\s*\(([\d.-]+)\),\s*dy\s*-\s*\(([\d.-]+)\)\)/);
     if (offsetMatch) {
-      p.radialCenterOffsetX = parseFloat(offsetMatch[1]) || 0;
-      p.radialCenterOffsetY = parseFloat(offsetMatch[2]) || 0;
+      p.radialCenterOffsetX = safeParseFloat(offsetMatch[1], p.radialCenterOffsetX);
+      p.radialCenterOffsetY = safeParseFloat(offsetMatch[2], p.radialCenterOffsetY);
     }
 
     // 2. Secondary Harmonic Ripple
     const radial2Match = code.match(/Secondary Harmonic Ripple[\s\S]*?Math\.sin\(\s*dist\s*\*\s*([\d.]+)\s*-\s*time\s*\*\s*([\d.-]+)\s*\)\s*\*\s*([\d.]+)/);
     if (radial2Match) {
-      p.radial2Freq = parseFloat(radial2Match[1]) ?? p.radial2Freq;
-      p.radial2Speed = parseFloat(radial2Match[2]) ?? p.radial2Speed;
-      p.radial2Amp = parseFloat(radial2Match[3]) ?? p.radial2Amp;
+      p.radial2Freq = safeParseFloat(radial2Match[1], p.radial2Freq);
+      p.radial2Speed = safeParseFloat(radial2Match[2], p.radial2Speed);
+      p.radial2Amp = safeParseFloat(radial2Match[3], p.radial2Amp);
     }
 
     // 3. Directional X Wave
     const xMatch = code.match(/Math\.cos\(dx\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
     if (xMatch) {
-      p.xFreq = parseFloat(xMatch[1]) ?? p.xFreq;
-      p.xSpeed = parseFloat(xMatch[2]) ?? p.xSpeed;
-      p.xAmp = parseFloat(xMatch[3]) ?? p.xAmp;
+      p.xFreq = safeParseFloat(xMatch[1], p.xFreq);
+      p.xSpeed = safeParseFloat(xMatch[2], p.xSpeed);
+      p.xAmp = safeParseFloat(xMatch[3], p.xAmp);
     }
 
     // 4. Directional Y Wave
     const yMatch = code.match(/Math\.sin\(dy\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
     if (yMatch) {
-      p.yFreq = parseFloat(yMatch[1]) ?? p.yFreq;
-      p.ySpeed = parseFloat(yMatch[2]) ?? p.ySpeed;
-      p.yAmp = parseFloat(yMatch[3]) ?? p.yAmp;
+      p.yFreq = safeParseFloat(yMatch[1], p.yFreq);
+      p.ySpeed = safeParseFloat(yMatch[2], p.ySpeed);
+      p.yAmp = safeParseFloat(yMatch[3], p.yAmp);
     }
 
     // 5. Diagonal Wave (X+Y)
     const diagMatch = code.match(/Math\.sin\(\(dx\s*\+\s*dy\)\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
     if (diagMatch) {
-      p.diagFreq = parseFloat(diagMatch[1]) ?? p.diagFreq;
-      p.diagSpeed = parseFloat(diagMatch[2]) ?? p.diagSpeed;
-      p.diagAmp = parseFloat(diagMatch[3]) ?? p.diagAmp;
+      p.diagFreq = safeParseFloat(diagMatch[1], p.diagFreq);
+      p.diagSpeed = safeParseFloat(diagMatch[2], p.diagSpeed);
+      p.diagAmp = safeParseFloat(diagMatch[3], p.diagAmp);
     }
 
     // 6. Spiral / Vortex (Angular)
     const spiralMatch = code.match(/Math\.sin\(angle\s*\*\s*([\d.]+)\s*-\s*time\s*\*\s*([\d.-]+)(?:\s*\+\s*dist\s*\*\s*([\d.]+))?\)\s*\*\s*([\d.]+)/);
     if (spiralMatch) {
-      p.spiralArms = parseFloat(spiralMatch[1]) ?? p.spiralArms;
-      p.spiralSpeed = parseFloat(spiralMatch[2]) ?? p.spiralSpeed;
-      if (spiralMatch[3]) p.spiralTwist = parseFloat(spiralMatch[3]) ?? p.spiralTwist;
-      p.spiralAmp = parseFloat(spiralMatch[4]) ?? p.spiralAmp;
+      p.spiralArms = safeParseFloat(spiralMatch[1], p.spiralArms);
+      p.spiralSpeed = safeParseFloat(spiralMatch[2], p.spiralSpeed);
+      if (spiralMatch[3]) p.spiralTwist = safeParseFloat(spiralMatch[3], p.spiralTwist);
+      p.spiralAmp = safeParseFloat(spiralMatch[4], p.spiralAmp);
     }
 
     // 7. Tunnel / Depth Inverse Distance
     const tunnelMatch = code.match(/Math\.sin\(([\d.]+)\s*\/\s*(?:Math\.max\(0\.01,\s*)?dist(?:\s*\+\s*[\d.]+)?\)?\s*-\s*time\s*\*\s*([\d.-]+)\)\s*\*\s*([\d.]+)/);
     if (tunnelMatch) {
-      p.tunnelPower = parseFloat(tunnelMatch[1]) ?? p.tunnelPower;
-      p.tunnelSpeed = parseFloat(tunnelMatch[2]) ?? p.tunnelSpeed;
-      p.tunnelAmp = parseFloat(tunnelMatch[3]) ?? p.tunnelAmp;
+      p.tunnelPower = safeParseFloat(tunnelMatch[1], p.tunnelPower);
+      p.tunnelSpeed = safeParseFloat(tunnelMatch[2], p.tunnelSpeed);
+      p.tunnelAmp = safeParseFloat(tunnelMatch[3], p.tunnelAmp);
     }
 
     // 8. Concentric Rings
     const ringsModMatch = code.match(/rDistMod\s*=\s*Math\.abs\(dist\s*-\s*\(([\d.]+)\s*\+\s*Math\.sin\(time\s*\*\s*([\d.-]+)\)/);
     if (ringsModMatch) {
-      p.ringsRadius = parseFloat(ringsModMatch[1]) ?? p.ringsRadius;
-      p.ringsSpeed = parseFloat(ringsModMatch[2]) ?? p.ringsSpeed;
+      p.ringsRadius = safeParseFloat(ringsModMatch[1], p.ringsRadius);
+      p.ringsSpeed = safeParseFloat(ringsModMatch[2], p.ringsSpeed);
     }
     const ringsAmpMatch = code.match(/Math\.sin\(angle\s*\*\s*([\d.]+)\s*\+\s*time\s*\*\s*[\d.-]+\)\s*\*\s*0\.5\s*\+\s*0\.5\)\s*\*\s*([\d.]+)/);
     if (ringsAmpMatch) {
-      p.ringsCount = parseFloat(ringsAmpMatch[1]) ?? p.ringsCount;
-      p.ringsAmp = parseFloat(ringsAmpMatch[2]) ?? p.ringsAmp;
+      p.ringsCount = safeParseFloat(ringsAmpMatch[1], p.ringsCount);
+      p.ringsAmp = safeParseFloat(ringsAmpMatch[2], p.ringsAmp);
     }
 
     // 9. Dual Emitter Interference
     const dualSpacingMatch = code.match(/dx\s*-\s*([\d.]+)/);
     if (dualSpacingMatch) {
-      p.dualEmitterSpacing = parseFloat(dualSpacingMatch[1]) ?? p.dualEmitterSpacing;
+      p.dualEmitterSpacing = safeParseFloat(dualSpacingMatch[1], p.dualEmitterSpacing);
     }
     const dualWaveMatch = code.match(/Math\.sin\(d1\s*\*\s*([\d.]+)\s*-\s*time\s*\*\s*([\d.-]+)\)[\s\S]*?\*\s*([\d.]+);/);
     if (dualWaveMatch) {
-      p.dualEmitterFreq = parseFloat(dualWaveMatch[1]) ?? p.dualEmitterFreq;
-      p.dualEmitterSpeed = parseFloat(dualWaveMatch[2]) ?? p.dualEmitterSpeed;
-      p.dualEmitterAmp = parseFloat(dualWaveMatch[3]) ?? p.dualEmitterAmp;
+      p.dualEmitterFreq = safeParseFloat(dualWaveMatch[1], p.dualEmitterFreq);
+      p.dualEmitterSpeed = safeParseFloat(dualWaveMatch[2], p.dualEmitterSpeed);
+      p.dualEmitterAmp = safeParseFloat(dualWaveMatch[3], p.dualEmitterAmp);
     }
 
     // 10. Starfield Sparkle
     const starMatch = code.match(/Math\.sin\(x\s*\*\s*123\.45\)[\s\S]*?val\s*\+=\s*([\d.]+);/);
     if (starMatch) {
-      p.starfieldIntensity = parseFloat(starMatch[1]) ?? p.starfieldIntensity;
+      p.starfieldIntensity = safeParseFloat(starMatch[1], p.starfieldIntensity);
     }
 
     // 11. Final Return Contrast and Bias
     const returnMatch = code.match(/return\s+val(?:\s*\*\s*([\d.]+))?(?:\s*\+\s*([-\d.]+))?/);
     if (returnMatch) {
-      if (returnMatch[1]) p.contrast = parseFloat(returnMatch[1]) ?? p.contrast;
-      if (returnMatch[2]) p.bias = parseFloat(returnMatch[2]) ?? p.bias;
+      if (returnMatch[1]) p.contrast = safeParseFloat(returnMatch[1], p.contrast);
+      if (returnMatch[2]) p.bias = safeParseFloat(returnMatch[2], p.bias);
     }
   } catch {
     // Keep base params on parsing exception
@@ -355,9 +361,9 @@ export interface CompileResult {
     cols: number,
     rows: number,
     angle: number,
-    ctx?: any
+    ctx?: CustomRenderContext
   ) => number;
-  prepareFn?: (time: number, cols: number, rows: number, ctx?: any) => void;
+  prepareFn?: (time: number, cols: number, rows: number, ctx?: CustomRenderContext) => void;
   error: string | null;
 }
 
@@ -366,14 +372,14 @@ export interface CompileResult {
  */
 export function compileCustomCode(renderCode: string, prepareCode?: string): CompileResult {
   try {
-    let prepareFn: ((time: number, cols: number, rows: number, ctx?: any) => void) | undefined;
+    let prepareFn: ((time: number, cols: number, rows: number, ctx?: CustomRenderContext) => void) | undefined;
     if (prepareCode && prepareCode.trim().length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-implied-eval
       prepareFn = new Function('time', 'cols', 'rows', 'ctx', prepareCode) as (
         time: number,
         cols: number,
         rows: number,
-        ctx?: any
+        ctx?: CustomRenderContext
       ) => void;
     }
 
@@ -413,7 +419,7 @@ export function compileCustomCode(renderCode: string, prepareCode?: string): Com
       cols: number,
       rows: number,
       angle: number,
-      ctx?: any
+      ctx?: CustomRenderContext
     ) => number;
 
     renderFn(0, 0, 0, 0, 0, 0, 80, 40, 0, {});
