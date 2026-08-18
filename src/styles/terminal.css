@@ -443,6 +443,8 @@ html, body, #root {
   gap: 8px;
   flex-shrink: 0;
   flex-wrap: wrap;
+  min-height: 38px;
+  box-sizing: border-box;
 }
 
 .status-group {
@@ -1137,4 +1139,41 @@ input[type="number"] {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
+}
+
+/* Sidebar Credits */
+.sidebar-credits {
+  margin-top: auto;
+  height: 38px;
+  min-height: 38px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.sidebar-credits a {
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
+}
+
+.sidebar-credits a:hover {
+  color: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .sidebar-credits {
+    height: auto;
+    min-height: unset;
+    padding: 18px 14px 16px 14px;
+  }
 }

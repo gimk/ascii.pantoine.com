@@ -1127,6 +1127,20 @@ export const App: React.FC = () => {
                 onChangeCrtConfig={setCrtConfig}
               />
             )}
+
+            {/* Sidebar Credits Line */}
+            <div className="sidebar-credits">
+              <span>
+                Made with dedication by{' '}
+                <a
+                  href="https://www.pantoine.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Antoine Pouligny
+                </a>
+              </span>
+            </div>
           </div>
         )}
       </div>
