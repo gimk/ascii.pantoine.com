@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw } from 'lucide-react';
+import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw, Code2, Database, FileCode, FileText } from 'lucide-react';
 import { generateAstroComponent, generateStandaloneHtml, generateAiPrompt } from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
@@ -26,6 +26,13 @@ interface ExportModalProps {
 }
 
 type ExportTab = 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
+type ExportCategory = 'media' | 'code' | 'data';
+
+const getCategoryForTab = (tab: ExportTab): ExportCategory => {
+  if (tab === 'gif' || tab === 'video') return 'media';
+  if (tab === 'astro' || tab === 'html' || tab === 'prompt') return 'code';
+  return 'data';
+};
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
@@ -47,6 +54,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   initialTab = 'prompt',
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
+  const [activeCategory, setActiveCategory] = useState<ExportCategory>(getCategoryForTab(initialTab));
   const [copied, setCopied] = useState<boolean>(false);
   const [customBaseName, setCustomBaseName] = useState<string>('');
 
@@ -85,6 +93,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   useEffect(() => {
     if (isOpen && initialTab) {
       setActiveTab(initialTab);
+      setActiveCategory(getCategoryForTab(initialTab));
     }
     if (!isOpen) {
       if (gifUrl) {
@@ -131,6 +140,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   const effectiveFileName = `${(customBaseName.trim() || defaultBaseName).replace(/\.[^/.]+$/, '')}${getExtension()}`;
+
+  const handleSelectCategory = (cat: ExportCategory) => {
+    setActiveCategory(cat);
+    if (cat === 'media') {
+      if (activeTab !== 'gif' && activeTab !== 'video') setActiveTab('gif');
+    } else if (cat === 'code') {
+      if (activeTab !== 'astro' && activeTab !== 'html' && activeTab !== 'prompt') setActiveTab('astro');
+    } else if (cat === 'data') {
+      if (activeTab !== 'json' && activeTab !== 'ascii') setActiveTab('json');
+    }
+  };
 
   const handleRecordGif = async () => {
     setIsRecordingGif(true);
@@ -317,56 +337,96 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        {/* Export Tabs */}
-        <div className="tab-nav">
+        {/* Level 1: Primary Category Nav */}
+        <div className="export-category-nav">
           <button
-            className={`tab-btn ${activeTab === 'gif' ? 'active' : ''}`}
-            onClick={() => setActiveTab('gif')}
-            title="Record and export animated GIF loop"
+            className={`export-category-btn ${activeCategory === 'media' ? 'active' : ''}`}
+            onClick={() => handleSelectCategory('media')}
           >
-            <Film size={11} style={{ display: 'inline', marginRight: '3px' }} />
-            GIF (.gif)
+            <Film size={13} />
+            MEDIA CAPTURE
           </button>
           <button
-            className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
-            onClick={() => setActiveTab('video')}
-            title="Record and export WebM / MP4 Video clip"
+            className={`export-category-btn ${activeCategory === 'code' ? 'active' : ''}`}
+            onClick={() => handleSelectCategory('code')}
           >
-            <Video size={11} style={{ display: 'inline', marginRight: '3px' }} />
-            Video (.mp4/.webm)
+            <Code2 size={13} />
+            CODE & EMBED
           </button>
           <button
-            className={`tab-btn ${activeTab === 'prompt' ? 'active' : ''}`}
-            onClick={() => setActiveTab('prompt')}
-            title="Export as standardized prompt for AI (Claude, GPT, Gemini, etc.)"
+            className={`export-category-btn ${activeCategory === 'data' ? 'active' : ''}`}
+            onClick={() => handleSelectCategory('data')}
           >
-            <Bot size={11} style={{ display: 'inline', marginRight: '3px' }} />
-            AI Prompt (.txt)
+            <Database size={13} />
+            RAW DATA
           </button>
-          <button
-            className={`tab-btn ${activeTab === 'astro' ? 'active' : ''}`}
-            onClick={() => setActiveTab('astro')}
-          >
-            Astro (.astro)
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'html' ? 'active' : ''}`}
-            onClick={() => setActiveTab('html')}
-          >
-            HTML (.html)
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'json' ? 'active' : ''}`}
-            onClick={() => setActiveTab('json')}
-          >
-            Preset (.json)
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'ascii' ? 'active' : ''}`}
-            onClick={() => setActiveTab('ascii')}
-          >
-            Frame (.txt)
-          </button>
+        </div>
+
+        {/* Level 2: Sub-Tabs Nav */}
+        <div className="export-subtab-nav">
+          {activeCategory === 'media' && (
+            <>
+              <button
+                className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
+                onClick={() => setActiveTab('gif')}
+              >
+                <Film size={11} />
+                GIF Animation (.gif)
+              </button>
+              <button
+                className={`export-subtab-btn ${activeTab === 'video' ? 'active' : ''}`}
+                onClick={() => setActiveTab('video')}
+              >
+                <Video size={11} />
+                Video Clip (.mp4 / .webm)
+              </button>
+            </>
+          )}
+
+          {activeCategory === 'code' && (
+            <>
+              <button
+                className={`export-subtab-btn ${activeTab === 'astro' ? 'active' : ''}`}
+                onClick={() => setActiveTab('astro')}
+              >
+                <FileCode size={11} />
+                Astro Component (.astro)
+              </button>
+              <button
+                className={`export-subtab-btn ${activeTab === 'html' ? 'active' : ''}`}
+                onClick={() => setActiveTab('html')}
+              >
+                <Code2 size={11} />
+                Standalone HTML (.html)
+              </button>
+              <button
+                className={`export-subtab-btn ${activeTab === 'prompt' ? 'active' : ''}`}
+                onClick={() => setActiveTab('prompt')}
+              >
+                <Bot size={11} />
+                AI Prompt (.txt)
+              </button>
+            </>
+          )}
+
+          {activeCategory === 'data' && (
+            <>
+              <button
+                className={`export-subtab-btn ${activeTab === 'json' ? 'active' : ''}`}
+                onClick={() => setActiveTab('json')}
+              >
+                <Database size={11} />
+                JSON Preset (.json)
+              </button>
+              <button
+                className={`export-subtab-btn ${activeTab === 'ascii' ? 'active' : ''}`}
+                onClick={() => setActiveTab('ascii')}
+              >
+                <FileText size={11} />
+                ASCII Frame (.txt)
+              </button>
+            </>
+          )}
         </div>
 
         {/* Code Content */}

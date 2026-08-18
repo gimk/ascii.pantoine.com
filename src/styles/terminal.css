@@ -831,14 +831,86 @@ input[type="number"] {
 }
 
 .modal-card {
-  width: 90%;
-  max-width: 650px;
-  max-height: 85vh;
+  width: min(94vw, 740px);
+  max-height: 88vh;
   background-color: var(--bg-panel);
   border: 1px solid var(--accent);
   display: flex;
   flex-direction: column;
   box-shadow: 0 0 30px var(--accent-glow);
+}
+
+.export-category-nav {
+  display: flex;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0;
+}
+
+.export-category-btn {
+  flex: 1;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.export-category-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-control-hover);
+}
+
+.export-category-btn.active {
+  color: var(--accent);
+  background: var(--bg-panel);
+  border-bottom-color: var(--accent);
+}
+
+.export-subtab-nav {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+}
+
+.export-subtab-btn {
+  padding: 4px 10px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.export-subtab-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.export-subtab-btn.active {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+  font-weight: 700;
 }
 
 .modal-header {
