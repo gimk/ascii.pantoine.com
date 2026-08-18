@@ -169,23 +169,15 @@ export async function exportAnimatedGif(
     ctx.textAlign = 'left';
 
     if (showGlow && gradientConfig) {
-      // Gradient glow bloom pass 1 (color1 glow)
-      ctx.fillStyle = gradientConfig.color1;
-      ctx.shadowColor = gradientConfig.color1;
-      ctx.shadowBlur = Math.round(3 * scale);
+      // Direct directional gradient bloom matching character gradient
+      ctx.save();
+      ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
+      ctx.fillStyle = textFillStyle;
       for (let row = 0; row < lines.length && row < rows; row++) {
         const line = lines[row];
         if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
       }
-
-      // Gradient glow bloom pass 2 (color2 wide bloom)
-      ctx.fillStyle = gradientConfig.color2;
-      ctx.shadowColor = gradientConfig.color2;
-      ctx.shadowBlur = Math.round(7 * scale);
-      for (let row = 0; row < lines.length && row < rows; row++) {
-        const line = lines[row];
-        if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
-      }
+      ctx.restore();
     } else if (showGlow) {
       ctx.shadowColor = text;
       ctx.shadowBlur = Math.round(3 * scale);

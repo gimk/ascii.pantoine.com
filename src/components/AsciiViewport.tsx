@@ -52,6 +52,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
+  const bloomPreRef = useRef<HTMLPreElement>(null);
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
   const latestFrameTextRef = useRef<string>('');
@@ -133,6 +134,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       if (preRef.current) {
         preRef.current.textContent = frameText;
       }
+      if (bloomPreRef.current) {
+        bloomPreRef.current.textContent = frameText;
+      }
       if (timeSpanRef.current) {
         timeSpanRef.current.textContent = `${time.toFixed(2)}s`;
       }
@@ -145,7 +149,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     getOptimalResolution,
   }));
 
-  // Initial layout & viewMode autoFit
   useEffect(() => {
     const timer = setTimeout(() => {
       autoFit();
@@ -153,7 +156,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return () => clearTimeout(timer);
   }, [viewMode, autoFit]);
 
-  // When autoRes is enabled, continuously adapt grid resolution on container resize / layout
   useEffect(() => {
     if (!autoRes || !containerRef.current || !onAutoResolutionChange) return;
     const el = containerRef.current;
@@ -167,7 +169,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
     };
 
-    // Run once on mount / activation
     runAutoRes();
 
     const observer = new ResizeObserver(() => {
@@ -228,16 +229,31 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       >
         {showScanlines && <div className="scanline-overlay" />}
         {showVignette && <div className="crt-vignette-overlay" />}
+        {/* Directional Phosphor Bloom Underlayer */}
+        {showGlow && (
+          <pre
+            ref={bloomPreRef}
+            aria-hidden="true"
+            className={`ascii-pre ascii-bloom-pre ${gradientConfig ? 'gradient-enabled' : 'single-glow-enabled'}`}
+            style={{
+              transform: `scale(${zoom})`,
+              fontSize: '10px',
+              ...(gradientConfig ? ({
+                '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
+              } as React.CSSProperties) : {}),
+            }}
+          />
+        )}
+
+        {/* Sharp Foreground ASCII Text */}
         <pre
           ref={preRef}
-          className={`ascii-pre ${showGlow ? 'glow-enabled' : 'glow-disabled'} ${gradientConfig ? 'gradient-enabled' : ''}`}
+          className={`ascii-pre ${gradientConfig ? 'gradient-enabled' : ''} ${showGlow && !gradientConfig ? 'single-glow-enabled' : ''}`}
           style={{
             transform: `scale(${zoom})`,
             fontSize: '10px',
             ...(gradientConfig ? ({
               '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
-              '--grad-color-1': gradientConfig.color1,
-              '--grad-color-2': gradientConfig.color2,
             } as React.CSSProperties) : {}),
           }}
         />
