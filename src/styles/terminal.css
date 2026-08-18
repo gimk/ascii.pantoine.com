@@ -322,11 +322,11 @@ html, body, #root {
   transition: background 0.15s ease;
 }
 
-.viewport-canvas-container:not(.glow-disabled) {
+.viewport-canvas-container.crt-glow-enabled {
   background: radial-gradient(circle at center, var(--accent-glow) 0%, transparent 70%);
 }
 
-.viewport-canvas-container.glow-disabled {
+.viewport-canvas-container:not(.crt-glow-enabled) {
   background: transparent !important;
 }
 

@@ -215,22 +215,23 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   const showScanlines = crtConfig ? crtConfig.scanlines : true;
-  const showGlow = crtConfig ? crtConfig.glow : false;
+  const showCrtGlow = crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
   const showVignette = crtConfig ? crtConfig.vignette : false;
+  const showPhosphorBloom = crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
 
   return (
     <div className="viewport-pane">
       {/* Visual Canvas Container */}
       <div
         ref={containerRef}
-        className={`viewport-canvas-container ${!showGlow ? 'glow-disabled' : ''}`}
+        className={`viewport-canvas-container ${showCrtGlow ? 'crt-glow-enabled' : ''}`}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
       >
         {showScanlines && <div className="scanline-overlay" />}
         {showVignette && <div className="crt-vignette-overlay" />}
-        {/* Directional Phosphor Bloom Underlayer */}
-        {showGlow && (
+        {/* Directional Phosphor Bloom Underlayer (Character Bloom) */}
+        {showPhosphorBloom && (
           <pre
             ref={bloomPreRef}
             aria-hidden="true"
@@ -248,7 +249,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         {/* Sharp Foreground ASCII Text */}
         <pre
           ref={preRef}
-          className={`ascii-pre ${gradientConfig ? 'gradient-enabled' : ''} ${showGlow && !gradientConfig ? 'single-glow-enabled' : ''}`}
+          className={`ascii-pre ${gradientConfig ? 'gradient-enabled' : ''} ${showPhosphorBloom && !gradientConfig ? 'single-glow-enabled' : ''}`}
           style={{
             transform: `scale(${zoom})`,
             fontSize: '10px',

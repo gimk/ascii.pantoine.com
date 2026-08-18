@@ -10,8 +10,10 @@ export interface TrailPoint {
 
 export interface CrtConfig {
   scanlines: boolean;
-  glow: boolean;
+  crtGlow: boolean; // centered ambient background radial glow
   vignette: boolean;
+  phosphorBloom: boolean; // character soft bloom
+  glow?: boolean; // legacy compatibility fallback
 }
 
 export interface ParticleConfig {

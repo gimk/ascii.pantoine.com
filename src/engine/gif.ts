@@ -81,8 +81,9 @@ export async function exportAnimatedGif(
   } = opts;
 
   const showScanlines = crtConfig ? crtConfig.scanlines : true;
-  const showGlow = crtConfig ? crtConfig.glow : false;
+  const showCrtGlow = crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
   const showVignette = crtConfig ? crtConfig.vignette : false;
+  const showPhosphorBloom = crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
 
   // Wait for fonts to be ready so canvas typography is crisp
   if (typeof document !== 'undefined' && document.fonts) {
@@ -163,12 +164,27 @@ export async function exportAnimatedGif(
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. Draw ASCII Text Lines (with CRT glow if enabled)
+    // Optional CRT Centered Ambient Background Glow
+    if (showCrtGlow) {
+      const ambientGlow = ctx.createRadialGradient(
+        width / 2, height / 2, 0,
+        width / 2, height / 2, Math.max(width, height) * 0.7
+      );
+      const glowColor = gradientConfig
+        ? `${gradientConfig.color1}33`
+        : (customThemeColor ? `${customThemeColor}33` : 'rgba(0, 255, 102, 0.2)');
+      ambientGlow.addColorStop(0, glowColor);
+      ambientGlow.addColorStop(1, 'transparent');
+      ctx.fillStyle = ambientGlow;
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    // 2. Draw ASCII Text Lines (with Phosphor Bloom if enabled)
     ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', monospace`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
 
-    if (showGlow && gradientConfig) {
+    if (showPhosphorBloom && gradientConfig) {
       // Direct directional gradient bloom matching character gradient
       ctx.save();
       ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
@@ -178,7 +194,7 @@ export async function exportAnimatedGif(
         if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
       }
       ctx.restore();
-    } else if (showGlow) {
+    } else if (showPhosphorBloom) {
       ctx.shadowColor = text;
       ctx.shadowBlur = Math.round(3 * scale);
     } else {

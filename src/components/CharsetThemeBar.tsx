@@ -435,6 +435,7 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
           <Tv size={12} style={{ color: 'var(--accent)' }} />
         </div>
 
+        {/* 1. CRT Scanlines */}
         <div className="control-row">
           <span className="control-label">CRT Scanlines</span>
           <button
@@ -445,16 +446,18 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
           </button>
         </div>
 
+        {/* 2. CRT Glow (Centered Background Ambient Glow) */}
         <div className="control-row">
-          <span className="control-label">Phosphor Glow Bloom</span>
+          <span className="control-label">CRT Glow</span>
           <button
-            className={`btn btn-sm ${crtConfig.glow ? 'btn-primary' : ''}`}
-            onClick={() => updateCrt('glow', !crtConfig.glow)}
+            className={`btn btn-sm ${crtConfig.crtGlow ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('crtGlow', !crtConfig.crtGlow)}
           >
-            {crtConfig.glow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+            {crtConfig.crtGlow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
           </button>
         </div>
 
+        {/* 3. CRT Corner Vignette */}
         <div className="control-row">
           <span className="control-label">CRT Corner Vignette</span>
           <button
@@ -462,6 +465,17 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
             onClick={() => updateCrt('vignette', !crtConfig.vignette)}
           >
             {crtConfig.vignette ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+          </button>
+        </div>
+
+        {/* 4. Phosphor Bloom (Character Soft Blur) */}
+        <div className="control-row">
+          <span className="control-label">Phosphor Bloom</span>
+          <button
+            className={`btn btn-sm ${crtConfig.phosphorBloom ? 'btn-primary' : ''}`}
+            onClick={() => updateCrt('phosphorBloom', !crtConfig.phosphorBloom)}
+          >
+            {crtConfig.phosphorBloom ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
           </button>
         </div>
       </div>

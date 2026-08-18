@@ -120,8 +120,9 @@ export const App: React.FC = () => {
   // CRT Display Effects
   const [crtConfig, setCrtConfig] = useState<CrtConfig>(() => ({
     scanlines: sharedState?.crtConfig?.scanlines ?? true,
-    glow: sharedState?.crtConfig?.glow ?? false,
+    crtGlow: sharedState?.crtConfig?.crtGlow ?? false,
     vignette: sharedState?.crtConfig?.vignette ?? false,
+    phosphorBloom: sharedState?.crtConfig?.phosphorBloom ?? false,
   }));
 
   // Particles & Interaction
@@ -456,7 +457,12 @@ export const App: React.FC = () => {
     }
 
     if (preset.crtConfig) {
-      setCrtConfig({ ...preset.crtConfig });
+      setCrtConfig({
+        scanlines: preset.crtConfig.scanlines ?? true,
+        crtGlow: preset.crtConfig.crtGlow ?? (preset.crtConfig.glow ?? false),
+        vignette: preset.crtConfig.vignette ?? false,
+        phosphorBloom: preset.crtConfig.phosphorBloom ?? (preset.crtConfig.glow ?? false),
+      });
     }
 
     if (preset.densityCharset) {
