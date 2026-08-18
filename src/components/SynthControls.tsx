@@ -322,7 +322,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                   </button>
                 </div>
                 {renderSlider('Time Speed', 'timeSpeed', 0.0, 3.0, 0.05)}
-                {renderSlider('Aspect Compensation', 'aspectRatio', 0.5, 1.5, 0.025)}
+                {renderSlider('Aspect Compensation', 'aspectRatio', 0.1, 2.0, 0.01)}
                 {renderSlider('Contrast', 'contrast', 0.2, 3.0, 0.1)}
                 {renderSlider('Brightness Bias', 'bias', -1.0, 1.0, 0.05)}
 

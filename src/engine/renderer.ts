@@ -12,8 +12,10 @@ export const CHARSETS = [
   { id: 'contrast', name: 'High Contrast', chars: '  ..::##@@' },
 ];
 
+let cachedLines: string[] = [];
+
 /**
- * Computes a single full ASCII frame
+ * Computes a single full ASCII frame with zero per-row array allocations
  */
 export function renderAsciiFrame(ctx: RenderContext): string {
   const {
@@ -46,14 +48,15 @@ export function renderAsciiFrame(ctx: RenderContext): string {
     }
   }
 
-  // Pre-allocate row arrays
-  const lines: string[] = new Array(rows);
-  const grid: string[][] = new Array(rows);
+  if (cachedLines.length !== rows) {
+    cachedLines = new Array(rows);
+  }
+
   const numTrails = trailPoints.length;
 
   for (let y = 0; y < rows; y++) {
-    const rowChars: string[] = new Array(cols);
     const dy = y - cy;
+    let rowStr = '';
 
     for (let x = 0; x < cols; x++) {
       const dx = (x - cx) * aspectRatio;
@@ -111,28 +114,24 @@ export function renderAsciiFrame(ctx: RenderContext): string {
       if (charIndex < 0) charIndex = 0;
       else if (charIndex >= densityLength) charIndex = densityLength - 1;
 
-      rowChars[x] = density[charIndex] || ' ';
-    }
-    grid[y] = rowChars;
-  }
+      let cellChar = density[charIndex] || ' ';
 
-  // Stamp active trail point characters on top
-  if (interactiveInfluence && numTrails > 0) {
-    for (let i = 0; i < numTrails; i++) {
-      const pt = trailPoints[i];
-      const px = Math.floor(pt.x);
-      const py = Math.floor(pt.y);
-      if (px >= 0 && px < cols && py >= 0 && py < rows) {
-        if (Math.random() < pt.age * 0.6) {
-          grid[py][px] = pt.char;
+      // Stamp active trail point characters on top
+      if (interactiveInfluence && numTrails > 0) {
+        for (let i = 0; i < numTrails; i++) {
+          const pt = trailPoints[i];
+          if (Math.floor(pt.x) === x && Math.floor(pt.y) === y) {
+            if (Math.random() < pt.age * 0.6) {
+              cellChar = pt.char;
+            }
+          }
         }
       }
+
+      rowStr += cellChar;
     }
+    cachedLines[y] = rowStr;
   }
 
-  for (let y = 0; y < rows; y++) {
-    lines[y] = grid[y].join('');
-  }
-
-  return lines.join('\n');
+  return cachedLines.join('\n');
 }

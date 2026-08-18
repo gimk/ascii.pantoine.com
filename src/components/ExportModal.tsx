@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Copy, Download, Check } from 'lucide-react';
-import { generateAstroComponent, generateStandaloneHtml } from '../engine/exporter';
-import { WaveParams, ParticleConfig } from '../types/ascii';
+import { X, Copy, Download, Check, Bot } from 'lucide-react';
+import { generateAstroComponent, generateStandaloneHtml, generateAiPrompt } from '../engine/exporter';
+import { WaveParams, ParticleConfig, OptimizeConfig } from '../types/ascii';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -12,13 +12,15 @@ interface ExportModalProps {
   customCode?: string;
   customPrepare?: string;
   particleConfig: ParticleConfig;
+  optimizeConfig?: OptimizeConfig;
   cols: number;
   rows: number;
   density: string;
   currentAsciiFrame: string;
+  initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii';
 }
 
-type ExportTab = 'astro' | 'html' | 'json' | 'ascii';
+type ExportTab = 'prompt' | 'astro' | 'html' | 'json' | 'ascii';
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
@@ -29,12 +31,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   customCode,
   customPrepare,
   particleConfig,
+  optimizeConfig,
   cols,
   rows,
   density,
   currentAsciiFrame,
+  initialTab = 'prompt',
 }) => {
-  const [activeTab, setActiveTab] = useState<ExportTab>('astro');
+  const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
   const [copied, setCopied] = useState<boolean>(false);
   const [customBaseName, setCustomBaseName] = useState<string>('');
 
@@ -45,6 +49,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setCustomBaseName(defaultBaseName);
   }, [name, isOpen]);
 
+  React.useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
   if (!isOpen) return null;
 
   const exportCfg = {
@@ -54,14 +64,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     customCode,
     customPrepare,
     particleConfig,
+    optimizeConfig,
     cols,
     rows,
     density,
-    fps: 30,
+    fps: optimizeConfig?.targetFps !== undefined ? optimizeConfig.targetFps : 60,
   };
 
   const getExtension = (): string => {
     switch (activeTab) {
+      case 'prompt': return '-ai-prompt.txt';
       case 'astro': return '.astro';
       case 'html': return '.html';
       case 'json': return '.json';
@@ -73,6 +85,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const getExportContent = (): { text: string; mimeType: string } => {
     switch (activeTab) {
+      case 'prompt':
+        return {
+          text: generateAiPrompt(exportCfg),
+          mimeType: 'text/plain',
+        };
       case 'astro':
         return {
           text: generateAstroComponent(exportCfg),
@@ -141,28 +158,36 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         {/* Export Tabs */}
         <div className="tab-nav">
           <button
+            className={`tab-btn ${activeTab === 'prompt' ? 'active' : ''}`}
+            onClick={() => setActiveTab('prompt')}
+            title="Export as standardized prompt for AI (Claude, GPT, Gemini, etc.)"
+          >
+            <Bot size={11} style={{ display: 'inline', marginRight: '3px' }} />
+            AI Prompt (.txt)
+          </button>
+          <button
             className={`tab-btn ${activeTab === 'astro' ? 'active' : ''}`}
             onClick={() => setActiveTab('astro')}
           >
-            Astro Component (.astro)
+            Astro (.astro)
           </button>
           <button
             className={`tab-btn ${activeTab === 'html' ? 'active' : ''}`}
             onClick={() => setActiveTab('html')}
           >
-            Standalone HTML (.html)
+            HTML (.html)
           </button>
           <button
             className={`tab-btn ${activeTab === 'json' ? 'active' : ''}`}
             onClick={() => setActiveTab('json')}
           >
-            Preset JSON (.json)
+            Preset (.json)
           </button>
           <button
             className={`tab-btn ${activeTab === 'ascii' ? 'active' : ''}`}
             onClick={() => setActiveTab('ascii')}
           >
-            Current Frame (.txt)
+            Frame (.txt)
           </button>
         </div>
 
@@ -206,7 +231,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
           <textarea
             className="code-editor-area"
-            style={{ minHeight: '280px', fontFamily: 'var(--font-mono)' }}
+            style={{
+              minHeight: '280px',
+              fontFamily: 'var(--font-mono)',
+              fontVariantLigatures: 'none',
+              WebkitFontVariantLigatures: 'none',
+              fontFeatureSettings: '"liga" 0, "calt" 0, "dlig" 0',
+            }}
             value={text}
             readOnly
           />

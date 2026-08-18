@@ -1,12 +1,15 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
+export interface AsciiViewportHandle {
+  setFrame: (frameText: string, time: number, fps: number) => void;
+  getFrameText: () => string;
+}
+
 interface AsciiViewportProps {
-  asciiOutput: string;
   cols: number;
   rows: number;
-  fps: number;
-  time: number;
+  onInitResolution?: (cols: number, rows: number, zoom: number) => void;
   isPlaying: boolean;
   onTogglePlay: () => void;
   onResetTime: () => void;
@@ -18,12 +21,10 @@ interface AsciiViewportProps {
   targetFps?: number;
 }
 
-export const AsciiViewport: React.FC<AsciiViewportProps> = ({
-  asciiOutput,
+export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
   cols,
   rows,
-  fps,
-  time,
+  onInitResolution,
   isPlaying,
   onTogglePlay,
   onResetTime,
@@ -33,43 +34,128 @@ export const AsciiViewport: React.FC<AsciiViewportProps> = ({
   presetName,
   isEdited,
   targetFps,
-}) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
+  const timeSpanRef = useRef<HTMLElement>(null);
+  const fpsSpanRef = useRef<HTMLElement>(null);
+  const latestFrameTextRef = useRef<string>('');
+  const hasInitializedResolution = useRef<boolean>(false);
+
   const [zoom, setZoom] = useState<number>(1.0);
   const [copied, setCopied] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
-  // Auto-fit zoom based on viewport dimensions
+  useImperativeHandle(ref, () => ({
+    setFrame: (frameText: string, time: number, fps: number) => {
+      latestFrameTextRef.current = frameText;
+      if (preRef.current) {
+        preRef.current.textContent = frameText;
+      }
+      if (timeSpanRef.current) {
+        timeSpanRef.current.textContent = `${time.toFixed(2)}s`;
+      }
+      if (fpsSpanRef.current) {
+        fpsSpanRef.current.textContent = `${fps}`;
+      }
+    },
+    getFrameText: () => latestFrameTextRef.current || '',
+  }));
+
+  // Auto-fit zoom on demand based on current cols and rows
   const autoFit = useCallback(() => {
     if (!containerRef.current) return;
     const { clientWidth, clientHeight } = containerRef.current;
-    const neededWidth = cols * 6.5;
-    const neededHeight = rows * 10.5;
+    if (clientWidth <= 0 || clientHeight <= 0) return;
 
-    const scaleX = (clientWidth * 0.9) / neededWidth;
-    const scaleY = (clientHeight * 0.9) / neededHeight;
-    const fitScale = Math.max(0.4, Math.min(2.5, Math.min(scaleX, scaleY)));
+    // Font character metrics at 10px font-size with 1.0 line-height:
+    const charWidth = 6.015;
+    const charHeight = 10.0;
+    const unscaledWidth = cols * charWidth;
+    const unscaledHeight = rows * charHeight;
+
+    const pad = 16;
+    const availableWidth = Math.max(10, clientWidth - pad);
+    const availableHeight = Math.max(10, clientHeight - pad);
+
+    const scaleX = availableWidth / unscaledWidth;
+    const scaleY = availableHeight / unscaledHeight;
+    const fitScale = Math.max(0.2, Math.min(5.0, Math.min(scaleX, scaleY)));
     setZoom(Number(fitScale.toFixed(2)));
   }, [cols, rows]);
 
-  // Initial auto-fit only once on mount
-  const hasInitialFit = useRef(false);
+  // Once on page load: inspect the viewfinder ratio, find the best matching
+  // (cols, rows) pair that matches that aspect ratio, and zoom to fit the space
   useEffect(() => {
-    if (!hasInitialFit.current && containerRef.current) {
-      hasInitialFit.current = true;
-      autoFit();
-    }
-  }, [autoFit]);
+    if (hasInitializedResolution.current) return;
 
-  // Window resize handler
-  useEffect(() => {
-    const handleResize = () => {
-      // Keep existing zoom on window resize unless requested
+    const measureAndInit = () => {
+      if (hasInitializedResolution.current || !containerRef.current) return;
+      const { clientWidth, clientHeight } = containerRef.current;
+      if (clientWidth <= 0 || clientHeight <= 0) {
+        requestAnimationFrame(measureAndInit);
+        return;
+      }
+
+      hasInitializedResolution.current = true;
+
+      const charWidth = 6.015;
+      const charHeight = 10.0;
+      const pad = 20;
+      const availableWidth = Math.max(80, clientWidth - pad);
+      const availableHeight = Math.max(60, clientHeight - pad);
+      const windowRatio = availableWidth / availableHeight;
+      const charAspectCompensation = charHeight / charWidth; // ~1.6625
+
+      // Target density based on container dimensions
+      const targetCells = Math.max(2000, Math.min(7500, Math.round((availableWidth * availableHeight) / 95)));
+
+      let bestCols = 100;
+      let bestRows = 50;
+      let minScore = Infinity;
+
+      // Candidate row counts to explore
+      const minRows = Math.max(20, Math.min(35, Math.floor(availableHeight / 20)));
+      const maxRows = Math.min(80, Math.max(45, Math.floor(availableHeight / 8)));
+
+      for (let r = minRows; r <= maxRows; r++) {
+        let c = Math.round(r * windowRatio * charAspectCompensation);
+        if (c % 2 !== 0) c += 1;
+        if (c < 36 || c > 180) continue;
+
+        const gridVisualWidth = c * charWidth;
+        const gridVisualHeight = r * charHeight;
+        const gridRatio = gridVisualWidth / gridVisualHeight;
+
+        // Ratio error relative to available window ratio
+        const ratioMismatch = Math.abs(gridRatio - windowRatio) / windowRatio;
+
+        // Density preference (steers towards comfortable visual cell density)
+        const cellCount = c * r;
+        const densityPenalty = Math.abs(cellCount - targetCells) / targetCells * 0.08;
+
+        const score = ratioMismatch + densityPenalty;
+
+        if (score < minScore) {
+          minScore = score;
+          bestCols = c;
+          bestRows = r;
+        }
+      }
+
+      // Calculate the zoom factor to fit the entire space
+      const scaleX = availableWidth / (bestCols * charWidth);
+      const scaleY = availableHeight / (bestRows * charHeight);
+      const fitZoom = Number(Math.max(0.3, Math.min(3.5, Math.min(scaleX, scaleY))).toFixed(2));
+
+      setZoom(fitZoom);
+      if (onInitResolution) {
+        onInitResolution(bestCols, bestRows, fitZoom);
+      }
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+
+    measureAndInit();
+  }, [onInitResolution]);
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const targetElement = preRef.current || containerRef.current;
@@ -94,7 +180,8 @@ export const AsciiViewport: React.FC<AsciiViewportProps> = ({
   };
 
   const copySnapshot = () => {
-    navigator.clipboard.writeText(asciiOutput);
+    const text = latestFrameTextRef.current || preRef.current?.textContent || '';
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -127,9 +214,7 @@ export const AsciiViewport: React.FC<AsciiViewportProps> = ({
             transform: `scale(${zoom})`,
             fontSize: '10px',
           }}
-        >
-          {asciiOutput}
-        </pre>
+        />
       </div>
 
       {/* Bottom Timeline and Diagnostics Bar */}
@@ -154,10 +239,10 @@ export const AsciiViewport: React.FC<AsciiViewportProps> = ({
           </button>
 
           <span className="status-tag">
-            FPS: <strong>{fps}</strong>{targetFps && targetFps > 0 ? ` (${targetFps})` : ''}
+            FPS: <strong ref={fpsSpanRef}>0</strong>{targetFps && targetFps > 0 ? ` (${targetFps})` : ''}
           </span>
           <span className="status-tag">
-            T: <strong>{time.toFixed(2)}s</strong>
+            T: <strong ref={timeSpanRef}>0.00s</strong>
           </span>
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
@@ -209,4 +294,4 @@ export const AsciiViewport: React.FC<AsciiViewportProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -24,13 +24,14 @@ import {
   DEFAULT_PARTICLE_CONFIG,
 } from './engine/particles';
 
-import { AsciiViewport } from './components/AsciiViewport';
+import { AsciiViewport, AsciiViewportHandle } from './components/AsciiViewport';
 import { SynthControls } from './components/SynthControls';
 import { PresetSelector } from './components/PresetSelector';
 import { ParticleControls } from './components/ParticleControls';
 import { OptimizeControls } from './components/OptimizeControls';
 import { CharsetThemeBar } from './components/CharsetThemeBar';
 import { ExportModal } from './components/ExportModal';
+import { generateRandomAnimation } from './engine/randomizer';
 
 import {
   Sliders,
@@ -41,6 +42,8 @@ import {
   Undo2,
   Redo2,
   Cpu,
+  Dices,
+  Bot,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_PRESETS_KEY = 'ascii_builder_user_presets';
@@ -87,15 +90,16 @@ export const App: React.FC = () => {
     idleThrottle: false,
   });
 
-  // Playback & Frame rendering
+  // Playback state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [time, setTime] = useState<number>(0);
-  const [fps, setFps] = useState<number>(30);
-  const [asciiOutput, setAsciiOutput] = useState<string>('');
+  const viewportRef = useRef<AsciiViewportHandle>(null);
+  const currentFpsRef = useRef<number>(30);
 
   // UI state
   const [activeTab, setActiveTab] = useState<'presets' | 'synth' | 'particles' | 'optimize' | 'visuals'>('presets');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
+  const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii'>('prompt');
+  const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
   const [userPresets, setUserPresets] = useState<Preset[]>([]);
 
   // Undo / Redo History Stack
@@ -269,6 +273,34 @@ export const App: React.FC = () => {
     pushHistorySnapshot(waveParams, pureFormula, activePreset.name);
   };
 
+  // Fun Randomizer Handler
+  const handleRandomize = useCallback(() => {
+    setIsRandomizing(true);
+    setTimeout(() => setIsRandomizing(false), 400);
+
+    const randomized = generateRandomAnimation();
+    setWaveParams(randomized.params);
+    setTheme(randomized.theme);
+    setDensity(randomized.density);
+
+    const formula = generateFormulaCode(randomized.params);
+    setCustomCode(formula);
+    setCustomPrepare('');
+    setPresetType('parametric');
+    recompileCustomCode(formula, '');
+
+    const randomPreset: Preset = {
+      id: `random-${Date.now()}`,
+      name: randomized.name,
+      description: `Procedurally generated ${randomized.archetype}`,
+      type: 'parametric',
+      params: { ...randomized.params },
+      densityCharset: randomized.density,
+    };
+    setActivePreset(randomPreset);
+    pushHistorySnapshot(randomized.params, formula, randomized.name);
+  }, [recompileCustomCode, pushHistorySnapshot]);
+
   // Save Custom User Preset
   const handleSaveCustomPreset = (name: string) => {
     const newPreset: Preset = {
@@ -364,8 +396,7 @@ export const App: React.FC = () => {
       frameCountRef.current++;
       const timeSinceLastFpsCalc = timestamp - fpsTimerRef.current;
       if (timeSinceLastFpsCalc >= 500) {
-        const measuredFps = Math.round((frameCountRef.current * 1000) / timeSinceLastFpsCalc);
-        setFps(measuredFps);
+        currentFpsRef.current = Math.round((frameCountRef.current * 1000) / timeSinceLastFpsCalc);
         frameCountRef.current = 0;
         fpsTimerRef.current = timestamp;
       }
@@ -373,7 +404,6 @@ export const App: React.FC = () => {
       if (isPlaying) {
         const delta = lastTimeRef.current ? Math.min(0.1, (timestamp - lastTimeRef.current) / 1000) : 0.016;
         timeRef.current += delta * (waveParams.timeSpeed || 1.0);
-        setTime(timeRef.current);
         lastTimeRef.current = timestamp;
 
         // Vector field sampling function
@@ -432,9 +462,13 @@ export const App: React.FC = () => {
               delta
             );
           }
-          while (pts.length > 0 && pts[0].age <= 0) {
-            pts.shift();
+          let aliveCount = 0;
+          for (let i = 0; i < pts.length; i++) {
+            if (pts[i].age > 0) {
+              pts[aliveCount++] = pts[i];
+            }
           }
+          pts.length = aliveCount;
         }
       } else {
         lastTimeRef.current = timestamp;
@@ -455,7 +489,7 @@ export const App: React.FC = () => {
         luminanceBoost: particleConfig.luminanceBoost,
       });
 
-      setAsciiOutput(frameText);
+      viewportRef.current?.setFrame(frameText, timeRef.current, currentFpsRef.current);
       animFrameId = requestAnimationFrame(loop);
     };
 
@@ -495,11 +529,14 @@ export const App: React.FC = () => {
       } else if (e.code === 'Space' && !isInput) {
         e.preventDefault();
         setIsPlaying((p) => !p);
+      } else if (e.key.toLowerCase() === 'r' && !isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        handleRandomize();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, handleRandomize]);
 
   return (
     <div className="app-container">
@@ -515,8 +552,17 @@ export const App: React.FC = () => {
           <span className="brand-badge">v1.0</span>
         </div>
 
-        {/* Header Tools: Undo, Redo, Export */}
+        {/* Header Tools: Randomize, Undo, Redo, Export */}
         <div className="header-actions">
+          <button
+            className="btn btn-randomize btn-sm"
+            onClick={handleRandomize}
+            title="Randomize animation, theme & charset (Press R)"
+          >
+            <Dices size={13} className={isRandomizing ? 'dice-spin' : ''} />
+            <span>RANDOMIZE</span>
+          </button>
+
           <button
             className="btn btn-sm header-btn-undo"
             onClick={handleUndo}
@@ -539,10 +585,25 @@ export const App: React.FC = () => {
           </button>
 
           <button
+            className="btn btn-sm"
+            onClick={() => {
+              setExportInitialTab('prompt');
+              setIsExportOpen(true);
+            }}
+            title="Export as standardized prompt for AI (Claude, ChatGPT, Gemini, etc.)"
+            style={{ marginLeft: '4px' }}
+          >
+            <Bot size={12} />
+            AI PROMPT
+          </button>
+
+          <button
             className="btn btn-primary btn-sm"
-            onClick={() => setIsExportOpen(true)}
+            onClick={() => {
+              setExportInitialTab('astro');
+              setIsExportOpen(true);
+            }}
             title="Export to Astro or Standalone HTML"
-            style={{ marginLeft: '6px' }}
           >
             <Share2 size={12} />
             EXPORT CODE
@@ -554,20 +615,20 @@ export const App: React.FC = () => {
       <div className="main-workspace">
         {/* Left / Center Viewport */}
         <AsciiViewport
-          asciiOutput={asciiOutput}
+          ref={viewportRef}
           cols={cols}
           rows={rows}
-          fps={fps}
-          time={time}
+          onInitResolution={(initCols, initRows) => {
+            setCols(initCols);
+            setRows(initRows);
+          }}
           isPlaying={isPlaying}
           onTogglePlay={() => setIsPlaying((p) => !p)}
           onResetTime={() => {
             timeRef.current = 0;
-            setTime(0);
           }}
           onStepFrame={() => {
             timeRef.current += 0.03;
-            setTime(timeRef.current);
           }}
           onMouseMove={handleMouseMove}
           onClick={handleClick}
@@ -691,10 +752,12 @@ export const App: React.FC = () => {
         customCode={customCode}
         customPrepare={customPrepare}
         particleConfig={particleConfig}
+        optimizeConfig={optimizeConfig}
         cols={cols}
         rows={rows}
         density={density}
-        currentAsciiFrame={asciiOutput}
+        currentAsciiFrame={viewportRef.current?.getFrameText() || ''}
+        initialTab={exportInitialTab}
       />
     </div>
   );

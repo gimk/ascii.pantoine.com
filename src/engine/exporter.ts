@@ -1,4 +1,4 @@
-import { WaveParams, ParticleConfig } from '../types/ascii';
+import { WaveParams, ParticleConfig, OptimizeConfig } from '../types/ascii';
 
 interface ExportConfig {
   name: string;
@@ -7,6 +7,7 @@ interface ExportConfig {
   customCode?: string;
   customPrepare?: string;
   particleConfig?: ParticleConfig;
+  optimizeConfig?: OptimizeConfig;
   cols: number;
   rows: number;
   density: string;
@@ -343,4 +344,186 @@ export function generateStandaloneHtml(cfg: ExportConfig): string {
   </script>
 </body>
 </html>`;
+}
+
+export function generateAiPrompt(cfg: ExportConfig): string {
+  const renderFormula =
+    cfg.type === 'custom' && cfg.customCode
+      ? cfg.customCode
+      : `// Parametric Wave Synthesizer
+  let val = 0;
+  const radialAmp = ${cfg.params?.radialAmp ?? 0.6};
+  if (radialAmp !== 0) {
+    val += Math.sin(dist * ${cfg.params?.radialFreq ?? 0.12} - time * ${cfg.params?.radialSpeed ?? 1.0}) * radialAmp;
+  }
+  const xAmp = ${cfg.params?.xAmp ?? 0.2};
+  if (xAmp !== 0) {
+    val += Math.cos(dx * ${cfg.params?.xFreq ?? 0.08} + time * ${cfg.params?.xSpeed ?? 0.5}) * xAmp;
+  }
+  const yAmp = ${cfg.params?.yAmp ?? 0.2};
+  if (yAmp !== 0) {
+    val += Math.sin(dy * ${cfg.params?.yFreq ?? 0.08} + time * ${cfg.params?.ySpeed ?? 0.5}) * yAmp;
+  }
+  const spiralAmp = ${cfg.params?.spiralAmp ?? 0.0};
+  if (spiralAmp !== 0) {
+    val += Math.sin(angle * ${cfg.params?.spiralArms ?? 3} - time * ${cfg.params?.spiralSpeed ?? 2.0} + dist * 0.1) * spiralAmp;
+  }
+  const tunnelAmp = ${cfg.params?.tunnelAmp ?? 0.0};
+  if (tunnelAmp !== 0) {
+    const safeDist = Math.max(0.01, dist + 4.0);
+    val += Math.sin(${cfg.params?.tunnelPower ?? 40} / safeDist - time * ${cfg.params?.tunnelSpeed ?? 1.5}) * tunnelAmp;
+  }
+  const dualEmitterAmp = ${cfg.params?.dualEmitterAmp ?? 0.0};
+  if (dualEmitterAmp !== 0) {
+    const d1 = Math.hypot(dx - 25, dy - 10);
+    const d2 = Math.hypot(dx + 25, dy + 10);
+    val += ((Math.sin(d1 * 0.15 - time * 2.0) + Math.sin(d2 * 0.15 - time * 2.0)) * 0.5) * dualEmitterAmp;
+  }
+  return val * ${cfg.params?.contrast ?? 1.0} + ${cfg.params?.bias ?? 0.0};`;
+
+  const prepareSnippet = cfg.customPrepare
+    ? `\n--- OPTIONAL FRAME PREPARATION (ctx.prepare) ---\n${cfg.customPrepare}\n`
+    : '';
+
+  const flowStrength = cfg.particleConfig?.flowStrength ?? 0.9;
+  const swirlStrength = cfg.particleConfig?.swirlStrength ?? 0.6;
+  const drag = cfg.particleConfig?.drag ?? 0.93;
+  const lifespan = cfg.particleConfig?.lifespan ?? 1.8;
+  const trailChars = cfg.particleConfig?.trailChars ?? '@#%*+=-:. ';
+  const burstCount = cfg.particleConfig?.burstCount ?? 18;
+  const burstSpeed = cfg.particleConfig?.burstSpeed ?? 1.4;
+
+  const targetFps = cfg.optimizeConfig?.targetFps ?? cfg.fps ?? 60;
+  const targetFpsDesc = targetFps === 0 ? 'Uncapped / VSync (~60-120 FPS)' : `${targetFps} FPS (Frame interval: ${(1000 / targetFps).toFixed(1)}ms)`;
+  const pauseWhenHidden = cfg.optimizeConfig?.pauseWhenHidden ?? true;
+  const idleThrottle = cfg.optimizeConfig?.idleThrottle ?? false;
+
+  return `================================================================================
+TASK: REPRODUCE THIS EXACT INTERACTIVE ASCII ANIMATION
+================================================================================
+
+You are an expert creative technologist, shader developer, and front-end engineer.
+Your task is to reproduce this exact interactive mathematical ASCII wave animation for the user.
+
+IMPORTANT INSTRUCTION FOR THE AI:
+Before generating the final implementation code, ASK THE USER where and in what environment they want to implement this animation (for example: React component, Next.js, Astro, Vue, Svelte, standalone HTML/JS/CSS, Canvas/WebGL, or Terminal script), and if they have any specific layout, container, or styling requirements. Once the user replies with their target environment, generate the complete, self-contained, drop-in code.
+
+All mathematical formulas, physics constants, performance optimization settings, ASCII density mapping, and typography rules are specified below.
+
+================================================================================
+1. ANIMATION SPECIFICATION & OPTIMIZATION SETTINGS
+================================================================================
+- Animation Name: "${cfg.name}"
+- Grid Resolution: ${cfg.cols} columns × ${cfg.rows} rows (${cfg.cols * cfg.rows} total cells)
+- Target Framerate: ${targetFpsDesc}
+- Smart Throttling (Pause when Hidden): ${pauseWhenHidden ? 'ENABLED (Pause requestAnimationFrame loop when document.hidden or off-screen)' : 'DISABLED'}
+- Smart Throttling (Idle Throttle): ${idleThrottle ? 'ENABLED (Drop framerate to 12 FPS when user is idle for >4 seconds)' : 'DISABLED'}
+- Active Density Charset: "${cfg.density}" (Length: ${cfg.density.length} glyphs, sorted dark to light)
+- Aspect Compensation Factor (Global Dynamics): ${cfg.params?.aspectRatio ?? 0.55}
+- Theme Aesthetic: Phosphor terminal glow (#00ff66 or custom accent) on deep dark (#050505) background
+- Interactivity: Cursor movement illuminates the wave field; mouse clicks trigger radial particle bursts.
+
+================================================================================
+2. EXACT MATHEMATICAL FORMULA & EVALUATION
+================================================================================
+For each cell at integer coordinates (x, y) with center (cx = cols / 2, cy = rows / 2) at time (t in seconds):
+
+Geometry setup:
+  dx = (x - cx) * ${cfg.params?.aspectRatio ?? 0.55}
+  dy = y - cy
+  dist = Math.hypot(dx, dy)
+  angle = Math.atan2(dy, dx)
+
+Core evaluation formula:
+--------------------------------------------------------------------------------
+${renderFormula}
+--------------------------------------------------------------------------------
+${prepareSnippet}
+Parameter breakdown:
+- Time Speed Multiplier: ${cfg.params?.timeSpeed ?? 1.0}
+- Aspect Compensation (Global Dynamics): ${cfg.params?.aspectRatio ?? 0.55}
+- Contrast: ${cfg.params?.contrast ?? 1.0} | Bias: ${cfg.params?.bias ?? 0.0}
+- Radial Wave: Amp=${cfg.params?.radialAmp ?? 0}, Freq=${cfg.params?.radialFreq ?? 0}, Speed=${cfg.params?.radialSpeed ?? 0}
+- Harmonic Ripple: Amp=${cfg.params?.radial2Amp ?? 0}, Freq=${cfg.params?.radial2Freq ?? 0}, Speed=${cfg.params?.radial2Speed ?? 0}
+- Directional X: Amp=${cfg.params?.xAmp ?? 0}, Freq=${cfg.params?.xFreq ?? 0}, Speed=${cfg.params?.xSpeed ?? 0}
+- Directional Y: Amp=${cfg.params?.yAmp ?? 0}, Freq=${cfg.params?.yFreq ?? 0}, Speed=${cfg.params?.ySpeed ?? 0}
+- Diagonal (X+Y): Amp=${cfg.params?.diagAmp ?? 0}, Freq=${cfg.params?.diagFreq ?? 0}, Speed=${cfg.params?.diagSpeed ?? 0}
+- Spiral Vortex: Amp=${cfg.params?.spiralAmp ?? 0}, Arms=${cfg.params?.spiralArms ?? 0}, Speed=${cfg.params?.spiralSpeed ?? 0}, Twist=${cfg.params?.spiralTwist ?? 0}
+- Depth Tunnel: Amp=${cfg.params?.tunnelAmp ?? 0}, Power=${cfg.params?.tunnelPower ?? 0}, Speed=${cfg.params?.tunnelSpeed ?? 0}
+- Concentric Rings: Amp=${cfg.params?.ringsAmp ?? 0}, Radius=${cfg.params?.ringsRadius ?? 0}, Speed=${cfg.params?.ringsSpeed ?? 0}, Count=${cfg.params?.ringsCount ?? 0}
+- Dual Emitters: Amp=${cfg.params?.dualEmitterAmp ?? 0}, Spacing=${cfg.params?.dualEmitterSpacing ?? 0}, Freq=${cfg.params?.dualEmitterFreq ?? 0}, Speed=${cfg.params?.dualEmitterSpeed ?? 0}
+- Starfield Sparkle: Intensity=${cfg.params?.starfieldIntensity ?? 0}
+
+================================================================================
+3. PARTICLE PHYSICS & MOUSE TRAIL
+================================================================================
+- Flow Field Strength: ${flowStrength}
+- Swirl Force Strength: ${swirlStrength}
+- Particle Drag Factor: ${drag}
+- Lifespan: ${lifespan}s
+- Burst Count on Click: ${burstCount}
+- Burst Speed: ${burstSpeed}
+- Trail Glyphs: ${JSON.stringify(trailChars)}
+
+Gradient-based vector forces on particle (px, py) at time t:
+  fRight = sampleField(px + 0.5, py, t)
+  fLeft  = sampleField(px - 0.5, py, t)
+  fDown  = sampleField(px, py + 0.5, t)
+  fUp    = sampleField(px, py - 0.5, t)
+  gradX  = (fRight - fLeft)
+  gradY  = (fDown - fUp)
+  forceX = -gradX * ${(flowStrength * 0.4).toFixed(3)}
+  forceY = -gradY * ${(flowStrength * 0.4).toFixed(3)}
+  swirlX = -gradY * ${(swirlStrength * 0.3).toFixed(3)}
+  swirlY =  gradX * ${(swirlStrength * 0.3).toFixed(3)}
+  vx = (vx + (forceX + swirlX) * dtFactor) * drag
+  vy = (vy + (forceY + swirlY) * dtFactor) * drag
+  px += vx * dtFactor
+  py += vy * dtFactor
+
+================================================================================
+4. ASCII TERMINAL RENDERING, CSS & PERFORMANCE CONSTRAINTS
+================================================================================
+1. Aspect Compensation (Global Dynamics):
+   - Monospace font characters are rectangular rather than square (standard monospace font cells are ~6px wide × 10px high, representing a ~0.55-0.6 ratio).
+   - To compensate for character cell geometry or achieve custom geometric stretching, the animation uses the user-configured Aspect Compensation factor from Global Dynamics (active value: ${cfg.params?.aspectRatio ?? 0.55}).
+   - Always scale horizontal distance by this exact parameter when computing distance and angle:
+       dx = (x - cx) * ${cfg.params?.aspectRatio ?? 0.55}
+       dy = y - cy
+       dist = Math.hypot(dx, dy)
+       angle = Math.atan2(dy, dx)
+
+2. Density & Luminance Mapping:
+   - Normalize mathematical value to [0.0, 1.0]: normalized = (val + 1.0) * 0.5 + trailInfluence
+   - Map to charset index: charIndex = Math.floor(normalized * charset.length)
+   - Clamp bounds: charIndex = Math.max(0, Math.min(charset.length - 1, charIndex))
+   - Resulting glyph: charset[charIndex]
+
+3. Font & CSS Rules (MANDATORY):
+   - Font stack: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace
+   - Mandatory CSS properties:
+     white-space: pre;
+     line-height: 1.0;
+     letter-spacing: 0px;
+     font-variant-ligatures: none;
+     -webkit-font-variant-ligatures: none;
+     font-feature-settings: "liga" 0, "calt" 0;
+   - Disabling ligatures is strictly required so combinations like '->', '==', or '//' do NOT merge into single glyphs and ruin column alignment.
+
+4. Performance & Runtime Optimization:
+   - Target Framerate: Implement FPS limiter for ${targetFpsDesc}.
+   ${pauseWhenHidden ? '- Pause when Inactive: Use IntersectionObserver and document.hidden to pause requestAnimationFrame when the element or tab is not visible (0% CPU idle).' : ''}
+   ${idleThrottle ? '- Idle Throttling: When no user interaction (mousemove/touch) has occurred for >4s, throttle to 12 FPS to conserve device battery.' : ''}
+   - Single Buffer DOM Writes: Render the complete grid into a single string joined by '\\n' (e.g. lines.join('\\n')) and update <pre>.textContent once per frame. Do NOT create separate DOM nodes per character.
+
+================================================================================
+5. INSTRUCTIONS FOR THE AI ASSISTANT
+================================================================================
+1. STEP 1: Ask the user which framework or environment they want this implemented in (e.g. React/Next.js, Vue, Svelte, Astro, HTML/JS/CSS, or Terminal script).
+2. STEP 2: Upon user confirmation, generate the complete, self-contained, drop-in code:
+   - Faithfully implement the mathematical formula, harmonics, and physics specified above.
+   - Implement the configured resolution (${cfg.cols}x${cfg.rows}) and framerate limiter (${targetFpsDesc}).
+   - Implement container zoom / auto-fitting so it scales seamlessly to fill its viewport.
+================================================================================
+`;
 }
