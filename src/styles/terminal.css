@@ -319,6 +319,11 @@ html, body, #root {
   position: relative;
   cursor: crosshair;
   background: radial-gradient(circle at center, var(--accent-glow) 0%, transparent 70%);
+  transition: background 0.15s ease;
+}
+
+.viewport-canvas-container.glow-disabled {
+  background: transparent !important;
 }
 
 .ascii-pre {
@@ -328,9 +333,9 @@ html, body, #root {
   letter-spacing: 0px;
   word-spacing: 0px;
   color: var(--text-primary);
-  text-shadow: 0 0 2px var(--accent-glow);
+  text-shadow: 0 0 3px var(--accent), 0 0 8px var(--accent-glow);
   transform-origin: center center;
-  transition: transform 0.05s ease;
+  transition: transform 0.05s ease, text-shadow 0.15s ease;
   pointer-events: none;
   font-variant-ligatures: none !important;
   -webkit-font-variant-ligatures: none !important;

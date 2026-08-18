@@ -220,7 +220,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       {/* Visual Canvas Container */}
       <div
         ref={containerRef}
-        className="viewport-canvas-container"
+        className={`viewport-canvas-container ${!showGlow ? 'glow-disabled' : ''}`}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
       >

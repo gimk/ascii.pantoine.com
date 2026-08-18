@@ -4,7 +4,6 @@ import {
   Preset,
   PhosphorTheme,
   TrailPoint,
-  RippleImpulse,
   ParticleConfig,
   OptimizeConfig,
   CrtConfig,
@@ -123,12 +122,11 @@ export const App: React.FC = () => {
     vignette: sharedState?.crtConfig?.vignette ?? false,
   }));
 
-  // Particles, Ripples & Interaction
+  // Particles & Interaction
   const [particleConfig, setParticleConfig] = useState<ParticleConfig>(
     sharedState?.particleConfig || DEFAULT_PARTICLE_CONFIG
   );
   const trailPointsRef = useRef<TrailPoint[]>([]);
-  const ripplesRef = useRef<RippleImpulse[]>([]);
 
   // Optimization & Performance Config
   const [optimizeConfig, setOptimizeConfig] = useState<OptimizeConfig>(
@@ -477,23 +475,6 @@ export const App: React.FC = () => {
 
   const handleClick = (x: number, y: number) => {
     lastInteractionTimeRef.current = Date.now();
-
-    // Spawn interactive fluid wave ripple
-    if (particleConfig.ripplesEnabled !== false) {
-      ripplesRef.current.push({
-        x,
-        y,
-        startTime: timeRef.current,
-        maxAge: 2.2,
-        amplitude: (particleConfig.rippleStrength ?? 1.0) * 0.85,
-        frequency: 0.28,
-        speed: 7.5,
-      });
-      if (ripplesRef.current.length > 8) {
-        ripplesRef.current.shift();
-      }
-    }
-
     if (!particleConfig.enabled) return;
     const particles = generateClickParticles(
       x,
@@ -620,12 +601,6 @@ export const App: React.FC = () => {
           }
           pts.length = aliveCount;
         }
-
-        // Prune expired fluid ripples
-        if (ripplesRef.current.length > 0) {
-          const nowT = timeRef.current;
-          ripplesRef.current = ripplesRef.current.filter((r) => nowT - r.startTime < r.maxAge);
-        }
       } else {
         lastTimeRef.current = timestamp;
       }
@@ -637,7 +612,6 @@ export const App: React.FC = () => {
         time: timeRef.current,
         density,
         trailPoints: trailPointsRef.current,
-        ripples: ripplesRef.current,
         waveParams,
         customRenderFn: presetType === 'custom' ? compiledFnRef.current : undefined,
         prepareFn: presetType === 'custom' ? prepareFnRef.current : undefined,
@@ -970,7 +944,6 @@ export const App: React.FC = () => {
                 onChange={setParticleConfig}
                 onClearParticles={() => {
                   trailPointsRef.current = [];
-                  ripplesRef.current = [];
                 }}
               />
             )}

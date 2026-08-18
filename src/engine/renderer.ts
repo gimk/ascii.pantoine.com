@@ -65,16 +65,6 @@ export function renderAsciiFrame(ctx: RenderContext): string {
   const numTrails = trailPoints.length;
   const hasTrails = interactiveInfluence && numTrails > 0;
 
-  // Filter active fluid wave ripples
-  const activeRipples = (ctx.ripples && ctx.ripples.length > 0)
-    ? ctx.ripples.filter((r) => {
-        const dt = time - r.startTime;
-        return dt >= 0 && dt < r.maxAge;
-      })
-    : [];
-  const numRipples = activeRipples.length;
-  const hasRipples = numRipples > 0;
-
   // Spatial Particle Pre-Rasterization Buffer
   if (hasTrails) {
     if (trailInfluenceBuffer.length !== totalCells) {
@@ -162,25 +152,6 @@ export function renderAsciiFrame(ctx: RenderContext): string {
           angle,
           waveParams
         );
-      }
-
-      // Dynamic Interactive Wave Ripples
-      if (hasRipples) {
-        for (let r = 0; r < numRipples; r++) {
-          const rip = activeRipples[r];
-          const dt = time - rip.startTime;
-          const decay = 1 - dt / rip.maxAge;
-          const ripWaveRadius = dt * rip.speed;
-          const rdx = (x - rip.x) * aspectRatio;
-          const rdy = y - rip.y;
-          const rdist = Math.hypot(rdx, rdy);
-          const distDiff = Math.abs(rdist - ripWaveRadius);
-
-          if (distDiff < 10) {
-            const envelope = 1 - distDiff / 10;
-            animValue += Math.sin((rdist - ripWaveRadius) * rip.frequency) * rip.amplitude * decay * envelope * 0.8;
-          }
-        }
       }
 
       // O(1) particle influence lookup from pre-rasterized spatial buffer
