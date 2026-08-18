@@ -340,8 +340,12 @@ export const App: React.FC = () => {
       }
 
       document.body.style.setProperty('--text-gradient', `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`);
+      document.body.style.setProperty('--grad-color-1', gradientConfig.color1);
+      document.body.style.setProperty('--grad-color-2', gradientConfig.color2);
     } else if (customThemeColor) {
       document.body.style.removeProperty('--text-gradient');
+      document.body.style.removeProperty('--grad-color-1');
+      document.body.style.removeProperty('--grad-color-2');
       let cleaned = customThemeColor.replace('#', '').trim();
       if (cleaned.length === 3) {
         cleaned = cleaned.split('').map((c) => c + c).join('');
@@ -358,10 +362,10 @@ export const App: React.FC = () => {
 
       if (!isLightMode) {
         // Dark CRT mode: very dark tint of the selected color
-        const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(b * 0.035 + 2))})`;
-        const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(b * 0.06 + 5))})`;
-        const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(b * 0.11 + 9))})`;
-        const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(b * 0.16 + 14))})`;
+        const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))})`;
+        const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))})`;
+        const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))})`;
+        const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))})`;
         const borderColor = `rgb(${Math.max(24, Math.round(r * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))})`;
         const textMuted = `rgb(${Math.round(r * 0.65 + 30)}, ${Math.round(g * 0.65 + 30)}, ${Math.round(b * 0.65 + 30)})`;
         const textDim = `rgb(${Math.round(r * 0.35 + 15)}, ${Math.round(g * 0.35 + 15)}, ${Math.round(b * 0.35 + 15)})`;
@@ -414,6 +418,8 @@ export const App: React.FC = () => {
         '--accent',
         '--accent-glow',
         '--text-gradient',
+        '--grad-color-1',
+        '--grad-color-2',
       ];
       vars.forEach((v) => document.body.style.removeProperty(v));
     }

@@ -234,7 +234,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           style={{
             transform: `scale(${zoom})`,
             fontSize: '10px',
-            ...(gradientConfig ? ({ '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})` } as React.CSSProperties) : {}),
+            ...(gradientConfig ? ({
+              '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
+              '--grad-color-1': gradientConfig.color1,
+              '--grad-color-2': gradientConfig.color2,
+            } as React.CSSProperties) : {}),
           }}
         />
       </div>

@@ -360,8 +360,14 @@ html, body, #root {
   color: transparent !important;
 }
 
+.ascii-pre.gradient-enabled.glow-enabled {
+  text-shadow: none !important;
+  filter: drop-shadow(0 0 2.5px var(--grad-color-1, var(--accent))) drop-shadow(0 0 7px var(--grad-color-2, var(--accent-glow))) !important;
+}
+
 .ascii-pre.glow-disabled {
   text-shadow: none !important;
+  filter: none !important;
 }
 
 /* Angle Dial Knob */

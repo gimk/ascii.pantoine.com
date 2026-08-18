@@ -164,18 +164,37 @@ export async function exportAnimatedGif(
     ctx.fillRect(0, 0, width, height);
 
     // 2. Draw ASCII Text Lines (with CRT glow if enabled)
-    ctx.fillStyle = textFillStyle;
     ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', monospace`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
 
-    if (showGlow) {
+    if (showGlow && gradientConfig) {
+      // Gradient glow bloom pass 1 (color1 glow)
+      ctx.fillStyle = gradientConfig.color1;
+      ctx.shadowColor = gradientConfig.color1;
+      ctx.shadowBlur = Math.round(3 * scale);
+      for (let row = 0; row < lines.length && row < rows; row++) {
+        const line = lines[row];
+        if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
+      }
+
+      // Gradient glow bloom pass 2 (color2 wide bloom)
+      ctx.fillStyle = gradientConfig.color2;
+      ctx.shadowColor = gradientConfig.color2;
+      ctx.shadowBlur = Math.round(7 * scale);
+      for (let row = 0; row < lines.length && row < rows; row++) {
+        const line = lines[row];
+        if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
+      }
+    } else if (showGlow) {
       ctx.shadowColor = text;
       ctx.shadowBlur = Math.round(3 * scale);
     } else {
       ctx.shadowBlur = 0;
     }
 
+    // Main sharp text render with linear gradient
+    ctx.fillStyle = textFillStyle;
     for (let row = 0; row < lines.length && row < rows; row++) {
       const line = lines[row];
       if (line) {
