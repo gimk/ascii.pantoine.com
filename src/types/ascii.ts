@@ -162,6 +162,88 @@ export interface RenderContext {
   luminanceBoost?: number;
 }
 
+export type AppMode = 'synth' | 'model';
+
+export type ModelShadingMode = 'shaded' | 'wireframe' | 'depth' | 'normals' | 'outline' | 'points';
+
+export type BuiltinModelId =
+  | 'torus-knot'
+  | 'teapot'
+  | 'skull'
+  | 'dna'
+  | 'spaceship'
+  | 'crystal'
+  | 'suzanne'
+  | 'saturn'
+  | 'dome'
+  | 'mobius'
+  | 'sphere'
+  | 'cube'
+  | 'cylinder';
+
+export interface ModelConfig {
+  sourceType: 'preset' | 'file';
+  modelId: string;
+  fileName?: string;
+  fileData?: string; // base64 or text representation for serialization
+  fileType?: 'obj' | 'stl' | 'gltf' | 'glb' | 'ply';
+  scale: number;
+  scaleX: number;
+  scaleY: number;
+  scaleZ: number;
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  normalizeSize: boolean;
+  autoCenter: boolean;
+  flatShading: boolean;
+  wireframe: boolean;
+  doubleSided: boolean;
+  invertNormals: boolean;
+  polyStats?: { vertices: number; faces: number };
+}
+
+export interface ModelViewConfig {
+  shadingMode: ModelShadingMode;
+  autoRotate: boolean;
+  autoRotateSpeedX: number;
+  autoRotateSpeedY: number;
+  autoRotateSpeedZ: number;
+  manualRotationX: number;
+  manualRotationY: number;
+  manualRotationZ: number;
+  wobbleSpeed: number;
+  wobbleAmp: number;
+  lightAngleX: number;
+  lightAngleY: number;
+  lightIntensity: number;
+  ambientLight: number;
+  specularIntensity: number;
+  contrast: number;
+  brightness: number;
+  invert: boolean;
+  edgeThreshold: number;
+  edgeWeight: number;
+  cameraDistance: number;
+  fov: number;
+  isOrthographic: boolean;
+}
+
+export interface ModelPreset {
+  id: string;
+  name: string;
+  description: string;
+  modelConfig: ModelConfig;
+  viewConfig: ModelViewConfig;
+  theme?: PhosphorTheme;
+  customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
+  densityCharset?: string;
+  optimizeConfig?: OptimizeConfig;
+  crtConfig?: CrtConfig;
+  author?: string;
+}
+
 export interface OptimizeConfig {
   targetFps: number; // 0 for uncapped, or 15, 20, 24, 30, 45, 60
   pauseWhenHidden: boolean; // Pause when tab is inactive

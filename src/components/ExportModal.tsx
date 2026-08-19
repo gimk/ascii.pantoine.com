@@ -3,7 +3,18 @@ import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw, C
 import { generateAstroComponent, generateStandaloneHtml, generateAiPrompt } from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
-import { WaveParams, ParticleConfig, OptimizeConfig, PhosphorTheme, CrtConfig, PhosphorGradient } from '../types/ascii';
+import * as THREE from 'three';
+import {
+  WaveParams,
+  ParticleConfig,
+  OptimizeConfig,
+  PhosphorTheme,
+  CrtConfig,
+  PhosphorGradient,
+  AppMode,
+  ModelConfig,
+  ModelViewConfig,
+} from '../types/ascii';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -24,6 +35,10 @@ interface ExportModalProps {
   gradientConfig?: PhosphorGradient | null;
   crtConfig?: CrtConfig;
   initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
+  appMode?: AppMode;
+  modelConfig?: ModelConfig;
+  modelViewConfig?: ModelViewConfig;
+  geometry?: THREE.BufferGeometry;
 }
 
 type ExportTab = 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
@@ -54,6 +69,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   gradientConfig,
   crtConfig,
   initialTab = 'prompt',
+  appMode = 'synth',
+  modelConfig,
+  modelViewConfig,
+  geometry,
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
   const [activeCategory, setActiveCategory] = useState<ExportCategory>(getCategoryForTab(initialTab));
@@ -174,6 +193,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           duration: gifDuration,
           fps: gifFps,
           scale: gifScale,
+          appMode,
+          modelConfig,
+          modelViewConfig,
+          geometry,
         },
         (progress, frame, total) => {
           setRecordProgressGif(progress);
@@ -218,6 +241,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           fps: videoFps,
           scale: videoScale,
           preferredFormat: videoFormat,
+          appMode,
+          modelConfig,
+          modelViewConfig,
+          geometry,
         },
         (progress, frame, total) => {
           setRecordProgressVideo(progress);

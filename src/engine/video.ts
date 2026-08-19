@@ -1,10 +1,22 @@
-import { WaveParams, PhosphorTheme, CustomRenderContext, CrtConfig, PhosphorGradient } from '../types/ascii';
+import * as THREE from 'three';
+import {
+  WaveParams,
+  PhosphorTheme,
+  CustomRenderContext,
+  CrtConfig,
+  PhosphorGradient,
+  AppMode,
+  ModelConfig,
+  ModelViewConfig,
+} from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
+import { renderModelAsciiFrame } from './modelRenderer';
+import { DEFAULT_WAVE_PARAMS } from './math';
 
 export interface VideoExportOptions {
   name: string;
   type: 'parametric' | 'custom';
-  params: WaveParams;
+  params?: WaveParams;
   customCode?: string;
   customPrepare?: string;
   density: string;
@@ -18,6 +30,10 @@ export interface VideoExportOptions {
   fps?: number; // Framerate (default: 30 fps)
   scale?: number; // Render resolution multiplier (1.0, 1.5, 2.0)
   preferredFormat?: 'mp4' | 'webm' | 'auto';
+  appMode?: AppMode;
+  modelConfig?: ModelConfig;
+  modelViewConfig?: ModelViewConfig;
+  geometry?: THREE.BufferGeometry;
 }
 
 export interface VideoExportResult {
@@ -213,21 +229,36 @@ export async function exportVideoAnimation(
   recorder.start();
 
   // Step-by-step frame rendering driven by real clock intervals
-  for (let i = 0; i < totalFrames; i++) {
-    const t = i * (1 / fps) * (params.timeSpeed || 1.0);
+  const timeSpeed = (params?.timeSpeed || 1.0);
 
-    const frameText = renderAsciiFrame({
-      cols,
-      rows,
-      time: t,
-      density,
-      trailPoints: [],
-      waveParams: params,
-      customRenderFn,
-      prepareFn,
-      customContext,
-      interactiveInfluence: false,
-    });
+  for (let i = 0; i < totalFrames; i++) {
+    const t = i * (1 / fps) * timeSpeed;
+
+    let frameText = '';
+    if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
+      frameText = renderModelAsciiFrame({
+        cols,
+        rows,
+        time: t,
+        density,
+        geometry: opts.geometry,
+        modelConfig: opts.modelConfig,
+        viewConfig: opts.modelViewConfig,
+      });
+    } else {
+      frameText = renderAsciiFrame({
+        cols,
+        rows,
+        time: t,
+        density,
+        trailPoints: [],
+        waveParams: params || DEFAULT_WAVE_PARAMS,
+        customRenderFn,
+        prepareFn,
+        customContext,
+        interactiveInfluence: false,
+      });
+    }
 
     const lines = frameText.split('\n');
 

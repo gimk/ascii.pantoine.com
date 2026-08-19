@@ -5,12 +5,16 @@ import {
   OptimizeConfig,
   CrtConfig,
   PhosphorGradient,
+  AppMode,
+  ModelConfig,
+  ModelViewConfig,
 } from '../types/ascii';
 
 export interface FullAnimationState {
+  appMode?: AppMode;
   name: string;
-  type: 'parametric' | 'custom';
-  params: WaveParams;
+  type?: 'parametric' | 'custom';
+  params?: WaveParams;
   customCode?: string;
   customPrepare?: string;
   density: string;
@@ -21,9 +25,11 @@ export interface FullAnimationState {
   rows: number;
   autoRes?: boolean;
   lockResolution?: boolean;
-  particleConfig: ParticleConfig;
+  particleConfig?: ParticleConfig;
   optimizeConfig: OptimizeConfig;
   crtConfig?: CrtConfig;
+  modelConfig?: ModelConfig;
+  modelViewConfig?: ModelViewConfig;
 }
 
 // UTF-8 safe base64 encoding/decoding helper

@@ -1,11 +1,23 @@
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
-import { WaveParams, PhosphorTheme, CustomRenderContext, CrtConfig, PhosphorGradient } from '../types/ascii';
+import * as THREE from 'three';
+import {
+  WaveParams,
+  PhosphorTheme,
+  CustomRenderContext,
+  CrtConfig,
+  PhosphorGradient,
+  AppMode,
+  ModelConfig,
+  ModelViewConfig,
+} from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
+import { renderModelAsciiFrame } from './modelRenderer';
+import { DEFAULT_WAVE_PARAMS } from './math';
 
 export interface GifExportOptions {
   name: string;
   type: 'parametric' | 'custom';
-  params: WaveParams;
+  params?: WaveParams;
   customCode?: string;
   customPrepare?: string;
   density: string;
@@ -18,6 +30,10 @@ export interface GifExportOptions {
   duration?: number; // Duration in seconds (default: 2.0s)
   fps?: number; // Framerate (default: 15 fps)
   scale?: number; // Render resolution multiplier (1.0 or 1.5)
+  appMode?: AppMode;
+  modelConfig?: ModelConfig;
+  modelViewConfig?: ModelViewConfig;
+  geometry?: THREE.BufferGeometry;
 }
 
 const THEME_COLORS: Record<PhosphorTheme, { bg: string; text: string }> = {
@@ -141,22 +157,36 @@ export async function exportAnimatedGif(
   }
 
   const gif = GIFEncoder();
+  const timeSpeed = (params?.timeSpeed || 1.0);
 
   for (let i = 0; i < totalFrames; i++) {
-    const t = i * (1 / fps) * (params.timeSpeed || 1.0);
+    const t = i * (1 / fps) * timeSpeed;
 
-    const frameText = renderAsciiFrame({
-      cols,
-      rows,
-      time: t,
-      density,
-      trailPoints: [],
-      waveParams: params,
-      customRenderFn,
-      prepareFn,
-      customContext,
-      interactiveInfluence: false,
-    });
+    let frameText = '';
+    if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
+      frameText = renderModelAsciiFrame({
+        cols,
+        rows,
+        time: t,
+        density,
+        geometry: opts.geometry,
+        modelConfig: opts.modelConfig,
+        viewConfig: opts.modelViewConfig,
+      });
+    } else {
+      frameText = renderAsciiFrame({
+        cols,
+        rows,
+        time: t,
+        density,
+        trailPoints: [],
+        waveParams: params || DEFAULT_WAVE_PARAMS,
+        customRenderFn,
+        prepareFn,
+        customContext,
+        interactiveInfluence: false,
+      });
+    }
 
     const lines = frameText.split('\n');
 

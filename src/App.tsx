@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import * as THREE from 'three';
 import {
   WaveParams,
   Preset,
@@ -8,6 +9,11 @@ import {
   OptimizeConfig,
   CrtConfig,
   PhosphorGradient,
+  AppMode,
+  ModelConfig,
+  ModelViewConfig,
+  ModelPreset,
+  BuiltinModelId,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -18,6 +24,13 @@ import {
   checkFormulaDivergence,
 } from './engine/math';
 import { PRESETS } from './engine/presets';
+import {
+  DEFAULT_MODEL_CONFIG,
+  DEFAULT_MODEL_VIEW_CONFIG,
+  MODEL_PRESETS,
+} from './engine/modelPresets';
+import { getBuiltinGeometry, getGeometryStats } from './engine/modelLoader';
+import { renderModelAsciiFrame } from './engine/modelRenderer';
 import { CHARSETS, renderAsciiFrame } from './engine/renderer';
 import {
   createTrailPoint,
@@ -32,6 +45,9 @@ import { PresetSelector } from './components/PresetSelector';
 import { ParticleControls } from './components/ParticleControls';
 import { OptimizeControls } from './components/OptimizeControls';
 import { CharsetThemeBar } from './components/CharsetThemeBar';
+import { ModelPresetSelector } from './components/ModelPresetSelector';
+import { ModelSettingsControls } from './components/ModelSettingsControls';
+import { ModelViewControls } from './components/ModelViewControls';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { generateRandomAnimation } from './engine/randomizer';
@@ -53,9 +69,12 @@ import {
   Cpu,
   Dices,
   Bot,
+  Box,
+  Eye,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_PRESETS_KEY = 'ascii_builder_user_presets';
+const LOCAL_STORAGE_MODEL_PRESETS_KEY = 'ascii_builder_user_model_presets';
 
 interface HistorySnapshot {
   waveParams: WaveParams;
@@ -70,9 +89,12 @@ export const App: React.FC = () => {
   const initialUrlData = useMemo(() => decodeShareFromUrl(), []);
   const sharedState = initialUrlData.state;
 
-  // Preset & Configuration State
+  // App Mode State: 'synth' (Wave Synthesizer) or 'model' (3D Model Visualizer)
+  const [appMode, setAppMode] = useState<AppMode>(sharedState?.appMode || 'synth');
+
+  // Preset & Configuration State for Synth Mode
   const [activePreset, setActivePreset] = useState<Preset>(() => {
-    if (sharedState?.name) {
+    if (sharedState?.name && sharedState.appMode !== 'model') {
       const match = PRESETS.find((p) => p.name.toLowerCase() === sharedState.name.toLowerCase());
       if (match) return match;
       return {
@@ -80,7 +102,7 @@ export const App: React.FC = () => {
         name: sharedState.name,
         description: 'Shared ASCII animation',
         type: sharedState.type || 'parametric',
-        params: sharedState.params,
+        params: sharedState.params || DEFAULT_WAVE_PARAMS,
         customCode: sharedState.customCode,
         customPrepare: sharedState.customPrepare,
         densityCharset: sharedState.density,
@@ -108,6 +130,37 @@ export const App: React.FC = () => {
   const compiledFnRef = useRef<any>(null);
   const prepareFnRef = useRef<any>(null);
   const customContextRef = useRef<Record<string, any>>({});
+
+  // 3D Model State for Model Mode
+  const [activeModelPreset, setActiveModelPreset] = useState<ModelPreset>(() => {
+    if (sharedState?.modelConfig?.modelId) {
+      const match = MODEL_PRESETS.find(
+        (p) => p.modelConfig.modelId === sharedState.modelConfig?.modelId
+      );
+      if (match) return match;
+    }
+    return MODEL_PRESETS[0];
+  });
+
+  const [modelConfig, setModelConfig] = useState<ModelConfig>(() => ({
+    ...DEFAULT_MODEL_CONFIG,
+    ...(sharedState?.modelConfig || MODEL_PRESETS[0].modelConfig || {}),
+  }));
+
+  const [modelViewConfig, setModelViewConfig] = useState<ModelViewConfig>(() => ({
+    ...DEFAULT_MODEL_VIEW_CONFIG,
+    ...(sharedState?.modelViewConfig || MODEL_PRESETS[0].viewConfig || {}),
+  }));
+
+  const [userModelPresets, setUserModelPresets] = useState<ModelPreset[]>([]);
+  const [modelTab, setModelTab] = useState<'presets' | 'model' | 'view' | 'optimize' | 'visuals'>('presets');
+
+  // Active Three.js geometry reference
+  const currentGeometryRef = useRef<THREE.BufferGeometry>(
+    getBuiltinGeometry(
+      ((sharedState?.modelConfig?.modelId as BuiltinModelId) || 'torus-knot')
+    )
+  );
 
   // Display & Resolution
   const [cols, setCols] = useState<number>(sharedState?.cols || 100);
@@ -273,6 +326,10 @@ export const App: React.FC = () => {
       const saved = localStorage.getItem(LOCAL_STORAGE_PRESETS_KEY);
       if (saved) {
         setUserPresets(JSON.parse(saved));
+      }
+      const savedModels = localStorage.getItem(LOCAL_STORAGE_MODEL_PRESETS_KEY);
+      if (savedModels) {
+        setUserModelPresets(JSON.parse(savedModels));
       }
     } catch {
       // LocalStorage error ignored
@@ -536,10 +593,141 @@ export const App: React.FC = () => {
     pushHistorySnapshot(waveParams, pureFormula, activePreset.name, '', 'parametric');
   };
 
+  // Handle 3D Model Preset Selection
+  const handleSelectModelPreset = useCallback((preset: ModelPreset) => {
+    setActiveModelPreset(preset);
+    setModelConfig({ ...preset.modelConfig });
+    setModelViewConfig({ ...preset.viewConfig });
+
+    if (preset.modelConfig.sourceType === 'preset') {
+      currentGeometryRef.current = getBuiltinGeometry(
+        preset.modelConfig.modelId as BuiltinModelId
+      );
+    }
+
+    if (preset.theme) {
+      setTheme(preset.theme);
+    }
+    if (preset.customThemeColor !== undefined) {
+      setCustomThemeColor(preset.customThemeColor || '');
+    } else {
+      setCustomThemeColor('');
+    }
+    if (preset.gradientConfig !== undefined) {
+      setGradientConfig(preset.gradientConfig || null);
+    } else {
+      setGradientConfig(null);
+    }
+    if (preset.densityCharset) {
+      setDensity(preset.densityCharset);
+    }
+    if (preset.crtConfig) {
+      setCrtConfig({
+        scanlines: preset.crtConfig.scanlines ?? true,
+        crtGlow: preset.crtConfig.crtGlow ?? (preset.crtConfig.glow ?? false),
+        vignette: preset.crtConfig.vignette ?? false,
+        phosphorBloom: preset.crtConfig.phosphorBloom ?? (preset.crtConfig.glow ?? false),
+      });
+    }
+    if (preset.optimizeConfig) {
+      setOptimizeConfig({ ...preset.optimizeConfig });
+    }
+  }, []);
+
+  // Save Custom User Model Preset
+  const handleSaveCustomModelPreset = (name: string) => {
+    const newPreset: ModelPreset = {
+      id: `user-model-${Date.now()}`,
+      name,
+      description: `Custom 3D model preset created on ${new Date().toLocaleDateString()}`,
+      modelConfig: { ...modelConfig },
+      viewConfig: { ...modelViewConfig },
+      theme,
+      customThemeColor: customThemeColor || undefined,
+      densityCharset: density,
+      optimizeConfig: { ...optimizeConfig },
+      crtConfig: { ...crtConfig },
+    };
+
+    const updated = [newPreset, ...userModelPresets];
+    setUserModelPresets(updated);
+    setActiveModelPreset(newPreset);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_MODEL_PRESETS_KEY, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleDeleteUserModelPreset = (id: string) => {
+    const updated = userModelPresets.filter((p) => p.id !== id);
+    setUserModelPresets(updated);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_MODEL_PRESETS_KEY, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleLoadCustomGeometry = (
+    geometry: THREE.BufferGeometry,
+    fileName: string,
+    fileType: 'obj' | 'stl' | 'gltf' | 'glb' | 'ply',
+    stats: { vertices: number; faces: number }
+  ) => {
+    currentGeometryRef.current = geometry;
+    setModelConfig((prev) => ({
+      ...prev,
+      sourceType: 'file',
+      fileName,
+      fileType,
+      polyStats: stats,
+    }));
+  };
+
+  const handleSelectBuiltinGeometry = (id: BuiltinModelId) => {
+    const geo = getBuiltinGeometry(id);
+    currentGeometryRef.current = geo;
+    const stats = getGeometryStats(geo);
+    setModelConfig((prev) => ({
+      ...prev,
+      sourceType: 'preset',
+      modelId: id,
+      fileName: undefined,
+      polyStats: stats,
+    }));
+  };
+
+  const handleOrbitRotate = useCallback((deltaPitch: number, deltaYaw: number) => {
+    setModelViewConfig((prev) => ({
+      ...prev,
+      manualRotationX: prev.manualRotationX + deltaPitch,
+      manualRotationY: prev.manualRotationY + deltaYaw,
+    }));
+  }, []);
+
+  const handleWheelZoom = useCallback((deltaZoom: number) => {
+    setModelViewConfig((prev) => ({
+      ...prev,
+      cameraDistance: Math.max(1.2, Math.min(8.0, prev.cameraDistance + deltaZoom)),
+    }));
+  }, []);
+
+  const handleResetModelRotation = useCallback(() => {
+    setModelViewConfig((prev) => ({
+      ...prev,
+      manualRotationX: 0,
+      manualRotationY: 0,
+      manualRotationZ: 0,
+    }));
+  }, []);
+
   // Fun Randomizer Handler
   const handleRandomize = useCallback(() => {
     setIsRandomizing(true);
     setTimeout(() => setIsRandomizing(false), 400);
+
+    if (appMode === 'model') {
+      const randomPreset = MODEL_PRESETS[Math.floor(Math.random() * MODEL_PRESETS.length)];
+      handleSelectModelPreset(randomPreset);
+      return;
+    }
 
     const randomized = generateRandomAnimation();
     setWaveParams(randomized.params);
@@ -563,7 +751,7 @@ export const App: React.FC = () => {
     };
     setActivePreset(randomPreset);
     pushHistorySnapshot(randomized.params, formula, randomized.name, '', 'parametric');
-  }, [recompileCustomCode, pushHistorySnapshot]);
+  }, [appMode, handleSelectModelPreset, recompileCustomCode, pushHistorySnapshot]);
 
   // Save Custom User Preset
   const handleSaveCustomPreset = (name: string) => {
@@ -748,19 +936,32 @@ export const App: React.FC = () => {
       }
 
       // Render ASCII frame
-      const frameText = renderAsciiFrame({
-        cols,
-        rows,
-        time: timeRef.current,
-        density,
-        trailPoints: trailPointsRef.current,
-        waveParams,
-        customRenderFn: presetType === 'custom' ? compiledFnRef.current : undefined,
-        prepareFn: presetType === 'custom' ? prepareFnRef.current : undefined,
-        customContext: customContextRef.current,
-        interactiveInfluence: particleConfig.enabled,
-        luminanceBoost: particleConfig.luminanceBoost,
-      });
+      let frameText = '';
+      if (appMode === 'model') {
+        frameText = renderModelAsciiFrame({
+          cols,
+          rows,
+          time: timeRef.current,
+          density,
+          geometry: currentGeometryRef.current,
+          modelConfig,
+          viewConfig: modelViewConfig,
+        });
+      } else {
+        frameText = renderAsciiFrame({
+          cols,
+          rows,
+          time: timeRef.current,
+          density,
+          trailPoints: trailPointsRef.current,
+          waveParams,
+          customRenderFn: presetType === 'custom' ? compiledFnRef.current : undefined,
+          prepareFn: presetType === 'custom' ? prepareFnRef.current : undefined,
+          customContext: customContextRef.current,
+          interactiveInfluence: particleConfig.enabled,
+          luminanceBoost: particleConfig.luminanceBoost,
+        });
+      }
 
       viewportRef.current?.setFrame(frameText, timeRef.current, currentFpsRef.current);
       animFrameId = requestAnimationFrame(loop);
@@ -773,6 +974,9 @@ export const App: React.FC = () => {
     cols,
     rows,
     density,
+    appMode,
+    modelConfig,
+    modelViewConfig,
     waveParams,
     presetType,
     particleConfig,
@@ -824,14 +1028,26 @@ export const App: React.FC = () => {
     sharedState?.autoRes !== undefined ? sharedState.autoRes : true
   );
 
+  const isModelEdited = useMemo(() => {
+    if (!activeModelPreset) return false;
+    if (modelConfig.modelId !== activeModelPreset.modelConfig.modelId) return true;
+    if (modelConfig.sourceType !== activeModelPreset.modelConfig.sourceType) return true;
+    if (modelConfig.scale !== activeModelPreset.modelConfig.scale) return true;
+    if (modelViewConfig.shadingMode !== activeModelPreset.viewConfig.shadingMode) return true;
+    return false;
+  }, [activeModelPreset, modelConfig, modelViewConfig]);
+
   // Complete snapshot of the current animation state for sharing / deep-linking
   const currentFullState: FullAnimationState = useMemo(
     () => ({
-      name: isEdited ? `${activePreset.name} (Edited)` : activePreset.name,
-      type: presetType,
-      params: waveParams,
-      customCode: presetType === 'custom' ? customCode : undefined,
-      customPrepare: presetType === 'custom' ? customPrepare : undefined,
+      appMode,
+      name: appMode === 'model'
+        ? (isModelEdited ? `${activeModelPreset.name} (Edited)` : activeModelPreset.name)
+        : (isEdited ? `${activePreset.name} (Edited)` : activePreset.name),
+      type: appMode === 'synth' ? presetType : undefined,
+      params: appMode === 'synth' ? waveParams : undefined,
+      customCode: appMode === 'synth' && presetType === 'custom' ? customCode : undefined,
+      customPrepare: appMode === 'synth' && presetType === 'custom' ? customPrepare : undefined,
       density,
       theme,
       customThemeColor: customThemeColor || undefined,
@@ -839,11 +1055,16 @@ export const App: React.FC = () => {
       cols,
       rows,
       autoRes,
-      particleConfig,
+      particleConfig: appMode === 'synth' ? particleConfig : undefined,
       optimizeConfig,
       crtConfig,
+      modelConfig: appMode === 'model' ? modelConfig : undefined,
+      modelViewConfig: appMode === 'model' ? modelViewConfig : undefined,
     }),
     [
+      appMode,
+      activeModelPreset.name,
+      isModelEdited,
       activePreset.name,
       isEdited,
       presetType,
@@ -860,6 +1081,8 @@ export const App: React.FC = () => {
       particleConfig,
       optimizeConfig,
       crtConfig,
+      modelConfig,
+      modelViewConfig,
     ]
   );
 
@@ -904,6 +1127,24 @@ export const App: React.FC = () => {
             </div>
           </div>
           <span className="brand-badge">v1.3</span>
+
+          {/* Big Mode Switcher: SYNTH vs MODEL */}
+          <div className="mode-switcher-group">
+            <button
+              className={`btn-mode-switch ${appMode === 'synth' ? 'active' : ''}`}
+              onClick={() => setAppMode('synth')}
+              title="Parametric Wave & Particle Synthesizer"
+            >
+              SYNTH
+            </button>
+            <button
+              className={`btn-mode-switch ${appMode === 'model' ? 'active' : ''}`}
+              onClick={() => setAppMode('model')}
+              title="3D Model to 2D ASCII Visualizer"
+            >
+              MODEL
+            </button>
+          </div>
         </div>
 
         {/* Header Tools: Randomize, Undo, Redo, AI Prompt, Export, Share */}
@@ -911,13 +1152,13 @@ export const App: React.FC = () => {
           <button
             className="btn btn-randomize btn-sm"
             onClick={handleRandomize}
-            title="Randomize animation, theme & charset (Press R)"
+            title={appMode === 'model' ? 'Randomize 3D model preset & theme (Press R)' : 'Randomize animation, theme & charset (Press R)'}
           >
             <Dices size={14} className={`header-btn-icon ${isRandomizing ? 'dice-spin' : ''}`} />
             <span className="btn-label">RANDOMIZE</span>
           </button>
 
-          {viewMode === 'editor' && (
+          {viewMode === 'editor' && appMode === 'synth' && (
             <>
               <button
                 className="btn btn-sm header-btn-undo"
@@ -994,8 +1235,8 @@ export const App: React.FC = () => {
           }}
           onMouseMove={handleMouseMove}
           onClick={handleClick}
-          presetName={activePreset.name}
-          isEdited={isEdited}
+          presetName={appMode === 'model' ? activeModelPreset.name : activePreset.name}
+          isEdited={appMode === 'model' ? isModelEdited : isEdited}
           targetFps={optimizeConfig.targetFps}
           viewMode={viewMode}
           onToggleViewMode={handleToggleViewMode}
@@ -1007,125 +1248,243 @@ export const App: React.FC = () => {
           }}
           crtConfig={crtConfig}
           gradientConfig={gradientConfig}
+          appMode={appMode}
+          onOrbitRotate={handleOrbitRotate}
+          onWheelZoom={handleWheelZoom}
         />
 
         {/* Right Sidebar Control Panel */}
         {viewMode === 'editor' && (
           <div className="sidebar-pane">
-            {/* Tabs */}
-            <div className="tab-nav">
-              <button
-                className={`tab-btn ${activeTab === 'presets' ? 'active' : ''}`}
-                onClick={() => setActiveTab('presets')}
-                title="Presets Library"
-              >
-                <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                PRESETS
-              </button>
-              <button
-                className={`tab-btn ${activeTab === 'synth' ? 'active' : ''}`}
-                onClick={() => setActiveTab('synth')}
-                title="Wave Synthesizer & Advanced Formula Code"
-              >
-                <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                SYNTH
-              </button>
-              <button
-                className={`tab-btn ${activeTab === 'particles' ? 'active' : ''}`}
-                onClick={() => setActiveTab('particles')}
-                title="Particle Physics & Mouse Trail"
-              >
-                <Sparkles size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                PARTICLES
-              </button>
-              <button
-                className={`tab-btn ${activeTab === 'optimize' ? 'active' : ''}`}
-                onClick={() => setActiveTab('optimize')}
-                title="Performance Profiles & CPU Optimization"
-              >
-                <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                OPTIMIZE
-              </button>
-              <button
-                className={`tab-btn ${activeTab === 'visuals' ? 'active' : ''}`}
-                onClick={() => setActiveTab('visuals')}
-                title="Charsets & Color Themes"
-              >
-                <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                THEME
-              </button>
-            </div>
+            {appMode === 'synth' ? (
+              /* SYNTH MODE TABS */
+              <>
+                <div className="tab-nav">
+                  <button
+                    className={`tab-btn ${activeTab === 'presets' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('presets')}
+                    title="Presets Library"
+                  >
+                    <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    PRESETS
+                  </button>
+                  <button
+                    className={`tab-btn ${activeTab === 'synth' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('synth')}
+                    title="Wave Synthesizer & Advanced Formula Code"
+                  >
+                    <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    SYNTH
+                  </button>
+                  <button
+                    className={`tab-btn ${activeTab === 'particles' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('particles')}
+                    title="Particle Physics & Mouse Trail"
+                  >
+                    <Sparkles size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    PARTICLES
+                  </button>
+                  <button
+                    className={`tab-btn ${activeTab === 'optimize' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('optimize')}
+                    title="Performance Profiles & CPU Optimization"
+                  >
+                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    OPTIMIZE
+                  </button>
+                  <button
+                    className={`tab-btn ${activeTab === 'visuals' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('visuals')}
+                    title="Charsets & Color Themes"
+                  >
+                    <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    THEME
+                  </button>
+                </div>
 
-            {/* Active Tab View */}
-            {activeTab === 'presets' && (
-              <PresetSelector
-                activePresetId={activePreset.id}
-                onSelectPreset={handleSelectPreset}
-                onSaveCustomPreset={handleSaveCustomPreset}
-                userPresets={userPresets}
-                onDeleteUserPreset={handleDeleteUserPreset}
-              />
-            )}
+                {/* Active Tab View */}
+                {activeTab === 'presets' && (
+                  <PresetSelector
+                    activePresetId={activePreset.id}
+                    onSelectPreset={handleSelectPreset}
+                    onSaveCustomPreset={handleSaveCustomPreset}
+                    userPresets={userPresets}
+                    onDeleteUserPreset={handleDeleteUserPreset}
+                  />
+                )}
 
-            {activeTab === 'synth' && (
-              <SynthControls
-                params={waveParams}
-                onChangeParams={handleParamChange}
-                onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
-                code={customCode}
-                prepareCode={customPrepare}
-                compileError={compileError}
-                onChangeFormula={handleFormulaCodeChange}
-                isFormulaDivergent={presetType === 'custom'}
-                onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
-              />
-            )}
+                {activeTab === 'synth' && (
+                  <SynthControls
+                    params={waveParams}
+                    onChangeParams={handleParamChange}
+                    onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
+                    code={customCode}
+                    prepareCode={customPrepare}
+                    compileError={compileError}
+                    onChangeFormula={handleFormulaCodeChange}
+                    isFormulaDivergent={presetType === 'custom'}
+                    onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
+                  />
+                )}
 
-            {activeTab === 'particles' && (
-              <ParticleControls
-                config={particleConfig}
-                onChange={setParticleConfig}
-                onClearParticles={() => {
-                  trailPointsRef.current = [];
-                }}
-              />
-            )}
+                {activeTab === 'particles' && (
+                  <ParticleControls
+                    config={particleConfig}
+                    onChange={setParticleConfig}
+                    onClearParticles={() => {
+                      trailPointsRef.current = [];
+                    }}
+                  />
+                )}
 
-            {activeTab === 'optimize' && (
-              <OptimizeControls
-                config={optimizeConfig}
-                onChangeConfig={setOptimizeConfig}
-                cols={cols}
-                rows={rows}
-                onChangeResolution={handleManualResolutionChange}
-                autoRes={autoRes}
-                onToggleAutoRes={handleToggleAutoRes}
-              />
-            )}
+                {activeTab === 'optimize' && (
+                  <OptimizeControls
+                    config={optimizeConfig}
+                    onChangeConfig={setOptimizeConfig}
+                    cols={cols}
+                    rows={rows}
+                    onChangeResolution={handleManualResolutionChange}
+                    autoRes={autoRes}
+                    onToggleAutoRes={handleToggleAutoRes}
+                  />
+                )}
 
-            {activeTab === 'visuals' && (
-              <CharsetThemeBar
-                currentCharset={density}
-                onChangeCharset={setDensity}
-                currentTheme={theme}
-                onChangeTheme={(t) => {
-                  setCustomThemeColor('');
-                  setGradientConfig(null);
-                  setTheme(t);
-                }}
-                customThemeColor={customThemeColor}
-                onChangeCustomColor={(c) => {
-                  setGradientConfig(null);
-                  setCustomThemeColor(c);
-                }}
-                gradientConfig={gradientConfig}
-                onChangeGradient={(g) => {
-                  setCustomThemeColor('');
-                  setGradientConfig(g);
-                }}
-                crtConfig={crtConfig}
-                onChangeCrtConfig={setCrtConfig}
-              />
+                {activeTab === 'visuals' && (
+                  <CharsetThemeBar
+                    currentCharset={density}
+                    onChangeCharset={setDensity}
+                    currentTheme={theme}
+                    onChangeTheme={(t) => {
+                      setCustomThemeColor('');
+                      setGradientConfig(null);
+                      setTheme(t);
+                    }}
+                    customThemeColor={customThemeColor}
+                    onChangeCustomColor={(c) => {
+                      setGradientConfig(null);
+                      setCustomThemeColor(c);
+                    }}
+                    gradientConfig={gradientConfig}
+                    onChangeGradient={(g) => {
+                      setCustomThemeColor('');
+                      setGradientConfig(g);
+                    }}
+                    crtConfig={crtConfig}
+                    onChangeCrtConfig={setCrtConfig}
+                  />
+                )}
+              </>
+            ) : (
+              /* MODEL MODE TABS */
+              <>
+                <div className="tab-nav">
+                  <button
+                    className={`tab-btn ${modelTab === 'presets' ? 'active' : ''}`}
+                    onClick={() => setModelTab('presets')}
+                    title="3D Model Presets"
+                  >
+                    <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    PRESETS
+                  </button>
+                  <button
+                    className={`tab-btn ${modelTab === 'model' ? 'active' : ''}`}
+                    onClick={() => setModelTab('model')}
+                    title="Upload & 3D Geometry Settings"
+                  >
+                    <Box size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    MODEL
+                  </button>
+                  <button
+                    className={`tab-btn ${modelTab === 'view' ? 'active' : ''}`}
+                    onClick={() => setModelTab('view')}
+                    title="ASCII Shading, Rotation & Lighting"
+                  >
+                    <Eye size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    VIEW
+                  </button>
+                  <button
+                    className={`tab-btn ${modelTab === 'optimize' ? 'active' : ''}`}
+                    onClick={() => setModelTab('optimize')}
+                    title="Performance Profiles & Resolution"
+                  >
+                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    OPTIMIZE
+                  </button>
+                  <button
+                    className={`tab-btn ${modelTab === 'visuals' ? 'active' : ''}`}
+                    onClick={() => setModelTab('visuals')}
+                    title="Charsets & Color Themes"
+                  >
+                    <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    THEME
+                  </button>
+                </div>
+
+                {/* Active 3D Model Tab Views */}
+                {modelTab === 'presets' && (
+                  <ModelPresetSelector
+                    activePresetId={activeModelPreset.id}
+                    onSelectPreset={handleSelectModelPreset}
+                    onSaveCustomPreset={handleSaveCustomModelPreset}
+                    userPresets={userModelPresets}
+                    onDeleteUserPreset={handleDeleteUserModelPreset}
+                  />
+                )}
+
+                {modelTab === 'model' && (
+                  <ModelSettingsControls
+                    config={modelConfig}
+                    onChangeConfig={setModelConfig}
+                    onLoadCustomGeometry={handleLoadCustomGeometry}
+                    onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                  />
+                )}
+
+                {modelTab === 'view' && (
+                  <ModelViewControls
+                    config={modelViewConfig}
+                    onChangeConfig={setModelViewConfig}
+                    onResetRotation={handleResetModelRotation}
+                  />
+                )}
+
+                {modelTab === 'optimize' && (
+                  <OptimizeControls
+                    config={optimizeConfig}
+                    onChangeConfig={setOptimizeConfig}
+                    cols={cols}
+                    rows={rows}
+                    onChangeResolution={handleManualResolutionChange}
+                    autoRes={autoRes}
+                    onToggleAutoRes={handleToggleAutoRes}
+                  />
+                )}
+
+                {modelTab === 'visuals' && (
+                  <CharsetThemeBar
+                    currentCharset={density}
+                    onChangeCharset={setDensity}
+                    currentTheme={theme}
+                    onChangeTheme={(t) => {
+                      setCustomThemeColor('');
+                      setGradientConfig(null);
+                      setTheme(t);
+                    }}
+                    customThemeColor={customThemeColor}
+                    onChangeCustomColor={(c) => {
+                      setGradientConfig(null);
+                      setCustomThemeColor(c);
+                    }}
+                    gradientConfig={gradientConfig}
+                    onChangeGradient={(g) => {
+                      setCustomThemeColor('');
+                      setGradientConfig(g);
+                    }}
+                    crtConfig={crtConfig}
+                    onChangeCrtConfig={setCrtConfig}
+                  />
+                )}
+              </>
             )}
 
             {/* Sidebar Credits Line */}
@@ -1149,8 +1508,8 @@ export const App: React.FC = () => {
       <ExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
-        name={isEdited ? `${activePreset.name} (Edited)` : activePreset.name}
-        type={presetType}
+        name={appMode === 'model' ? (isModelEdited ? `${activeModelPreset.name} (Edited)` : activeModelPreset.name) : (isEdited ? `${activePreset.name} (Edited)` : activePreset.name)}
+        type={appMode === 'synth' ? presetType : 'parametric'}
         params={waveParams}
         customCode={customCode}
         customPrepare={customPrepare}
@@ -1165,6 +1524,10 @@ export const App: React.FC = () => {
         gradientConfig={gradientConfig}
         crtConfig={crtConfig}
         initialTab={exportInitialTab}
+        appMode={appMode}
+        modelConfig={modelConfig}
+        modelViewConfig={modelViewConfig}
+        geometry={currentGeometryRef.current}
       />
 
       {/* Share Modal */}

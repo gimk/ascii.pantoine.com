@@ -28,6 +28,9 @@ interface AsciiViewportProps {
   onAutoResolutionChange?: (cols: number, rows: number) => void;
   crtConfig?: CrtConfig;
   gradientConfig?: PhosphorGradient | null;
+  appMode?: 'synth' | 'model';
+  onOrbitRotate?: (deltaPitch: number, deltaYaw: number) => void;
+  onWheelZoom?: (deltaZoom: number) => void;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -49,6 +52,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onAutoResolutionChange,
   crtConfig,
   gradientConfig,
+  appMode = 'synth',
+  onOrbitRotate,
+  onWheelZoom,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -56,6 +62,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
   const latestFrameTextRef = useRef<string>('');
+  const isDraggingRef = useRef<boolean>(false);
+  const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const [zoom, setZoom] = useState<number>(1.0);
   const [copied, setCopied] = useState<boolean>(false);
@@ -185,26 +193,61 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     };
   }, [autoRes, getOptimalResolution, onAutoResolutionChange, autoFit]);
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const targetElement = preRef.current || containerRef.current;
-    if (!targetElement) return;
-    const rect = targetElement.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const mouseX = ((e.clientX - rect.left) / rect.width) * cols;
-    const mouseY = ((e.clientY - rect.top) / rect.height) * rows;
-    if (mouseX >= 0 && mouseX < cols && mouseY >= 0 && mouseY < rows) {
-      onMouseMove(mouseX, mouseY);
-    }
-  };
-
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const targetElement = preRef.current || containerRef.current;
     if (!targetElement) return;
     const rect = targetElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const cx = ((e.clientX - rect.left) / rect.width) * cols;
-    const cy = ((e.clientY - rect.top) / rect.height) * rows;
-    onClick(cx, cy);
+
+    if (appMode === 'model') {
+      isDraggingRef.current = true;
+      lastPosRef.current = { x: e.clientX, y: e.clientY };
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {}
+    } else {
+      const cx = ((e.clientX - rect.left) / rect.width) * cols;
+      const cy = ((e.clientY - rect.top) / rect.height) * rows;
+      onClick(cx, cy);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const targetElement = preRef.current || containerRef.current;
+    if (!targetElement) return;
+    const rect = targetElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    if (appMode === 'model') {
+      if (isDraggingRef.current && onOrbitRotate) {
+        const dx = e.clientX - lastPosRef.current.x;
+        const dy = e.clientY - lastPosRef.current.y;
+        lastPosRef.current = { x: e.clientX, y: e.clientY };
+        onOrbitRotate(dy * 0.015, dx * 0.015);
+      }
+    } else {
+      const mouseX = ((e.clientX - rect.left) / rect.width) * cols;
+      const mouseY = ((e.clientY - rect.top) / rect.height) * rows;
+      if (mouseX >= 0 && mouseX < cols && mouseY >= 0 && mouseY < rows) {
+        onMouseMove(mouseX, mouseY);
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (appMode === 'model') {
+      isDraggingRef.current = false;
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (appMode === 'model' && onWheelZoom) {
+      e.preventDefault();
+      onWheelZoom(e.deltaY > 0 ? 0.2 : -0.2);
+    }
   };
 
   const copySnapshot = () => {
@@ -224,9 +267,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       {/* Visual Canvas Container */}
       <div
         ref={containerRef}
-        className={`viewport-canvas-container ${showCrtGlow ? 'crt-glow-enabled' : ''}`}
+        className={`viewport-canvas-container ${showCrtGlow ? 'crt-glow-enabled' : ''} ${appMode === 'model' ? 'model-orbit-active' : ''}`}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onWheel={handleWheel}
       >
         {showScanlines && <div className="scanline-overlay" />}
         {showVignette && <div className="crt-vignette-overlay" />}
