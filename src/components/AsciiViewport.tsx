@@ -29,7 +29,14 @@ interface AsciiViewportProps {
   crtConfig?: CrtConfig;
   gradientConfig?: PhosphorGradient | null;
   appMode?: 'synth' | 'model';
-  onOrbitRotate?: (deltaPitch: number, deltaYaw: number) => void;
+  onOrbitRotate?: (
+    prevX: number,
+    prevY: number,
+    currX: number,
+    currY: number,
+    width: number,
+    height: number
+  ) => void;
   onWheelZoom?: (deltaZoom: number) => void;
 }
 
@@ -220,10 +227,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
     if (appMode === 'model') {
       if (isDraggingRef.current && onOrbitRotate) {
-        const dx = e.clientX - lastPosRef.current.x;
-        const dy = e.clientY - lastPosRef.current.y;
+        const prevX = lastPosRef.current.x - rect.left;
+        const prevY = lastPosRef.current.y - rect.top;
+        const currX = e.clientX - rect.left;
+        const currY = e.clientY - rect.top;
         lastPosRef.current = { x: e.clientX, y: e.clientY };
-        onOrbitRotate(dy * 0.015, dx * 0.015);
+        onOrbitRotate(prevX, prevY, currX, currY, rect.width, rect.height);
       }
     } else {
       const mouseX = ((e.clientX - rect.left) / rect.width) * cols;

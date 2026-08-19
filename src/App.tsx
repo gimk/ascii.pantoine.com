@@ -30,7 +30,7 @@ import {
   MODEL_PRESETS,
 } from './engine/modelPresets';
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats } from './engine/modelLoader';
-import { renderModelAsciiFrame } from './engine/modelRenderer';
+import { renderModelAsciiFrame, applyTrackballRotation } from './engine/modelRenderer';
 import { CHARSETS, renderAsciiFrame } from './engine/renderer';
 import {
   createTrailPoint,
@@ -82,6 +82,18 @@ interface HistorySnapshot {
   customPrepare?: string;
   presetName: string;
   presetType?: 'parametric' | 'custom';
+}
+
+interface ModelHistorySnapshot {
+  modelConfig: ModelConfig;
+  modelViewConfig: ModelViewConfig;
+  activePreset: ModelPreset;
+  theme?: PhosphorTheme;
+  customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
+  density?: string;
+  crtConfig?: CrtConfig;
+  optimizeConfig?: OptimizeConfig;
 }
 
 export const App: React.FC = () => {
@@ -211,12 +223,31 @@ export const App: React.FC = () => {
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
   const [userPresets, setUserPresets] = useState<Preset[]>([]);
 
-  // Undo / Redo History Stack
-  const historyRef = useRef<HistorySnapshot[]>([]);
-  const historyIndexRef = useRef<number>(-1);
+  // Undo / Redo History Stack (Separate stacks for Synth and Model modes)
+  const synthHistoryRef = useRef<HistorySnapshot[]>([]);
+  const synthHistoryIndexRef = useRef<number>(-1);
+  const synthHistoryDebounceTimer = useRef<any>(null);
+
+  const modelHistoryRef = useRef<ModelHistorySnapshot[]>([]);
+  const modelHistoryIndexRef = useRef<number>(-1);
+  const modelHistoryDebounceTimer = useRef<any>(null);
+
   const [canUndo, setCanUndo] = useState<boolean>(false);
   const [canRedo, setCanRedo] = useState<boolean>(false);
-  const historyDebounceTimer = useRef<any>(null);
+
+  const updateHistoryButtons = useCallback(() => {
+    if (appMode === 'synth') {
+      setCanUndo(synthHistoryIndexRef.current > 0);
+      setCanRedo(synthHistoryIndexRef.current < synthHistoryRef.current.length - 1);
+    } else {
+      setCanUndo(modelHistoryIndexRef.current > 0);
+      setCanRedo(modelHistoryIndexRef.current < modelHistoryRef.current.length - 1);
+    }
+  }, [appMode]);
+
+  useEffect(() => {
+    updateHistoryButtons();
+  }, [appMode, updateHistoryButtons]);
 
   // Check if current parameters or formula differ from the active preset
   const isEdited = useMemo(() => {
@@ -234,11 +265,6 @@ export const App: React.FC = () => {
     return false;
   }, [activePreset, presetType, customCode, customPrepare, waveParams]);
 
-  const updateHistoryButtons = () => {
-    setCanUndo(historyIndexRef.current > 0);
-    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
-  };
-
   const pushHistorySnapshot = useCallback(
     (
       params: WaveParams,
@@ -247,8 +273,8 @@ export const App: React.FC = () => {
       prepare?: string,
       type?: 'parametric' | 'custom'
     ) => {
-      const nextIndex = historyIndexRef.current + 1;
-      const newHistory = historyRef.current.slice(0, nextIndex);
+      const nextIndex = synthHistoryIndexRef.current + 1;
+      const newHistory = synthHistoryRef.current.slice(0, nextIndex);
       newHistory.push({
         waveParams: { ...params },
         customCode: code,
@@ -257,18 +283,51 @@ export const App: React.FC = () => {
         presetType: type || 'parametric',
       });
       if (newHistory.length > 50) newHistory.shift();
-      historyRef.current = newHistory;
-      historyIndexRef.current = newHistory.length - 1;
+      synthHistoryRef.current = newHistory;
+      synthHistoryIndexRef.current = newHistory.length - 1;
       updateHistoryButtons();
     },
-    []
+    [updateHistoryButtons]
   );
 
-  // Initialize first history entry
+  const pushModelHistorySnapshot = useCallback(
+    (
+      mConfig: ModelConfig,
+      vConfig: ModelViewConfig,
+      preset: ModelPreset,
+      optConfig?: OptimizeConfig,
+      crt?: CrtConfig,
+      thm?: PhosphorTheme,
+      cColor?: string,
+      grad?: PhosphorGradient | null,
+      dens?: string
+    ) => {
+      const nextIndex = modelHistoryIndexRef.current + 1;
+      const newHistory = modelHistoryRef.current.slice(0, nextIndex);
+      newHistory.push({
+        modelConfig: { ...mConfig },
+        modelViewConfig: { ...vConfig },
+        activePreset: { ...preset },
+        theme: thm !== undefined ? thm : theme,
+        customThemeColor: cColor !== undefined ? cColor : customThemeColor,
+        gradientConfig: grad !== undefined ? grad : gradientConfig,
+        density: dens !== undefined ? dens : density,
+        crtConfig: crt !== undefined ? { ...crt } : { ...crtConfig },
+        optimizeConfig: optConfig !== undefined ? { ...optConfig } : { ...optimizeConfig },
+      });
+      if (newHistory.length > 50) newHistory.shift();
+      modelHistoryRef.current = newHistory;
+      modelHistoryIndexRef.current = newHistory.length - 1;
+      updateHistoryButtons();
+    },
+    [theme, customThemeColor, gradientConfig, density, crtConfig, optimizeConfig, updateHistoryButtons]
+  );
+
+  // Initialize first history entries
   useEffect(() => {
-    if (historyRef.current.length === 0) {
+    if (synthHistoryRef.current.length === 0) {
       const initialCode = generateFormulaCode(DEFAULT_WAVE_PARAMS);
-      historyRef.current = [
+      synthHistoryRef.current = [
         {
           waveParams: { ...DEFAULT_WAVE_PARAMS },
           customCode: initialCode,
@@ -277,10 +336,26 @@ export const App: React.FC = () => {
           presetType: 'parametric',
         },
       ];
-      historyIndexRef.current = 0;
-      updateHistoryButtons();
+      synthHistoryIndexRef.current = 0;
     }
-  }, []);
+    if (modelHistoryRef.current.length === 0) {
+      modelHistoryRef.current = [
+        {
+          modelConfig: { ...modelConfig },
+          modelViewConfig: { ...modelViewConfig },
+          activePreset: activeModelPreset,
+          theme,
+          customThemeColor,
+          gradientConfig,
+          density,
+          crtConfig: { ...crtConfig },
+          optimizeConfig: { ...optimizeConfig },
+        },
+      ];
+      modelHistoryIndexRef.current = 0;
+    }
+    updateHistoryButtons();
+  }, [updateHistoryButtons]);
 
   // Compile custom code when changed
   const recompileCustomCode = useCallback((code: string, prepare?: string) => {
@@ -294,31 +369,71 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const handleUndo = useCallback(() => {
-    if (historyIndexRef.current > 0) {
-      historyIndexRef.current -= 1;
-      const snapshot = historyRef.current[historyIndexRef.current];
-      setWaveParams({ ...snapshot.waveParams });
-      setCustomCode(snapshot.customCode);
-      setCustomPrepare(snapshot.customPrepare || '');
-      setPresetType(snapshot.presetType || 'parametric');
-      recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
-      updateHistoryButtons();
+  const restoreModelSnapshot = useCallback((snapshot: ModelHistorySnapshot) => {
+    setModelConfig({ ...snapshot.modelConfig });
+    setModelViewConfig({ ...snapshot.modelViewConfig });
+    setActiveModelPreset(snapshot.activePreset);
+
+    if (snapshot.modelConfig.sourceType === 'preset') {
+      const modelId = snapshot.modelConfig.modelId as BuiltinModelId;
+      const initialGeo = getBuiltinGeometry(modelId);
+      currentGeometryRef.current = initialGeo;
+      loadBuiltinGeometryAsync(modelId).then((geo) => {
+        currentGeometryRef.current = geo;
+      });
     }
-  }, [recompileCustomCode]);
+
+    if (snapshot.theme) setTheme(snapshot.theme);
+    if (snapshot.customThemeColor !== undefined) setCustomThemeColor(snapshot.customThemeColor);
+    if (snapshot.gradientConfig !== undefined) setGradientConfig(snapshot.gradientConfig);
+    if (snapshot.density) setDensity(snapshot.density);
+    if (snapshot.crtConfig) setCrtConfig({ ...snapshot.crtConfig });
+    if (snapshot.optimizeConfig) setOptimizeConfig({ ...snapshot.optimizeConfig });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (appMode === 'synth') {
+      if (synthHistoryIndexRef.current > 0) {
+        synthHistoryIndexRef.current -= 1;
+        const snapshot = synthHistoryRef.current[synthHistoryIndexRef.current];
+        setWaveParams({ ...snapshot.waveParams });
+        setCustomCode(snapshot.customCode);
+        setCustomPrepare(snapshot.customPrepare || '');
+        setPresetType(snapshot.presetType || 'parametric');
+        recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
+        updateHistoryButtons();
+      }
+    } else {
+      if (modelHistoryIndexRef.current > 0) {
+        modelHistoryIndexRef.current -= 1;
+        const snapshot = modelHistoryRef.current[modelHistoryIndexRef.current];
+        restoreModelSnapshot(snapshot);
+        updateHistoryButtons();
+      }
+    }
+  }, [appMode, recompileCustomCode, restoreModelSnapshot, updateHistoryButtons]);
 
   const handleRedo = useCallback(() => {
-    if (historyIndexRef.current < historyRef.current.length - 1) {
-      historyIndexRef.current += 1;
-      const snapshot = historyRef.current[historyIndexRef.current];
-      setWaveParams({ ...snapshot.waveParams });
-      setCustomCode(snapshot.customCode);
-      setCustomPrepare(snapshot.customPrepare || '');
-      setPresetType(snapshot.presetType || 'parametric');
-      recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
-      updateHistoryButtons();
+    if (appMode === 'synth') {
+      if (synthHistoryIndexRef.current < synthHistoryRef.current.length - 1) {
+        synthHistoryIndexRef.current += 1;
+        const snapshot = synthHistoryRef.current[synthHistoryIndexRef.current];
+        setWaveParams({ ...snapshot.waveParams });
+        setCustomCode(snapshot.customCode);
+        setCustomPrepare(snapshot.customPrepare || '');
+        setPresetType(snapshot.presetType || 'parametric');
+        recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
+        updateHistoryButtons();
+      }
+    } else {
+      if (modelHistoryIndexRef.current < modelHistoryRef.current.length - 1) {
+        modelHistoryIndexRef.current += 1;
+        const snapshot = modelHistoryRef.current[modelHistoryIndexRef.current];
+        restoreModelSnapshot(snapshot);
+        updateHistoryButtons();
+      }
     }
-  }, [recompileCustomCode]);
+  }, [appMode, recompileCustomCode, restoreModelSnapshot, updateHistoryButtons]);
 
   // Load user presets from localStorage
   useEffect(() => {
@@ -560,8 +675,8 @@ export const App: React.FC = () => {
     setCustomCode(formula);
     recompileCustomCode(formula, customPrepare);
 
-    clearTimeout(historyDebounceTimer.current);
-    historyDebounceTimer.current = setTimeout(() => {
+    clearTimeout(synthHistoryDebounceTimer.current);
+    synthHistoryDebounceTimer.current = setTimeout(() => {
       pushHistorySnapshot(updated, formula, activePreset.name, customPrepare, 'parametric');
     }, 400);
   };
@@ -578,8 +693,8 @@ export const App: React.FC = () => {
     setPresetType(isDivergent ? 'custom' : 'parametric');
     recompileCustomCode(newCode, newPrepare);
 
-    clearTimeout(historyDebounceTimer.current);
-    historyDebounceTimer.current = setTimeout(() => {
+    clearTimeout(synthHistoryDebounceTimer.current);
+    synthHistoryDebounceTimer.current = setTimeout(() => {
       pushHistorySnapshot(parsed, newCode, isDivergent ? 'Custom Formula' : activePreset.name, newPrepare, isDivergent ? 'custom' : 'parametric');
     }, 600);
   };
@@ -646,7 +761,19 @@ export const App: React.FC = () => {
     if (preset.optimizeConfig) {
       setOptimizeConfig({ ...preset.optimizeConfig });
     }
-  }, []);
+
+    pushModelHistorySnapshot(
+      preset.modelConfig,
+      preset.viewConfig,
+      preset,
+      preset.optimizeConfig,
+      preset.crtConfig,
+      preset.theme,
+      preset.customThemeColor,
+      preset.gradientConfig,
+      preset.densityCharset
+    );
+  }, [pushModelHistorySnapshot]);
 
   // Initial async geometry loader (for OBJ presets)
   useEffect(() => {
@@ -700,26 +827,30 @@ export const App: React.FC = () => {
     stats: { vertices: number; faces: number }
   ) => {
     currentGeometryRef.current = geometry;
-    setModelConfig((prev) => ({
-      ...prev,
+    const newConfig: ModelConfig = {
+      ...modelConfig,
       sourceType: 'file',
       fileName,
       fileType,
       polyStats: stats,
-    }));
+    };
+    setModelConfig(newConfig);
+    pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
   };
 
   const handleSelectBuiltinGeometry = (id: BuiltinModelId) => {
     const initialGeo = getBuiltinGeometry(id);
     currentGeometryRef.current = initialGeo;
     const initialStats = getGeometryStats(initialGeo);
-    setModelConfig((prev) => ({
-      ...prev,
+    const newConfig: ModelConfig = {
+      ...modelConfig,
       sourceType: 'preset',
       modelId: id,
       fileName: undefined,
       polyStats: initialStats,
-    }));
+    };
+    setModelConfig(newConfig);
+    pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
 
     loadBuiltinGeometryAsync(id).then((geo) => {
       currentGeometryRef.current = geo;
@@ -731,29 +862,75 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleOrbitRotate = useCallback((deltaPitch: number, deltaYaw: number) => {
-    setModelViewConfig((prev) => ({
-      ...prev,
-      manualRotationX: prev.manualRotationX + deltaPitch,
-      manualRotationY: prev.manualRotationY + deltaYaw,
-    }));
-  }, []);
+  const handleChangeModelConfig = useCallback((newConfig: ModelConfig) => {
+    setModelConfig(newConfig);
+    clearTimeout(modelHistoryDebounceTimer.current);
+    modelHistoryDebounceTimer.current = setTimeout(() => {
+      pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
+    }, 400);
+  }, [modelViewConfig, activeModelPreset, pushModelHistorySnapshot]);
+
+  const handleChangeModelViewConfig = useCallback((newViewConfig: ModelViewConfig) => {
+    setModelViewConfig(newViewConfig);
+    clearTimeout(modelHistoryDebounceTimer.current);
+    modelHistoryDebounceTimer.current = setTimeout(() => {
+      pushModelHistorySnapshot(modelConfig, newViewConfig, activeModelPreset);
+    }, 400);
+  }, [modelConfig, activeModelPreset, pushModelHistorySnapshot]);
+
+  const handleOrbitRotate = useCallback(
+    (prevX: number, prevY: number, currX: number, currY: number, width: number, height: number) => {
+      setModelViewConfig((prev) => {
+        const nextRot = applyTrackballRotation(
+          prev,
+          prevX,
+          prevY,
+          currX,
+          currY,
+          width,
+          height,
+          2.0
+        );
+        const updated = {
+          ...prev,
+          manualRotationX: nextRot.manualRotationX,
+          manualRotationY: nextRot.manualRotationY,
+          manualRotationZ: nextRot.manualRotationZ,
+        };
+        clearTimeout(modelHistoryDebounceTimer.current);
+        modelHistoryDebounceTimer.current = setTimeout(() => {
+          pushModelHistorySnapshot(modelConfig, updated, activeModelPreset);
+        }, 500);
+        return updated;
+      });
+    },
+    [modelConfig, activeModelPreset, pushModelHistorySnapshot]
+  );
 
   const handleWheelZoom = useCallback((deltaZoom: number) => {
-    setModelViewConfig((prev) => ({
-      ...prev,
-      cameraDistance: Math.max(1.2, Math.min(8.0, prev.cameraDistance + deltaZoom)),
-    }));
-  }, []);
+    setModelViewConfig((prev) => {
+      const updated = {
+        ...prev,
+        cameraDistance: Math.max(1.2, Math.min(8.0, prev.cameraDistance + deltaZoom)),
+      };
+      clearTimeout(modelHistoryDebounceTimer.current);
+      modelHistoryDebounceTimer.current = setTimeout(() => {
+        pushModelHistorySnapshot(modelConfig, updated, activeModelPreset);
+      }, 500);
+      return updated;
+    });
+  }, [modelConfig, activeModelPreset, pushModelHistorySnapshot]);
 
   const handleResetModelRotation = useCallback(() => {
-    setModelViewConfig((prev) => ({
-      ...prev,
+    const updated = {
+      ...modelViewConfig,
       manualRotationX: 0,
       manualRotationY: 0,
       manualRotationZ: 0,
-    }));
-  }, []);
+    };
+    setModelViewConfig(updated);
+    pushModelHistorySnapshot(modelConfig, updated, activeModelPreset);
+  }, [modelConfig, modelViewConfig, activeModelPreset, pushModelHistorySnapshot]);
 
   // Fun Randomizer Handler
   const handleRandomize = useCallback(() => {
@@ -1177,7 +1354,7 @@ export const App: React.FC = () => {
             <span className="btn-label">RANDOMIZE</span>
           </button>
 
-          {viewMode === 'editor' && appMode === 'synth' && (
+          {viewMode === 'editor' && (
             <>
               <button
                 className="btn btn-sm header-btn-undo"
@@ -1473,7 +1650,7 @@ export const App: React.FC = () => {
                 {modelTab === 'model' && (
                   <ModelSettingsControls
                     config={modelConfig}
-                    onChangeConfig={setModelConfig}
+                    onChangeConfig={handleChangeModelConfig}
                     onLoadCustomGeometry={handleLoadCustomGeometry}
                     onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
                   />
@@ -1482,7 +1659,7 @@ export const App: React.FC = () => {
                 {modelTab === 'view' && (
                   <ModelViewControls
                     config={modelViewConfig}
-                    onChangeConfig={setModelViewConfig}
+                    onChangeConfig={handleChangeModelViewConfig}
                     onResetRotation={handleResetModelRotation}
                   />
                 )}

@@ -11,6 +11,97 @@ export interface ModelRenderContext {
   viewConfig: ModelViewConfig;
 }
 
+// Scratch Three.js objects for zero allocations during pointer interaction & trackball calculation
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _axis = new THREE.Vector3();
+const _deltaQ = new THREE.Quaternion();
+const _curEuler = new THREE.Euler();
+const _curQ = new THREE.Quaternion();
+
+/**
+ * Projects a screen point (normalized relative to center and trackball radius) onto a virtual sphere / trackball.
+ * Uses Holroyd's smooth hyperbolic blend to ensure continuous, non-jittering rotation even outside the sphere radius.
+ */
+function projectTrackball(x: number, y: number, out: THREE.Vector3): void {
+  const d2 = x * x + y * y;
+  let z: number;
+  if (d2 <= 0.5) {
+    z = Math.sqrt(Math.max(0, 1.0 - d2));
+  } else {
+    z = 0.5 / Math.sqrt(d2);
+  }
+  const len = Math.sqrt(x * x + y * y + z * z);
+  out.set(x / len, y / len, z / len);
+}
+
+/**
+ * Modern screen-space trackball / arcball rotation calculator.
+ * Rotates the 3D model relative to the current camera view referential (physical touch/grab direct manipulation),
+ * completely avoiding gimbal lock and awkward local-axis twisting regardless of the model's orientation.
+ */
+export function applyTrackballRotation(
+  currentRot: { manualRotationX: number; manualRotationY: number; manualRotationZ: number },
+  prevX: number,
+  prevY: number,
+  currX: number,
+  currY: number,
+  width: number,
+  height: number,
+  sensitivity: number = 2.0
+): { manualRotationX: number; manualRotationY: number; manualRotationZ: number } {
+  if (width <= 0 || height <= 0) return currentRot;
+
+  const cx = width * 0.5;
+  const cy = height * 0.5;
+  const radius = Math.min(width, height) * 0.5;
+  if (radius <= 0) return currentRot;
+
+  // Screen coords: invert Y so that +Y is up
+  const x1 = (prevX - cx) / radius;
+  const y1 = (cy - prevY) / radius;
+  const x2 = (currX - cx) / radius;
+  const y2 = (cy - currY) / radius;
+
+  projectTrackball(x1, y1, _v1);
+  projectTrackball(x2, y2, _v2);
+
+  const dot = Math.max(-1.0, Math.min(1.0, _v1.dot(_v2)));
+  const angle = Math.acos(dot) * sensitivity;
+
+  if (angle < 1e-6) {
+    return currentRot;
+  }
+
+  _axis.crossVectors(_v1, _v2);
+  const axisLen = _axis.length();
+  if (axisLen < 1e-6) {
+    return currentRot;
+  }
+  _axis.divideScalar(axisLen);
+
+  _deltaQ.setFromAxisAngle(_axis, angle);
+
+  _curEuler.set(
+    currentRot.manualRotationX,
+    currentRot.manualRotationY,
+    currentRot.manualRotationZ,
+    'XYZ'
+  );
+  _curQ.setFromEuler(_curEuler);
+
+  // Pre-multiply delta: apply rotation in view/screen referential
+  _curQ.premultiply(_deltaQ);
+
+  _curEuler.setFromQuaternion(_curQ, 'XYZ');
+
+  return {
+    manualRotationX: _curEuler.x,
+    manualRotationY: _curEuler.y,
+    manualRotationZ: _curEuler.z,
+  };
+}
+
 // Reusable scratch variables & zero-allocation buffers
 let cachedLines: string[] = [];
 let lineBuffer: string[] = [];
