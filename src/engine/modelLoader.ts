@@ -3,6 +3,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BuiltinModelId } from '../types/ascii';
 
 // --- Built-in Model Library & Preset Loader ---
@@ -130,59 +131,6 @@ export interface ParsedModelResult {
 }
 
 /**
- * Helper to merge an array of BufferGeometries into a single BufferGeometry
- */
-function mergeBufferGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  let totalVertices = 0;
-  let totalIndices = 0;
-
-  for (const g of geometries) {
-    const pos = g.getAttribute('position');
-    if (pos) totalVertices += pos.count;
-    if (g.index) totalIndices += g.index.count;
-    else if (pos) totalIndices += pos.count;
-  }
-
-  const mergedPos = new Float32Array(totalVertices * 3);
-  const mergedNormals = new Float32Array(totalVertices * 3);
-  const mergedIndices: number[] = [];
-
-  let vertexOffset = 0;
-
-  for (const g of geometries) {
-    const pos = g.getAttribute('position');
-    if (!pos) continue;
-
-    g.computeVertexNormals();
-    const norm = g.getAttribute('normal');
-
-    for (let i = 0; i < pos.count * 3; i++) {
-      mergedPos[vertexOffset * 3 + i] = pos.array[i];
-      if (norm) mergedNormals[vertexOffset * 3 + i] = norm.array[i];
-    }
-
-    if (g.index) {
-      for (let i = 0; i < g.index.count; i++) {
-        mergedIndices.push(g.index.array[i] + vertexOffset);
-      }
-    } else {
-      for (let i = 0; i < pos.count; i++) {
-        mergedIndices.push(i + vertexOffset);
-      }
-    }
-
-    vertexOffset += pos.count;
-  }
-
-  const merged = new THREE.BufferGeometry();
-  merged.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
-  merged.setAttribute('normal', new THREE.BufferAttribute(mergedNormals, 3));
-  merged.setIndex(mergedIndices);
-  merged.computeVertexNormals();
-  return merged;
-}
-
-/**
  * Extracts a single merged BufferGeometry from a Three.js Object3D hierarchy
  */
 function extractGeometryFromObject(object: THREE.Object3D): THREE.BufferGeometry {
@@ -192,9 +140,23 @@ function extractGeometryFromObject(object: THREE.Object3D): THREE.BufferGeometry
   object.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
-      const g = mesh.geometry.clone();
-      g.applyMatrix4(mesh.matrixWorld);
-      geometries.push(g);
+      if (mesh.geometry) {
+        let g = mesh.geometry.clone();
+        if (!g.attributes.normal) {
+          g.computeVertexNormals();
+        }
+        g.applyMatrix4(mesh.matrixWorld);
+
+        // Keep only standard position and normal attributes to prevent attribute mismatch on merge
+        const clean = new THREE.BufferGeometry();
+        const posAttr = g.getAttribute('position');
+        const normAttr = g.getAttribute('normal');
+        if (posAttr) clean.setAttribute('position', posAttr);
+        if (normAttr) clean.setAttribute('normal', normAttr);
+        if (g.index) clean.setIndex(g.index);
+
+        geometries.push(clean);
+      }
     }
   });
 
@@ -204,7 +166,18 @@ function extractGeometryFromObject(object: THREE.Object3D): THREE.BufferGeometry
   if (geometries.length === 1) {
     return geometries[0];
   }
-  return mergeBufferGeometries(geometries);
+
+  try {
+    const merged = BufferGeometryUtils.mergeGeometries(geometries, false);
+    if (merged) {
+      merged.computeVertexNormals();
+      return merged;
+    }
+  } catch (err) {
+    console.warn('BufferGeometryUtils merge error, falling back to first mesh:', err);
+  }
+
+  return geometries[0];
 }
 
 /**
@@ -252,5 +225,74 @@ export async function parseModelFile(file: File): Promise<ParsedModelResult> {
     stats,
     fileName: file.name,
     fileType,
+  };
+}
+
+/**
+ * Downloads and parses a remote 3D model file from a CDN/URL (e.g. Poly Pizza GLB, Smithsonian, Khronos)
+ */
+export async function fetchRemoteGeometry(
+  url: string,
+  fileTypeHint?: 'glb' | 'gltf' | 'obj' | 'stl' | 'ply'
+): Promise<ParsedModelResult> {
+  const cached = geometryCache.get(url);
+  if (cached) {
+    const stats = getGeometryStats(cached);
+    return {
+      geometry: cached.clone(),
+      stats,
+      fileName: url.split('/').pop()?.split('?')[0] || 'remote-model',
+      fileType: fileTypeHint || 'glb',
+    };
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download remote 3D model (${response.status}): ${url}`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  let ext = fileTypeHint;
+  if (!ext) {
+    const cleanUrl = url.split('?')[0].toLowerCase();
+    if (cleanUrl.endsWith('.glb')) ext = 'glb';
+    else if (cleanUrl.endsWith('.gltf')) ext = 'gltf';
+    else if (cleanUrl.endsWith('.obj')) ext = 'obj';
+    else if (cleanUrl.endsWith('.stl')) ext = 'stl';
+    else if (cleanUrl.endsWith('.ply')) ext = 'ply';
+    else ext = 'glb';
+  }
+
+  let geometry: THREE.BufferGeometry;
+
+  if (ext === 'obj') {
+    const text = new TextDecoder().decode(buffer);
+    const loader = new OBJLoader();
+    const obj = loader.parse(text);
+    geometry = extractGeometryFromObject(obj);
+  } else if (ext === 'stl') {
+    const loader = new STLLoader();
+    geometry = loader.parse(buffer);
+  } else if (ext === 'ply') {
+    const loader = new PLYLoader();
+    geometry = loader.parse(buffer);
+  } else {
+    // GLTF / GLB
+    const loader = new GLTFLoader();
+    const gltf = await new Promise<any>((resolve, reject) => {
+      loader.parse(buffer, '', resolve, reject);
+    });
+    geometry = extractGeometryFromObject(gltf.scene || gltf.scenes[0]);
+  }
+
+  normalizeGeometryBounds(geometry);
+  geometryCache.set(url, geometry);
+  const stats = getGeometryStats(geometry);
+
+  return {
+    geometry: geometry.clone(),
+    stats,
+    fileName: url.split('/').pop()?.split('?')[0] || 'remote-model',
+    fileType: ext,
   };
 }

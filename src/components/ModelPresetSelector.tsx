@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { ModelPreset } from '../types/ascii';
+import { ModelPreset, ModelConfig } from '../types/ascii';
 import { MODEL_PRESETS } from '../engine/modelPresets';
 import { BookmarkPlus, Trash2, Box } from 'lucide-react';
 
 interface ModelPresetSelectorProps {
   activePresetId: string;
+  activeModelConfig?: ModelConfig;
   onSelectPreset: (preset: ModelPreset) => void;
   onSaveCustomPreset: (name: string) => void;
   userPresets: ModelPreset[];
@@ -13,6 +14,7 @@ interface ModelPresetSelectorProps {
 
 export const ModelPresetSelector: React.FC<ModelPresetSelectorProps> = ({
   activePresetId,
+  activeModelConfig,
   onSelectPreset,
   onSaveCustomPreset,
   userPresets,
@@ -29,17 +31,17 @@ export const ModelPresetSelector: React.FC<ModelPresetSelectorProps> = ({
 
   return (
     <div className="tab-content">
-      {/* Built-in 3D Model Presets */}
+      {/* 1. Built-in 3D Model Presets */}
       <div className="control-section">
         <div className="section-header">
-          <span>3D Model Library</span>
+          <span>Standard 3D Presets</span>
           <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
-            {MODEL_PRESETS.length} models
+            {MODEL_PRESETS.length} presets
           </span>
         </div>
         <div className="presets-grid">
           {MODEL_PRESETS.map((preset) => {
-            const isActive = activePresetId === preset.id;
+            const isActive = activePresetId === preset.id && activeModelConfig?.sourceType === 'preset';
             return (
               <button
                 key={preset.id}
@@ -57,8 +59,8 @@ export const ModelPresetSelector: React.FC<ModelPresetSelectorProps> = ({
         </div>
       </div>
 
-      {/* User Saved 3D Presets */}
-      <div className="control-section">
+      {/* 2. User Saved 3D Presets */}
+      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
         <div className="section-header">
           <span>User Saved 3D Presets</span>
           <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>

@@ -102,6 +102,111 @@ export function applyTrackballRotation(
   };
 }
 
+/**
+ * Calculates the exact visual Euler rotation of the model at time t,
+ * combining base manual rotation, auto-rotation velocities, and sinusoidal wobble.
+ */
+export function getVisualRotation(
+  viewConfig: {
+    manualRotationX: number;
+    manualRotationY: number;
+    manualRotationZ: number;
+    autoRotate: boolean;
+    autoRotateSpeedX: number;
+    autoRotateSpeedY: number;
+    autoRotateSpeedZ: number;
+    wobbleSpeed: number;
+    wobbleAmp: number;
+  },
+  time: number
+): { rotX: number; rotY: number; rotZ: number } {
+  let rotX = viewConfig.manualRotationX;
+  let rotY = viewConfig.manualRotationY;
+  let rotZ = viewConfig.manualRotationZ;
+
+  if (viewConfig.autoRotate) {
+    rotX += time * viewConfig.autoRotateSpeedX;
+    rotY += time * viewConfig.autoRotateSpeedY;
+    rotZ += time * viewConfig.autoRotateSpeedZ;
+  }
+
+  if (viewConfig.wobbleAmp > 0) {
+    const wobble = Math.sin(time * viewConfig.wobbleSpeed) * viewConfig.wobbleAmp;
+    rotX += wobble * 0.5;
+    rotZ += wobble * 0.3;
+  }
+
+  return { rotX, rotY, rotZ };
+}
+
+/**
+ * Applies direct-touch trackball rotation against the LIVE animated visual orientation of the model at time t,
+ * deducting the animation offset so that manualRotation stores the base correctly with zero jumping or glitching.
+ */
+export function applyTrackballRotationWithTime(
+  viewConfig: {
+    manualRotationX: number;
+    manualRotationY: number;
+    manualRotationZ: number;
+    autoRotate: boolean;
+    autoRotateSpeedX: number;
+    autoRotateSpeedY: number;
+    autoRotateSpeedZ: number;
+    wobbleSpeed: number;
+    wobbleAmp: number;
+  },
+  time: number,
+  prevX: number,
+  prevY: number,
+  currX: number,
+  currY: number,
+  width: number,
+  height: number,
+  sensitivity: number = 2.0
+): { manualRotationX: number; manualRotationY: number; manualRotationZ: number } {
+  const currentVisual = getVisualRotation(viewConfig, time);
+
+  // Apply trackball rotation to the LIVE visual orientation
+  const nextVisual = applyTrackballRotation(
+    {
+      manualRotationX: currentVisual.rotX,
+      manualRotationY: currentVisual.rotY,
+      manualRotationZ: currentVisual.rotZ,
+    },
+    prevX,
+    prevY,
+    currX,
+    currY,
+    width,
+    height,
+    sensitivity
+  );
+
+  // Calculate the active animation offset at time t
+  let autoOffsetX = 0;
+  let autoOffsetY = 0;
+  let autoOffsetZ = 0;
+
+  if (viewConfig.autoRotate) {
+    autoOffsetX += time * viewConfig.autoRotateSpeedX;
+    autoOffsetY += time * viewConfig.autoRotateSpeedY;
+    autoOffsetZ += time * viewConfig.autoRotateSpeedZ;
+  }
+
+  if (viewConfig.wobbleAmp > 0) {
+    const wobble = Math.sin(time * viewConfig.wobbleSpeed) * viewConfig.wobbleAmp;
+    autoOffsetX += wobble * 0.5;
+    autoOffsetZ += wobble * 0.3;
+  }
+
+  // Deduct animation offset so manualRotation continues seamlessly
+  return {
+    manualRotationX: nextVisual.manualRotationX - autoOffsetX,
+    manualRotationY: nextVisual.manualRotationY - autoOffsetY,
+    manualRotationZ: nextVisual.manualRotationZ - autoOffsetZ,
+  };
+}
+
 // Reusable scratch variables & zero-allocation buffers
 let cachedLines: string[] = [];
 let lineBuffer: string[] = [];

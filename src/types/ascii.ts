@@ -173,11 +173,13 @@ export type BuiltinModelId =
   | 'cylinder';
 
 export interface ModelConfig {
-  sourceType: 'preset' | 'file';
+  sourceType: 'preset' | 'file' | 'url';
   modelId: string;
   fileName?: string;
   fileData?: string; // base64 or text representation for serialization
   fileType?: 'obj' | 'stl' | 'gltf' | 'glb' | 'ply';
+  remoteUrl?: string;
+  remoteAttribution?: string;
   scale: number;
   scaleX: number;
   scaleY: number;

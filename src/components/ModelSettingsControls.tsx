@@ -1,14 +1,38 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { ModelConfig, BuiltinModelId } from '../types/ascii';
 import { parseModelFile } from '../engine/modelLoader';
-import { Upload, FileCode, RotateCcw, Sliders, Box, AlertCircle } from 'lucide-react';
+import {
+  Khronos3DModel,
+  KhronosCategory,
+  KHRONOS_CATEGORIES,
+  searchKhronosModels,
+} from '../engine/khronos3dModels';
+import {
+  Upload,
+  FileCode,
+  RotateCcw,
+  Sliders,
+  Box,
+  AlertCircle,
+  Globe,
+  Search,
+  Sparkles,
+  Check,
+  Loader2,
+} from 'lucide-react';
 import { BufferGeometry } from 'three';
 
 interface ModelSettingsControlsProps {
   config: ModelConfig;
   onChangeConfig: (newConfig: ModelConfig) => void;
-  onLoadCustomGeometry: (geometry: BufferGeometry, fileName: string, fileType: 'obj' | 'stl' | 'gltf' | 'glb' | 'ply', stats: { vertices: number; faces: number }) => void;
+  onLoadCustomGeometry: (
+    geometry: BufferGeometry,
+    fileName: string,
+    fileType: 'obj' | 'stl' | 'gltf' | 'glb' | 'ply',
+    stats: { vertices: number; faces: number }
+  ) => void;
   onSelectBuiltinGeometry: (id: BuiltinModelId) => void;
+  onLoadRemoteModel: (model: Khronos3DModel) => Promise<void>;
 }
 
 export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
@@ -16,11 +40,17 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
   onChangeConfig,
   onLoadCustomGeometry,
   onSelectBuiltinGeometry,
+  onLoadRemoteModel,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Online Khronos Library state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<KhronosCategory>('All');
+  const [loadingModelId, setLoadingModelId] = useState<string | null>(null);
 
   const update = <K extends keyof ModelConfig>(key: K, val: ModelConfig[K]) => {
     onChangeConfig({
@@ -30,7 +60,7 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
   };
 
   const handleProcessFile = async (file: File) => {
-    setIsLoading(true);
+    setIsLoadingFile(true);
     setErrorMsg(null);
     try {
       const res = await parseModelFile(file);
@@ -38,7 +68,7 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to parse 3D file.');
     } finally {
-      setIsLoading(false);
+      setIsLoadingFile(false);
     }
   };
 
@@ -56,6 +86,19 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
     }
   };
 
+  const handleLoadRemote = async (model: Khronos3DModel) => {
+    setLoadingModelId(model.id);
+    try {
+      await onLoadRemoteModel(model);
+    } finally {
+      setLoadingModelId(null);
+    }
+  };
+
+  const displayedOnlineModels = useMemo(() => {
+    return searchKhronosModels(searchQuery, selectedCategory);
+  }, [searchQuery, selectedCategory]);
+
   const builtinOptions: { id: BuiltinModelId; label: string }[] = [
     { id: 'torus-knot', label: 'Torus Knot' },
     { id: 'skull', label: 'Skull (OBJ)' },
@@ -65,10 +108,185 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
 
   return (
     <div className="tab-content">
-      {/* 1. 3D Model File Upload */}
+      {/* 1. Online 3D Library (Khronos & Open CDN - Text Cards) */}
       <div className="control-section">
         <div className="section-header">
-          <span>Upload 3D Model</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Globe size={12} style={{ color: 'var(--accent)' }} />
+            <span>Online 3D Library</span>
+          </div>
+          <span style={{ fontSize: '9px', color: 'var(--accent)', fontWeight: 'bold' }}>
+            KHRONOS glTF & OPEN CDN
+          </span>
+        </div>
+
+        <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
+          Explore official Khronos glTF benchmark assets & open 3D models. Click any model to render in ASCII.
+        </p>
+
+        {/* Search Input */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <input
+              type="text"
+              className="number-input"
+              style={{ width: '100%', textAlign: 'left', padding: '5px 8px 5px 24px', fontSize: '11px' }}
+              placeholder="Search 3D models (e.g. duck, ferrari, robot, helmet)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <Search
+              size={12}
+              style={{
+                position: 'absolute',
+                left: '7px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-dim)',
+              }}
+            />
+          </div>
+          {searchQuery && (
+            <button className="btn btn-sm" onClick={() => setSearchQuery('')} title="Clear search">
+              CLEAR
+            </button>
+          )}
+        </div>
+
+        {/* Category Filters */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '4px',
+            overflowX: 'auto',
+            paddingBottom: '4px',
+            marginBottom: '10px',
+            scrollbarWidth: 'none',
+          }}
+        >
+          {KHRONOS_CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              className={`btn btn-sm ${selectedCategory === cat ? 'btn-primary' : ''}`}
+              style={{
+                fontSize: '9px',
+                padding: '2px 7px',
+                whiteSpace: 'nowrap',
+                textTransform: 'uppercase',
+              }}
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Models Grid (Clean text cards without images) */}
+        {displayedOnlineModels.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-dim)', fontSize: '10px' }}>
+            No models found matching "{searchQuery}".
+          </div>
+        ) : (
+          <div
+            className="presets-grid"
+            style={{
+              maxHeight: '260px',
+              overflowY: 'auto',
+              paddingRight: '2px',
+              marginBottom: '4px',
+            }}
+          >
+            {displayedOnlineModels.map((model) => {
+              const isLoaded =
+                config.sourceType === 'url' &&
+                (config.remoteUrl === model.downloadUrl || config.modelId === model.id);
+              const isLoading = loadingModelId === model.id;
+
+              return (
+                <button
+                  key={model.id}
+                  className={`preset-card ${isLoaded ? 'active' : ''}`}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    textAlign: 'left',
+                    minHeight: '62px',
+                    padding: '8px 10px',
+                  }}
+                  disabled={isLoading}
+                  onClick={() => handleLoadRemote(model)}
+                >
+                  <div style={{ width: '100%' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '2px',
+                      }}
+                    >
+                      <div className="preset-card-title" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Box size={11} style={{ flexShrink: 0 }} />
+                        {model.title}
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '8px',
+                          color: 'var(--text-muted)',
+                          backgroundColor: 'var(--bg-panel)',
+                          padding: '1px 4px',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '2px',
+                        }}
+                      >
+                        {model.triCount} tris
+                      </span>
+                    </div>
+
+                    <div className="preset-card-desc" style={{ fontSize: '9px', color: 'var(--text-dim)' }}>
+                      by {model.author} ({model.license})
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+                    <span
+                      style={{
+                        fontSize: '8.5px',
+                        fontWeight: 700,
+                        letterSpacing: '0.5px',
+                        color: isLoaded ? 'var(--accent)' : 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                      }}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 size={9} className="dice-spin" /> FETCHING...
+                        </>
+                      ) : isLoaded ? (
+                        <>
+                          <Check size={9} /> ACTIVE
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={9} /> LOAD ASCII
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 2. Upload Custom 3D Model */}
+      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+        <div className="section-header">
+          <span>Upload Custom 3D File</span>
           <Upload size={12} />
         </div>
 
@@ -90,11 +308,11 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
         >
-          <Upload size={20} style={{ color: 'var(--accent)', marginBottom: '4px' }} />
-          <div style={{ fontWeight: 700, fontSize: '11px', color: 'var(--text-primary)' }}>
-            {isLoading ? 'PARSING 3D MODEL...' : 'DROP 3D FILE OR CLICK TO BROWSE'}
+          <Upload size={18} style={{ color: 'var(--accent)', marginBottom: '4px' }} />
+          <div style={{ fontWeight: 700, fontSize: '10.5px', color: 'var(--text-primary)' }}>
+            {isLoadingFile ? 'PARSING 3D MODEL...' : 'DROP 3D FILE OR CLICK TO BROWSE'}
           </div>
-          <div style={{ fontSize: '9px', color: 'var(--text-dim)', marginTop: '2px' }}>
+          <div style={{ fontSize: '8.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
             Supports .OBJ, .STL, .GLTF, .GLB, .PLY
           </div>
         </div>
@@ -106,19 +324,27 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
           </div>
         )}
 
-        {/* Current Active Model Info */}
+        {/* Current Active Model Info Card */}
         <div className="model-info-card" style={{ marginTop: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <span style={{ fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
               <FileCode size={12} />
-              {config.sourceType === 'file' ? config.fileName || 'Custom 3D Model' : `Built-in: ${config.modelId.toUpperCase()}`}
+              {config.sourceType === 'file'
+                ? config.fileName || 'Custom 3D Model'
+                : config.sourceType === 'url'
+                ? config.fileName || 'Online Model'
+                : `Built-in: ${config.modelId.toUpperCase()}`}
             </span>
             <span className="brand-badge" style={{ fontSize: '8px' }}>
-              {config.sourceType === 'file' ? config.fileType?.toUpperCase() : 'PRIMITIVE'}
+              {config.sourceType === 'file'
+                ? config.fileType?.toUpperCase()
+                : config.sourceType === 'url'
+                ? 'REMOTE GLB'
+                : 'PRIMITIVE'}
             </span>
           </div>
           {config.polyStats && (
-            <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
+            <div style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
               <span>VERTICES: <strong>{config.polyStats.vertices.toLocaleString()}</strong></span>
               <span>FACES: <strong>{config.polyStats.faces.toLocaleString()}</strong></span>
             </div>
@@ -126,8 +352,8 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
         </div>
       </div>
 
-      {/* 2. Built-in Shape Selector */}
-      <div className="control-section">
+      {/* 3. Built-in Shape Primitives */}
+      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
         <div className="section-header">
           <span>Built-in 3D Primitives</span>
           <Box size={12} />
@@ -145,8 +371,8 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
         </div>
       </div>
 
-      {/* 3. Transformations & Scaling */}
-      <div className="control-section">
+      {/* 4. Transformations & Scaling */}
+      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
         <div className="section-header">
           <span>Transformations & Scale</span>
           <Sliders size={12} />
@@ -160,57 +386,101 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
               type="range"
               className="range-slider"
               min={0.1}
-              max={3.5}
+              max={4.0}
               step={0.05}
               value={config.scale}
               onChange={(e) => update('scale', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
-              {config.scale.toFixed(2)}x
-            </span>
+            <input
+              type="number"
+              className="number-input"
+              min={0.1}
+              max={4.0}
+              step={0.05}
+              value={config.scale}
+              onChange={(e) => update('scale', parseFloat(e.target.value) || 1)}
+            />
           </div>
         </div>
 
-        {/* Per-axis Scale */}
+        {/* Scale X */}
         <div className="control-row">
-          <span className="control-label">Scale X / Y / Z</span>
-          <div style={{ display: 'flex', gap: '4px' }}>
+          <span className="control-label">Scale X</span>
+          <div className="control-input-wrapper">
+            <input
+              type="range"
+              className="range-slider"
+              min={0.2}
+              max={3.0}
+              step={0.05}
+              value={config.scaleX}
+              onChange={(e) => update('scaleX', parseFloat(e.target.value))}
+            />
             <input
               type="number"
               className="number-input"
-              style={{ width: '42px', padding: '2px', fontSize: '10px' }}
-              step={0.1}
-              min={0.1}
-              max={5.0}
+              min={0.2}
+              max={3.0}
+              step={0.05}
               value={config.scaleX}
               onChange={(e) => update('scaleX', parseFloat(e.target.value) || 1)}
             />
+          </div>
+        </div>
+
+        {/* Scale Y */}
+        <div className="control-row">
+          <span className="control-label">Scale Y</span>
+          <div className="control-input-wrapper">
             <input
-              type="number"
-              className="number-input"
-              style={{ width: '42px', padding: '2px', fontSize: '10px' }}
-              step={0.1}
-              min={0.1}
-              max={5.0}
+              type="range"
+              className="range-slider"
+              min={0.2}
+              max={3.0}
+              step={0.05}
               value={config.scaleY}
-              onChange={(e) => update('scaleY', parseFloat(e.target.value) || 1)}
+              onChange={(e) => update('scaleY', parseFloat(e.target.value))}
             />
             <input
               type="number"
               className="number-input"
-              style={{ width: '42px', padding: '2px', fontSize: '10px' }}
-              step={0.1}
-              min={0.1}
-              max={5.0}
+              min={0.2}
+              max={3.0}
+              step={0.05}
+              value={config.scaleY}
+              onChange={(e) => update('scaleY', parseFloat(e.target.value) || 1)}
+            />
+          </div>
+        </div>
+
+        {/* Scale Z */}
+        <div className="control-row">
+          <span className="control-label">Scale Z</span>
+          <div className="control-input-wrapper">
+            <input
+              type="range"
+              className="range-slider"
+              min={0.2}
+              max={3.0}
+              step={0.05}
+              value={config.scaleZ}
+              onChange={(e) => update('scaleZ', parseFloat(e.target.value))}
+            />
+            <input
+              type="number"
+              className="number-input"
+              min={0.2}
+              max={3.0}
+              step={0.05}
               value={config.scaleZ}
               onChange={(e) => update('scaleZ', parseFloat(e.target.value) || 1)}
             />
           </div>
         </div>
 
-        {/* Translation Offsets */}
+        {/* Translation Offset X */}
         <div className="control-row">
-          <span className="control-label">Position Offset X</span>
+          <span className="control-label">Offset X</span>
           <div className="control-input-wrapper">
             <input
               type="range"
@@ -221,14 +491,21 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
               value={config.offsetX}
               onChange={(e) => update('offsetX', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
-              {config.offsetX.toFixed(2)}
-            </span>
+            <input
+              type="number"
+              className="number-input"
+              min={-2.0}
+              max={2.0}
+              step={0.05}
+              value={config.offsetX}
+              onChange={(e) => update('offsetX', parseFloat(e.target.value) || 0)}
+            />
           </div>
         </div>
 
+        {/* Translation Offset Y */}
         <div className="control-row">
-          <span className="control-label">Position Offset Y</span>
+          <span className="control-label">Offset Y</span>
           <div className="control-input-wrapper">
             <input
               type="range"
@@ -239,14 +516,21 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
               value={config.offsetY}
               onChange={(e) => update('offsetY', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
-              {config.offsetY.toFixed(2)}
-            </span>
+            <input
+              type="number"
+              className="number-input"
+              min={-2.0}
+              max={2.0}
+              step={0.05}
+              value={config.offsetY}
+              onChange={(e) => update('offsetY', parseFloat(e.target.value) || 0)}
+            />
           </div>
         </div>
 
+        {/* Translation Offset Z */}
         <div className="control-row">
-          <span className="control-label">Position Offset Z</span>
+          <span className="control-label">Offset Z</span>
           <div className="control-input-wrapper">
             <input
               type="range"
@@ -257,17 +541,23 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
               value={config.offsetZ}
               onChange={(e) => update('offsetZ', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
-              {config.offsetZ.toFixed(2)}
-            </span>
+            <input
+              type="number"
+              className="number-input"
+              min={-2.0}
+              max={2.0}
+              step={0.05}
+              value={config.offsetZ}
+              onChange={(e) => update('offsetZ', parseFloat(e.target.value) || 0)}
+            />
           </div>
         </div>
 
         {/* Reset Transforms */}
-        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+        <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
           <button
             className="btn btn-sm"
-            style={{ flex: 1 }}
+            style={{ width: '100%' }}
             onClick={() => {
               onChangeConfig({
                 ...config,
@@ -281,40 +571,81 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
               });
             }}
           >
-            <RotateCcw size={11} /> RESET TRANSFORMS
+            <RotateCcw size={10} />
+            RESET TRANSFORMS
           </button>
         </div>
       </div>
 
-      {/* 4. Surface & Geometry Properties */}
-      <div className="control-section">
+      {/* 5. Geometry Processing & Mesh Options */}
+      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
         <div className="section-header">
-          <span>Surface & Geometry</span>
+          <span>Mesh & Normal Settings</span>
         </div>
 
         <div className="control-row">
-          <span className="control-label">
-            Flat Shading
-            <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>Faceted low-poly polygon faces</div>
-          </span>
+          <span className="control-label">Auto Center Mesh</span>
           <button
-            className={`btn btn-sm ${config.flatShading ? 'btn-primary' : ''}`}
-            onClick={() => update('flatShading', !config.flatShading)}
+            className={`btn btn-sm ${config.autoCenter ? 'btn-primary' : ''}`}
+            style={{ minWidth: '80px' }}
+            onClick={() => update('autoCenter', !config.autoCenter)}
           >
-            {config.flatShading ? 'ENABLED' : 'SMOOTH'}
+            {config.autoCenter ? 'ENABLED' : 'DISABLED'}
           </button>
         </div>
 
-        <div className="control-row" style={{ marginTop: '6px' }}>
-          <span className="control-label">
-            Double-Sided Rendering
-            <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>Render inside and outside faces</div>
-          </span>
+        <div className="control-row">
+          <span className="control-label">Normalize Bounding Size</span>
+          <button
+            className={`btn btn-sm ${config.normalizeSize ? 'btn-primary' : ''}`}
+            style={{ minWidth: '80px' }}
+            onClick={() => update('normalizeSize', !config.normalizeSize)}
+          >
+            {config.normalizeSize ? 'ENABLED' : 'DISABLED'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Flat Shading (Faceted Normals)</span>
+          <button
+            className={`btn btn-sm ${config.flatShading ? 'btn-primary' : ''}`}
+            style={{ minWidth: '80px' }}
+            onClick={() => update('flatShading', !config.flatShading)}
+          >
+            {config.flatShading ? 'FLAT' : 'SMOOTH'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Wireframe Edges Mode</span>
+          <button
+            className={`btn btn-sm ${config.wireframe ? 'btn-primary' : ''}`}
+            style={{ minWidth: '80px' }}
+            onClick={() => update('wireframe', !config.wireframe)}
+          >
+            {config.wireframe ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Double-Sided Faces</span>
           <button
             className={`btn btn-sm ${config.doubleSided ? 'btn-primary' : ''}`}
+            style={{ minWidth: '80px' }}
             onClick={() => update('doubleSided', !config.doubleSided)}
           >
-            {config.doubleSided ? 'DOUBLE' : 'SINGLE'}
+            {config.doubleSided ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Invert Face Normals</span>
+          <button
+            className={`btn btn-sm ${config.invertNormals ? 'btn-primary' : ''}`}
+            style={{ minWidth: '80px' }}
+            onClick={() => update('invertNormals', !config.invertNormals)}
+          >
+            {config.invertNormals ? 'INVERTED' : 'NORMAL'}
           </button>
         </div>
       </div>

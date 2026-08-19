@@ -29,8 +29,9 @@ import {
   DEFAULT_MODEL_VIEW_CONFIG,
   MODEL_PRESETS,
 } from './engine/modelPresets';
-import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats } from './engine/modelLoader';
-import { renderModelAsciiFrame, applyTrackballRotation } from './engine/modelRenderer';
+import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
+import { Khronos3DModel } from './engine/khronos3dModels';
+import { renderModelAsciiFrame, applyTrackballRotationWithTime } from './engine/modelRenderer';
 import { CHARSETS, renderAsciiFrame } from './engine/renderer';
 import {
   createTrailPoint,
@@ -775,7 +776,7 @@ export const App: React.FC = () => {
     );
   }, [pushModelHistorySnapshot]);
 
-  // Initial async geometry loader (for OBJ presets)
+  // Initial async geometry loader (for OBJ presets & remote models)
   useEffect(() => {
     if (modelConfig.sourceType === 'preset') {
       loadBuiltinGeometryAsync(modelConfig.modelId as BuiltinModelId).then((geo) => {
@@ -786,8 +787,43 @@ export const App: React.FC = () => {
           polyStats: stats,
         }));
       });
+    } else if (modelConfig.sourceType === 'url' && modelConfig.remoteUrl) {
+      fetchRemoteGeometry(modelConfig.remoteUrl, 'glb')
+        .then((res) => {
+          currentGeometryRef.current = res.geometry;
+          setModelConfig((prev) => ({
+            ...prev,
+            polyStats: res.stats,
+          }));
+        })
+        .catch((e) => console.warn('Failed to load remote model on initialization:', e));
     }
   }, []);
+
+  const handleLoadOnlineModel = useCallback(
+    async (model: Khronos3DModel) => {
+      try {
+        const result = await fetchRemoteGeometry(model.downloadUrl, 'glb');
+        currentGeometryRef.current = result.geometry;
+        const newConfig: ModelConfig = {
+          ...modelConfig,
+          sourceType: 'url',
+          modelId: model.id,
+          fileName: model.title,
+          fileType: 'glb',
+          remoteUrl: model.downloadUrl,
+          remoteAttribution: `${model.title} by ${model.author} (${model.license})`,
+          polyStats: result.stats,
+        };
+        setModelConfig(newConfig);
+        pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
+      } catch (err) {
+        console.error('Failed to load remote 3D model:', err);
+        alert(`Could not load 3D model "${model.title}". Please try another model.`);
+      }
+    },
+    [modelConfig, modelViewConfig, activeModelPreset, pushModelHistorySnapshot]
+  );
 
   // Save Custom User Model Preset
   const handleSaveCustomModelPreset = (name: string) => {
@@ -881,8 +917,9 @@ export const App: React.FC = () => {
   const handleOrbitRotate = useCallback(
     (prevX: number, prevY: number, currX: number, currY: number, width: number, height: number) => {
       setModelViewConfig((prev) => {
-        const nextRot = applyTrackballRotation(
+        const nextRot = applyTrackballRotationWithTime(
           prev,
+          timeRef.current,
           prevX,
           prevY,
           currX,
@@ -1431,7 +1468,15 @@ export const App: React.FC = () => {
           }}
           onMouseMove={handleMouseMove}
           onClick={handleClick}
-          presetName={appMode === 'model' ? activeModelPreset.name : activePreset.name}
+          presetName={
+            appMode === 'model'
+              ? modelConfig.sourceType === 'url'
+                ? modelConfig.fileName || 'Online 3D Model'
+                : modelConfig.sourceType === 'file'
+                ? modelConfig.fileName || 'Custom 3D File'
+                : activeModelPreset.name
+              : activePreset.name
+          }
           isEdited={appMode === 'model' ? isModelEdited : isEdited}
           targetFps={optimizeConfig.targetFps}
           viewMode={viewMode}
@@ -1640,6 +1685,7 @@ export const App: React.FC = () => {
                 {modelTab === 'presets' && (
                   <ModelPresetSelector
                     activePresetId={activeModelPreset.id}
+                    activeModelConfig={modelConfig}
                     onSelectPreset={handleSelectModelPreset}
                     onSaveCustomPreset={handleSaveCustomModelPreset}
                     userPresets={userModelPresets}
@@ -1653,6 +1699,7 @@ export const App: React.FC = () => {
                     onChangeConfig={handleChangeModelConfig}
                     onLoadCustomGeometry={handleLoadCustomGeometry}
                     onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                    onLoadRemoteModel={handleLoadOnlineModel}
                   />
                 )}
 
