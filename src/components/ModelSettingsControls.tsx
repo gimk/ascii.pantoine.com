@@ -58,16 +58,6 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
 
   const builtinOptions: { id: BuiltinModelId; label: string }[] = [
     { id: 'torus-knot', label: 'Torus Knot' },
-    { id: 'teapot', label: 'Teapot' },
-    { id: 'skull', label: 'Cyber Skull' },
-    { id: 'dna', label: 'DNA Helix' },
-    { id: 'spaceship', label: 'Starfighter' },
-    { id: 'crystal', label: 'Crystal' },
-    { id: 'saturn', label: 'Saturn' },
-    { id: 'suzanne', label: 'Suzanne' },
-    { id: 'dome', label: 'Dome' },
-    { id: 'mobius', label: 'Möbius' },
-    { id: 'sphere', label: 'Sphere' },
     { id: 'cube', label: 'Cube' },
     { id: 'cylinder', label: 'Cylinder' },
   ];

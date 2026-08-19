@@ -168,16 +168,6 @@ export type ModelShadingMode = 'shaded' | 'wireframe' | 'depth' | 'normals' | 'o
 
 export type BuiltinModelId =
   | 'torus-knot'
-  | 'teapot'
-  | 'skull'
-  | 'dna'
-  | 'spaceship'
-  | 'crystal'
-  | 'suzanne'
-  | 'saturn'
-  | 'dome'
-  | 'mobius'
-  | 'sphere'
   | 'cube'
   | 'cylinder';
 
