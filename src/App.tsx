@@ -1127,24 +1127,6 @@ export const App: React.FC = () => {
             </div>
           </div>
           <span className="brand-badge">v1.3</span>
-
-          {/* Big Mode Switcher: SYNTH vs MODEL */}
-          <div className="mode-switcher-group">
-            <button
-              className={`btn-mode-switch ${appMode === 'synth' ? 'active' : ''}`}
-              onClick={() => setAppMode('synth')}
-              title="Parametric Wave & Particle Synthesizer"
-            >
-              SYNTH
-            </button>
-            <button
-              className={`btn-mode-switch ${appMode === 'model' ? 'active' : ''}`}
-              onClick={() => setAppMode('model')}
-              title="3D Model to 2D ASCII Visualizer"
-            >
-              MODEL
-            </button>
-          </div>
         </div>
 
         {/* Header Tools: Randomize, Undo, Redo, AI Prompt, Export, Share */}
@@ -1256,6 +1238,26 @@ export const App: React.FC = () => {
         {/* Right Sidebar Control Panel */}
         {viewMode === 'editor' && (
           <div className="sidebar-pane">
+            {/* Primary Mode Switcher (Full Width at Top of Right Panel) */}
+            <div className="sidebar-mode-switcher">
+              <button
+                className={`sidebar-mode-btn ${appMode === 'synth' ? 'active' : ''}`}
+                onClick={() => setAppMode('synth')}
+                title="Parametric Wave & Particle Synthesizer"
+              >
+                <Sliders size={13} style={{ marginRight: '6px' }} />
+                SYNTH
+              </button>
+              <button
+                className={`sidebar-mode-btn ${appMode === 'model' ? 'active' : ''}`}
+                onClick={() => setAppMode('model')}
+                title="3D Model to 2D ASCII Visualizer"
+              >
+                <Box size={13} style={{ marginRight: '6px' }} />
+                MODEL
+              </button>
+            </div>
+
             {appMode === 'synth' ? (
               /* SYNTH MODE TABS */
               <>

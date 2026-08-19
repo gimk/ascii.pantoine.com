@@ -185,44 +185,6 @@ html, body, #root {
   font-weight: bold;
 }
 
-/* Big Mode Switcher in Header (SYNTH / MODEL) */
-.mode-switcher-group {
-  display: inline-flex;
-  align-items: center;
-  background: var(--bg-control);
-  border: 1px solid var(--border-color);
-  border-radius: 2px;
-  padding: 2px;
-  gap: 2px;
-  margin-left: 6px;
-}
-
-.btn-mode-switch {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  padding: 3px 8px;
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-}
-
-.btn-mode-switch:hover {
-  color: var(--text-primary);
-  background: var(--bg-control-hover);
-}
-
-.btn-mode-switch.active {
-  background: var(--accent);
-  color: var(--bg-primary);
-  box-shadow: 0 0 8px var(--accent-glow);
-}
-
 /* 3D Model Dropzone, Info Card, & Viewport Cursor */
 .model-dropzone {
   display: flex;
@@ -676,10 +638,63 @@ html, body, #root {
   }
 }
 
-/* Tab Navigation (Pinned Sticky Top) */
-.tab-nav {
+/* Primary Mode Switcher (Pinned Top of Sidebar) */
+.sidebar-mode-switcher {
   position: sticky;
   top: 0;
+  z-index: 35;
+  display: flex;
+  width: 100%;
+  height: 38px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-control);
+  flex-shrink: 0;
+}
+
+.sidebar-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-color);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.sidebar-mode-btn:last-child {
+  border-right: none;
+}
+
+.sidebar-mode-btn:hover {
+  background-color: var(--bg-control-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-mode-btn.active {
+  background-color: var(--accent);
+  color: var(--bg-primary);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.sidebar-mode-btn.active svg {
+  color: var(--bg-primary);
+}
+
+/* Tab Navigation (Sub-Tabs Pinned Below Mode Switcher) */
+.tab-nav {
+  position: sticky;
+  top: 38px;
   z-index: 30;
   display: flex;
   border-bottom: 1px solid var(--border-color);
