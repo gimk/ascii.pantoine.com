@@ -5,9 +5,40 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { BuiltinModelId } from '../types/ascii';
 
-// --- Built-in Model Library ---
+// --- Built-in Model Library & Preset Loader ---
+
+const geometryCache = new Map<string, THREE.BufferGeometry>();
+
+/**
+ * Fetches an OBJ file from public path and parses it into normalized BufferGeometry
+ */
+export async function fetchPresetObjGeometry(path: string): Promise<THREE.BufferGeometry> {
+  const cached = geometryCache.get(path);
+  if (cached) return cached.clone();
+
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`Failed to load preset 3D model: ${path} (status: ${response.status})`);
+  }
+  const text = await response.text();
+  const loader = new OBJLoader();
+  const obj = loader.parse(text);
+  const geo = extractGeometryFromObject(obj);
+  normalizeGeometryBounds(geo);
+  geometryCache.set(path, geo);
+  return geo.clone();
+}
 
 export function getBuiltinGeometry(id: BuiltinModelId): THREE.BufferGeometry {
+  if (id === 'skull') {
+    const cached = geometryCache.get('skull') || geometryCache.get('/presets/skull.obj');
+    if (cached) return cached.clone();
+    // Default placeholder while OBJ fetches
+    const placeholder = new THREE.IcosahedronGeometry(1.0, 1);
+    normalizeGeometryBounds(placeholder);
+    return placeholder;
+  }
+
   let geo: THREE.BufferGeometry;
 
   switch (id) {
@@ -26,6 +57,34 @@ export function getBuiltinGeometry(id: BuiltinModelId): THREE.BufferGeometry {
 
   normalizeGeometryBounds(geo);
   return geo;
+}
+
+/**
+ * Loads a built-in or preset geometry asynchronously (supporting static OBJ assets)
+ */
+export async function loadBuiltinGeometryAsync(id: BuiltinModelId): Promise<THREE.BufferGeometry> {
+  if (id === 'skull') {
+    const cached = geometryCache.get('skull');
+    if (cached) return cached.clone();
+
+    const basePath = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL)
+      ? (import.meta as any).env.BASE_URL.replace(/\/$/, '')
+      : '';
+    const presetUrl = `${basePath}/presets/skull.obj`;
+
+    try {
+      const geo = await fetchPresetObjGeometry(presetUrl);
+      geometryCache.set('skull', geo);
+      return geo.clone();
+    } catch {
+      // Fallback relative path
+      const geo = await fetchPresetObjGeometry('./presets/skull.obj');
+      geometryCache.set('skull', geo);
+      return geo.clone();
+    }
+  }
+
+  return getBuiltinGeometry(id);
 }
 
 /**

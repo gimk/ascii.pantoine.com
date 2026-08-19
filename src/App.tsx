@@ -29,7 +29,7 @@ import {
   DEFAULT_MODEL_VIEW_CONFIG,
   MODEL_PRESETS,
 } from './engine/modelPresets';
-import { getBuiltinGeometry, getGeometryStats } from './engine/modelLoader';
+import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats } from './engine/modelLoader';
 import { renderModelAsciiFrame } from './engine/modelRenderer';
 import { CHARSETS, renderAsciiFrame } from './engine/renderer';
 import {
@@ -600,9 +600,23 @@ export const App: React.FC = () => {
     setModelViewConfig({ ...preset.viewConfig });
 
     if (preset.modelConfig.sourceType === 'preset') {
-      currentGeometryRef.current = getBuiltinGeometry(
-        preset.modelConfig.modelId as BuiltinModelId
-      );
+      const modelId = preset.modelConfig.modelId as BuiltinModelId;
+      const initialGeo = getBuiltinGeometry(modelId);
+      currentGeometryRef.current = initialGeo;
+      const initialStats = getGeometryStats(initialGeo);
+      setModelConfig((prev) => ({
+        ...prev,
+        polyStats: initialStats,
+      }));
+
+      loadBuiltinGeometryAsync(modelId).then((geo) => {
+        currentGeometryRef.current = geo;
+        const stats = getGeometryStats(geo);
+        setModelConfig((prev) => ({
+          ...prev,
+          polyStats: stats,
+        }));
+      });
     }
 
     if (preset.theme) {
@@ -631,6 +645,20 @@ export const App: React.FC = () => {
     }
     if (preset.optimizeConfig) {
       setOptimizeConfig({ ...preset.optimizeConfig });
+    }
+  }, []);
+
+  // Initial async geometry loader (for OBJ presets)
+  useEffect(() => {
+    if (modelConfig.sourceType === 'preset') {
+      loadBuiltinGeometryAsync(modelConfig.modelId as BuiltinModelId).then((geo) => {
+        currentGeometryRef.current = geo;
+        const stats = getGeometryStats(geo);
+        setModelConfig((prev) => ({
+          ...prev,
+          polyStats: stats,
+        }));
+      });
     }
   }, []);
 
@@ -682,16 +710,25 @@ export const App: React.FC = () => {
   };
 
   const handleSelectBuiltinGeometry = (id: BuiltinModelId) => {
-    const geo = getBuiltinGeometry(id);
-    currentGeometryRef.current = geo;
-    const stats = getGeometryStats(geo);
+    const initialGeo = getBuiltinGeometry(id);
+    currentGeometryRef.current = initialGeo;
+    const initialStats = getGeometryStats(initialGeo);
     setModelConfig((prev) => ({
       ...prev,
       sourceType: 'preset',
       modelId: id,
       fileName: undefined,
-      polyStats: stats,
+      polyStats: initialStats,
     }));
+
+    loadBuiltinGeometryAsync(id).then((geo) => {
+      currentGeometryRef.current = geo;
+      const stats = getGeometryStats(geo);
+      setModelConfig((prev) => ({
+        ...prev,
+        polyStats: stats,
+      }));
+    });
   };
 
   const handleOrbitRotate = useCallback((deltaPitch: number, deltaYaw: number) => {
