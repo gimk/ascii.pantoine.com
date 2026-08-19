@@ -200,9 +200,18 @@ export async function exportAnimatedGif(
         width / 2, height / 2, 0,
         width / 2, height / 2, Math.max(width, height) * 0.7
       );
-      const glowColor = gradientConfig
-        ? `${gradientConfig.color1}33`
-        : (customThemeColor ? `${customThemeColor}33` : 'rgba(0, 255, 102, 0.2)');
+      const baseGlowHex = gradientConfig ? gradientConfig.color1 : (customThemeColor || text);
+      let glowColor = baseGlowHex;
+      if (baseGlowHex.startsWith('#')) {
+        const hex = baseGlowHex.slice(1);
+        const fullHex = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+        if (fullHex.length === 6) {
+          const r = parseInt(fullHex.slice(0, 2), 16);
+          const g = parseInt(fullHex.slice(2, 4), 16);
+          const b = parseInt(fullHex.slice(4, 6), 16);
+          glowColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
+        }
+      }
       ambientGlow.addColorStop(0, glowColor);
       ambientGlow.addColorStop(1, 'transparent');
       ctx.fillStyle = ambientGlow;

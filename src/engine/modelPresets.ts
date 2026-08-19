@@ -79,10 +79,13 @@ export const MODEL_PRESETS: ModelPreset[] = [
     viewConfig: {
       ...DEFAULT_MODEL_VIEW_CONFIG,
       shadingMode: 'shaded',
-      autoRotateSpeedX: 0.1,
-      autoRotateSpeedY: 0.6,
-      autoRotateSpeedZ: 0.0,
-      manualRotationX: 0.15,
+      autoRotate: true,
+      autoRotateSpeedX: 0.0,
+      autoRotateSpeedY: 0.0,
+      autoRotateSpeedZ: -0.3,
+      manualRotationX: -1.8326, // -105 deg
+      manualRotationY: 0.0175,  // 1 deg
+      manualRotationZ: 0.0,
       contrast: 1.45,
       cameraDistance: 3.2,
     },
