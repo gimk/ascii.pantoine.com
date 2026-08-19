@@ -1251,10 +1251,10 @@ export const App: React.FC = () => {
               <button
                 className={`sidebar-mode-btn ${appMode === 'model' ? 'active' : ''}`}
                 onClick={() => setAppMode('model')}
-                title="3D Model to 2D ASCII Visualizer"
+                title="3D Model to 2D ASCII Visualizer (Work In Progress)"
               >
                 <Box size={13} style={{ marginRight: '6px' }} />
-                MODEL
+                MODEL (WIP)
               </button>
             </div>
 
