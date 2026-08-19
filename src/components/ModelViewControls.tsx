@@ -162,6 +162,24 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
           </div>
         </div>
 
+        <div className="control-row">
+          <span className="control-label">Manual Roll (Z Angle)</span>
+          <div className="control-input-wrapper">
+            <input
+              type="range"
+              className="range-slider"
+              min={-3.14}
+              max={3.14}
+              step={0.05}
+              value={config.manualRotationZ}
+              onChange={(e) => update('manualRotationZ', parseFloat(e.target.value))}
+            />
+            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+              {Math.round((config.manualRotationZ * 180) / Math.PI)}°
+            </span>
+          </div>
+        </div>
+
         <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
           <button className="btn btn-sm" style={{ flex: 1 }} onClick={onResetRotation}>
             RESET ANGLES (0°)
