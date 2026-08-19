@@ -125,6 +125,9 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
           </div>
         </div>
 
+        {/* Separator */}
+        <div style={{ borderTop: '1px solid var(--border-color)', margin: '6px 0', opacity: 0.7 }} />
+
         {/* Manual Angle Adjustments */}
         <div className="control-row">
           <span className="control-label">Manual Pitch (X Angle)</span>
