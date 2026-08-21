@@ -28,7 +28,6 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   sharpenStrength: 120,
   sharpenRadius: 2,
   noise: 0,
-  denoise: 0,
   blur: 0,
   brightness: 0,
   contrast: 0,

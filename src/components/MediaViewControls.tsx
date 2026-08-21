@@ -554,29 +554,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           </div>
         </div>
 
-        {/* Denoise */}
-        <div className="control-row">
-          <span className="control-label">Denoise</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={0}
-              max={100}
-              step={1}
-              value={config.denoise}
-              onChange={(e) => update('denoise', parseInt(e.target.value))}
-            />
-            <NumberInput
-              value={config.denoise}
-              min={0}
-              max={100}
-              step={1}
-              onChange={(val) => update('denoise', val)}
-            />
-          </div>
-        </div>
-
         {/* Blur */}
         <div className="control-row">
           <span className="control-label">Blur</span>

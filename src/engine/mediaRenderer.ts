@@ -273,13 +273,11 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     lumBuffer[i] = lum;
   }
 
-  // 5. Blur / Denoise Pre-Filtering
-  const denoiseRadius = viewConfig.denoise > 0 ? Math.max(1, Math.round(viewConfig.denoise / 25)) : 0;
-  const userBlurRadius = viewConfig.blur > 0 ? Math.max(1, Math.round(viewConfig.blur / 3)) : 0;
-  const effectiveBlurRadius = Math.max(denoiseRadius, userBlurRadius);
+  // 5. Blur Pre-Filtering
+  const blurRadius = viewConfig.blur > 0 ? Math.max(1, Math.round(viewConfig.blur / 2)) : 0;
 
-  if (effectiveBlurRadius > 0) {
-    applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, effectiveBlurRadius);
+  if (blurRadius > 0) {
+    applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, blurRadius);
     for (let i = 0; i < totalCells; i++) {
       if (lumBuffer[i] >= 0) lumBuffer[i] = blurBuffer[i];
     }

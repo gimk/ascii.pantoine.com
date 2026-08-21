@@ -204,7 +204,6 @@ export interface MediaViewConfig {
   sharpenStrength: number; // 0 to 300
   sharpenRadius: number; // 1 to 10
   noise: number; // 0 to 100
-  denoise: number; // 0 to 100
   blur: number; // 0 to 20
   brightness: number; // -100 to 100
   contrast: number; // -100 to 100
