@@ -15,7 +15,7 @@ const NumberInput: React.FC<{
   step?: number;
   disabled?: boolean;
   onChange: (val: number) => void;
-}> = ({ value, min = 0, max = 100, step = 1, disabled = false, onChange }) => {
+}> = ({ value, min = -100, max = 100, step = 1, disabled = false, onChange }) => {
   const [text, setText] = useState<string>(value.toString());
   const [isFocused, setIsFocused] = useState<boolean>(false);
 
@@ -29,6 +29,7 @@ const NumberInput: React.FC<{
     if (disabled) return;
     const raw = e.target.value;
     setText(raw);
+    if (raw === '-' || raw === '') return;
     const parsed = parseInt(raw, 10);
     if (!isNaN(parsed)) {
       onChange(Math.max(min, Math.min(max, parsed)));
@@ -76,6 +77,291 @@ const NumberInput: React.FC<{
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
     />
+  );
+};
+
+interface LevelsControlProps {
+  black: number; // 0..100
+  midtones: number; // 0..100
+  white: number; // 0..100
+  onChange: (black: number, midtones: number, white: number) => void;
+}
+
+const LevelsControl: React.FC<LevelsControlProps> = ({
+  black = 0,
+  midtones = 50,
+  white = 100,
+  onChange,
+}) => {
+  const trackRef = React.useRef<HTMLDivElement>(null);
+  const [activeHandle, setActiveHandle] = useState<number | null>(null);
+
+  const calculateNormalizedGamma = (b: number, m: number, w: number) => {
+    const midNorm = (m - b) / Math.max(1, w - b);
+    const gamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+    return (1 / gamma).toFixed(2);
+  };
+
+  const handlePointerDown = (handleIdx: number, e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveHandle(handleIdx);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleTrackPointerDown = (e: React.PointerEvent) => {
+    if (!trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const clickPct = Math.max(0, Math.min(100, Math.round(((e.clientX - rect.left) / rect.width) * 100)));
+
+    const distBlack = Math.abs(clickPct - black);
+    const distMid = Math.abs(clickPct - midtones);
+    const distWhite = Math.abs(clickPct - white);
+
+    let closest = 1;
+    if (distBlack < distMid && distBlack < distWhite) closest = 0;
+    else if (distWhite < distMid && distWhite < distBlack) closest = 2;
+
+    setActiveHandle(closest);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
+    if (closest === 0) {
+      const newBlack = Math.min(clickPct, midtones - 1);
+      onChange(Math.max(0, newBlack), midtones, white);
+    } else if (closest === 1) {
+      const newMid = Math.max(black + 1, Math.min(white - 1, clickPct));
+      onChange(black, newMid, white);
+    } else {
+      const newWhite = Math.max(clickPct, midtones + 1);
+      onChange(black, midtones, Math.min(100, newWhite));
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (activeHandle === null || !trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(100, Math.round(((e.clientX - rect.left) / rect.width) * 100)));
+
+    if (activeHandle === 0) {
+      const newBlack = Math.min(pct, midtones - 1);
+      onChange(Math.max(0, newBlack), midtones, white);
+    } else if (activeHandle === 1) {
+      const newMid = Math.max(black + 1, Math.min(white - 1, pct));
+      onChange(black, newMid, white);
+    } else if (activeHandle === 2) {
+      const newWhite = Math.max(pct, midtones + 1);
+      onChange(black, midtones, Math.min(100, newWhite));
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setActiveHandle(null);
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handleReset = () => {
+    onChange(0, 50, 100);
+  };
+
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      {/* Outer row with CAPSULE on left and GRADIENT TRACK on right */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'var(--bg-primary)',
+          padding: '6px 8px',
+          border: '1px solid var(--border-color)',
+          borderRadius: '4px',
+        }}
+      >
+        {/* Capsule Label Button */}
+        <button
+          className="btn btn-sm"
+          style={{
+            padding: '4px 10px',
+            fontWeight: 700,
+            fontSize: '10px',
+            letterSpacing: '0.05em',
+            background: 'var(--bg-control)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '3px',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+          onClick={handleReset}
+          title="Click to Reset Levels to [0, 50, 100]"
+        >
+          LEVELS
+        </button>
+
+        {/* Multi-Stop Interactive Gradient Track */}
+        <div
+          ref={trackRef}
+          style={{
+            flex: 1,
+            position: 'relative',
+            height: '26px',
+            display: 'flex',
+            alignItems: 'center',
+            cursor: 'pointer',
+            touchAction: 'none',
+            userSelect: 'none',
+          }}
+          onPointerDown={handleTrackPointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          {/* Visual Gradient Track */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '7px',
+              right: '7px',
+              height: '5px',
+              borderRadius: '2.5px',
+              background: 'linear-gradient(to right, #000000 0%, #777777 50%, #ffffff 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.25)',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.6)',
+            }}
+          />
+
+          {/* 1. Black Point Thumb (Left) */}
+          <div
+            style={{
+              position: 'absolute',
+              left: `calc(7px + (100% - 14px) * ${black / 100})`,
+              transform: 'translateX(-50%)',
+              top: '3px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              cursor: 'ew-resize',
+              zIndex: activeHandle === 0 ? 10 : 2,
+            }}
+            onPointerDown={(e) => handlePointerDown(0, e)}
+          >
+            <div
+              style={{
+                width: '13px',
+                height: '13px',
+                borderRadius: '50%',
+                background: '#000000',
+                border: activeHandle === 0 ? '2px solid var(--accent)' : '2px solid #ffffff',
+                boxShadow: '0 0 5px rgba(0,0,0,0.9)',
+                transition: 'border-color 0.15s',
+              }}
+            />
+            <div
+              style={{
+                width: '7px',
+                height: '3px',
+                background: activeHandle === 0 ? 'var(--accent)' : '#888',
+                borderRadius: '1px',
+                marginTop: '1px',
+              }}
+            />
+          </div>
+
+          {/* 2. Midtones / Gamma Thumb (Center / Middle) */}
+          <div
+            style={{
+              position: 'absolute',
+              left: `calc(7px + (100% - 14px) * ${midtones / 100})`,
+              transform: 'translateX(-50%)',
+              top: '3px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              cursor: 'grab',
+              zIndex: activeHandle === 1 ? 10 : 3,
+            }}
+            onPointerDown={(e) => handlePointerDown(1, e)}
+          >
+            <div
+              style={{
+                width: '13px',
+                height: '13px',
+                borderRadius: '50%',
+                background: '#222222',
+                border: activeHandle === 1 ? '2px solid var(--accent)' : '2px solid #ffffff',
+                boxShadow: '0 0 5px rgba(0,0,0,0.9)',
+                transition: 'border-color 0.15s',
+              }}
+            />
+            <div
+              style={{
+                width: '7px',
+                height: '3px',
+                background: activeHandle === 1 ? 'var(--accent)' : '#aaa',
+                borderRadius: '1px',
+                marginTop: '1px',
+              }}
+            />
+          </div>
+
+          {/* 3. White Point Thumb (Right) */}
+          <div
+            style={{
+              position: 'absolute',
+              left: `calc(7px + (100% - 14px) * ${white / 100})`,
+              transform: 'translateX(-50%)',
+              top: '3px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              cursor: 'ew-resize',
+              zIndex: activeHandle === 2 ? 10 : 2,
+            }}
+            onPointerDown={(e) => handlePointerDown(2, e)}
+          >
+            <div
+              style={{
+                width: '13px',
+                height: '13px',
+                borderRadius: '50%',
+                background: '#ffffff',
+                border: activeHandle === 2 ? '2px solid var(--accent)' : '2px solid #ffffff',
+                boxShadow: '0 0 5px rgba(0,0,0,0.9)',
+                transition: 'border-color 0.15s',
+              }}
+            />
+            <div
+              style={{
+                width: '7px',
+                height: '3px',
+                background: activeHandle === 2 ? 'var(--accent)' : '#ccc',
+                borderRadius: '1px',
+                marginTop: '1px',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Numerical Indicators */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '9.5px',
+          color: 'var(--text-muted)',
+          padding: '3px 4px 0 4px',
+          fontFamily: 'var(--font-mono)',
+        }}
+      >
+        <span>Shadows: <strong style={{ color: 'var(--text-primary)' }}>{Math.round((black / 100) * 255)}</strong> ({black}%)</span>
+        <span>Gamma: <strong style={{ color: 'var(--accent)' }}>{calculateNormalizedGamma(black, midtones, white)}</strong> ({midtones}%)</span>
+        <span>Highlights: <strong style={{ color: 'var(--text-primary)' }}>{Math.round((white / 100) * 255)}</strong> ({white}%)</span>
+      </div>
+    </div>
   );
 };
 
@@ -417,7 +703,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         </div>
 
         {/* Tonal Mapping Mode */}
-        <div className="control-row">
+        <div className="control-row" style={{ marginBottom: '10px' }}>
           <span className="control-label">Tonal Mapping</span>
           <div style={{ display: 'flex', gap: '3px' }}>
             {[
@@ -435,6 +721,21 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           </div>
         </div>
 
+        {/* Levels 3-Point Multi-Stop Gradient Slider */}
+        <LevelsControl
+          black={config.levelBlack ?? 0}
+          midtones={config.levelMidtones ?? 50}
+          white={config.levelWhite ?? 100}
+          onChange={(black, midtones, white) => {
+            onChangeConfig({
+              ...config,
+              levelBlack: black,
+              levelMidtones: midtones,
+              levelWhite: white,
+            });
+          }}
+        />
+
         {/* Highlights */}
         <div className="control-row">
           <span className="control-label">Highlights</span>
@@ -442,7 +743,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             <input
               type="range"
               className="range-slider"
-              min={0}
+              min={-100}
               max={100}
               step={1}
               value={config.highlights}
@@ -450,7 +751,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             />
             <NumberInput
               value={config.highlights}
-              min={0}
+              min={-100}
               max={100}
               step={1}
               onChange={(val) => update('highlights', val)}
@@ -465,16 +766,16 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             <input
               type="range"
               className="range-slider"
-              min={-50}
-              max={50}
+              min={-100}
+              max={100}
               step={1}
               value={config.midtones}
               onChange={(e) => update('midtones', parseInt(e.target.value))}
             />
             <NumberInput
               value={config.midtones}
-              min={-50}
-              max={50}
+              min={-100}
+              max={100}
               step={1}
               onChange={(val) => update('midtones', val)}
             />
@@ -488,7 +789,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             <input
               type="range"
               className="range-slider"
-              min={0}
+              min={-100}
               max={100}
               step={1}
               value={config.shadows}
@@ -496,7 +797,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             />
             <NumberInput
               value={config.shadows}
-              min={0}
+              min={-100}
               max={100}
               step={1}
               onChange={(val) => update('shadows', val)}

@@ -343,12 +343,21 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     }
   }
 
-  // 8. Brightness, Contrast & Tonal Level Curves (Shadows, Midtones, Highlights)
+  // 8. Levels, Brightness, Contrast & Tonal Level Curves
   const contrastFactor = Math.tan(((viewConfig.contrast + 100) * Math.PI) / 400); // [-100..100] -> [0..inf]
   const brightnessOffset = viewConfig.brightness / 100.0;
-  const shadowLift = (viewConfig.shadows || 0) / 200.0;
-  const highlightBoost = (viewConfig.highlights - 50) / 100.0;
-  const midtoneGamma = Math.pow(2.0, -(viewConfig.midtones || 0) / 50.0); // gamma curve
+
+  // Levels parameters: black point, white point, and midtones gamma
+  const inBlack = Math.max(0, Math.min(0.95, (viewConfig.levelBlack ?? 0) / 100.0));
+  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (viewConfig.levelWhite ?? 100) / 100.0));
+  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (viewConfig.levelMidtones ?? 50) / 100.0));
+  const midNorm = (inMid - inBlack) / (inWhite - inBlack);
+  const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+
+  // Symmetrical tonal adjustments centered at 0 (range: -100 to 100)
+  const shadowAdj = (viewConfig.shadows || 0) / 100.0; // [-1..1]
+  const highlightAdj = (viewConfig.highlights || 0) / 100.0; // [-1..1]
+  const midtoneGamma = Math.pow(2.0, -(viewConfig.midtones || 0) / 50.0); // [-100..100] -> gamma
 
   // Noise injection
   const noiseAmp = (viewConfig.noise || 0) / 200.0;
@@ -357,20 +366,32 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     let val = lumBuffer[i];
     if (val < 0) continue;
 
-    // Apply Contrast & Brightness
+    // 1. Levels Remapping
+    val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
+    if (levelsGamma !== 1.0 && val > 0 && val < 1) {
+      val = Math.pow(val, 1 / levelsGamma);
+    }
+
+    // 2. Contrast & Brightness
     val = (val - 0.5) * contrastFactor + 0.5 + brightnessOffset;
 
-    // Apply Tonal Levels
-    if (shadowLift > 0) val = val * (1 - shadowLift) + shadowLift;
-    if (highlightBoost !== 0) val = Math.min(1, val * (1 + highlightBoost));
-    if (midtoneGamma !== 1.0 && val > 0) val = Math.pow(val, midtoneGamma);
+    // 3. Tonal Curves (Shadows, Highlights, Midtones)
+    if (shadowAdj !== 0) {
+      val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
+    }
+    if (highlightAdj !== 0) {
+      val = val + highlightAdj * val * val * 0.5;
+    }
+    if (midtoneGamma !== 1.0 && val > 0 && val < 1) {
+      val = Math.pow(val, midtoneGamma);
+    }
 
-    // Apply Noise
+    // 4. Noise
     if (noiseAmp > 0) {
       val += (Math.random() - 0.5) * noiseAmp;
     }
 
-    // Invert
+    // 5. Invert
     if (viewConfig.invert) {
       val = 1.0 - val;
     }

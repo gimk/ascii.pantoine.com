@@ -32,11 +32,14 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   denoise: 0,
   blur: 0,
   brightness: 0,
-  contrast: 20,
+  contrast: 0,
 
-  // 3. Tonal Controls
+  // 3. Tonal Controls (all sliders start at center)
   tonalMapping: '1-color',
-  highlights: 50,
+  levelBlack: 0,
+  levelMidtones: 50,
+  levelWhite: 100,
+  highlights: 0,
   midtones: 0,
   shadows: 0,
   background: 'black',

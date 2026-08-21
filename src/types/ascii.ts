@@ -212,9 +212,12 @@ export interface MediaViewConfig {
 
   // 3. Tonal Controls
   tonalMapping: TonalMappingMode;
-  highlights: number; // 0 to 100
-  midtones: number; // -50 to 50
-  shadows: number; // 0 to 100
+  levelBlack?: number; // 0 to 100, default 0
+  levelMidtones?: number; // 0 to 100, default 50 (middle)
+  levelWhite?: number; // 0 to 100, default 100
+  highlights: number; // -100 to 100, default 0 (middle)
+  midtones: number; // -100 to 100, default 0 (middle)
+  shadows: number; // -100 to 100, default 0 (middle)
   background: BackgroundMode;
   alphaThreshold: number; // 0 to 255
 }
