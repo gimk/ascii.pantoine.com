@@ -166,47 +166,22 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
   };
 
   return (
-    <div style={{ marginBottom: '12px' }}>
-      {/* Outer row with CAPSULE on left and GRADIENT TRACK on right */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          background: 'var(--bg-primary)',
-          padding: '6px 8px',
-          border: '1px solid var(--border-color)',
-          borderRadius: '4px',
-        }}
-      >
-        {/* Capsule Label Button */}
-        <button
-          className="btn btn-sm"
-          style={{
-            padding: '4px 10px',
-            fontWeight: 700,
-            fontSize: '10px',
-            letterSpacing: '0.05em',
-            background: 'var(--bg-control)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '3px',
-            color: 'var(--text-primary)',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-          onClick={handleReset}
-          title="Click to Reset Levels to [0, 50, 100]"
-        >
-          LEVELS
-        </button>
+    <div className="control-row" style={{ marginBottom: '10px' }}>
+      <span className="control-label">
+        Levels (B/M/W)
+        <div style={{ fontSize: '9px', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+          {Math.round((black / 100) * 255)} • γ {calculateNormalizedGamma(black, midtones, white)} • {Math.round((white / 100) * 255)}
+        </div>
+      </span>
 
+      <div className="control-input-wrapper">
         {/* Multi-Stop Interactive Gradient Track */}
         <div
           ref={trackRef}
           style={{
             flex: 1,
             position: 'relative',
-            height: '26px',
+            height: '24px',
             display: 'flex',
             alignItems: 'center',
             cursor: 'pointer',
@@ -222,12 +197,11 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
           <div
             style={{
               position: 'absolute',
-              left: '7px',
-              right: '7px',
-              height: '5px',
-              borderRadius: '2.5px',
+              left: '6px',
+              right: '6px',
+              height: '4px',
+              borderRadius: '2px',
               background: 'linear-gradient(to right, #000000 0%, #777777 50%, #ffffff 100%)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
               boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.6)',
             }}
           />
@@ -236,7 +210,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
           <div
             style={{
               position: 'absolute',
-              left: `calc(7px + (100% - 14px) * ${black / 100})`,
+              left: `calc(6px + (100% - 12px) * ${black / 100})`,
               transform: 'translateX(-50%)',
               top: '3px',
               display: 'flex',
@@ -246,23 +220,24 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
               zIndex: activeHandle === 0 ? 10 : 2,
             }}
             onPointerDown={(e) => handlePointerDown(0, e)}
+            title={`Black: ${Math.round((black / 100) * 255)} (${black}%)`}
           >
             <div
               style={{
-                width: '13px',
-                height: '13px',
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 background: '#000000',
-                border: activeHandle === 0 ? '2px solid var(--accent)' : '2px solid #ffffff',
-                boxShadow: '0 0 5px rgba(0,0,0,0.9)',
+                border: activeHandle === 0 ? '2px solid var(--accent)' : '2px solid var(--text-primary)',
+                boxShadow: '0 0 4px rgba(0,0,0,0.9)',
                 transition: 'border-color 0.15s',
               }}
             />
             <div
               style={{
-                width: '7px',
-                height: '3px',
-                background: activeHandle === 0 ? 'var(--accent)' : '#888',
+                width: '6px',
+                height: '2px',
+                background: activeHandle === 0 ? 'var(--accent)' : 'var(--text-muted)',
                 borderRadius: '1px',
                 marginTop: '1px',
               }}
@@ -273,7 +248,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
           <div
             style={{
               position: 'absolute',
-              left: `calc(7px + (100% - 14px) * ${midtones / 100})`,
+              left: `calc(6px + (100% - 12px) * ${midtones / 100})`,
               transform: 'translateX(-50%)',
               top: '3px',
               display: 'flex',
@@ -283,23 +258,24 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
               zIndex: activeHandle === 1 ? 10 : 3,
             }}
             onPointerDown={(e) => handlePointerDown(1, e)}
+            title={`Midtones / Gamma: ${midtones}%`}
           >
             <div
               style={{
-                width: '13px',
-                height: '13px',
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 background: '#222222',
-                border: activeHandle === 1 ? '2px solid var(--accent)' : '2px solid #ffffff',
-                boxShadow: '0 0 5px rgba(0,0,0,0.9)',
+                border: activeHandle === 1 ? '2px solid var(--accent)' : '2px solid var(--text-primary)',
+                boxShadow: '0 0 4px rgba(0,0,0,0.9)',
                 transition: 'border-color 0.15s',
               }}
             />
             <div
               style={{
-                width: '7px',
-                height: '3px',
-                background: activeHandle === 1 ? 'var(--accent)' : '#aaa',
+                width: '6px',
+                height: '2px',
+                background: activeHandle === 1 ? 'var(--accent)' : 'var(--text-muted)',
                 borderRadius: '1px',
                 marginTop: '1px',
               }}
@@ -310,7 +286,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
           <div
             style={{
               position: 'absolute',
-              left: `calc(7px + (100% - 14px) * ${white / 100})`,
+              left: `calc(6px + (100% - 12px) * ${white / 100})`,
               transform: 'translateX(-50%)',
               top: '3px',
               display: 'flex',
@@ -320,46 +296,45 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
               zIndex: activeHandle === 2 ? 10 : 2,
             }}
             onPointerDown={(e) => handlePointerDown(2, e)}
+            title={`White: ${Math.round((white / 100) * 255)} (${white}%)`}
           >
             <div
               style={{
-                width: '13px',
-                height: '13px',
+                width: '12px',
+                height: '12px',
                 borderRadius: '50%',
                 background: '#ffffff',
-                border: activeHandle === 2 ? '2px solid var(--accent)' : '2px solid #ffffff',
-                boxShadow: '0 0 5px rgba(0,0,0,0.9)',
+                border: activeHandle === 2 ? '2px solid var(--accent)' : '2px solid var(--text-primary)',
+                boxShadow: '0 0 4px rgba(0,0,0,0.9)',
                 transition: 'border-color 0.15s',
               }}
             />
             <div
               style={{
-                width: '7px',
-                height: '3px',
-                background: activeHandle === 2 ? 'var(--accent)' : '#ccc',
+                width: '6px',
+                height: '2px',
+                background: activeHandle === 2 ? 'var(--accent)' : 'var(--text-muted)',
                 borderRadius: '1px',
                 marginTop: '1px',
               }}
             />
           </div>
         </div>
-      </div>
 
-      {/* Numerical Indicators */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontSize: '9.5px',
-          color: 'var(--text-muted)',
-          padding: '3px 4px 0 4px',
-          fontFamily: 'var(--font-mono)',
-        }}
-      >
-        <span>Shadows: <strong style={{ color: 'var(--text-primary)' }}>{Math.round((black / 100) * 255)}</strong> ({black}%)</span>
-        <span>Gamma: <strong style={{ color: 'var(--accent)' }}>{calculateNormalizedGamma(black, midtones, white)}</strong> ({midtones}%)</span>
-        <span>Highlights: <strong style={{ color: 'var(--text-primary)' }}>{Math.round((white / 100) * 255)}</strong> ({white}%)</span>
+        {/* Small quick reset button */}
+        <button
+          className="btn btn-sm"
+          style={{
+            padding: '2px 6px',
+            fontSize: '10px',
+            height: '22px',
+            color: 'var(--text-muted)',
+          }}
+          onClick={handleReset}
+          title="Reset Levels to [0, 50, 100]"
+        >
+          RESET
+        </button>
       </div>
     </div>
   );
