@@ -2196,6 +2196,8 @@ export const App: React.FC = () => {
                     appMode={appMode}
                     mediaElement={mediaElementRef.current}
                     mediaConfig={mediaConfig}
+                    mediaViewConfig={mediaViewConfig}
+                    onChangeMediaViewConfig={handleChangeMediaViewConfig}
                   />
                 )}
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { OptimizeConfig, AppMode, MediaConfig } from '../types/ascii';
-import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2 } from 'lucide-react';
+import { OptimizeConfig, AppMode, MediaConfig, MediaViewConfig, DitherAlgorithm, ResamplingMode } from '../types/ascii';
+import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Settings2, Moon, Sun, Activity } from 'lucide-react';
 
 interface OptimizeControlsProps {
   config: OptimizeConfig;
@@ -14,6 +14,8 @@ interface OptimizeControlsProps {
   appMode?: AppMode;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   mediaConfig?: MediaConfig;
+  mediaViewConfig?: MediaViewConfig;
+  onChangeMediaViewConfig?: (cfg: MediaViewConfig) => void;
 }
 
 const NumberInput: React.FC<{
@@ -97,10 +99,28 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   appMode = 'synth',
   mediaElement,
   mediaConfig,
+  mediaViewConfig,
+  onChangeMediaViewConfig,
 }) => {
   const [draftCols, setDraftCols] = useState<number>(cols);
   const [draftRows, setDraftRows] = useState<number>(rows);
   const [lockAspectRatio, setLockAspectRatio] = useState<boolean>(true);
+
+  const algorithms: { id: DitherAlgorithm; label: string }[] = [
+    { id: 'floyd-steinberg', label: 'Floyd Steinberg' },
+    { id: 'atkinson', label: 'Atkinson (Mac 1-Bit)' },
+    { id: 'bayer-4x4', label: 'Bayer 4x4 (Matrix)' },
+    { id: 'bayer-8x8', label: 'Bayer 8x8 (Smooth)' },
+    { id: 'sierra', label: 'Sierra Lite' },
+    { id: 'noise', label: 'Random Noise' },
+    { id: 'none', label: 'None (Direct Quantize)' },
+  ];
+
+  const resamplingModes: { id: ResamplingMode; label: string }[] = [
+    { id: 'preserve-details', label: 'Preserve Details (High)' },
+    { id: 'bilinear', label: 'Bilinear (Smooth)' },
+    { id: 'nearest', label: 'Nearest (Pixelated)' },
+  ];
 
   const isStaticImage = appMode === 'media' && (mediaConfig?.mediaType === 'image' || !mediaConfig?.mediaType);
 
@@ -258,8 +278,113 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   return (
     <div className="tab-content">
       {appMode === 'media' ? (
-        /* MEDIA SPECIFIC RESOLUTION CONTROLS */
+        /* MEDIA SPECIFIC RESOLUTION & RENDER CONTROLS */
         <>
+          {/* 1. RENDER SETTINGS (Resampling, Dithering Algorithm, Invert, Outline) */}
+          {mediaViewConfig && onChangeMediaViewConfig && (
+            <div className="control-section">
+              <div className="section-header">
+                <span>Render Settings</span>
+                <Settings2 size={12} />
+              </div>
+
+              {/* Resampling Mode Dropdown */}
+              <div className="control-row">
+                <span className="control-label">Resampling</span>
+                <select
+                  className="number-input"
+                  style={{ width: '150px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
+                  value={mediaViewConfig.resampling}
+                  onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, resampling: e.target.value as ResamplingMode })}
+                >
+                  {resamplingModes.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Dithering Algorithm Dropdown */}
+              <div className="control-row">
+                <span className="control-label">Algorithm</span>
+                <select
+                  className="number-input"
+                  style={{ width: '150px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
+                  value={mediaViewConfig.algorithm}
+                  onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, algorithm: e.target.value as DitherAlgorithm })}
+                >
+                  {algorithms.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quick Toggles: Invert & Edge Detection */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '8px' }}>
+                <button
+                  className={`btn btn-sm ${mediaViewConfig.invert ? 'btn-primary' : ''}`}
+                  onClick={() => onChangeMediaViewConfig({ ...mediaViewConfig, invert: !mediaViewConfig.invert })}
+                >
+                  {mediaViewConfig.invert ? <Sun size={11} /> : <Moon size={11} />}
+                  INVERT {mediaViewConfig.invert ? '[ON]' : '[OFF]'}
+                </button>
+
+                <button
+                  className={`btn btn-sm ${mediaViewConfig.edgeDetection ? 'btn-primary' : ''}`}
+                  onClick={() => onChangeMediaViewConfig({ ...mediaViewConfig, edgeDetection: !mediaViewConfig.edgeDetection })}
+                >
+                  <Activity size={11} />
+                  OUTLINE {mediaViewConfig.edgeDetection ? '[ON]' : '[OFF]'}
+                </button>
+              </div>
+
+              {/* Edge Detection Threshold & Strength (if active) */}
+              {mediaViewConfig.edgeDetection && (
+                <div style={{ marginTop: '8px', padding: '8px', background: 'var(--bg-control)', borderRadius: '3px' }}>
+                  <div className="control-row" style={{ marginBottom: '6px' }}>
+                    <span className="control-label" style={{ fontSize: '10.5px' }}>Edge Threshold</span>
+                    <div className="control-input-wrapper">
+                      <input
+                        type="range"
+                        className="range-slider"
+                        min={5}
+                        max={90}
+                        step={1}
+                        value={mediaViewConfig.edgeThreshold}
+                        onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, edgeThreshold: parseInt(e.target.value) })}
+                      />
+                      <span style={{ fontSize: '10px', minWidth: '28px', textAlign: 'right' }}>
+                        {mediaViewConfig.edgeThreshold}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="control-row">
+                    <span className="control-label" style={{ fontSize: '10.5px' }}>Edge Strength</span>
+                    <div className="control-input-wrapper">
+                      <input
+                        type="range"
+                        className="range-slider"
+                        min={10}
+                        max={200}
+                        step={5}
+                        value={mediaViewConfig.edgeStrength}
+                        onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, edgeStrength: parseInt(e.target.value) })}
+                      />
+                      <span style={{ fontSize: '10px', minWidth: '28px', textAlign: 'right' }}>
+                        {mediaViewConfig.edgeStrength}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 2. Grid Resolution */}
           <div className="control-section">
             <div className="section-header">
               <span>Grid Resolution</span>
