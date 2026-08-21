@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { OptimizeConfig, AppMode, MediaConfig } from '../types/ascii';
-import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Crop, AlertTriangle, Lock, Unlock, Image as ImageIcon, Scale, CheckCircle2 } from 'lucide-react';
+import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2 } from 'lucide-react';
 
 interface OptimizeControlsProps {
   config: OptimizeConfig;
@@ -258,13 +258,15 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
       {appMode === 'media' ? (
         /* MEDIA SPECIFIC RESOLUTION CONTROLS */
         <>
-          {/* Media Info & Aspect Ratio Card */}
           <div className="control-section">
             <div className="section-header">
-              <span>Media Source & Framing</span>
-              <ImageIcon size={12} />
+              <span>Grid Resolution</span>
+              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                {cols}×{rows} ({totalCells.toLocaleString()} chars)
+              </span>
             </div>
 
+            {/* Media Source & Ratio Info Card */}
             <div
               style={{
                 padding: '8px 10px',
@@ -318,44 +320,12 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
             </div>
 
-            {/* Match Aspect Ratio & Lock Ratio Toggle */}
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button
-                className={`btn btn-sm ${lockAspectRatio ? 'btn-primary' : ''}`}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                onClick={() => setLockAspectRatio(!lockAspectRatio)}
-                title="When locked, changing columns automatically adjusts rows to maintain the image's exact ratio without borders"
-              >
-                {lockAspectRatio ? <Lock size={11} /> : <Unlock size={11} />}
-                RATIO LOCK {lockAspectRatio ? '[ON]' : '[OFF]'}
-              </button>
-
-              <button
-                className="btn btn-sm"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                onClick={handleMatchRatio}
-                title="Instantly snap rows to match the image aspect ratio"
-              >
-                <Scale size={11} />
-                MATCH RATIO
-              </button>
-            </div>
-          </div>
-
-          {/* Fractional Scale Presets (1/2, 1/4, 1/5, 1/6, 1/8, 1/16, 1/32) */}
-          <div className="control-section">
-            <div className="section-header">
-              <span>Image Scale Fractions</span>
-              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
-                {cols}×{rows} ({totalCells.toLocaleString()} chars)
-              </span>
-            </div>
-
+            {/* Fractional Scale Presets (1/2, 1/4, 1/5, 1/6, 1/8, 1/16, 1/32, FIT) */}
             <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
-              Scale resolutions proportional to image size with monospace aspect compensation.
+              Scale resolutions proportional to image size with monospace aspect compensation:
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '8px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '10px' }}>
               {mediaFractionPresets.map((preset) => {
                 const isActive = cols === preset.cols && rows === preset.rows;
                 return (
@@ -395,6 +365,29 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   <span style={{ fontSize: '8.5px', opacity: 0.8 }}>VIEWPORT</span>
                 </button>
               )}
+            </div>
+
+            {/* Match Aspect Ratio & Lock Ratio Toggle */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+              <button
+                className={`btn btn-sm ${lockAspectRatio ? 'btn-primary' : ''}`}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                onClick={() => setLockAspectRatio(!lockAspectRatio)}
+                title="When locked, changing columns automatically adjusts rows to maintain the image's exact ratio without borders"
+              >
+                {lockAspectRatio ? <Lock size={11} /> : <Unlock size={11} />}
+                RATIO LOCK {lockAspectRatio ? '[ON]' : '[OFF]'}
+              </button>
+
+              <button
+                className="btn btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                onClick={handleMatchRatio}
+                title="Instantly snap rows to match the image aspect ratio"
+              >
+                <Scale size={11} />
+                MATCH RATIO
+              </button>
             </div>
 
             {/* Columns Slider */}
