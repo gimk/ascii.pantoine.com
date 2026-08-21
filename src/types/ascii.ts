@@ -193,7 +193,6 @@ export interface MediaConfig {
 
 export interface MediaViewConfig {
   // 1. Render / Sampling Settings
-  inputDpi: number; // 36 to 300
   resampling: ResamplingMode;
   algorithm: DitherAlgorithm;
   invert: boolean;
@@ -211,7 +210,6 @@ export interface MediaViewConfig {
   contrast: number; // -100 to 100
 
   // 3. Tonal Controls
-  tonalMapping: TonalMappingMode;
   levelBlack?: number; // 0 to 100, default 0
   levelMidtones?: number; // 0 to 100, default 50 (middle)
   levelWhite?: number; // 0 to 100, default 100

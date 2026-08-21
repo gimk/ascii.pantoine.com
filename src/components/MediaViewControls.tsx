@@ -383,29 +383,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           <Settings2 size={12} />
         </div>
 
-        {/* Input DPI */}
-        <div className="control-row">
-          <span className="control-label">Input DPI / Sampling</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={36}
-              max={300}
-              step={6}
-              value={config.inputDpi}
-              onChange={(e) => update('inputDpi', parseInt(e.target.value))}
-            />
-            <NumberInput
-              value={config.inputDpi}
-              min={36}
-              max={300}
-              step={6}
-              onChange={(val) => update('inputDpi', val)}
-            />
-          </div>
-        </div>
-
         {/* Resampling Mode Dropdown */}
         <div className="control-row">
           <span className="control-label">Resampling</span>
@@ -675,25 +652,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         <div className="section-header">
           <span>TONAL CONTROLS</span>
           <Sparkles size={12} />
-        </div>
-
-        {/* Tonal Mapping Mode */}
-        <div className="control-row" style={{ marginBottom: '10px' }}>
-          <span className="control-label">Tonal Mapping</span>
-          <div style={{ display: 'flex', gap: '3px' }}>
-            {[
-              { id: '1-color', label: '1 Color' },
-              { id: 'grayscale', label: 'Grayscale' },
-            ].map((tm) => (
-              <button
-                key={tm.id}
-                className={`btn btn-sm ${config.tonalMapping === tm.id ? 'btn-primary' : ''}`}
-                onClick={() => update('tonalMapping', tm.id as any)}
-              >
-                {tm.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Levels 3-Point Multi-Stop Gradient Slider */}

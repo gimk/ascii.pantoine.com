@@ -17,7 +17,6 @@ export const DEFAULT_MEDIA_CONFIG: MediaConfig = {
 
 export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   // 1. Render / Sampling Settings
-  inputDpi: 72,
   resampling: 'preserve-details',
   algorithm: 'floyd-steinberg',
   invert: false,
@@ -35,7 +34,6 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   contrast: 0,
 
   // 3. Tonal Controls (all sliders start at center)
-  tonalMapping: '1-color',
   levelBlack: 0,
   levelMidtones: 50,
   levelWhite: 100,
