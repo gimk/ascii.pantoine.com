@@ -29,6 +29,7 @@ interface AsciiViewportProps {
   crtConfig?: CrtConfig;
   gradientConfig?: PhosphorGradient | null;
   appMode?: 'synth' | 'media' | 'model';
+  mediaType?: 'image' | 'video';
   onOrbitRotate?: (
     prevX: number,
     prevY: number,
@@ -62,11 +63,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   crtConfig,
   gradientConfig,
   appMode = 'synth',
+  mediaType,
   onOrbitRotate,
   onWheelZoom,
   onMediaPan,
   onMediaZoom,
 }, ref) => {
+  const isTimelineDisabled = appMode === 'media' && mediaType === 'image';
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const bloomPreRef = useRef<HTMLPreElement>(null);
@@ -157,7 +160,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         bloomPreRef.current.textContent = frameText;
       }
       if (timeSpanRef.current) {
-        timeSpanRef.current.textContent = `${time.toFixed(2)}s`;
+        timeSpanRef.current.textContent = isTimelineDisabled ? '0.00s' : `${time.toFixed(2)}s`;
       }
       if (fpsSpanRef.current) {
         fpsSpanRef.current.textContent = `${fps}`;
@@ -332,23 +335,56 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       {/* Bottom Timeline and Diagnostics Bar */}
       <div className="viewport-bottom-bar">
         <div className="status-group">
-          <button
-            className="btn btn-sm"
-            onClick={onTogglePlay}
-            title={isPlaying ? 'Pause Animation (Space)' : 'Play Animation (Space)'}
-          >
-            {isPlaying ? <Pause size={12} /> : <Play size={12} />}
-            {isPlaying ? 'PAUSE' : 'PLAY'}
-          </button>
-          {!isPlaying && (
-            <button className="btn btn-sm" onClick={onStepFrame} title="Step 1 Frame">
-              STEP
-            </button>
+          {isTimelineDisabled ? (
+            <>
+              <button
+                className="btn btn-sm"
+                disabled
+                style={{ opacity: 0.35, cursor: 'not-allowed' }}
+                title="Playback disabled for static 2D image"
+              >
+                <Play size={12} />
+                PLAY
+              </button>
+              <button
+                className="btn btn-sm"
+                disabled
+                style={{ opacity: 0.35, cursor: 'not-allowed' }}
+                title="Step disabled for static 2D image"
+              >
+                STEP
+              </button>
+              <button
+                className="btn btn-sm"
+                disabled
+                style={{ opacity: 0.35, cursor: 'not-allowed' }}
+                title="Reset disabled for static 2D image"
+              >
+                <RotateCcw size={12} />
+                RESET
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="btn btn-sm"
+                onClick={onTogglePlay}
+                title={isPlaying ? 'Pause Animation (Space)' : 'Play Animation (Space)'}
+              >
+                {isPlaying ? <Pause size={12} /> : <Play size={12} />}
+                {isPlaying ? 'PAUSE' : 'PLAY'}
+              </button>
+              {!isPlaying && (
+                <button className="btn btn-sm" onClick={onStepFrame} title="Step 1 Frame">
+                  STEP
+                </button>
+              )}
+              <button className="btn btn-sm" onClick={onResetTime} title="Reset Time to 0">
+                <RotateCcw size={12} />
+                RESET
+              </button>
+            </>
           )}
-          <button className="btn btn-sm" onClick={onResetTime} title="Reset Time to 0">
-            <RotateCcw size={12} />
-            RESET
-          </button>
 
           <span className="status-tag">
             FPS: <strong ref={fpsSpanRef}>0</strong>{targetFps && targetFps > 0 ? ` (${targetFps})` : ''}

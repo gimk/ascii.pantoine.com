@@ -1517,7 +1517,12 @@ export const App: React.FC = () => {
         fpsTimerRef.current = timestamp;
       }
 
-      if (isPlaying) {
+      const isStaticImage = appMode === 'media' && mediaConfig.mediaType === 'image';
+
+      if (isStaticImage) {
+        timeRef.current = 0;
+        lastTimeRef.current = timestamp;
+      } else if (isPlaying) {
         const delta = lastTimeRef.current ? Math.min(0.1, (timestamp - lastTimeRef.current) / 1000) : 0.016;
         timeRef.current += delta * (waveParams.timeSpeed || 1.0);
         lastTimeRef.current = timestamp;
@@ -1671,7 +1676,9 @@ export const App: React.FC = () => {
         }
       } else if (e.code === 'Space' && !isInput) {
         e.preventDefault();
-        setIsPlaying((p) => !p);
+        if (!(appMode === 'media' && mediaConfig.mediaType === 'image')) {
+          setIsPlaying((p) => !p);
+        }
       } else if (e.key.toLowerCase() === 'r' && !isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         handleRandomize();
@@ -1679,7 +1686,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, handleRandomize]);
+  }, [handleUndo, handleRedo, handleRandomize, appMode, mediaConfig.mediaType]);
 
   // Toggle between editor and fullscreen viewfinder
   const handleToggleViewMode = useCallback(() => {
@@ -1929,6 +1936,7 @@ export const App: React.FC = () => {
           crtConfig={crtConfig}
           gradientConfig={gradientConfig}
           appMode={appMode}
+          mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
           onOrbitRotate={handleOrbitRotate}
           onWheelZoom={handleWheelZoom}
           onMediaPan={handleMediaPan}
