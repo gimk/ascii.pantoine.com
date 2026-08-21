@@ -16,6 +16,7 @@ import { renderAsciiFrame } from './renderer';
 import { renderModelAsciiFrame } from './modelRenderer';
 import { renderAsciiMediaFrame } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
+import { injectGifComment } from './mediaMetadata';
 
 export interface GifExportOptions {
   name: string;
@@ -309,5 +310,8 @@ export async function exportAnimatedGif(
 
   gif.finish();
   const bytes = gif.bytesView();
-  return new Blob([bytes], { type: 'image/gif' });
+  return injectGifComment(
+    bytes,
+    `Generated with ASCII Studio (https://ascii.pantoine.com) - ${opts.name} (${opts.appMode || 'synth'})`
+  );
 }

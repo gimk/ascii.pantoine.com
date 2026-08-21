@@ -15,6 +15,7 @@ import { renderAsciiFrame } from './renderer';
 import { renderModelAsciiFrame } from './modelRenderer';
 import { renderAsciiMediaFrame } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
+import { injectPngMetadata, injectJpegComment } from './mediaMetadata';
 
 export interface ImageExportOptions {
   name: string;
@@ -104,6 +105,7 @@ function getThemeColors(
  */
 export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageExportResult> {
   const {
+    name = 'ascii-art',
     format = 'png',
     quality = 0.95,
     scale = 2.0,
@@ -302,26 +304,60 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     ctx.fillRect(0, 0, width, height);
   }
 
-  // 5. Convert to Blob & Return Result
+  // 5. Convert to Blob & Inject Container Metadata
   const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
   const extension = format === 'jpg' ? '.jpg' : '.png';
 
   return new Promise<ImageExportResult>((resolve, reject) => {
     canvas.toBlob(
-      (blob) => {
-        if (!blob) {
+      (rawBlob) => {
+        if (!rawBlob) {
           reject(new Error('Failed to generate image blob'));
           return;
         }
-        const url = URL.createObjectURL(blob);
-        resolve({
-          blob,
-          url,
-          width,
-          height,
-          mimeType,
-          extension,
-        });
+
+        rawBlob
+          .arrayBuffer()
+          .then((arrayBuffer) => {
+            let finalBlob: Blob = rawBlob;
+
+            if (format === 'png') {
+              finalBlob = injectPngMetadata(arrayBuffer, {
+                Title: name,
+                Author: 'ASCII Studio',
+                Software: 'ASCII Studio (https://ascii.pantoine.com)',
+                Source: 'https://ascii.pantoine.com',
+                Comment: `Generated with ASCII Studio (https://ascii.pantoine.com) - ${cols}x${rows}`,
+                Description: `ASCII art rendered via ASCII Studio: ${name} (${opts.appMode || 'synth'})`,
+              });
+            } else {
+              finalBlob = injectJpegComment(
+                arrayBuffer,
+                `ASCII Studio (https://ascii.pantoine.com) - ${name} (${opts.appMode || 'synth'})`
+              );
+            }
+
+            const url = URL.createObjectURL(finalBlob);
+            resolve({
+              blob: finalBlob,
+              url,
+              width,
+              height,
+              mimeType,
+              extension,
+            });
+          })
+          .catch(() => {
+            const url = URL.createObjectURL(rawBlob);
+            resolve({
+              blob: rawBlob,
+              url,
+              width,
+              height,
+              mimeType,
+              extension,
+            });
+          });
       },
       mimeType,
       format === 'jpg' ? quality : undefined
