@@ -1376,7 +1376,7 @@ export const App: React.FC = () => {
               <span className="brand-full">ASCII STUDIO</span>
             </div>
           </div>
-          <span className="brand-badge">v1.3</span>
+          <span className="brand-version">v1.3</span>
         </div>
 
         {/* Header Tools: Randomize, Undo, Redo, AI Prompt, Export, Share */}
