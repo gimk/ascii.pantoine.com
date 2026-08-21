@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop } from 'lucide-react';
 import { CrtConfig, PhosphorGradient } from '../types/ascii';
+import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 
 export interface AsciiViewportHandle {
   setFrame: (frameText: string, time: number, fps: number) => void;
@@ -30,6 +31,8 @@ interface AsciiViewportProps {
   gradientConfig?: PhosphorGradient | null;
   appMode?: 'synth' | 'media' | 'model';
   mediaType?: 'image' | 'video';
+  isLoading?: boolean;
+  loadingMessage?: string;
   onOrbitRotate?: (
     prevX: number,
     prevY: number,
@@ -62,6 +65,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   gradientConfig,
   appMode = 'synth',
   mediaType,
+  isLoading = false,
+  loadingMessage,
   onOrbitRotate,
   onWheelZoom,
 }, ref) => {
@@ -316,6 +321,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             } as React.CSSProperties) : {}),
           }}
         />
+
+        {/* ASCII 3D Loading Spinner Overlay */}
+        {isLoading && <AsciiLoadingSpinner message={loadingMessage} />}
       </div>
 
       {/* Bottom Timeline and Diagnostics Bar */}

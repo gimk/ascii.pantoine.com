@@ -191,6 +191,8 @@ export const App: React.FC = () => {
 
   const [userModelPresets, setUserModelPresets] = useState<ModelPreset[]>([]);
   const [modelTab, setModelTab] = useState<'presets' | 'model' | 'view' | 'render' | 'visuals'>('presets');
+  const [isModelLoading, setIsModelLoading] = useState<boolean>(false);
+  const [modelLoadingMessage, setModelLoadingMessage] = useState<string>('LOADING 3D GEOMETRY...');
 
   // Active Three.js geometry reference
   const currentGeometryRef = useRef<THREE.BufferGeometry>(
@@ -927,6 +929,21 @@ export const App: React.FC = () => {
       setOptimizeConfig({ ...preset.optimizeConfig });
     }
 
+    if (preset.modelConfig.sourceType === 'preset') {
+      setIsModelLoading(true);
+      setModelLoadingMessage(`LOADING ${preset.name.toUpperCase()}...`);
+      loadBuiltinGeometryAsync(preset.modelConfig.modelId as BuiltinModelId)
+        .then((geo) => {
+          currentGeometryRef.current = geo;
+          const stats = getGeometryStats(geo);
+          setModelConfig((prev) => ({
+            ...prev,
+            polyStats: stats,
+          }));
+        })
+        .finally(() => setIsModelLoading(false));
+    }
+
     pushModelHistorySnapshot(
       preset.modelConfig,
       preset.viewConfig,
@@ -943,15 +960,21 @@ export const App: React.FC = () => {
   // Initial async geometry loader (for OBJ presets & remote models)
   useEffect(() => {
     if (modelConfig.sourceType === 'preset') {
-      loadBuiltinGeometryAsync(modelConfig.modelId as BuiltinModelId).then((geo) => {
-        currentGeometryRef.current = geo;
-        const stats = getGeometryStats(geo);
-        setModelConfig((prev) => ({
-          ...prev,
-          polyStats: stats,
-        }));
-      });
+      setIsModelLoading(true);
+      setModelLoadingMessage('LOADING 3D MODEL...');
+      loadBuiltinGeometryAsync(modelConfig.modelId as BuiltinModelId)
+        .then((geo) => {
+          currentGeometryRef.current = geo;
+          const stats = getGeometryStats(geo);
+          setModelConfig((prev) => ({
+            ...prev,
+            polyStats: stats,
+          }));
+        })
+        .finally(() => setIsModelLoading(false));
     } else if (modelConfig.sourceType === 'url' && modelConfig.remoteUrl) {
+      setIsModelLoading(true);
+      setModelLoadingMessage(`DOWNLOADING ${modelConfig.fileName || '3D MODEL'}...`);
       fetchRemoteGeometry(modelConfig.remoteUrl, 'glb')
         .then((res) => {
           currentGeometryRef.current = res.geometry;
@@ -960,12 +983,15 @@ export const App: React.FC = () => {
             polyStats: res.stats,
           }));
         })
-        .catch((e) => console.warn('Failed to load remote model on initialization:', e));
+        .catch((e) => console.warn('Failed to load remote model on initialization:', e))
+        .finally(() => setIsModelLoading(false));
     }
   }, []);
 
   const handleLoadOnlineModel = useCallback(
     async (model: Khronos3DModel) => {
+      setIsModelLoading(true);
+      setModelLoadingMessage(`DOWNLOADING ${model.title.toUpperCase()}...`);
       try {
         const result = await fetchRemoteGeometry(model.downloadUrl, 'glb');
         currentGeometryRef.current = result.geometry;
@@ -984,6 +1010,8 @@ export const App: React.FC = () => {
       } catch (err) {
         console.error('Failed to load remote 3D model:', err);
         alert(`Could not load 3D model "${model.title}". Please try another model.`);
+      } finally {
+        setIsModelLoading(false);
       }
     },
     [modelConfig, modelViewConfig, activeModelPreset, pushModelHistorySnapshot]
@@ -1968,6 +1996,8 @@ export const App: React.FC = () => {
           gradientConfig={gradientConfig}
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
+          isLoading={appMode === 'model' && isModelLoading}
+          loadingMessage={modelLoadingMessage}
           onOrbitRotate={handleOrbitRotate}
           onWheelZoom={handleWheelZoom}
         />
@@ -2312,6 +2342,11 @@ export const App: React.FC = () => {
                     onLoadCustomGeometry={handleLoadCustomGeometry}
                     onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
                     onLoadRemoteModel={handleLoadOnlineModel}
+                    onStartLoading={(msg) => {
+                      setIsModelLoading(true);
+                      if (msg) setModelLoadingMessage(msg);
+                    }}
+                    onEndLoading={() => setIsModelLoading(false)}
                   />
                 )}
 

@@ -1278,3 +1278,15 @@ input[type="number"] {
     padding: 18px 14px 16px 14px;
   }
 }
+
+@keyframes ascii-scan-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
