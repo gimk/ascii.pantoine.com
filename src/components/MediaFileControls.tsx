@@ -115,8 +115,12 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!urlInput.trim()) return;
-    onUrlLoad(urlInput.trim());
+    let url = urlInput.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url) && !url.startsWith('data:') && !url.startsWith('blob:')) {
+      url = 'https://' + url;
+    }
+    onUrlLoad(url);
     setUrlInput('');
   };
 

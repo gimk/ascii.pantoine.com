@@ -1315,7 +1315,8 @@ export const App: React.FC = () => {
         ...mediaConfig,
         sourceType: 'url',
         mediaType: 'video',
-        fileName: url.split('/').pop() || 'Remote Video',
+        fileName: url.split('/').pop()?.split('?')[0] || 'Remote Video',
+        fileData: url,
         remoteUrl: url,
       };
       setMediaConfig(newConfig);
@@ -1334,7 +1335,8 @@ export const App: React.FC = () => {
         ...mediaConfig,
         sourceType: 'url',
         mediaType: 'image',
-        fileName: url.split('/').pop() || 'Remote Image',
+        fileName: url.split('/').pop()?.split('?')[0] || 'Remote Image',
+        fileData: url,
         remoteUrl: url,
       };
       setMediaConfig(newConfig);

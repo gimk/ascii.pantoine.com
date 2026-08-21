@@ -36,14 +36,21 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   if (!isOpen) return null;
 
   const isSynthMode = !state.appMode || state.appMode === 'synth';
+
+  const modelUrl = (state.modelConfig?.remoteUrl || '').trim();
   const isOnlineModel =
     state.appMode === 'model' &&
-    state.modelConfig?.sourceType === 'url' &&
-    Boolean(state.modelConfig?.remoteUrl);
+    (state.modelConfig?.sourceType === 'url' || Boolean(modelUrl.startsWith('http://') || modelUrl.startsWith('https://'))) &&
+    !modelUrl.startsWith('blob:') &&
+    !modelUrl.startsWith('data:');
+
+  const mediaUrl = (state.mediaConfig?.remoteUrl || state.mediaConfig?.fileData || '').trim();
   const isRemoteMedia =
     state.appMode === 'media' &&
-    state.mediaConfig?.sourceType === 'url' &&
-    Boolean((state.mediaConfig?.fileData || state.mediaConfig?.remoteUrl)?.startsWith('http'));
+    (state.mediaConfig?.sourceType === 'url' ||
+      Boolean(mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://') || mediaUrl.startsWith('//'))) &&
+    !mediaUrl.startsWith('blob:') &&
+    !mediaUrl.startsWith('data:');
 
   const isShareable = isSynthMode || isOnlineModel || isRemoteMedia;
 
