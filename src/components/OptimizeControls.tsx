@@ -140,6 +140,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     const fractions = [
       { label: '1/2', factor: 0.5, desc: 'Ultra Detail' },
       { label: '1/4', factor: 0.25, desc: 'High Detail' },
+      { label: '1/5', factor: 0.2, desc: 'Medium-High' },
+      { label: '1/6', factor: 1 / 6, desc: 'Medium' },
       { label: '1/8', factor: 0.125, desc: 'Standard' },
       { label: '1/16', factor: 0.0625, desc: 'Compact' },
       { label: '1/32', factor: 0.03125, desc: 'Retro' },
@@ -340,7 +342,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             </div>
           </div>
 
-          {/* Fractional Scale Presets (1/2, 1/4, 1/8, 1/16, 1/32) */}
+          {/* Fractional Scale Presets (1/2, 1/4, 1/5, 1/6, 1/8, 1/16, 1/32) */}
           <div className="control-section">
             <div className="section-header">
               <span>Image Scale Fractions</span>
@@ -353,7 +355,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               Scale resolutions proportional to image size with monospace aspect compensation.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '5px', marginBottom: '8px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '8px' }}>
               {mediaFractionPresets.map((preset) => {
                 const isActive = cols === preset.cols && rows === preset.rows;
                 return (
