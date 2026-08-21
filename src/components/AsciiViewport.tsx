@@ -32,7 +32,8 @@ interface AsciiViewportProps {
   appMode?: 'synth' | 'media' | 'model';
   mediaType?: 'image' | 'video';
   isLoading?: boolean;
-  loadingMessage?: string;
+  loadingFileName?: string;
+  loadingStatusText?: string;
   onOrbitRotate?: (
     prevX: number,
     prevY: number,
@@ -66,7 +67,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   appMode = 'synth',
   mediaType,
   isLoading = false,
-  loadingMessage,
+  loadingFileName,
+  loadingStatusText,
   onOrbitRotate,
   onWheelZoom,
 }, ref) => {
@@ -322,8 +324,10 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           }}
         />
 
-        {/* ASCII 3D Loading Spinner Overlay */}
-        {isLoading && <AsciiLoadingSpinner message={loadingMessage} />}
+        {/* ASCII Loading Spinner Overlay */}
+        {isLoading && (
+          <AsciiLoadingSpinner fileName={loadingFileName} statusText={loadingStatusText} />
+        )}
       </div>
 
       {/* Bottom Timeline and Diagnostics Bar */}

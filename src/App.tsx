@@ -192,7 +192,8 @@ export const App: React.FC = () => {
   const [userModelPresets, setUserModelPresets] = useState<ModelPreset[]>([]);
   const [modelTab, setModelTab] = useState<'presets' | 'model' | 'view' | 'render' | 'visuals'>('presets');
   const [isModelLoading, setIsModelLoading] = useState<boolean>(false);
-  const [modelLoadingMessage, setModelLoadingMessage] = useState<string>('LOADING 3D GEOMETRY...');
+  const [modelLoadingFileName, setModelLoadingFileName] = useState<string>('3D Model');
+  const [modelLoadingStatusText, setModelLoadingStatusText] = useState<string>('Downloading');
 
   // Active Three.js geometry reference
   const currentGeometryRef = useRef<THREE.BufferGeometry>(
@@ -931,7 +932,8 @@ export const App: React.FC = () => {
 
     if (preset.modelConfig.sourceType === 'preset') {
       setIsModelLoading(true);
-      setModelLoadingMessage(`LOADING ${preset.name.toUpperCase()}...`);
+      setModelLoadingFileName(preset.name);
+      setModelLoadingStatusText('Loading');
       loadBuiltinGeometryAsync(preset.modelConfig.modelId as BuiltinModelId)
         .then((geo) => {
           currentGeometryRef.current = geo;
@@ -961,7 +963,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (modelConfig.sourceType === 'preset') {
       setIsModelLoading(true);
-      setModelLoadingMessage('LOADING 3D MODEL...');
+      setModelLoadingFileName(modelConfig.fileName || '3D Preset');
+      setModelLoadingStatusText('Loading');
       loadBuiltinGeometryAsync(modelConfig.modelId as BuiltinModelId)
         .then((geo) => {
           currentGeometryRef.current = geo;
@@ -974,7 +977,8 @@ export const App: React.FC = () => {
         .finally(() => setIsModelLoading(false));
     } else if (modelConfig.sourceType === 'url' && modelConfig.remoteUrl) {
       setIsModelLoading(true);
-      setModelLoadingMessage(`DOWNLOADING ${modelConfig.fileName || '3D MODEL'}...`);
+      setModelLoadingFileName(modelConfig.fileName || 'Online Model');
+      setModelLoadingStatusText('Downloading');
       fetchRemoteGeometry(modelConfig.remoteUrl, 'glb')
         .then((res) => {
           currentGeometryRef.current = res.geometry;
@@ -991,7 +995,8 @@ export const App: React.FC = () => {
   const handleLoadOnlineModel = useCallback(
     async (model: Khronos3DModel) => {
       setIsModelLoading(true);
-      setModelLoadingMessage(`DOWNLOADING ${model.title.toUpperCase()}...`);
+      setModelLoadingFileName(model.title);
+      setModelLoadingStatusText('Downloading');
       try {
         const result = await fetchRemoteGeometry(model.downloadUrl, 'glb');
         currentGeometryRef.current = result.geometry;
@@ -1997,7 +2002,8 @@ export const App: React.FC = () => {
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
           isLoading={appMode === 'model' && isModelLoading}
-          loadingMessage={modelLoadingMessage}
+          loadingFileName={modelLoadingFileName}
+          loadingStatusText={modelLoadingStatusText}
           onOrbitRotate={handleOrbitRotate}
           onWheelZoom={handleWheelZoom}
         />
@@ -2342,9 +2348,10 @@ export const App: React.FC = () => {
                     onLoadCustomGeometry={handleLoadCustomGeometry}
                     onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
                     onLoadRemoteModel={handleLoadOnlineModel}
-                    onStartLoading={(msg) => {
+                    onStartLoading={(fileName, statusText) => {
                       setIsModelLoading(true);
-                      if (msg) setModelLoadingMessage(msg);
+                      if (fileName) setModelLoadingFileName(fileName);
+                      if (statusText) setModelLoadingStatusText(statusText);
                     }}
                     onEndLoading={() => setIsModelLoading(false)}
                   />

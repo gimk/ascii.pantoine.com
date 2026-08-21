@@ -33,7 +33,7 @@ interface ModelSettingsControlsProps {
   ) => void;
   onSelectBuiltinGeometry: (id: BuiltinModelId) => void;
   onLoadRemoteModel: (model: Khronos3DModel) => Promise<void>;
-  onStartLoading?: (msg?: string) => void;
+  onStartLoading?: (fileName: string, statusText?: string) => void;
   onEndLoading?: () => void;
 }
 
@@ -65,7 +65,7 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
 
   const handleProcessFile = async (file: File) => {
     setIsLoadingFile(true);
-    onStartLoading?.(`PARSING ${file.name.toUpperCase()}...`);
+    onStartLoading?.(file.name, 'Parsing');
     setErrorMsg(null);
     try {
       const res = await parseModelFile(file);

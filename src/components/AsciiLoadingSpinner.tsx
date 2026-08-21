@@ -1,98 +1,33 @@
 import React, { useState, useEffect } from 'react';
 
 interface AsciiLoadingSpinnerProps {
-  message?: string;
+  fileName?: string;
+  statusText?: string;
 }
-
-const SPINNER_FRAMES = [
-  [
-    '     .───────.     ',
-    '    ╱       ╱│     ',
-    '   ┌───────┐ │     ',
-    '   │ ░▒▓█▓ │ │     ',
-    '   │       │╱      ',
-    '   └───────┘       ',
-  ],
-  [
-    '      .─────.      ',
-    '     ╱     ╱│      ',
-    '    ┌─────┐ │      ',
-    '    │▒▓█▓▒│ │      ',
-    '    │     │╱       ',
-    '    └─────┘        ',
-  ],
-  [
-    '       .───.       ',
-    '      ╱   ╱│       ',
-    '     ┌───┐ │       ',
-    '     │▓█▓│ │       ',
-    '     │   │╱        ',
-    '     └───┘         ',
-  ],
-  [
-    '       .───.       ',
-    '       │   │       ',
-    '       │█▓█│       ',
-    '       │   │       ',
-    '       └───┘       ',
-    '                   ',
-  ],
-  [
-    '       .───.       ',
-    '      │╲   │╲      ',
-    '      │ ┌───┐│     ',
-    '      │ │▓█▓││     ',
-    '      └─│───┘│     ',
-    '         ╲   │     ',
-  ],
-  [
-    '      .─────.      ',
-    '     │╲     │╲     ',
-    '     │ ┌─────┐│    ',
-    '     │ │▒▓█▓▒││    ',
-    '     └─│─────┘│    ',
-    '        ╲     │    ',
-  ],
-  [
-    '     .───────.     ',
-    '    │╲       │╲    ',
-    '    │ ┌───────┐│   ',
-    '    │ │ ░▒▓█▓ ││   ',
-    '    └─│───────┘│   ',
-    '       ╲       │   ',
-  ],
-  [
-    '    .─────────.    ',
-    '    │         │    ',
-    '    │  ░▒▓█▓░ │    ',
-    '    │         │    ',
-    '    └─────────┘    ',
-    '                   ',
-  ],
-];
 
 const BRAILLE_SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 export const AsciiLoadingSpinner: React.FC<AsciiLoadingSpinnerProps> = ({
-  message = 'LOADING 3D GEOMETRY...',
+  fileName = '3D Model',
+  statusText = 'Downloading',
 }) => {
-  const [frameIndex, setFrameIndex] = useState(0);
-  const [brailleIndex, setBrailleIndex] = useState(0);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    const frameTimer = setInterval(() => {
-      setFrameIndex((prev) => (prev + 1) % SPINNER_FRAMES.length);
-    }, 110);
-
-    const brailleTimer = setInterval(() => {
-      setBrailleIndex((prev) => (prev + 1) % BRAILLE_SPINNER.length);
+    const timer = setInterval(() => {
+      setIndex((prev) => (prev + 1) % BRAILLE_SPINNER.length);
     }, 70);
 
-    return () => {
-      clearInterval(frameTimer);
-      clearInterval(brailleTimer);
-    };
+    return () => clearInterval(timer);
   }, []);
+
+  const bLen = BRAILLE_SPINNER.length;
+  const tl = BRAILLE_SPINNER[index];
+  const tr = BRAILLE_SPINNER[(index + 2) % bLen];
+  const bl = BRAILLE_SPINNER[(index + 4) % bLen];
+  const br = BRAILLE_SPINNER[(index + 6) % bLen];
+
+  const displayFileName = fileName.length > 22 ? `${fileName.slice(0, 18)}...` : fileName;
 
   return (
     <div
@@ -103,85 +38,113 @@ export const AsciiLoadingSpinner: React.FC<AsciiLoadingSpinnerProps> = ({
         left: '50%',
         transform: 'translate(-50%, -50%)',
         zIndex: 50,
-        background: 'rgba(5, 10, 7, 0.92)',
+        width: '140px',
+        height: '140px',
+        background: 'rgba(3, 8, 5, 0.94)',
         border: '1.5px solid var(--accent)',
-        borderRadius: '4px',
-        padding: '16px 24px',
-        boxShadow: '0 0 30px var(--accent-glow), inset 0 0 15px rgba(0, 0, 0, 0.8)',
+        borderRadius: '3px',
+        boxShadow: '0 0 25px var(--accent-glow), inset 0 0 12px rgba(0, 0, 0, 0.85)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '10px',
+        gap: '6px',
         color: 'var(--text-primary)',
         fontFamily: 'var(--font-mono)',
         userSelect: 'none',
         pointerEvents: 'none',
         backdropFilter: 'blur(3px)',
+        boxSizing: 'border-box',
+        padding: '12px',
       }}
     >
+      {/* 4 Corner Braille Pulse Indicators */}
+      <span
+        style={{
+          position: 'absolute',
+          top: '6px',
+          left: '8px',
+          color: 'var(--accent)',
+          fontSize: '14px',
+          fontWeight: 900,
+          textShadow: '0 0 8px var(--accent-glow)',
+          lineHeight: 1,
+        }}
+      >
+        {tl}
+      </span>
+      <span
+        style={{
+          position: 'absolute',
+          top: '6px',
+          right: '8px',
+          color: 'var(--accent)',
+          fontSize: '14px',
+          fontWeight: 900,
+          textShadow: '0 0 8px var(--accent-glow)',
+          lineHeight: 1,
+        }}
+      >
+        {tr}
+      </span>
+      <span
+        style={{
+          position: 'absolute',
+          bottom: '6px',
+          left: '8px',
+          color: 'var(--accent)',
+          fontSize: '14px',
+          fontWeight: 900,
+          textShadow: '0 0 8px var(--accent-glow)',
+          lineHeight: 1,
+        }}
+      >
+        {bl}
+      </span>
+      <span
+        style={{
+          position: 'absolute',
+          bottom: '6px',
+          right: '8px',
+          color: 'var(--accent)',
+          fontSize: '14px',
+          fontWeight: 900,
+          textShadow: '0 0 8px var(--accent-glow)',
+          lineHeight: 1,
+        }}
+      >
+        {br}
+      </span>
+
+      {/* Middle Content */}
       <div
         style={{
-          fontSize: '9.5px',
+          fontSize: '10.5px',
           fontWeight: 800,
           color: 'var(--accent)',
-          letterSpacing: '0.12em',
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
           textShadow: '0 0 6px var(--accent-glow)',
         }}
       >
-        [ ▓▒░ RASTERIZING 3D MODEL ░▒▓ ]
+        {statusText}
       </div>
-
-      <pre
-        style={{
-          margin: 0,
-          fontSize: '11px',
-          lineHeight: '1.2',
-          color: 'var(--accent)',
-          textShadow: '0 0 8px var(--accent-glow)',
-          fontFamily: 'inherit',
-          whiteSpace: 'pre',
-        }}
-      >
-        {SPINNER_FRAMES[frameIndex].join('\n')}
-      </pre>
 
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontSize: '10.5px',
+          fontSize: '9.5px',
           color: 'var(--text-primary)',
-          fontWeight: 700,
-        }}
-      >
-        <span style={{ color: 'var(--accent)', fontWeight: 900, fontSize: '13px' }}>
-          {BRAILLE_SPINNER[brailleIndex]}
-        </span>
-        <span style={{ letterSpacing: '0.05em' }}>{message.toUpperCase()}</span>
-      </div>
-
-      {/* Retro Horizontal Scanline Bar */}
-      <div
-        style={{
-          width: '100%',
-          height: '3px',
-          background: 'rgba(255, 255, 255, 0.08)',
-          borderRadius: '2px',
+          fontWeight: 600,
+          textAlign: 'center',
+          maxWidth: '110px',
           overflow: 'hidden',
-          position: 'relative',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          lineHeight: 1.3,
         }}
+        title={fileName}
       >
-        <div
-          style={{
-            width: '40%',
-            height: '100%',
-            background: 'var(--accent)',
-            boxShadow: '0 0 8px var(--accent)',
-            animation: 'ascii-scan-bar 1.2s infinite ease-in-out',
-          }}
-        />
+        {displayFileName}
       </div>
     </div>
   );
