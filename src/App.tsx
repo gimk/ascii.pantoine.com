@@ -1132,6 +1132,23 @@ export const App: React.FC = () => {
   }, [modelConfig, modelViewConfig, activeModelPreset, pushModelHistorySnapshot]);
 
   // Media Handlers
+  const autoSetMediaResolution = useCallback((w: number, h: number) => {
+    if (w <= 0 || h <= 0) return;
+    const srcAspect = w / h;
+    // Pick high crisp detail by default (targeting 200-320 cols)
+    let targetCols = 240;
+    if (w >= 1600) targetCols = Math.round(w / 8);
+    else if (w >= 800) targetCols = Math.round(w / 4);
+    else if (w >= 400) targetCols = Math.round(w / 2);
+    else targetCols = Math.max(80, w);
+
+    if (targetCols < 140) targetCols = Math.min(280, Math.round(targetCols * 2));
+
+    const targetRows = Math.max(15, Math.round((targetCols * 0.55) / srcAspect));
+    setCols(targetCols);
+    setRows(targetRows);
+  }, []);
+
   const handleSelectMediaPreset = useCallback((preset: MediaPreset) => {
     setActiveMediaPreset(preset);
     setMediaConfig({ ...preset.mediaConfig });
@@ -1142,6 +1159,7 @@ export const App: React.FC = () => {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         mediaElementRef.current = img;
+        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
       };
       img.src = preset.mediaConfig.fileData;
     }
@@ -1153,7 +1171,7 @@ export const App: React.FC = () => {
     if (preset.crtConfig) setCrtConfig({ ...preset.crtConfig });
     if (preset.optimizeConfig) setOptimizeConfig({ ...preset.optimizeConfig });
     pushMediaHistorySnapshot(preset.mediaConfig, preset.viewConfig, preset);
-  }, [pushMediaHistorySnapshot]);
+  }, [pushMediaHistorySnapshot, autoSetMediaResolution]);
 
   const handleSaveCustomMediaPreset = (name: string) => {
     const newPreset: MediaPreset = {
@@ -1213,6 +1231,9 @@ export const App: React.FC = () => {
       vid.loop = mediaConfig.loop;
       vid.muted = true;
       vid.playsInline = true;
+      vid.onloadedmetadata = () => {
+        autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+      };
       vid.play().catch(() => {});
       mediaElementRef.current = vid;
 
@@ -1230,6 +1251,7 @@ export const App: React.FC = () => {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         mediaElementRef.current = img;
+        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
       };
       img.src = objectUrl;
 
@@ -1243,7 +1265,7 @@ export const App: React.FC = () => {
       setMediaConfig(newConfig);
       pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
     }
-  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution]);
 
   const handleMediaUrlLoad = useCallback((url: string) => {
     const isVid = url.match(/\.(mp4|webm|mov|ogg)($|\?)/i);
@@ -1255,6 +1277,9 @@ export const App: React.FC = () => {
       vid.loop = mediaConfig.loop;
       vid.muted = true;
       vid.playsInline = true;
+      vid.onloadedmetadata = () => {
+        autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+      };
       vid.play().catch(() => {});
       mediaElementRef.current = vid;
 
@@ -1272,6 +1297,7 @@ export const App: React.FC = () => {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         mediaElementRef.current = img;
+        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
       };
       img.src = url;
 
@@ -1285,7 +1311,7 @@ export const App: React.FC = () => {
       setMediaConfig(newConfig);
       pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
     }
-  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution]);
 
   const handleMediaPan = useCallback((deltaX: number, deltaY: number) => {
     setMediaConfig((prev) => {
@@ -1924,7 +1950,23 @@ export const App: React.FC = () => {
               </button>
               <button
                 className={`sidebar-mode-btn ${appMode === 'media' ? 'active' : ''}`}
-                onClick={() => setAppMode('media')}
+                onClick={() => {
+                  setAppMode('media');
+                  if (mediaElementRef.current) {
+                    let w = 256;
+                    let h = 256;
+                    if (mediaElementRef.current instanceof HTMLImageElement) {
+                      w = mediaElementRef.current.naturalWidth || mediaElementRef.current.width || 256;
+                      h = mediaElementRef.current.naturalHeight || mediaElementRef.current.height || 256;
+                    } else if (mediaElementRef.current instanceof HTMLVideoElement) {
+                      w = mediaElementRef.current.videoWidth || mediaElementRef.current.width || 256;
+                      h = mediaElementRef.current.videoHeight || mediaElementRef.current.height || 256;
+                    }
+                    if (cols <= 120) {
+                      autoSetMediaResolution(w, h);
+                    }
+                  }
+                }}
                 title="2D Image & Video ASCII Rasterizer"
               >
                 <ImageIcon size={13} style={{ marginRight: '6px' }} />
@@ -2030,6 +2072,9 @@ export const App: React.FC = () => {
                     onChangeResolution={handleManualResolutionChange}
                     autoRes={autoRes}
                     onToggleAutoRes={handleToggleAutoRes}
+                    appMode={appMode}
+                    mediaElement={mediaElementRef.current}
+                    mediaConfig={mediaConfig}
                   />
                 )}
 
@@ -2143,6 +2188,9 @@ export const App: React.FC = () => {
                     onChangeResolution={handleManualResolutionChange}
                     autoRes={autoRes}
                     onToggleAutoRes={handleToggleAutoRes}
+                    appMode={appMode}
+                    mediaElement={mediaElementRef.current}
+                    mediaConfig={mediaConfig}
                   />
                 )}
 
@@ -2256,6 +2304,9 @@ export const App: React.FC = () => {
                     onChangeResolution={handleManualResolutionChange}
                     autoRes={autoRes}
                     onToggleAutoRes={handleToggleAutoRes}
+                    appMode={appMode}
+                    mediaElement={mediaElementRef.current}
+                    mediaConfig={mediaConfig}
                   />
                 )}
 
