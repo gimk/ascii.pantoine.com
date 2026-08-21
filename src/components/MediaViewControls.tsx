@@ -340,6 +340,162 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
   );
 };
 
+const ToneCurveGraph: React.FC<{
+  config: MediaViewConfig;
+}> = ({ config }) => {
+  const points: [number, number][] = [];
+  const samples = 48;
+
+  const inBlack = Math.max(0, Math.min(0.95, (config.levelBlack ?? 0) / 100.0));
+  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (config.levelWhite ?? 100) / 100.0));
+  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (config.levelMidtones ?? 50) / 100.0));
+  const midNorm = (inMid - inBlack) / (inWhite - inBlack);
+  const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+
+  const contrastFactor = Math.tan(((config.contrast + 100) * Math.PI) / 400);
+  const brightnessOffset = config.brightness / 100.0;
+  const shadowAdj = (config.shadows || 0) / 100.0;
+  const highlightAdj = (config.highlights || 0) / 100.0;
+  const midtoneGamma = Math.pow(2.0, -(config.midtones || 0) / 50.0);
+
+  for (let i = 0; i <= samples; i++) {
+    const x = i / samples;
+    let val = x;
+
+    // 1. Levels
+    val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
+    if (levelsGamma !== 1.0 && val > 0 && val < 1) {
+      val = Math.pow(val, 1 / levelsGamma);
+    }
+    // 2. Contrast & Brightness
+    val = (val - 0.5) * contrastFactor + 0.5 + brightnessOffset;
+    // 3. Tonal adjustments
+    if (shadowAdj !== 0) {
+      val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
+    }
+    if (highlightAdj !== 0) {
+      val = val + highlightAdj * val * val * 0.5;
+    }
+    if (midtoneGamma !== 1.0 && val > 0 && val < 1) {
+      val = Math.pow(val, midtoneGamma);
+    }
+    if (config.invert) {
+      val = 1.0 - val;
+    }
+    val = Math.max(0, Math.min(1, val));
+
+    const svgX = x * 100;
+    const svgY = 100 - val * 100;
+    points.push([svgX, svgY]);
+  }
+
+  const pathD = points.reduce((acc, [px, py], idx) => {
+    return idx === 0 ? `M ${px.toFixed(1)} ${py.toFixed(1)}` : `${acc} L ${px.toFixed(1)} ${py.toFixed(1)}`;
+  }, '');
+
+  const areaD = `${pathD} L 100 100 L 0 100 Z`;
+
+  let curveType = 'LINEAR (1:1)';
+  if (config.invert) curveType = 'INVERTED';
+  else if (config.contrast > 15) curveType = 'S-CURVE (CONTRAST)';
+  else if (config.contrast < -15) curveType = 'COMPRESSED';
+  else if (inBlack > 0.05 || inWhite < 0.95) curveType = 'CLIPPED';
+  else if (config.midtones !== 0 || (config.levelMidtones ?? 50) !== 50) curveType = 'GAMMA LIFT';
+  else if (config.shadows !== 0 || config.highlights !== 0) curveType = 'TONAL SHAPED';
+
+  const blackY = points[Math.round(inBlack * samples)]?.[1] ?? 100;
+  const midY = points[Math.round(inMid * samples)]?.[1] ?? 50;
+  const whiteY = points[Math.round(inWhite * samples)]?.[1] ?? 0;
+
+  return (
+    <div
+      style={{
+        marginBottom: '10px',
+        padding: '7px 9px',
+        background: 'var(--bg-primary)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '3px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '9.5px',
+          fontWeight: 700,
+          color: 'var(--text-muted)',
+          marginBottom: '5px',
+          fontFamily: 'var(--font-mono)',
+        }}
+      >
+        <span>TONE CURVE GRAPH</span>
+        <span style={{ color: 'var(--accent)', fontSize: '8.5px' }}>{curveType}</span>
+      </div>
+
+      <div style={{ position: 'relative', width: '100%', height: '72px', background: '#040404', borderRadius: '2px', overflow: 'hidden' }}>
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          style={{ width: '100%', height: '100%', display: 'block' }}
+        >
+          <defs>
+            <linearGradient id="toneCurveAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.09)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.09)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
+
+          {/* Neutral 1:1 diagonal reference */}
+          <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.18)" strokeWidth="0.7" strokeDasharray="3 3" />
+
+          {/* Shaded Area under Curve */}
+          <path d={areaD} fill="url(#toneCurveAreaGrad)" />
+
+          {/* Transfer Curve Stroke */}
+          <path
+            d={pathD}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* Key Point Anchors */}
+          <circle cx={inBlack * 100} cy={blackY} r="2.2" fill="#000000" stroke="var(--accent)" strokeWidth="1" />
+          <circle cx={inMid * 100} cy={midY} r="2.2" fill="var(--accent)" stroke="#ffffff" strokeWidth="0.7" />
+          <circle cx={inWhite * 100} cy={whiteY} r="2.2" fill="#ffffff" stroke="var(--accent)" strokeWidth="1" />
+        </svg>
+      </div>
+
+      {/* Axis Reference Scale */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: '8px',
+          color: 'var(--text-dim)',
+          fontFamily: 'var(--font-mono)',
+          marginTop: '3px',
+        }}
+      >
+        <span>IN: 0</span>
+        <span>128</span>
+        <span>255</span>
+      </div>
+    </div>
+  );
+};
+
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   config,
   onChangeConfig,
@@ -630,6 +786,9 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           <span>TONAL CONTROLS</span>
           <Sparkles size={12} />
         </div>
+
+        {/* Real-time Tonal Transfer Curve Graph */}
+        <ToneCurveGraph config={config} />
 
         {/* Levels 3-Point Multi-Stop Gradient Slider */}
         <LevelsControl
