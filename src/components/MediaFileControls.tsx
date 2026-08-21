@@ -290,15 +290,26 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
             alignItems: 'center',
             justifyContent: 'space-between',
             fontSize: '10px',
+            gap: '8px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
-            {config.mediaType === 'video' ? <Film size={12} color="var(--accent)" /> : <ImageIcon size={12} color="var(--accent)" />}
-            <span style={{ color: 'var(--text-primary)', fontWeight: 600, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', flex: 1, minWidth: 0 }}>
+            {config.mediaType === 'video' ? <Film size={12} color="var(--accent)" style={{ flexShrink: 0 }} /> : <ImageIcon size={12} color="var(--accent)" style={{ flexShrink: 0 }} />}
+            <span
+              style={{
+                color: 'var(--text-primary)',
+                fontWeight: 600,
+                textOverflow: 'ellipsis',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+              }}
+              title={config.fileName || 'Active Media File'}
+            >
               {config.fileName || 'Active Media File'}
             </span>
           </div>
-          <span className="brand-version" style={{ fontSize: '9px', textTransform: 'uppercase' }}>
+          <span className="brand-version" style={{ fontSize: '9px', textTransform: 'uppercase', flexShrink: 0 }}>
             {config.sourceType}
           </span>
         </div>

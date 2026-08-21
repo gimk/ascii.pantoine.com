@@ -512,12 +512,12 @@ html, body, #root {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 320px;
+  max-width: 180px;
 }
 
 @media (max-width: 950px) {
   .mode-tag {
-    max-width: 180px;
+    max-width: 120px;
   }
 }
 
