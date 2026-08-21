@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Preset } from '../types/ascii';
 import { PRESETS } from '../engine/presets';
-import { BookmarkPlus, Trash2 } from 'lucide-react';
+import { BookmarkPlus, Trash2, Dices } from 'lucide-react';
 
 interface PresetSelectorProps {
   activePresetId: string;
@@ -9,6 +9,8 @@ interface PresetSelectorProps {
   onSaveCustomPreset: (name: string) => void;
   userPresets: Preset[];
   onDeleteUserPreset: (id: string) => void;
+  onRandomize?: () => void;
+  isRandomizing?: boolean;
 }
 
 export const PresetSelector: React.FC<PresetSelectorProps> = ({
@@ -17,6 +19,8 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
   onSaveCustomPreset,
   userPresets,
   onDeleteUserPreset,
+  onRandomize,
+  isRandomizing = false,
 }) => {
   const [customName, setCustomName] = useState('');
 
@@ -29,6 +33,33 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
 
   return (
     <div className="tab-content">
+      {/* 0. Large Randomize Synthesizer Button */}
+      {onRandomize && (
+        <div style={{ marginBottom: '14px' }}>
+          <button
+            type="button"
+            className="btn btn-randomize"
+            style={{
+              width: '100%',
+              padding: '11px 14px',
+              fontSize: '11.5px',
+              fontWeight: 800,
+              letterSpacing: '0.07em',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              borderRadius: '4px',
+            }}
+            onClick={onRandomize}
+            title="Synthesize a completely new random parametric wave animation (Press R)"
+          >
+            <Dices size={16} className={`header-btn-icon ${isRandomizing ? 'dice-spin' : ''}`} />
+            <span>RANDOMIZE WAVE ANIMATION (R)</span>
+          </button>
+        </div>
+      )}
+
       {/* Built-in Presets */}
       <div className="control-section">
         <div className="section-header">

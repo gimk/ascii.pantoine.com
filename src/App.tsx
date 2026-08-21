@@ -80,8 +80,6 @@ import {
   Undo2,
   Redo2,
   Cpu,
-  Dices,
-  Bot,
   Box,
   Eye,
   Image as ImageIcon,
@@ -1702,8 +1700,10 @@ export const App: React.FC = () => {
           setIsPlaying((p) => !p);
         }
       } else if (e.key.toLowerCase() === 'r' && !isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        handleRandomize();
+        if (appMode === 'synth') {
+          e.preventDefault();
+          handleRandomize();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1846,17 +1846,8 @@ export const App: React.FC = () => {
           <span className="brand-version">v1.3</span>
         </div>
 
-        {/* Header Tools: Randomize, Undo, Redo, AI Prompt, Export, Share */}
+        {/* Header Tools: Undo, Redo, Export, Share */}
         <div className="header-actions">
-          <button
-            className="btn btn-randomize btn-sm"
-            onClick={handleRandomize}
-            title={appMode === 'model' ? 'Randomize 3D model preset & theme (Press R)' : 'Randomize animation, theme & charset (Press R)'}
-          >
-            <Dices size={14} className={`header-btn-icon ${isRandomizing ? 'dice-spin' : ''}`} />
-            <span className="btn-label">RANDOMIZE</span>
-          </button>
-
           {viewMode === 'editor' && (
             <>
               <button
@@ -1885,22 +1876,10 @@ export const App: React.FC = () => {
           <button
             className="btn btn-sm"
             onClick={() => {
-              setExportInitialTab('prompt');
+              setExportInitialTab('image');
               setIsExportOpen(true);
             }}
-            title="Export as standardized prompt for AI (Claude, ChatGPT, Gemini, etc.)"
-          >
-            <Bot size={13} className="header-btn-icon" />
-            <span className="btn-label">AI PROMPT</span>
-          </button>
-
-          <button
-            className="btn btn-sm"
-            onClick={() => {
-              setExportInitialTab('astro');
-              setIsExportOpen(true);
-            }}
-            title="Download or Export Code (Astro / HTML / JSON / Frame)"
+            title="Download or Export Media & Code"
           >
             <Download size={13} className="header-btn-icon" />
             <span className="btn-label">EXPORT</span>
@@ -2064,6 +2043,8 @@ export const App: React.FC = () => {
                     onSaveCustomPreset={handleSaveCustomPreset}
                     userPresets={userPresets}
                     onDeleteUserPreset={handleDeleteUserPreset}
+                    onRandomize={handleRandomize}
+                    isRandomizing={isRandomizing}
                   />
                 )}
 
