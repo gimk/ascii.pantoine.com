@@ -1,6 +1,31 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw, Code2, Database, FileCode, FileText, Camera } from 'lucide-react';
-import { generateAstroComponent, generateStandaloneHtml, generateAiPrompt } from '../engine/exporter';
+import {
+  X,
+  Copy,
+  Download,
+  Check,
+  Bot,
+  Film,
+  Video,
+  Loader2,
+  Play,
+  RotateCcw,
+  Code2,
+  Database,
+  FileCode,
+  FileText,
+  Camera,
+  Info,
+} from 'lucide-react';
+import {
+  generateAstroComponent,
+  generateStandaloneHtml,
+  generateAiPrompt,
+  generateHtmlEmbed,
+  generateMarkdownSnippet,
+  generateAsciiTextFrame,
+  generateModeJsonPreset,
+} from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
 import { exportAsciiImage } from '../engine/imageExporter';
@@ -38,7 +63,7 @@ interface ExportModalProps {
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
   crtConfig?: CrtConfig;
-  initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video';
+  initialTab?: 'prompt' | 'astro' | 'html' | 'html_embed' | 'markdown' | 'json' | 'ascii' | 'image' | 'gif' | 'video';
   appMode?: AppMode;
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
@@ -48,12 +73,23 @@ interface ExportModalProps {
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
-type ExportTab = 'image' | 'gif' | 'video' | 'prompt' | 'astro' | 'html' | 'json' | 'ascii';
-type ExportCategory = 'media' | 'code' | 'data';
+export type ExportTab =
+  | 'image'
+  | 'gif'
+  | 'video'
+  | 'html_embed'
+  | 'markdown'
+  | 'astro'
+  | 'html'
+  | 'prompt'
+  | 'json'
+  | 'ascii';
+
+export type ExportCategory = 'media' | 'code' | 'data';
 
 const getCategoryForTab = (tab: ExportTab): ExportCategory => {
   if (tab === 'image' || tab === 'gif' || tab === 'video') return 'media';
-  if (tab === 'astro' || tab === 'html' || tab === 'prompt') return 'code';
+  if (tab === 'astro' || tab === 'html' || tab === 'prompt' || tab === 'html_embed' || tab === 'markdown') return 'code';
   return 'data';
 };
 
@@ -206,10 +242,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     imageUrl,
   ]);
 
+  const isTabDisabled = useCallback(
+    (tab: ExportTab): boolean => {
+      if (tab === 'astro' || tab === 'html' || tab === 'prompt') {
+        return appMode !== 'synth';
+      }
+      return false;
+    },
+    [appMode]
+  );
+
   useEffect(() => {
-    if (isOpen && initialTab) {
-      setActiveTab(initialTab);
-      setActiveCategory(getCategoryForTab(initialTab));
+    if (isOpen) {
+      let targetTab: ExportTab = (initialTab as ExportTab) || 'image';
+      if (isTabDisabled(targetTab)) {
+        targetTab = 'html_embed';
+      }
+      setActiveTab(targetTab);
+      setActiveCategory(getCategoryForTab(targetTab));
     }
     if (isOpen && (activeTab === 'image' || initialTab === 'image')) {
       handleCaptureImage();
@@ -234,7 +284,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         setIsRecordingVideo(false);
       }
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, appMode, isTabDisabled]);
 
   // Re-capture image when still image options change while tab is active
   useEffect(() => {
@@ -257,6 +307,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     rows,
     density,
     fps: optimizeConfig?.targetFps !== undefined ? optimizeConfig.targetFps : 60,
+    appMode,
+    theme,
+    customThemeColor,
+    gradientConfig,
+    crtConfig,
+    modelConfig,
+    modelViewConfig,
+    mediaConfig,
+    mediaViewConfig,
   };
 
   const getExtension = (): string => {
@@ -264,7 +323,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       case 'image': return imageFormat === 'jpg' ? '.jpg' : '.png';
       case 'prompt': return '-ai-prompt.txt';
       case 'astro': return '.astro';
-      case 'html': return '.html';
+      case 'html': return '-standalone.html';
+      case 'html_embed': return '-embed.html';
+      case 'markdown': return '.md';
       case 'json': return '.json';
       case 'ascii': return '-frame.txt';
       case 'gif': return '.gif';
@@ -279,10 +340,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     if (cat === 'media') {
       if (activeTab !== 'image' && activeTab !== 'gif' && activeTab !== 'video') setActiveTab('image');
     } else if (cat === 'code') {
-      if (activeTab !== 'astro' && activeTab !== 'html' && activeTab !== 'prompt') setActiveTab('astro');
+      if (appMode !== 'synth') {
+        if (activeTab !== 'html_embed' && activeTab !== 'markdown') setActiveTab('html_embed');
+      } else {
+        if (
+          activeTab !== 'html_embed' &&
+          activeTab !== 'markdown' &&
+          activeTab !== 'astro' &&
+          activeTab !== 'html' &&
+          activeTab !== 'prompt'
+        ) {
+          setActiveTab('html_embed');
+        }
+      }
     } else if (cat === 'data') {
       if (activeTab !== 'json' && activeTab !== 'ascii') setActiveTab('json');
     }
+  };
+
+  const handleSelectSubTab = (tab: ExportTab) => {
+    if (isTabDisabled(tab)) return;
+    setActiveTab(tab);
   };
 
   const handleRecordGif = async () => {
@@ -390,6 +468,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           text: '',
           mimeType: imageFormat === 'jpg' ? 'image/jpeg' : 'image/png',
         };
+      case 'html_embed':
+        return {
+          text: generateHtmlEmbed({
+            name,
+            frameText: currentAsciiFrame,
+            cols,
+            rows,
+            theme,
+            customThemeColor,
+          }),
+          mimeType: 'text/html',
+        };
+      case 'markdown':
+        return {
+          text: generateMarkdownSnippet({
+            name,
+            frameText: currentAsciiFrame,
+            appMode,
+            cols,
+            rows,
+          }),
+          mimeType: 'text/markdown',
+        };
       case 'prompt':
         return {
           text: generateAiPrompt(exportCfg),
@@ -407,26 +508,38 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         };
       case 'json':
         return {
-          text: JSON.stringify(
-            {
-              name,
-              type,
-              params,
-              customCode,
-              customPrepare,
-              particleConfig,
-              cols,
-              rows,
-              density,
-            },
-            null,
-            2
-          ),
+          text: generateModeJsonPreset({
+            appMode,
+            name,
+            type,
+            params,
+            customCode,
+            customPrepare,
+            particleConfig,
+            optimizeConfig,
+            cols,
+            rows,
+            density,
+            theme,
+            customThemeColor,
+            gradientConfig,
+            crtConfig,
+            modelConfig,
+            modelViewConfig,
+            mediaConfig,
+            mediaViewConfig,
+          }),
           mimeType: 'application/json',
         };
       case 'ascii':
         return {
-          text: currentAsciiFrame,
+          text: generateAsciiTextFrame({
+            name,
+            frameText: currentAsciiFrame,
+            cols,
+            rows,
+            appMode,
+          }),
           mimeType: 'text/plain',
         };
       case 'gif':
@@ -525,11 +638,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const modeBadge =
+    appMode === 'model' ? '3D MODEL' : appMode === 'media' ? 'MEDIA RASTERIZER' : 'WAVE SYNTH';
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>EXPORT PRESET: [{name.toUpperCase()}]</span>
+          <span>
+            EXPORT [{modeBadge}: {name.toUpperCase()}]
+          </span>
           <button className="btn btn-sm" onClick={onClose}>
             <X size={14} />
           </button>
@@ -566,21 +684,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <>
               <button
                 className={`export-subtab-btn ${activeTab === 'image' ? 'active' : ''}`}
-                onClick={() => setActiveTab('image')}
+                onClick={() => handleSelectSubTab('image')}
               >
                 <Camera size={11} />
                 Still Image (.png / .jpg)
               </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
-                onClick={() => setActiveTab('gif')}
+                onClick={() => handleSelectSubTab('gif')}
               >
                 <Film size={11} />
                 GIF Animation (.gif)
               </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'video' ? 'active' : ''}`}
-                onClick={() => setActiveTab('video')}
+                onClick={() => handleSelectSubTab('video')}
               >
                 <Video size={11} />
                 Video Clip (.mp4 / .webm)
@@ -591,25 +709,81 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           {activeCategory === 'code' && (
             <>
               <button
+                className={`export-subtab-btn ${activeTab === 'html_embed' ? 'active' : ''}`}
+                onClick={() => handleSelectSubTab('html_embed')}
+              >
+                <Code2 size={11} />
+                HTML &lt;pre&gt; Embed (.html)
+              </button>
+              <button
+                className={`export-subtab-btn ${activeTab === 'markdown' ? 'active' : ''}`}
+                onClick={() => handleSelectSubTab('markdown')}
+              >
+                <FileText size={11} />
+                Markdown Snippet (.md)
+              </button>
+              <button
                 className={`export-subtab-btn ${activeTab === 'astro' ? 'active' : ''}`}
-                onClick={() => setActiveTab('astro')}
+                onClick={() => handleSelectSubTab('astro')}
+                disabled={isTabDisabled('astro')}
+                style={
+                  isTabDisabled('astro')
+                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
+                    : undefined
+                }
+                title={
+                  isTabDisabled('astro')
+                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
+                    : 'Astro Component (.astro)'
+                }
               >
                 <FileCode size={11} />
                 Astro Component (.astro)
+                {isTabDisabled('astro') && (
+                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
+                )}
               </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'html' ? 'active' : ''}`}
-                onClick={() => setActiveTab('html')}
+                onClick={() => handleSelectSubTab('html')}
+                disabled={isTabDisabled('html')}
+                style={
+                  isTabDisabled('html')
+                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
+                    : undefined
+                }
+                title={
+                  isTabDisabled('html')
+                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
+                    : 'Standalone HTML Wave Engine (.html)'
+                }
               >
-                <Code2 size={11} />
-                Standalone HTML (.html)
+                <Play size={11} />
+                Standalone Engine (.html)
+                {isTabDisabled('html') && (
+                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
+                )}
               </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'prompt' ? 'active' : ''}`}
-                onClick={() => setActiveTab('prompt')}
+                onClick={() => handleSelectSubTab('prompt')}
+                disabled={isTabDisabled('prompt')}
+                style={
+                  isTabDisabled('prompt')
+                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
+                    : undefined
+                }
+                title={
+                  isTabDisabled('prompt')
+                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
+                    : 'AI Prompt (.txt)'
+                }
               >
                 <Bot size={11} />
                 AI Prompt (.txt)
+                {isTabDisabled('prompt') && (
+                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
+                )}
               </button>
             </>
           )}
@@ -618,17 +792,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <>
               <button
                 className={`export-subtab-btn ${activeTab === 'json' ? 'active' : ''}`}
-                onClick={() => setActiveTab('json')}
+                onClick={() => handleSelectSubTab('json')}
               >
                 <Database size={11} />
-                JSON Preset (.json)
+                {appMode === 'model'
+                  ? '3D Model Preset (.json)'
+                  : appMode === 'media'
+                  ? 'Media Preset (.json)'
+                  : 'Synth Preset (.json)'}
               </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'ascii' ? 'active' : ''}`}
-                onClick={() => setActiveTab('ascii')}
+                onClick={() => handleSelectSubTab('ascii')}
               >
                 <FileText size={11} />
-                ASCII Frame (.txt)
+                ASCII Text Frame (.txt)
               </button>
             </>
           )}
@@ -998,18 +1176,43 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               )}
             </div>
           ) : (
-            <textarea
-              className="code-editor-area"
-              style={{
-                minHeight: '280px',
-                fontFamily: 'var(--font-mono)',
-                fontVariantLigatures: 'none',
-                WebkitFontVariantLigatures: 'none',
-                fontFeatureSettings: '"liga" 0, "calt" 0, "dlig" 0',
-              }}
-              value={text}
-              readOnly
-            />
+            <>
+              {activeCategory === 'code' && appMode !== 'synth' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 10px',
+                    marginBottom: '8px',
+                    background: 'var(--bg-control)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '3px',
+                    fontSize: '10.5px',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <Info size={13} color="var(--accent)" />
+                  <span>
+                    {appMode === 'model'
+                      ? '3D Model mode exports self-contained HTML/Markdown embeds or rendered media captures.'
+                      : 'Media mode exports self-contained HTML/Markdown embeds or rendered media captures.'}
+                  </span>
+                </div>
+              )}
+              <textarea
+                className="code-editor-area"
+                style={{
+                  minHeight: '280px',
+                  fontFamily: 'var(--font-mono)',
+                  fontVariantLigatures: 'none',
+                  WebkitFontVariantLigatures: 'none',
+                  fontFeatureSettings: '"liga" 0, "calt" 0, "dlig" 0',
+                }}
+                value={text}
+                readOnly
+              />
+            </>
           )}
         </div>
 
