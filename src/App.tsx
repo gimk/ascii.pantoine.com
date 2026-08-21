@@ -61,7 +61,6 @@ import { ModelSettingsControls } from './components/ModelSettingsControls';
 import { ModelViewControls } from './components/ModelViewControls';
 import { MediaPresetSelector } from './components/MediaPresetSelector';
 import { MediaFileControls } from './components/MediaFileControls';
-import { MediaViewControls } from './components/MediaViewControls';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { generateRandomAnimation } from './engine/randomizer';
@@ -224,7 +223,7 @@ export const App: React.FC = () => {
   }));
 
   const [userMediaPresets, setUserMediaPresets] = useState<MediaPreset[]>([]);
-  const [mediaTab, setMediaTab] = useState<'presets' | 'file' | 'view' | 'render' | 'visuals'>('presets');
+  const [mediaTab, setMediaTab] = useState<'presets' | 'file' | 'render' | 'visuals'>('presets');
   const [mediaRenderTrigger, setMediaRenderTrigger] = useState<number>(0);
   const triggerMediaRender = useCallback(() => setMediaRenderTrigger((v) => v + 1), []);
 
@@ -2123,18 +2122,10 @@ export const App: React.FC = () => {
                   <button
                     className={`tab-btn ${mediaTab === 'file' ? 'active' : ''}`}
                     onClick={() => setMediaTab('file')}
-                    title="Upload Image/Video & Framing Transforms"
+                    title="Upload Image/Video, Transforms, Effects & Tonal Controls"
                   >
                     <ImageIcon size={11} style={{ display: 'inline', marginRight: '4px' }} />
                     FILE
-                  </button>
-                  <button
-                    className={`tab-btn ${mediaTab === 'view' ? 'active' : ''}`}
-                    onClick={() => setMediaTab('view')}
-                    title="Dithering, Filters & Tonal Controls"
-                  >
-                    <Eye size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    VIEW
                   </button>
                   <button
                     className={`tab-btn ${mediaTab === 'visuals' ? 'active' : ''}`}
@@ -2170,17 +2161,12 @@ export const App: React.FC = () => {
                   <MediaFileControls
                     config={mediaConfig}
                     onChangeConfig={handleChangeMediaConfig}
+                    viewConfig={mediaViewConfig}
+                    onChangeViewConfig={handleChangeMediaViewConfig}
+                    onResetViewDefaults={handleResetMediaDefaults}
                     mediaElement={mediaElementRef.current}
                     onFileUpload={handleMediaFileUpload}
                     onUrlLoad={handleMediaUrlLoad}
-                  />
-                )}
-
-                {mediaTab === 'view' && (
-                  <MediaViewControls
-                    config={mediaViewConfig}
-                    onChangeConfig={handleChangeMediaViewConfig}
-                    onResetDefaults={handleResetMediaDefaults}
                   />
                 )}
 
@@ -2252,7 +2238,7 @@ export const App: React.FC = () => {
                     title="ASCII Shading, Rotation & Lighting"
                   >
                     <Eye size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    VIEW
+                    SCENE
                   </button>
                   <button
                     className={`tab-btn ${modelTab === 'visuals' ? 'active' : ''}`}

@@ -340,11 +340,15 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
   );
 };
 
-const ToneCurveGraph: React.FC<{
+interface ToneCurveGraphProps {
   config: MediaViewConfig;
-}> = ({ config }) => {
-  const points: [number, number][] = [];
-  const samples = 48;
+  onChangeConfig: (newConfig: MediaViewConfig) => void;
+}
+
+const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig }) => {
+  const svgRef = React.useRef<SVGSVGElement>(null);
+  const [activeDrag, setActiveDrag] = useState<'black' | 'mid' | 'white' | 'curve' | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   const inBlack = Math.max(0, Math.min(0.95, (config.levelBlack ?? 0) / 100.0));
   const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (config.levelWhite ?? 100) / 100.0));
@@ -358,18 +362,16 @@ const ToneCurveGraph: React.FC<{
   const highlightAdj = (config.highlights || 0) / 100.0;
   const midtoneGamma = Math.pow(2.0, -(config.midtones || 0) / 50.0);
 
-  for (let i = 0; i <= samples; i++) {
-    const x = i / samples;
-    let val = x;
+  const samples = 64;
+  const points: [number, number][] = [];
 
-    // 1. Levels
+  const evaluateTransfer = (x: number) => {
+    let val = x;
     val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
     if (levelsGamma !== 1.0 && val > 0 && val < 1) {
       val = Math.pow(val, 1 / levelsGamma);
     }
-    // 2. Contrast & Brightness
     val = (val - 0.5) * contrastFactor + 0.5 + brightnessOffset;
-    // 3. Tonal adjustments
     if (shadowAdj !== 0) {
       val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
     }
@@ -382,11 +384,13 @@ const ToneCurveGraph: React.FC<{
     if (config.invert) {
       val = 1.0 - val;
     }
-    val = Math.max(0, Math.min(1, val));
+    return Math.max(0, Math.min(1, val));
+  };
 
-    const svgX = x * 100;
-    const svgY = 100 - val * 100;
-    points.push([svgX, svgY]);
+  for (let i = 0; i <= samples; i++) {
+    const x = i / samples;
+    const y = evaluateTransfer(x);
+    points.push([x * 100, 100 - y * 100]);
   }
 
   const pathD = points.reduce((acc, [px, py], idx) => {
@@ -394,6 +398,89 @@ const ToneCurveGraph: React.FC<{
   }, '');
 
   const areaD = `${pathD} L 100 100 L 0 100 Z`;
+
+  const getSvgCoordinates = (e: React.PointerEvent<SVGSVGElement | HTMLDivElement>) => {
+    if (!svgRef.current) return { normX: 0.5, normY: 0.5 };
+    const rect = svgRef.current.getBoundingClientRect();
+    const clientX = Math.max(rect.left, Math.min(rect.right, e.clientX));
+    const clientY = Math.max(rect.top, Math.min(rect.bottom, e.clientY));
+    const normX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const normY = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height));
+    return { normX, normY };
+  };
+
+  const handlePointerDown = (type: 'black' | 'mid' | 'white' | 'curve', e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveDrag(type);
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const { normX, normY } = getSvgCoordinates(e);
+    setHoverPos({ x: normX * 100, y: 100 - normY * 100 });
+
+    if (!activeDrag) return;
+
+    if (activeDrag === 'black') {
+      const newBlack = Math.max(0, Math.min(Math.round((config.levelMidtones ?? 50) - 2), Math.round(normX * 100)));
+      onChangeConfig({ ...config, levelBlack: newBlack });
+    } else if (activeDrag === 'white') {
+      const newWhite = Math.max(Math.round((config.levelMidtones ?? 50) + 2), Math.min(100, Math.round(normX * 100)));
+      onChangeConfig({ ...config, levelWhite: newWhite });
+    } else if (activeDrag === 'mid') {
+      const minM = (config.levelBlack ?? 0) + 1;
+      const maxM = (config.levelWhite ?? 100) - 1;
+      const newMid = Math.max(minM, Math.min(maxM, Math.round(normX * 100)));
+      onChangeConfig({ ...config, levelMidtones: newMid });
+    } else if (activeDrag === 'curve') {
+      const targetY = normY;
+      const linearY = normX;
+      const delta = Math.round((targetY - linearY) * 200);
+
+      if (normX < 0.35) {
+        onChangeConfig({
+          ...config,
+          shadows: Math.max(-100, Math.min(100, delta)),
+        });
+      } else if (normX > 0.65) {
+        onChangeConfig({
+          ...config,
+          highlights: Math.max(-100, Math.min(100, delta)),
+        });
+      } else {
+        onChangeConfig({
+          ...config,
+          midtones: Math.max(-100, Math.min(100, delta)),
+        });
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setActiveDrag(null);
+    try {
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    } catch {}
+  };
+
+  const handleReset = () => {
+    onChangeConfig({
+      ...config,
+      levelBlack: 0,
+      levelMidtones: 50,
+      levelWhite: 100,
+      shadows: 0,
+      midtones: 0,
+      highlights: 0,
+      brightness: 0,
+      contrast: 0,
+    });
+  };
+
+  const blackPointY = 100 - evaluateTransfer(inBlack) * 100;
+  const midPointY = 100 - evaluateTransfer(inMid) * 100;
+  const whitePointY = 100 - evaluateTransfer(inWhite) * 100;
 
   let curveType = 'LINEAR (1:1)';
   if (config.invert) curveType = 'INVERTED';
@@ -403,15 +490,11 @@ const ToneCurveGraph: React.FC<{
   else if (config.midtones !== 0 || (config.levelMidtones ?? 50) !== 50) curveType = 'GAMMA LIFT';
   else if (config.shadows !== 0 || config.highlights !== 0) curveType = 'TONAL SHAPED';
 
-  const blackY = points[Math.round(inBlack * samples)]?.[1] ?? 100;
-  const midY = points[Math.round(inMid * samples)]?.[1] ?? 50;
-  const whiteY = points[Math.round(inWhite * samples)]?.[1] ?? 0;
-
   return (
     <div
       style={{
-        marginBottom: '10px',
-        padding: '7px 9px',
+        marginBottom: '12px',
+        padding: '10px',
         background: 'var(--bg-primary)',
         border: '1px solid var(--border-color)',
         borderRadius: '3px',
@@ -425,72 +508,183 @@ const ToneCurveGraph: React.FC<{
           fontSize: '9.5px',
           fontWeight: 700,
           color: 'var(--text-muted)',
-          marginBottom: '5px',
+          marginBottom: '8px',
           fontFamily: 'var(--font-mono)',
         }}
       >
         <span>TONE CURVE GRAPH</span>
-        <span style={{ color: 'var(--accent)', fontSize: '8.5px' }}>{curveType}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ color: 'var(--accent)', fontSize: '8.5px' }}>{curveType}</span>
+          <button
+            className="btn btn-sm"
+            style={{ padding: '1px 5px', fontSize: '8.5px', height: '18px', color: 'var(--text-muted)' }}
+            onClick={handleReset}
+            title="Reset Tone Curve to Linear 1:1"
+          >
+            RESET
+          </button>
+        </div>
       </div>
 
-      <div style={{ position: 'relative', width: '100%', height: '72px', background: '#040404', borderRadius: '2px', overflow: 'hidden' }}>
+      {/* SQUARED 1:1 Aspect Ratio Graph */}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '220px',
+          aspectRatio: '1 / 1',
+          margin: '0 auto',
+          position: 'relative',
+          background: '#040404',
+          border: '1px solid var(--border-color)',
+          borderRadius: '3px',
+          overflow: 'hidden',
+          cursor: activeDrag ? 'grabbing' : 'crosshair',
+          touchAction: 'none',
+          userSelect: 'none',
+        }}
+        onDoubleClick={handleReset}
+      >
         <svg
+          ref={svgRef}
           viewBox="0 0 100 100"
-          preserveAspectRatio="none"
           style={{ width: '100%', height: '100%', display: 'block' }}
+          onPointerDown={(e) => handlePointerDown('curve', e)}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onPointerLeave={() => {
+            setHoverPos(null);
+            if (!activeDrag) setActiveDrag(null);
+          }}
         >
           <defs>
-            <linearGradient id="toneCurveAreaGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.22" />
+            <linearGradient id="interactiveCurveGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
               <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.01" />
             </linearGradient>
           </defs>
 
-          {/* Grid lines */}
-          <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.09)" strokeWidth="0.7" strokeDasharray="2 2" />
-          <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
-          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.09)" strokeWidth="0.7" strokeDasharray="2 2" />
-          <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.06)" strokeWidth="0.7" strokeDasharray="2 2" />
+          {/* Grid lines (25%, 50%, 75%) */}
+          <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
+          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.1)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
 
-          {/* Neutral 1:1 diagonal reference */}
-          <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.18)" strokeWidth="0.7" strokeDasharray="3 3" />
+          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
+          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.1)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
 
-          {/* Shaded Area under Curve */}
-          <path d={areaD} fill="url(#toneCurveAreaGrad)" />
+          {/* 45-degree Neutral 1:1 Diagonal */}
+          <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.22)" strokeWidth="0.75" strokeDasharray="3 3" />
 
-          {/* Transfer Curve Stroke */}
+          {/* Fill under Curve */}
+          <path d={areaD} fill="url(#interactiveCurveGrad)" pointerEvents="none" />
+
+          {/* Active Transfer Curve */}
           <path
             d={pathD}
             fill="none"
             stroke="var(--accent)"
-            strokeWidth="1.8"
+            strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            pointerEvents="none"
           />
 
-          {/* Key Point Anchors */}
-          <circle cx={inBlack * 100} cy={blackY} r="2.2" fill="#000000" stroke="var(--accent)" strokeWidth="1" />
-          <circle cx={inMid * 100} cy={midY} r="2.2" fill="var(--accent)" stroke="#ffffff" strokeWidth="0.7" />
-          <circle cx={inWhite * 100} cy={whiteY} r="2.2" fill="#ffffff" stroke="var(--accent)" strokeWidth="1" />
+          {/* Interactive Handle: Black Point (Left) */}
+          <g
+            style={{ cursor: 'ew-resize' }}
+            onPointerDown={(e) => handlePointerDown('black', e)}
+          >
+            <circle
+              cx={inBlack * 100}
+              cy={blackPointY}
+              r="4.5"
+              fill="#000000"
+              stroke="var(--accent)"
+              strokeWidth="1.8"
+            />
+            <circle
+              cx={inBlack * 100}
+              cy={blackPointY}
+              r="8"
+              fill="transparent"
+            />
+          </g>
+
+          {/* Interactive Handle: Midtones / Gamma (Center) */}
+          <g
+            style={{ cursor: 'ew-resize' }}
+            onPointerDown={(e) => handlePointerDown('mid', e)}
+          >
+            <circle
+              cx={inMid * 100}
+              cy={midPointY}
+              r="4.5"
+              fill="var(--accent)"
+              stroke="#ffffff"
+              strokeWidth="1.2"
+            />
+            <circle
+              cx={inMid * 100}
+              cy={midPointY}
+              r="8"
+              fill="transparent"
+            />
+          </g>
+
+          {/* Interactive Handle: White Point (Right) */}
+          <g
+            style={{ cursor: 'ew-resize' }}
+            onPointerDown={(e) => handlePointerDown('white', e)}
+          >
+            <circle
+              cx={inWhite * 100}
+              cy={whitePointY}
+              r="4.5"
+              fill="#ffffff"
+              stroke="var(--accent)"
+              strokeWidth="1.8"
+            />
+            <circle
+              cx={inWhite * 100}
+              cy={whitePointY}
+              r="8"
+              fill="transparent"
+            />
+          </g>
+
+          {/* Hover Crosshair / Cursor position */}
+          {hoverPos && (
+            <circle
+              cx={hoverPos.x}
+              cy={100 - evaluateTransfer(hoverPos.x / 100) * 100}
+              r="2.5"
+              fill="none"
+              stroke="var(--text-primary)"
+              strokeWidth="0.8"
+              strokeDasharray="1 1"
+              pointerEvents="none"
+            />
+          )}
         </svg>
       </div>
 
       {/* Axis Reference Scale */}
       <div
         style={{
+          width: '100%',
+          maxWidth: '220px',
+          margin: '4px auto 0',
           display: 'flex',
           justifyContent: 'space-between',
           fontSize: '8px',
           color: 'var(--text-dim)',
           fontFamily: 'var(--font-mono)',
-          marginTop: '3px',
         }}
       >
-        <span>IN: 0</span>
-        <span>128</span>
-        <span>255</span>
+        <span>IN: 0 (BLACK)</span>
+        <span>128 (MID)</span>
+        <span>255 (WHITE)</span>
       </div>
     </div>
   );
@@ -669,8 +863,8 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           <Sparkles size={12} />
         </div>
 
-        {/* Real-time Tonal Transfer Curve Graph */}
-        <ToneCurveGraph config={config} />
+        {/* Real-time Interactive Tonal Transfer Curve Graph */}
+        <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
 
         {/* Levels 3-Point Multi-Stop Gradient Slider */}
         <LevelsControl

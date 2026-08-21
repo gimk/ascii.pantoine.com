@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { MediaConfig } from '../types/ascii';
+import { MediaConfig, MediaViewConfig } from '../types/ascii';
+import { MediaViewControls } from './MediaViewControls';
 import {
   Upload,
   Image as ImageIcon,
@@ -21,17 +22,23 @@ import {
 interface MediaFileControlsProps {
   config: MediaConfig;
   onChangeConfig: (cfg: MediaConfig) => void;
+  viewConfig?: MediaViewConfig;
+  onChangeViewConfig?: (cfg: MediaViewConfig) => void;
   mediaElement: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   onFileUpload: (file: File) => void;
   onUrlLoad: (url: string) => void;
+  onResetViewDefaults?: () => void;
 }
 
 export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
   config,
   onChangeConfig,
+  viewConfig,
+  onChangeViewConfig,
   mediaElement,
   onFileUpload,
   onUrlLoad,
+  onResetViewDefaults,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -516,6 +523,15 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
           RESET TRANSFORMS
         </button>
       </div>
+
+      {/* 4. EFFECT & TONAL CONTROLS (Tonal curve, Levels, Highlights/Shadows, Background) */}
+      {viewConfig && onChangeViewConfig && (
+        <MediaViewControls
+          config={viewConfig}
+          onChangeConfig={onChangeViewConfig}
+          onResetDefaults={onResetViewDefaults}
+        />
+      )}
     </div>
   );
 };
