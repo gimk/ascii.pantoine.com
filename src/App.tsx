@@ -225,6 +225,8 @@ export const App: React.FC = () => {
 
   const [userMediaPresets, setUserMediaPresets] = useState<MediaPreset[]>([]);
   const [mediaTab, setMediaTab] = useState<'presets' | 'file' | 'view' | 'render' | 'visuals'>('presets');
+  const [mediaRenderTrigger, setMediaRenderTrigger] = useState<number>(0);
+  const triggerMediaRender = useCallback(() => setMediaRenderTrigger((v) => v + 1), []);
 
   // Active HTML image/video/canvas element reference for media rasterizer
   const mediaElementRef = useRef<HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null>(null);
@@ -426,6 +428,7 @@ export const App: React.FC = () => {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         mediaElementRef.current = img;
+        triggerMediaRender();
       };
       img.src = dataUrl;
     }
@@ -525,6 +528,7 @@ export const App: React.FC = () => {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         mediaElementRef.current = img;
+        triggerMediaRender();
       };
       img.src = snapshot.mediaConfig.fileData;
     }
@@ -1161,6 +1165,7 @@ export const App: React.FC = () => {
       img.onload = () => {
         mediaElementRef.current = img;
         autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        triggerMediaRender();
       };
       img.src = preset.mediaConfig.fileData;
     }
@@ -1172,7 +1177,7 @@ export const App: React.FC = () => {
     if (preset.crtConfig) setCrtConfig({ ...preset.crtConfig });
     if (preset.optimizeConfig) setOptimizeConfig({ ...preset.optimizeConfig });
     pushMediaHistorySnapshot(preset.mediaConfig, preset.viewConfig, preset);
-  }, [pushMediaHistorySnapshot, autoSetMediaResolution]);
+  }, [pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
   const handleSaveCustomMediaPreset = (name: string) => {
     const newPreset: MediaPreset = {
@@ -1253,6 +1258,7 @@ export const App: React.FC = () => {
       img.onload = () => {
         mediaElementRef.current = img;
         autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        triggerMediaRender();
       };
       img.src = objectUrl;
 
@@ -1266,7 +1272,7 @@ export const App: React.FC = () => {
       setMediaConfig(newConfig);
       pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
     }
-  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution]);
+  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
   const handleMediaUrlLoad = useCallback((url: string) => {
     const isVid = url.match(/\.(mp4|webm|mov|ogg)($|\?)/i);
@@ -1299,6 +1305,7 @@ export const App: React.FC = () => {
       img.onload = () => {
         mediaElementRef.current = img;
         autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        triggerMediaRender();
       };
       img.src = url;
 
@@ -1312,7 +1319,7 @@ export const App: React.FC = () => {
       setMediaConfig(newConfig);
       pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
     }
-  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution]);
+  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
   const handleResetMediaDefaults = useCallback(() => {
     setMediaViewConfig({ ...DEFAULT_MEDIA_VIEW_CONFIG });
@@ -1464,6 +1471,22 @@ export const App: React.FC = () => {
   useEffect(() => {
     let animFrameId: number;
 
+    const isStaticImage = appMode === 'media' && mediaConfig.mediaType === 'image';
+
+    // If static 2D image mode, render once reactively on state changes without continuous RAF polling
+    if (isStaticImage) {
+      const frameText = renderAsciiMediaFrame({
+        cols,
+        rows,
+        mediaElement: mediaElementRef.current,
+        mediaConfig,
+        viewConfig: mediaViewConfig,
+        density,
+      });
+      viewportRef.current?.setFrame(frameText, 0, 0);
+      return;
+    }
+
     const loop = (timestamp: number) => {
       // Check if tab is hidden and optimization is enabled
       if (optimizeConfig.pauseWhenHidden && document.hidden) {
@@ -1497,12 +1520,7 @@ export const App: React.FC = () => {
         fpsTimerRef.current = timestamp;
       }
 
-      const isStaticImage = appMode === 'media' && mediaConfig.mediaType === 'image';
-
-      if (isStaticImage) {
-        timeRef.current = 0;
-        lastTimeRef.current = timestamp;
-      } else if (isPlaying) {
+      if (isPlaying) {
         const delta = lastTimeRef.current ? Math.min(0.1, (timestamp - lastTimeRef.current) / 1000) : 0.016;
         timeRef.current += delta * (waveParams.timeSpeed || 1.0);
         lastTimeRef.current = timestamp;
@@ -1628,6 +1646,7 @@ export const App: React.FC = () => {
     modelViewConfig,
     mediaConfig,
     mediaViewConfig,
+    mediaRenderTrigger,
     waveParams,
     presetType,
     particleConfig,

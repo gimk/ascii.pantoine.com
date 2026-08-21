@@ -159,7 +159,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         timeSpanRef.current.textContent = isTimelineDisabled ? '0.00s' : `${time.toFixed(2)}s`;
       }
       if (fpsSpanRef.current) {
-        fpsSpanRef.current.textContent = `${fps}`;
+        fpsSpanRef.current.textContent = isTimelineDisabled ? 'STATIC' : `${fps}`;
       }
     },
     getFrameText: () => latestFrameTextRef.current || '',
@@ -373,7 +373,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           )}
 
           <span className="status-tag">
-            FPS: <strong ref={fpsSpanRef}>0</strong>{targetFps && targetFps > 0 ? ` (${targetFps})` : ''}
+            FPS: <strong ref={fpsSpanRef}>{isTimelineDisabled ? 'STATIC' : '0'}</strong>{(!isTimelineDisabled && targetFps && targetFps > 0) ? ` (${targetFps})` : ''}
           </span>
           <span className="status-tag">
             T: <strong ref={timeSpanRef}>0.00s</strong>

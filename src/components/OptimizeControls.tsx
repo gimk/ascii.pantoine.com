@@ -102,6 +102,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   const [draftRows, setDraftRows] = useState<number>(rows);
   const [lockAspectRatio, setLockAspectRatio] = useState<boolean>(true);
 
+  const isStaticImage = appMode === 'media' && (mediaConfig?.mediaType === 'image' || !mediaConfig?.mediaType);
+
   useEffect(() => {
     setDraftCols(cols);
     setDraftRows(rows);
@@ -631,18 +633,31 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
       )}
 
       {/* 3. Framerate Limiter */}
-      <div className="control-section">
+      <div
+        className="control-section"
+        style={{
+          opacity: isStaticImage ? 0.35 : 1,
+          pointerEvents: isStaticImage ? 'none' : 'auto',
+        }}
+      >
         <div className="section-header">
           <span>FPS Limiter</span>
-          <span style={{ fontSize: '9.5px', color: 'var(--accent)' }}>
-            {config.targetFps === 0 ? 'UNCAPPED (VSYNC)' : `${config.targetFps} FPS`}
+          <span style={{ fontSize: '9.5px', color: isStaticImage ? 'var(--text-muted)' : 'var(--accent)' }}>
+            {isStaticImage ? 'N/A (STATIC FRAME)' : config.targetFps === 0 ? 'UNCAPPED (VSYNC)' : `${config.targetFps} FPS`}
           </span>
         </div>
+
+        {isStaticImage && (
+          <div style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px' }}>
+            Continuous rendering is disabled for static 2D images (rendered once at 0% CPU).
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
           {[15, 20, 24, 30, 45, 60, 0].map((fpsVal) => (
             <button
               key={fpsVal}
+              disabled={isStaticImage}
               className={`btn btn-sm ${config.targetFps === fpsVal ? 'btn-primary' : ''}`}
               onClick={() => update('targetFps', fpsVal)}
             >
@@ -660,6 +675,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               min={10}
               max={60}
               step={1}
+              disabled={isStaticImage}
               value={config.targetFps || 60}
               onChange={(e) => update('targetFps', parseInt(e.target.value, 10) || 60)}
             />
@@ -671,9 +687,18 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
       </div>
 
       {/* 4. Smart CPU & Battery Throttling */}
-      <div className="control-section">
+      <div
+        className="control-section"
+        style={{
+          opacity: isStaticImage ? 0.35 : 1,
+          pointerEvents: isStaticImage ? 'none' : 'auto',
+        }}
+      >
         <div className="section-header">
           <span>Smart Throttling</span>
+          {isStaticImage && (
+            <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>PAUSED (STATIC)</span>
+          )}
         </div>
 
         <div className="control-row">
@@ -682,6 +707,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>0% CPU when switched away</div>
           </span>
           <button
+            disabled={isStaticImage}
             className={`btn btn-sm ${config.pauseWhenHidden ? 'btn-primary' : ''}`}
             onClick={() => update('pauseWhenHidden', !config.pauseWhenHidden)}
           >
@@ -695,6 +721,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>Drops to 12 FPS when user is idle</div>
           </span>
           <button
+            disabled={isStaticImage}
             className={`btn btn-sm ${config.idleThrottle ? 'btn-primary' : ''}`}
             onClick={() => update('idleThrottle', !config.idleThrottle)}
           >
