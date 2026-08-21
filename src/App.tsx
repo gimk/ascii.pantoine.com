@@ -1314,11 +1314,10 @@ export const App: React.FC = () => {
       let cleanName = 'Remote Video';
       try {
         const u = new URL(url);
-        const lastPart = u.pathname.split('/').filter(Boolean).pop() || '';
-        cleanName = lastPart ? (lastPart.length > 24 ? lastPart.slice(0, 20) + '...' : lastPart) : u.hostname;
+        const lastPart = u.pathname.split('/').filter(Boolean).pop()?.split('?')[0] || '';
+        cleanName = lastPart || u.hostname;
       } catch {
-        const raw = url.split('/').pop()?.split('?')[0] || 'Remote Video';
-        cleanName = raw.length > 24 ? raw.slice(0, 20) + '...' : raw;
+        cleanName = url.split('/').pop()?.split('?')[0] || 'Remote Video';
       }
 
       const newConfig: MediaConfig = {
@@ -1344,11 +1343,10 @@ export const App: React.FC = () => {
       let cleanName = 'Remote Image';
       try {
         const u = new URL(url);
-        const lastPart = u.pathname.split('/').filter(Boolean).pop() || '';
-        cleanName = lastPart ? (lastPart.length > 24 ? lastPart.slice(0, 20) + '...' : lastPart) : u.hostname;
+        const lastPart = u.pathname.split('/').filter(Boolean).pop()?.split('?')[0] || '';
+        cleanName = lastPart || u.hostname;
       } catch {
-        const raw = url.split('/').pop()?.split('?')[0] || 'Remote Image';
-        cleanName = raw.length > 24 ? raw.slice(0, 20) + '...' : raw;
+        cleanName = url.split('/').pop()?.split('?')[0] || 'Remote Image';
       }
 
       const newConfig: MediaConfig = {

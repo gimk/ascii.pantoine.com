@@ -133,7 +133,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         }}
                         title={state.name}
                       >
-                        {state.name.length > 20 ? `${state.name.slice(0, 18)}...` : state.name}
+                        {state.name}
                       </strong>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
@@ -186,10 +186,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         }}
                         title={state.modelConfig?.fileName || state.name}
                       >
-                        {(() => {
-                          const name = state.modelConfig?.fileName || state.name;
-                          return name.length > 20 ? `${name.slice(0, 18)}...` : name;
-                        })()}
+                        {state.modelConfig?.fileName || state.name}
                       </strong>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
@@ -232,10 +229,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         }}
                         title={state.mediaConfig?.fileName || 'Remote Image'}
                       >
-                        {(() => {
-                          const name = state.mediaConfig?.fileName || 'Remote Image';
-                          return name.length > 20 ? `${name.slice(0, 18)}...` : name;
-                        })()}
+                        {state.mediaConfig?.fileName || 'Remote Image'}
                       </strong>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
