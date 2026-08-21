@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw, Code2, Database, FileCode, FileText } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Copy, Download, Check, Bot, Film, Video, Loader2, Play, RotateCcw, Code2, Database, FileCode, FileText, Camera } from 'lucide-react';
 import { generateAstroComponent, generateStandaloneHtml, generateAiPrompt } from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
+import { exportAsciiImage } from '../engine/imageExporter';
 import * as THREE from 'three';
 import {
   WaveParams,
@@ -32,11 +33,12 @@ interface ExportModalProps {
   rows: number;
   density: string;
   currentAsciiFrame: string;
+  currentTime?: number;
   theme?: PhosphorTheme;
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
   crtConfig?: CrtConfig;
-  initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
+  initialTab?: 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video';
   appMode?: AppMode;
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
@@ -46,11 +48,11 @@ interface ExportModalProps {
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
-type ExportTab = 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
+type ExportTab = 'image' | 'gif' | 'video' | 'prompt' | 'astro' | 'html' | 'json' | 'ascii';
 type ExportCategory = 'media' | 'code' | 'data';
 
 const getCategoryForTab = (tab: ExportTab): ExportCategory => {
-  if (tab === 'gif' || tab === 'video') return 'media';
+  if (tab === 'image' || tab === 'gif' || tab === 'video') return 'media';
   if (tab === 'astro' || tab === 'html' || tab === 'prompt') return 'code';
   return 'data';
 };
@@ -69,6 +71,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   rows,
   density,
   currentAsciiFrame,
+  currentTime = 0,
   theme = 'green',
   customThemeColor,
   gradientConfig,
@@ -86,6 +89,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [activeCategory, setActiveCategory] = useState<ExportCategory>(getCategoryForTab(initialTab));
   const [copied, setCopied] = useState<boolean>(false);
   const [customBaseName, setCustomBaseName] = useState<string>('');
+
+  // Still Image Export States
+  const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png');
+  const [imageQuality, setImageQuality] = useState<number>(0.95);
+  const [imageScale, setImageScale] = useState<number>(2.0);
+  const [imageTransparentBg, setImageTransparentBg] = useState<boolean>(false);
+  const [imageIncludeCrt, setImageIncludeCrt] = useState<boolean>(true);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [isCapturingImage, setIsCapturingImage] = useState<boolean>(false);
+  const [imageCopied, setImageCopied] = useState<boolean>(false);
 
   // GIF Recording States
   const [gifDuration, setGifDuration] = useState<number>(2.0);
@@ -117,12 +132,95 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setCustomBaseName(defaultBaseName);
   }, [name, isOpen]);
 
+  const handleCaptureImage = useCallback(async () => {
+    setIsCapturingImage(true);
+    try {
+      const res = await exportAsciiImage({
+        name,
+        format: imageFormat,
+        quality: imageQuality,
+        scale: imageScale,
+        transparentBg: imageFormat === 'png' ? imageTransparentBg : false,
+        includeScanlines: imageIncludeCrt ? (crtConfig?.scanlines ?? true) : false,
+        includeCrtGlow: imageIncludeCrt ? (crtConfig?.crtGlow ?? (crtConfig?.glow ?? false)) : false,
+        includeVignette: imageIncludeCrt ? (crtConfig?.vignette ?? false) : false,
+        includePhosphorBloom: imageIncludeCrt ? (crtConfig?.phosphorBloom ?? (crtConfig?.glow ?? false)) : false,
+        time: currentTime,
+        currentAsciiFrame,
+        type,
+        params,
+        customCode,
+        customPrepare,
+        density,
+        cols,
+        rows,
+        theme,
+        customThemeColor,
+        gradientConfig,
+        crtConfig,
+        appMode,
+        modelConfig,
+        modelViewConfig,
+        geometry,
+        mediaConfig,
+        mediaViewConfig,
+        mediaElement,
+      });
+
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      setImageUrl(res.url);
+      setImageBlob(res.blob);
+      setImageDimensions({ width: res.width, height: res.height });
+    } catch (err: any) {
+      console.error('Image Capture Error:', err);
+    } finally {
+      setIsCapturingImage(false);
+    }
+  }, [
+    name,
+    imageFormat,
+    imageQuality,
+    imageScale,
+    imageTransparentBg,
+    imageIncludeCrt,
+    crtConfig,
+    currentTime,
+    currentAsciiFrame,
+    type,
+    params,
+    customCode,
+    customPrepare,
+    density,
+    cols,
+    rows,
+    theme,
+    customThemeColor,
+    gradientConfig,
+    appMode,
+    modelConfig,
+    modelViewConfig,
+    geometry,
+    mediaConfig,
+    mediaViewConfig,
+    mediaElement,
+    imageUrl,
+  ]);
+
   useEffect(() => {
     if (isOpen && initialTab) {
       setActiveTab(initialTab);
       setActiveCategory(getCategoryForTab(initialTab));
     }
+    if (isOpen && (activeTab === 'image' || initialTab === 'image')) {
+      handleCaptureImage();
+    }
     if (!isOpen) {
+      if (imageUrl) {
+        URL.revokeObjectURL(imageUrl);
+        setImageUrl(null);
+        setImageBlob(null);
+        setIsCapturingImage(false);
+      }
       if (gifUrl) {
         URL.revokeObjectURL(gifUrl);
         setGifUrl(null);
@@ -137,6 +235,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
     }
   }, [isOpen, initialTab]);
+
+  // Re-capture image when still image options change while tab is active
+  useEffect(() => {
+    if (isOpen && activeTab === 'image') {
+      handleCaptureImage();
+    }
+  }, [isOpen, activeTab, imageFormat, imageQuality, imageScale, imageTransparentBg, imageIncludeCrt]);
 
   if (!isOpen) return null;
 
@@ -156,6 +261,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const getExtension = (): string => {
     switch (activeTab) {
+      case 'image': return imageFormat === 'jpg' ? '.jpg' : '.png';
       case 'prompt': return '-ai-prompt.txt';
       case 'astro': return '.astro';
       case 'html': return '.html';
@@ -171,7 +277,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleSelectCategory = (cat: ExportCategory) => {
     setActiveCategory(cat);
     if (cat === 'media') {
-      if (activeTab !== 'gif' && activeTab !== 'video') setActiveTab('gif');
+      if (activeTab !== 'image' && activeTab !== 'gif' && activeTab !== 'video') setActiveTab('image');
     } else if (cat === 'code') {
       if (activeTab !== 'astro' && activeTab !== 'html' && activeTab !== 'prompt') setActiveTab('astro');
     } else if (cat === 'data') {
@@ -279,6 +385,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const getExportContent = (): { text: string; mimeType: string } => {
     switch (activeTab) {
+      case 'image':
+        return {
+          text: '',
+          mimeType: imageFormat === 'jpg' ? 'image/jpeg' : 'image/png',
+        };
       case 'prompt':
         return {
           text: generateAiPrompt(exportCfg),
@@ -333,7 +444,41 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const { text, mimeType } = getExportContent();
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
+    if (activeTab === 'image') {
+      if (!imageBlob) return;
+      try {
+        if (imageFormat === 'png') {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': imageBlob }),
+          ]);
+        } else {
+          // Convert blob to png for universal browser clipboard support
+          const img = new Image();
+          img.src = imageUrl!;
+          await new Promise((resolve) => {
+            img.onload = resolve;
+          });
+          const cvs = document.createElement('canvas');
+          cvs.width = img.width;
+          cvs.height = img.height;
+          const c = cvs.getContext('2d');
+          c?.drawImage(img, 0, 0);
+          cvs.toBlob(async (b) => {
+            if (b) {
+              await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': b }),
+              ]);
+            }
+          }, 'image/png');
+        }
+        setImageCopied(true);
+        setTimeout(() => setImageCopied(false), 1800);
+      } catch (e) {
+        console.warn('Clipboard write failed:', e);
+      }
+      return;
+    }
     if (activeTab === 'gif' || activeTab === 'video') return;
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -341,6 +486,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   const handleDownload = () => {
+    if (activeTab === 'image') {
+      if (!imageBlob) return;
+      const url = URL.createObjectURL(imageBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = effectiveFileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
     if (activeTab === 'gif') {
       if (!gifBlob) return;
       const url = URL.createObjectURL(gifBlob);
@@ -409,6 +564,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         <div className="export-subtab-nav">
           {activeCategory === 'media' && (
             <>
+              <button
+                className={`export-subtab-btn ${activeTab === 'image' ? 'active' : ''}`}
+                onClick={() => setActiveTab('image')}
+              >
+                <Camera size={11} />
+                Still Image (.png / .jpg)
+              </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
                 onClick={() => setActiveTab('gif')}
@@ -510,7 +672,129 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </span>
           </div>
 
-          {activeTab === 'gif' ? (
+          {activeTab === 'image' ? (
+            <div>
+              {/* Still Image Configuration Grid */}
+              <div className="gif-config-grid">
+                {/* Format */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Image Format</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { id: 'png', label: 'PNG (Lossless)' },
+                      { id: 'jpg', label: 'JPG (Photo)' },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        className={`btn ${imageFormat === f.id ? 'btn-primary' : ''}`}
+                        onClick={() => setImageFormat(f.id as any)}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Resolution Scale */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Resolution Scale</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { val: 1.0, label: '1x' },
+                      { val: 1.5, label: '1.5x' },
+                      { val: 2.0, label: '2x (HD)' },
+                      { val: 3.0, label: '3x' },
+                      { val: 4.0, label: '4x (4K)' },
+                    ].map((s) => (
+                      <button
+                        key={s.val}
+                        className={`btn ${imageScale === s.val ? 'btn-primary' : ''}`}
+                        onClick={() => setImageScale(s.val)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Background (PNG) or Quality (JPG) */}
+                {imageFormat === 'png' ? (
+                  <div className="gif-config-item">
+                    <span className="gif-config-label">Background</span>
+                    <div className="gif-btn-group">
+                      <button
+                        className={`btn ${!imageTransparentBg ? 'btn-primary' : ''}`}
+                        onClick={() => setImageTransparentBg(false)}
+                      >
+                        Theme CRT
+                      </button>
+                      <button
+                        className={`btn ${imageTransparentBg ? 'btn-primary' : ''}`}
+                        onClick={() => setImageTransparentBg(true)}
+                      >
+                        Transparent
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="gif-config-item">
+                    <span className="gif-config-label">JPG Quality ({Math.round(imageQuality * 100)}%)</span>
+                    <div className="gif-btn-group">
+                      {[0.8, 0.9, 0.95, 1.0].map((q) => (
+                        <button
+                          key={q}
+                          className={`btn ${imageQuality === q ? 'btn-primary' : ''}`}
+                          onClick={() => setImageQuality(q)}
+                        >
+                          {Math.round(q * 100)}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* CRT Effects */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">CRT Effects</span>
+                  <div className="gif-btn-group">
+                    <button
+                      className={`btn ${imageIncludeCrt ? 'btn-primary' : ''}`}
+                      onClick={() => setImageIncludeCrt(!imageIncludeCrt)}
+                    >
+                      {imageIncludeCrt ? 'Glow & Scanlines [ON]' : 'Clean Text [OFF]'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Loading indicator */}
+              {isCapturingImage && (
+                <div className="gif-progress-box">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--accent)' }}>
+                    <Loader2 size={12} className="dice-spin" />
+                    Rendering high-resolution viewport frame...
+                  </div>
+                </div>
+              )}
+
+              {/* Still Image Preview Card */}
+              {imageUrl && (
+                <div
+                  className="gif-preview-card"
+                  style={{
+                    background: imageTransparentBg && imageFormat === 'png'
+                      ? 'repeating-conic-gradient(#1f1f1f 0% 25%, #121212 0% 50%) 50% / 16px 16px'
+                      : undefined,
+                  }}
+                >
+                  <img src={imageUrl} alt="Captured Still Frame Preview" className="gif-preview-img" style={{ maxHeight: '240px' }} />
+                  <div style={{ marginTop: '8px', fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                    Dimensions: {imageDimensions?.width}×{imageDimensions?.height}px • Format: {imageFormat.toUpperCase()} • Size: {(imageBlob ? (imageBlob.size / 1024).toFixed(1) : 0)} KB • Time: {currentTime.toFixed(2)}s
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'gif' ? (
             <div>
               {/* GIF Configuration */}
               <div className="gif-config-grid">
@@ -731,7 +1015,35 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Footer Actions */}
         <div className="modal-footer">
-          {activeTab === 'gif' ? (
+          {activeTab === 'image' ? (
+            <>
+              <button
+                className="btn"
+                onClick={handleCaptureImage}
+                disabled={isCapturingImage}
+                title="Re-render frame with current settings and timestamp"
+              >
+                <RotateCcw size={12} />
+                RE-CAPTURE FRAME
+              </button>
+              <button
+                className="btn"
+                onClick={handleCopy}
+                disabled={!imageBlob || isCapturingImage}
+              >
+                {imageCopied ? <Check size={12} /> : <Copy size={12} />}
+                {imageCopied ? 'IMAGE COPIED' : 'COPY IMAGE'}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleDownload}
+                disabled={!imageBlob || isCapturingImage}
+              >
+                <Download size={12} />
+                DOWNLOAD {effectiveFileName}
+              </button>
+            </>
+          ) : activeTab === 'gif' ? (
             <>
               {gifUrl && (
                 <button

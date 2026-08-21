@@ -273,7 +273,7 @@ export const App: React.FC = () => {
   // UI state
   const [activeTab, setActiveTab] = useState<'presets' | 'synth' | 'particles' | 'render' | 'visuals'>('presets');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
-  const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii'>('prompt');
+  const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video'>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
   const [userPresets, setUserPresets] = useState<Preset[]>([]);
 
@@ -2324,6 +2324,7 @@ export const App: React.FC = () => {
         rows={rows}
         density={density}
         currentAsciiFrame={viewportRef.current?.getFrameText() || ''}
+        currentTime={timeRef.current}
         theme={theme}
         customThemeColor={customThemeColor}
         gradientConfig={gradientConfig}
