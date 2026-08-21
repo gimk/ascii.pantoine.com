@@ -34,10 +34,8 @@ export function getBuiltinGeometry(id: BuiltinModelId): THREE.BufferGeometry {
   if (id === 'skull') {
     const cached = geometryCache.get('skull') || geometryCache.get('/presets/skull.obj');
     if (cached) return cached.clone();
-    // Default placeholder while OBJ fetches
-    const placeholder = new THREE.IcosahedronGeometry(1.0, 1);
-    normalizeGeometryBounds(placeholder);
-    return placeholder;
+    // Return empty BufferGeometry so no sphere flashes while OBJ fetches
+    return new THREE.BufferGeometry();
   }
 
   let geo: THREE.BufferGeometry;

@@ -27,7 +27,21 @@ export const AsciiLoadingSpinner: React.FC<AsciiLoadingSpinnerProps> = ({
   const bl = BRAILLE_SPINNER[(index + 4) % bLen];
   const br = BRAILLE_SPINNER[(index + 6) % bLen];
 
-  const displayFileName = fileName.length > 22 ? `${fileName.slice(0, 18)}...` : fileName;
+  const displayFileName = fileName.length > 20 ? `${fileName.slice(0, 17)}...` : fileName;
+
+  const cornerStyle: React.CSSProperties = {
+    position: 'absolute',
+    width: '18px',
+    height: '18px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'var(--accent)',
+    fontSize: '15px',
+    fontWeight: 900,
+    textShadow: '0 0 8px var(--accent-glow)',
+    lineHeight: 1,
+  };
 
   return (
     <div
@@ -38,8 +52,8 @@ export const AsciiLoadingSpinner: React.FC<AsciiLoadingSpinnerProps> = ({
         left: '50%',
         transform: 'translate(-50%, -50%)',
         zIndex: 50,
-        width: '140px',
-        height: '140px',
+        width: '136px',
+        height: '164px',
         background: 'rgba(3, 8, 5, 0.94)',
         border: '1.5px solid var(--accent)',
         borderRadius: '3px',
@@ -55,66 +69,22 @@ export const AsciiLoadingSpinner: React.FC<AsciiLoadingSpinnerProps> = ({
         pointerEvents: 'none',
         backdropFilter: 'blur(3px)',
         boxSizing: 'border-box',
-        padding: '12px',
+        padding: '16px 12px',
       }}
     >
-      {/* 4 Corner Braille Pulse Indicators */}
-      <span
-        style={{
-          position: 'absolute',
-          top: '6px',
-          left: '8px',
-          color: 'var(--accent)',
-          fontSize: '14px',
-          fontWeight: 900,
-          textShadow: '0 0 8px var(--accent-glow)',
-          lineHeight: 1,
-        }}
-      >
-        {tl}
-      </span>
-      <span
-        style={{
-          position: 'absolute',
-          top: '6px',
-          right: '8px',
-          color: 'var(--accent)',
-          fontSize: '14px',
-          fontWeight: 900,
-          textShadow: '0 0 8px var(--accent-glow)',
-          lineHeight: 1,
-        }}
-      >
-        {tr}
-      </span>
-      <span
-        style={{
-          position: 'absolute',
-          bottom: '6px',
-          left: '8px',
-          color: 'var(--accent)',
-          fontSize: '14px',
-          fontWeight: 900,
-          textShadow: '0 0 8px var(--accent-glow)',
-          lineHeight: 1,
-        }}
-      >
-        {bl}
-      </span>
-      <span
-        style={{
-          position: 'absolute',
-          bottom: '6px',
-          right: '8px',
-          color: 'var(--accent)',
-          fontSize: '14px',
-          fontWeight: 900,
-          textShadow: '0 0 8px var(--accent-glow)',
-          lineHeight: 1,
-        }}
-      >
-        {br}
-      </span>
+      {/* 4 Corner Braille Pulse Indicators with Equal Padding */}
+      <div style={{ ...cornerStyle, top: '9px', left: '9px' }}>
+        <span>{tl}</span>
+      </div>
+      <div style={{ ...cornerStyle, top: '9px', right: '9px' }}>
+        <span>{tr}</span>
+      </div>
+      <div style={{ ...cornerStyle, bottom: '9px', left: '9px' }}>
+        <span>{bl}</span>
+      </div>
+      <div style={{ ...cornerStyle, bottom: '9px', right: '9px' }}>
+        <span>{br}</span>
+      </div>
 
       {/* Middle Content */}
       <div
@@ -136,7 +106,7 @@ export const AsciiLoadingSpinner: React.FC<AsciiLoadingSpinnerProps> = ({
           color: 'var(--text-primary)',
           fontWeight: 600,
           textAlign: 'center',
-          maxWidth: '110px',
+          maxWidth: '106px',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',

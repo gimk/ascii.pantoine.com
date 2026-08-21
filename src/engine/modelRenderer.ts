@@ -307,7 +307,9 @@ class HeadlessModelRenderer {
   public render(ctx: ModelRenderContext): string {
     const { cols, rows, time, density, geometry, modelConfig, viewConfig } = ctx;
 
-    if (cols <= 0 || rows <= 0 || !geometry) return '';
+    if (cols <= 0 || rows <= 0 || !geometry || !geometry.attributes?.position || geometry.attributes.position.count === 0) {
+      return '';
+    }
     if (!this.renderer || !this.canvas) {
       this.initRenderer();
       if (!this.renderer || !this.canvas) return '';

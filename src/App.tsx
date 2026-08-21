@@ -1072,27 +1072,30 @@ export const App: React.FC = () => {
   };
 
   const handleSelectBuiltinGeometry = (id: BuiltinModelId) => {
-    const initialGeo = getBuiltinGeometry(id);
-    currentGeometryRef.current = initialGeo;
-    const initialStats = getGeometryStats(initialGeo);
-    const newConfig: ModelConfig = {
-      ...modelConfig,
-      sourceType: 'preset',
-      modelId: id,
-      fileName: undefined,
-      polyStats: initialStats,
-    };
-    setModelConfig(newConfig);
-    pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
-
-    loadBuiltinGeometryAsync(id).then((geo) => {
-      currentGeometryRef.current = geo;
-      const stats = getGeometryStats(geo);
-      setModelConfig((prev) => ({
-        ...prev,
-        polyStats: stats,
-      }));
-    });
+    if (id === 'skull') {
+      setIsModelLoading(true);
+      setModelLoadingFileName('Skull');
+      setModelLoadingStatusText('Loading');
+    }
+    loadBuiltinGeometryAsync(id)
+      .then((geo) => {
+        currentGeometryRef.current = geo;
+        const stats = getGeometryStats(geo);
+        const newConfig: ModelConfig = {
+          ...modelConfig,
+          sourceType: 'preset',
+          modelId: id,
+          fileName: undefined,
+          polyStats: stats,
+        };
+        setModelConfig(newConfig);
+        pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
+      })
+      .finally(() => {
+        if (id === 'skull') {
+          setIsModelLoading(false);
+        }
+      });
   };
 
   const handleChangeModelConfig = useCallback((newConfig: ModelConfig) => {
