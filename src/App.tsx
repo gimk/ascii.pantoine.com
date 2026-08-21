@@ -1313,35 +1313,6 @@ export const App: React.FC = () => {
     }
   }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution]);
 
-  const handleMediaPan = useCallback((deltaX: number, deltaY: number) => {
-    setMediaConfig((prev) => {
-      const next = {
-        ...prev,
-        offsetX: Math.max(-150, Math.min(150, prev.offsetX + Math.round(deltaX))),
-        offsetY: Math.max(-150, Math.min(150, prev.offsetY + Math.round(deltaY))),
-      };
-      clearTimeout(mediaHistoryDebounceTimer.current);
-      mediaHistoryDebounceTimer.current = setTimeout(() => {
-        pushMediaHistorySnapshot(next, mediaViewConfig, activeMediaPreset);
-      }, 500);
-      return next;
-    });
-  }, [mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
-
-  const handleMediaZoom = useCallback((deltaScale: number) => {
-    setMediaConfig((prev) => {
-      const next = {
-        ...prev,
-        scale: Math.max(0.1, Math.min(4.0, Number((prev.scale + deltaScale).toFixed(2)))),
-      };
-      clearTimeout(mediaHistoryDebounceTimer.current);
-      mediaHistoryDebounceTimer.current = setTimeout(() => {
-        pushMediaHistorySnapshot(next, mediaViewConfig, activeMediaPreset);
-      }, 500);
-      return next;
-    });
-  }, [mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
-
   const handleResetMediaDefaults = useCallback(() => {
     setMediaViewConfig({ ...DEFAULT_MEDIA_VIEW_CONFIG });
     pushMediaHistorySnapshot(mediaConfig, DEFAULT_MEDIA_VIEW_CONFIG, activeMediaPreset);
@@ -1939,8 +1910,6 @@ export const App: React.FC = () => {
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
           onOrbitRotate={handleOrbitRotate}
           onWheelZoom={handleWheelZoom}
-          onMediaPan={handleMediaPan}
-          onMediaZoom={handleMediaZoom}
         />
 
         {/* Right Sidebar Control Panel */}
