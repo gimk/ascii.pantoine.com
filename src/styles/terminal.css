@@ -270,17 +270,13 @@ html, body, #root {
 
   .brand-title {
     gap: 5px;
+    font-size: 12px;
   }
 
   .brand-full {
-    display: none;
-  }
-
-  .brand-short {
     display: inline;
     font-size: 12px;
-    font-weight: 800;
-    color: var(--accent);
+    font-weight: 700;
     letter-spacing: 0.5px;
   }
 

@@ -1,15 +1,15 @@
-# ASCII Wave Generator — Developer & AI Reference (`gemini.md`)
+# ASCII Studio — Developer & AI Reference (`gemini.md`)
 
-> **Project**: [ASCII Wave Generator](https://ascii.pantoine.com)  
+> **Project**: [ASCII Studio](https://ascii.pantoine.com)  
 > **Repository**: [github.com/gimk/ascii.pantoine.com](https://github.com/gimk/ascii.pantoine.com)  
 > **Live Web App**: [ascii.pantoine.com](https://ascii.pantoine.com)  
-> **Tech Stack**: React 19, TypeScript 5, Vite 6, gifenc, Lucide React, Monospace Fonts (JetBrains Mono, JuliaMono)
+> **Tech Stack**: React 19, TypeScript 5, Vite 6, Three.js, gifenc, Lucide React, Monospace Fonts (JetBrains Mono, JuliaMono)
 
 ---
 
 ## 1. Executive Overview
 
-**ASCII Wave Generator** (`A.W.G`) is an interactive, brutalist terminal-styled ASCII animation synthesizer, particle physics simulator, and live formula sandbox. It allows users to design, manipulate, code, and export complex, real-time procedural ASCII field animations, animated GIFs, and HD videos directly in the browser without any software installation.
+**ASCII Studio** is an interactive, brutalist terminal-styled ASCII animation synthesizer, 3D model rasterizer, particle physics simulator, and live formula sandbox. It allows users to design, manipulate, code, and export complex, real-time procedural ASCII field animations, animated GIFs, and HD videos directly in the browser without any software installation.
 
 ---
 

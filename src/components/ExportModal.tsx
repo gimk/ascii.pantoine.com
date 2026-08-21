@@ -102,7 +102,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [videoExtension, setVideoExtension] = useState<'.mp4' | '.webm'>(supportedDefault.extension);
 
-  const defaultBaseName = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'ascii-wave';
+  const defaultBaseName = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'ascii-studio';
 
   // Initialize or reset base filename when preset name or modal open state changes
   useEffect(() => {

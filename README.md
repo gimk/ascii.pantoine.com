@@ -1,11 +1,11 @@
-# ASCII Wave Generator
+# ASCII Studio
 
 [![Live Demo](https://img.shields.io/badge/Live_App-ascii.pantoine.com-00FF66?style=for-the-badge&logo=google-chrome&logoColor=black)](https://ascii.pantoine.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-> An interactive, brutalist terminal-styled ASCII wave synthesizer, particle physics simulator, and live formula sandbox.
+> An interactive, brutalist terminal-styled ASCII synthesizer, 3D model rasterizer, particle physics simulator, and live formula sandbox.
 >
 > 🚀 **No installation or download required — run it directly in your browser at [ascii.pantoine.com](https://ascii.pantoine.com).**
 
@@ -13,7 +13,7 @@
 
 ## ✦ Overview
 
-**ASCII Wave Generator** (`A.W.G`) lets you synthesize complex, retro-futuristic ASCII wave animations in real time using parametric math equations or dynamic vector fields. Fine-tune your visuals with deep parametric sliders, write raw JavaScript math formulas on the fly, simulate curl-noise particle physics, and export ready-to-use standalone code, animated GIFs, or HD videos directly from your browser.
+**ASCII Studio** lets you synthesize complex, retro-futuristic ASCII animations, render interactive 3D models into ASCII in real time, and simulate curl-noise particle physics. Fine-tune your visuals with deep parametric sliders, write raw JavaScript math formulas on the fly, and export ready-to-use standalone code, animated GIFs, or HD videos directly from your browser.
 
 ---
 
@@ -21,7 +21,7 @@
 
 ### 🌐 Live Online & Zero-Setup
 - **Instant Browser Access**: Available 24/7 at [**ascii.pantoine.com**](https://ascii.pantoine.com) — no installation, account, or local setup required.
-- **Mobile & Touch-Optimized**: Fully responsive brutalist interface (`A.W.G`) with compact touch-friendly controls for phones, tablets, and desktops.
+- **Mobile & Touch-Optimized**: Fully responsive brutalist interface with compact touch-friendly controls for phones, tablets, and desktops.
 
 ### 🎛️ 8-Channel Parametric Wave Synthesizer (`SYNTH`)
 - **Harmonic Radial Waves**: Primary & secondary radial oscillators with frequency, amplitude, and phase controls.
