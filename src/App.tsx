@@ -1138,8 +1138,9 @@ export const App: React.FC = () => {
   // Media Handlers
   const autoSetMediaResolution = useCallback((w: number, h: number) => {
     if (w <= 0 || h <= 0) return;
+    setAutoRes(false);
     const srcAspect = w / h;
-    // Pick high crisp detail by default (targeting 200-320 cols)
+    // Pick high crisp detail by default (targeting 180-280 cols)
     let targetCols = 240;
     if (w >= 1600) targetCols = Math.round(w / 8);
     else if (w >= 800) targetCols = Math.round(w / 4);
@@ -1147,10 +1148,15 @@ export const App: React.FC = () => {
     else targetCols = Math.max(80, w);
 
     if (targetCols < 140) targetCols = Math.min(280, Math.round(targetCols * 2));
+    if (targetCols > 320) targetCols = 320;
 
-    const targetRows = Math.max(15, Math.round((targetCols * 0.55) / srcAspect));
+    const targetRows = Math.max(10, Math.round((targetCols * 0.55) / srcAspect));
     setCols(targetCols);
     setRows(targetRows);
+
+    setTimeout(() => {
+      viewportRef.current?.autoFit();
+    }, 60);
   }, []);
 
   const handleSelectMediaPreset = useCallback((preset: MediaPreset) => {
@@ -1236,9 +1242,18 @@ export const App: React.FC = () => {
       vid.loop = mediaConfig.loop;
       vid.muted = true;
       vid.playsInline = true;
-      vid.onloadedmetadata = () => {
-        autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+
+      let hasSetResolution = false;
+      const onVideoReady = () => {
+        if (!hasSetResolution && (vid.videoWidth || vid.videoHeight)) {
+          hasSetResolution = true;
+          autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+        }
       };
+
+      vid.onloadedmetadata = onVideoReady;
+      vid.onloadeddata = onVideoReady;
+      vid.oncanplay = onVideoReady;
       vid.play().catch(() => {});
       mediaElementRef.current = vid;
 
@@ -1283,9 +1298,18 @@ export const App: React.FC = () => {
       vid.loop = mediaConfig.loop;
       vid.muted = true;
       vid.playsInline = true;
-      vid.onloadedmetadata = () => {
-        autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+
+      let hasSetResolution = false;
+      const onVideoReady = () => {
+        if (!hasSetResolution && (vid.videoWidth || vid.videoHeight)) {
+          hasSetResolution = true;
+          autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+        }
       };
+
+      vid.onloadedmetadata = onVideoReady;
+      vid.onloadeddata = onVideoReady;
+      vid.oncanplay = onVideoReady;
       vid.play().catch(() => {});
       mediaElementRef.current = vid;
 
