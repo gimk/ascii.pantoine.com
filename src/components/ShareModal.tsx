@@ -38,12 +38,18 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const isSynthMode = !state.appMode || state.appMode === 'synth';
   const isMediaMode = state.appMode === 'media';
 
+  const isBuiltinModel =
+    state.appMode === 'model' &&
+    (!state.modelConfig?.sourceType || state.modelConfig?.sourceType === 'preset');
+
   const modelUrl = (state.modelConfig?.remoteUrl || '').trim();
   const isOnlineModel =
     state.appMode === 'model' &&
     (state.modelConfig?.sourceType === 'url' || Boolean(modelUrl.startsWith('http://') || modelUrl.startsWith('https://'))) &&
     !modelUrl.startsWith('blob:') &&
     !modelUrl.startsWith('data:');
+
+  const isShareableModel = isBuiltinModel || isOnlineModel;
 
   const mediaUrl = (state.mediaConfig?.remoteUrl || state.mediaConfig?.fileData || '').trim();
   const isRemoteMedia =
@@ -53,7 +59,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     !mediaUrl.startsWith('blob:') &&
     !mediaUrl.startsWith('data:');
 
-  const isShareable = isSynthMode || isOnlineModel || isRemoteMedia;
+  const isShareable = isSynthMode || isShareableModel || isRemoteMedia;
 
   const shareUrl = isShareable
     ? encodeShareUrl(
@@ -193,7 +199,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                       <Globe size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
                       <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>SOURCE:</span>
                       <strong style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
-                        Online Library
+                        {isBuiltinModel ? 'Built-in Preset' : 'Online Library'}
                       </strong>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
