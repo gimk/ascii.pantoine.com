@@ -129,6 +129,32 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     edgeBuffer = new Float32Array(totalCells);
   }
 
+  // Placeholder when no image or video is loaded yet
+  if (!mediaElement) {
+    const lines: string[] = [];
+    const bannerMsg = 'PASTE IMAGE [ ⌘+V / CTRL+V ] OR DROP FILE';
+    const subMsg = 'ASCII STUDIO 2D MEDIA RASTERIZER';
+
+    for (let r = 0; r < rows; r++) {
+      let line = '';
+      if (r === Math.floor(rows / 2) - 1) {
+        const pad = Math.max(0, Math.floor((cols - subMsg.length) / 2));
+        line = ' '.repeat(pad) + subMsg + ' '.repeat(Math.max(0, cols - pad - subMsg.length));
+      } else if (r === Math.floor(rows / 2) + 1) {
+        const pad = Math.max(0, Math.floor((cols - bannerMsg.length) / 2));
+        line = ' '.repeat(pad) + bannerMsg + ' '.repeat(Math.max(0, cols - pad - bannerMsg.length));
+      } else if (r === Math.floor(rows / 2) - 3 || r === Math.floor(rows / 2) + 3) {
+        const boxWidth = Math.min(cols - 4, Math.max(subMsg.length, bannerMsg.length) + 6);
+        const pad = Math.max(0, Math.floor((cols - boxWidth) / 2));
+        line = ' '.repeat(pad) + '+' + '-'.repeat(Math.max(0, boxWidth - 2)) + '+' + ' '.repeat(Math.max(0, cols - pad - boxWidth));
+      } else {
+        line = ' '.repeat(cols);
+      }
+      lines.push(line.slice(0, cols));
+    }
+    return lines.join('\n');
+  }
+
   const { ctx } = getOffscreenCanvas(cols, rows);
   if (!ctx) return '';
 

@@ -35,6 +35,7 @@ import {
 import {
   DEFAULT_MEDIA_CONFIG,
   DEFAULT_MEDIA_VIEW_CONFIG,
+  DEFAULT_MEDIA_PRESET,
   MEDIA_PRESETS,
 } from './engine/mediaPresets';
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
@@ -209,17 +210,17 @@ export const App: React.FC = () => {
       );
       if (match) return match;
     }
-    return MEDIA_PRESETS[0];
+    return DEFAULT_MEDIA_PRESET;
   });
 
   const [mediaConfig, setMediaConfig] = useState<MediaConfig>(() => ({
     ...DEFAULT_MEDIA_CONFIG,
-    ...(sharedState?.mediaConfig || MEDIA_PRESETS[0].mediaConfig || {}),
+    ...(sharedState?.mediaConfig || {}),
   }));
 
   const [mediaViewConfig, setMediaViewConfig] = useState<MediaViewConfig>(() => ({
     ...DEFAULT_MEDIA_VIEW_CONFIG,
-    ...(sharedState?.mediaViewConfig || MEDIA_PRESETS[0].viewConfig || {}),
+    ...(sharedState?.mediaViewConfig || {}),
   }));
 
   const [userMediaPresets, setUserMediaPresets] = useState<MediaPreset[]>([]);
@@ -419,7 +420,7 @@ export const App: React.FC = () => {
 
   // Initialize initial media element on mount
   useEffect(() => {
-    const dataUrl = mediaConfig.fileData || MEDIA_PRESETS[0].mediaConfig.fileData;
+    const dataUrl = mediaConfig.fileData;
     if (dataUrl) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -1350,8 +1351,16 @@ export const App: React.FC = () => {
     }
 
     if (appMode === 'media') {
-      const randomPreset = MEDIA_PRESETS[Math.floor(Math.random() * MEDIA_PRESETS.length)];
-      handleSelectMediaPreset(randomPreset);
+      if (userMediaPresets.length > 0) {
+        const randomPreset = userMediaPresets[Math.floor(Math.random() * userMediaPresets.length)];
+        handleSelectMediaPreset(randomPreset);
+      } else {
+        const themes: PhosphorTheme[] = ['green', 'amber', 'cyan', 'monochrome', 'matrix', 'blood'];
+        const randTheme = themes[Math.floor(Math.random() * themes.length)];
+        const randCharset = CHARSETS[Math.floor(Math.random() * CHARSETS.length)].chars;
+        setTheme(randTheme);
+        setDensity(randCharset);
+      }
       return;
     }
 

@@ -39,24 +39,45 @@ export const MediaPresetSelector: React.FC<MediaPresetSelectorProps> = ({
             {MEDIA_PRESETS.length} presets
           </span>
         </div>
-        <div className="presets-grid">
-          {MEDIA_PRESETS.map((preset) => {
-            const isActive = activePresetId === preset.id && activeMediaConfig?.sourceType === 'preset';
-            return (
-              <button
-                key={preset.id}
-                className={`preset-card ${isActive ? 'active' : ''}`}
-                onClick={() => onSelectPreset(preset)}
-              >
-                <div className="preset-card-title">
-                  <ImageIcon size={11} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
-                  {preset.name}
-                </div>
-                <div className="preset-card-desc">{preset.description}</div>
-              </button>
-            );
-          })}
-        </div>
+        {MEDIA_PRESETS.length === 0 ? (
+          <div
+            style={{
+              padding: '12px 10px',
+              background: 'var(--bg-control)',
+              border: '1px dashed var(--border-color)',
+              borderRadius: '3px',
+              textAlign: 'center',
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              lineHeight: 1.5,
+            }}
+          >
+            <ImageIcon size={18} color="var(--accent)" style={{ display: 'block', margin: '0 auto 6px', opacity: 0.7 }} />
+            <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>No Built-in Presets</div>
+            <div style={{ fontSize: '9px', color: 'var(--text-dim)', marginTop: '2px' }}>
+              Import images in the <strong>FILE</strong> tab or press <strong>Cmd+V</strong> to paste, then save your custom presets below!
+            </div>
+          </div>
+        ) : (
+          <div className="presets-grid">
+            {MEDIA_PRESETS.map((preset) => {
+              const isActive = activePresetId === preset.id && activeMediaConfig?.sourceType === 'preset';
+              return (
+                <button
+                  key={preset.id}
+                  className={`preset-card ${isActive ? 'active' : ''}`}
+                  onClick={() => onSelectPreset(preset)}
+                >
+                  <div className="preset-card-title">
+                    <ImageIcon size={11} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+                    {preset.name}
+                  </div>
+                  <div className="preset-card-desc">{preset.description}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 2. User Saved 2D Presets */}

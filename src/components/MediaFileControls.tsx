@@ -163,10 +163,79 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
 
   return (
     <div className="tab-content">
+      {/* 0. High-Visibility Clipboard Paste Hero Banner */}
+      <div
+        className="control-section"
+        style={{
+          background: 'rgba(0, 255, 102, 0.05)',
+          border: '1.5px solid var(--accent)',
+          borderRadius: '4px',
+          padding: '12px 14px',
+          marginBottom: '12px',
+          boxShadow: '0 0 12px rgba(0, 255, 102, 0.12)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <ClipboardPaste size={15} color="var(--accent)" />
+            <span style={{ fontWeight: 800, fontSize: '11.5px', letterSpacing: '0.04em', color: 'var(--accent)' }}>
+              INSTANT CLIPBOARD PASTE
+            </span>
+          </div>
+          <span
+            style={{
+              padding: '2px 7px',
+              background: 'var(--accent)',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: '10px',
+              borderRadius: '2px',
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.05em',
+            }}
+          >
+            {typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? '⌘ + V' : 'CTRL + V'}
+          </span>
+        </div>
+
+        <p style={{ fontSize: '10.5px', color: 'var(--text-primary)', lineHeight: 1.45, marginBottom: '8px' }}>
+          Copy any image, screenshot, or graphic to your clipboard, then press <strong style={{ color: 'var(--accent)' }}>{typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? 'Cmd+V' : 'Ctrl+V'}</strong> anywhere to rasterize it instantly.
+        </p>
+
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          style={{ width: '100%', justifyContent: 'center', padding: '6px 10px', fontSize: '11px', fontWeight: 700 }}
+          onClick={async () => {
+            try {
+              if (navigator.clipboard && navigator.clipboard.read) {
+                const items = await navigator.clipboard.read();
+                for (const item of items) {
+                  for (const type of item.types) {
+                    if (type.startsWith('image/')) {
+                      const blob = await item.getType(type);
+                      const file = new File([blob], `clipboard-paste-${Date.now()}.${type.split('/')[1] || 'png'}`, { type });
+                      onFileUpload(file);
+                      return;
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Browser permission might require shortcut Cmd+V
+            }
+          }}
+          title="Paste image directly from clipboard (or press Cmd+V / Ctrl+V)"
+        >
+          <ClipboardPaste size={13} />
+          PASTE FROM CLIPBOARD ({typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? '⌘V' : 'Ctrl+V'})
+        </button>
+      </div>
+
       {/* 1. File Upload & Source Dropzone */}
       <div className="control-section">
         <div className="section-header">
-          <span>Import 2D Image or Video</span>
+          <span>Or Import From File / URL</span>
           <Upload size={12} />
         </div>
 
@@ -195,10 +264,6 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
           </div>
           <div style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
             PNG, JPG, WebP, GIF, SVG, MP4, WebM, MOV or click to browse
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '9px', color: 'var(--text-dim)' }}>
-            <ClipboardPaste size={10} />
-            <span>Tip: Press <strong>Cmd+V / Ctrl+V</strong> anywhere to paste an image</span>
           </div>
         </div>
 

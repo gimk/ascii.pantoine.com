@@ -176,7 +176,7 @@ export type BackgroundMode = 'black' | 'white' | 'transparent';
 export interface MediaConfig {
   sourceType: MediaSourceType;
   mediaType: MediaType;
-  mediaId: string;
+  mediaId?: string;
   fileName?: string;
   fileData?: string; // base64 or object URL / data URL for image or video
   remoteUrl?: string;
