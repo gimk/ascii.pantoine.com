@@ -106,42 +106,63 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                   gap: '8px',
                   padding: '10px 12px',
                   background: 'var(--bg-primary)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '3px',
                   fontSize: '10.5px',
+                  overflow: 'hidden',
                 }}
               >
                 {isSynthMode && (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Sliders size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>PRESET:</span>
-                      <strong style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        {state.name}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Sliders size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>PRESET:</span>
+                      <strong
+                        style={{
+                          color: 'var(--text-primary)',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          minWidth: 0,
+                          flex: 1,
+                        }}
+                        title={state.name}
+                      >
+                        {state.name.length > 20 ? `${state.name.slice(0, 18)}...` : state.name}
                       </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Palette size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>THEME:</span>
-                      <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Palette size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>THEME:</span>
+                      <strong
+                        style={{
+                          color: 'var(--text-primary)',
+                          textTransform: 'capitalize',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          minWidth: 0,
+                          flex: 1,
+                        }}
+                      >
                         {state.theme}
                       </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Sparkles size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>GRID:</span>
-                      <strong style={{ color: 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Sparkles size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>GRID:</span>
+                      <strong style={{ color: 'var(--text-primary)', flexShrink: 0 }}>
                         {state.cols}x{state.rows}
                       </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Cpu size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>PERF:</span>
-                      <strong style={{ color: 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Cpu size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>PERF:</span>
+                      <strong style={{ color: 'var(--text-primary)', flexShrink: 0 }}>
                         {state.optimizeConfig.targetFps || 60} FPS
                       </strong>
                     </div>
@@ -150,29 +171,44 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
                 {state.appMode === 'model' && (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Box size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>MODEL:</span>
-                      <strong style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        {state.modelConfig?.fileName || state.name}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Box size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>MODEL:</span>
+                      <strong
+                        style={{
+                          color: 'var(--text-primary)',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          minWidth: 0,
+                          flex: 1,
+                        }}
+                        title={state.modelConfig?.fileName || state.name}
+                      >
+                        {(() => {
+                          const name = state.modelConfig?.fileName || state.name;
+                          return name.length > 20 ? `${name.slice(0, 18)}...` : name;
+                        })()}
                       </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Globe size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>SOURCE:</span>
-                      <strong style={{ color: 'var(--text-primary)' }}>Online 3D Library</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Globe size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>SOURCE:</span>
+                      <strong style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
+                        Online Library
+                      </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Palette size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>THEME:</span>
-                      <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Palette size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>THEME:</span>
+                      <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize', flexShrink: 0 }}>
                         {state.theme}
                       </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Sparkles size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>GRID:</span>
-                      <strong style={{ color: 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Sparkles size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>GRID:</span>
+                      <strong style={{ color: 'var(--text-primary)', flexShrink: 0 }}>
                         {state.cols}x{state.rows}
                       </strong>
                     </div>
@@ -181,29 +217,44 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
                 {state.appMode === 'media' && (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <ImageIcon size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>MEDIA:</span>
-                      <strong style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        {state.mediaConfig?.fileName || 'Remote Image'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <ImageIcon size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>MEDIA:</span>
+                      <strong
+                        style={{
+                          color: 'var(--text-primary)',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          minWidth: 0,
+                          flex: 1,
+                        }}
+                        title={state.mediaConfig?.fileName || 'Remote Image'}
+                      >
+                        {(() => {
+                          const name = state.mediaConfig?.fileName || 'Remote Image';
+                          return name.length > 20 ? `${name.slice(0, 18)}...` : name;
+                        })()}
                       </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Globe size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>SOURCE:</span>
-                      <strong style={{ color: 'var(--text-primary)' }}>Public URL</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Globe size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>SOURCE:</span>
+                      <strong style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
+                        Public URL
+                      </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Palette size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>THEME:</span>
-                      <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Palette size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>THEME:</span>
+                      <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize', flexShrink: 0 }}>
                         {state.theme}
                       </strong>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Sparkles size={12} color="var(--accent)" />
-                      <span style={{ color: 'var(--text-muted)' }}>GRID:</span>
-                      <strong style={{ color: 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                      <Sparkles size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>GRID:</span>
+                      <strong style={{ color: 'var(--text-primary)', flexShrink: 0 }}>
                         {state.cols}x{state.rows}
                       </strong>
                     </div>
