@@ -1347,6 +1347,16 @@ export const App: React.FC = () => {
     pushMediaHistorySnapshot(mediaConfig, DEFAULT_MEDIA_VIEW_CONFIG, activeMediaPreset);
   }, [mediaConfig, activeMediaPreset, pushMediaHistorySnapshot]);
 
+  // Initial loader for shared remote media URLs
+  useEffect(() => {
+    if (appMode === 'media' && mediaConfig.sourceType === 'url') {
+      const url = mediaConfig.remoteUrl || mediaConfig.fileData;
+      if (url && url.startsWith('http')) {
+        handleMediaUrlLoad(url);
+      }
+    }
+  }, []);
+
   // Global Clipboard Paste Listener (Image/Video Paste)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
@@ -2393,6 +2403,10 @@ export const App: React.FC = () => {
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
         state={currentFullState}
+        onOpenExport={() => {
+          setExportInitialTab('image');
+          setIsExportOpen(true);
+        }}
       />
     </div>
   );
