@@ -291,10 +291,6 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
   drawW *= mediaConfig.scale || 1.0;
   drawH *= mediaConfig.scale || 1.0;
 
-  // Compress height back to cell aspect ratio
-  const finalDrawH = drawH * cellAspect;
-  const finalDrawW = drawW;
-
   // Compute pan offsets in grid coordinates
   const cx = cols / 2 + (mediaConfig.offsetX / 100) * (cols / 2);
   const cy = rows / 2 + (mediaConfig.offsetY / 100) * (rows / 2);
@@ -307,7 +303,10 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
 
   ctx.save();
   ctx.translate(cx, cy);
+  // Compress vertical dimension to account for monospace cell aspect ratio (tall characters)
+  ctx.scale(1, cellAspect);
 
+  // Perform rotation & flips in isotropic visual space so orientation never distorts aspect ratio
   if (mediaConfig.rotation !== 0) {
     ctx.rotate((mediaConfig.rotation * Math.PI) / 180);
   }
@@ -319,7 +318,7 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
   }
 
   try {
-    ctx.drawImage(mediaElement, -finalDrawW / 2, -finalDrawH / 2, finalDrawW, finalDrawH);
+    ctx.drawImage(mediaElement, -drawW / 2, -drawH / 2, drawW, drawH);
   } catch {
     // drawing error (e.g. video not ready)
   }

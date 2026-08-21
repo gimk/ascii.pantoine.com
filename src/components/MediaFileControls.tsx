@@ -174,12 +174,12 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
       <div
         className="control-section"
         style={{
-          background: 'rgba(0, 255, 102, 0.05)',
+          background: 'var(--accent-glow)',
           border: '1.5px solid var(--accent)',
           borderRadius: '4px',
           padding: '12px 14px',
           marginBottom: '12px',
-          boxShadow: '0 0 12px rgba(0, 255, 102, 0.12)',
+          boxShadow: '0 0 12px var(--accent-glow)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -193,7 +193,7 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
             style={{
               padding: '2px 7px',
               background: 'var(--accent)',
-              color: '#000',
+              color: 'var(--bg-primary)',
               fontWeight: 800,
               fontSize: '10px',
               borderRadius: '2px',
