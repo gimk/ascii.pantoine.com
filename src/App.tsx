@@ -14,6 +14,9 @@ import {
   ModelViewConfig,
   ModelPreset,
   BuiltinModelId,
+  MediaConfig,
+  MediaViewConfig,
+  MediaPreset,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -29,9 +32,15 @@ import {
   DEFAULT_MODEL_VIEW_CONFIG,
   MODEL_PRESETS,
 } from './engine/modelPresets';
+import {
+  DEFAULT_MEDIA_CONFIG,
+  DEFAULT_MEDIA_VIEW_CONFIG,
+  MEDIA_PRESETS,
+} from './engine/mediaPresets';
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelAsciiFrame, applyTrackballRotationWithTime } from './engine/modelRenderer';
+import { renderAsciiMediaFrame } from './engine/mediaRenderer';
 import { CHARSETS, renderAsciiFrame } from './engine/renderer';
 import {
   createTrailPoint,
@@ -49,6 +58,9 @@ import { CharsetThemeBar } from './components/CharsetThemeBar';
 import { ModelPresetSelector } from './components/ModelPresetSelector';
 import { ModelSettingsControls } from './components/ModelSettingsControls';
 import { ModelViewControls } from './components/ModelViewControls';
+import { MediaPresetSelector } from './components/MediaPresetSelector';
+import { MediaFileControls } from './components/MediaFileControls';
+import { MediaViewControls } from './components/MediaViewControls';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { generateRandomAnimation } from './engine/randomizer';
@@ -72,10 +84,12 @@ import {
   Bot,
   Box,
   Eye,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_PRESETS_KEY = 'ascii_builder_user_presets';
 const LOCAL_STORAGE_MODEL_PRESETS_KEY = 'ascii_builder_user_model_presets';
+const LOCAL_STORAGE_MEDIA_PRESETS_KEY = 'ascii_builder_user_media_presets';
 
 interface HistorySnapshot {
   waveParams: WaveParams;
@@ -89,6 +103,18 @@ interface ModelHistorySnapshot {
   modelConfig: ModelConfig;
   modelViewConfig: ModelViewConfig;
   activePreset: ModelPreset;
+  theme?: PhosphorTheme;
+  customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
+  density?: string;
+  crtConfig?: CrtConfig;
+  optimizeConfig?: OptimizeConfig;
+}
+
+interface MediaHistorySnapshot {
+  mediaConfig: MediaConfig;
+  mediaViewConfig: MediaViewConfig;
+  activePreset: MediaPreset;
   theme?: PhosphorTheme;
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
@@ -166,7 +192,7 @@ export const App: React.FC = () => {
   }));
 
   const [userModelPresets, setUserModelPresets] = useState<ModelPreset[]>([]);
-  const [modelTab, setModelTab] = useState<'presets' | 'model' | 'view' | 'optimize' | 'visuals'>('presets');
+  const [modelTab, setModelTab] = useState<'presets' | 'model' | 'view' | 'render' | 'visuals'>('presets');
 
   // Active Three.js geometry reference
   const currentGeometryRef = useRef<THREE.BufferGeometry>(
@@ -174,6 +200,33 @@ export const App: React.FC = () => {
       ((sharedState?.modelConfig?.modelId as BuiltinModelId) || 'torus-knot')
     )
   );
+
+  // 2D Media State for Media Mode
+  const [activeMediaPreset, setActiveMediaPreset] = useState<MediaPreset>(() => {
+    if (sharedState?.mediaConfig?.mediaId) {
+      const match = MEDIA_PRESETS.find(
+        (p) => p.mediaConfig.mediaId === sharedState.mediaConfig?.mediaId
+      );
+      if (match) return match;
+    }
+    return MEDIA_PRESETS[0];
+  });
+
+  const [mediaConfig, setMediaConfig] = useState<MediaConfig>(() => ({
+    ...DEFAULT_MEDIA_CONFIG,
+    ...(sharedState?.mediaConfig || MEDIA_PRESETS[0].mediaConfig || {}),
+  }));
+
+  const [mediaViewConfig, setMediaViewConfig] = useState<MediaViewConfig>(() => ({
+    ...DEFAULT_MEDIA_VIEW_CONFIG,
+    ...(sharedState?.mediaViewConfig || MEDIA_PRESETS[0].viewConfig || {}),
+  }));
+
+  const [userMediaPresets, setUserMediaPresets] = useState<MediaPreset[]>([]);
+  const [mediaTab, setMediaTab] = useState<'presets' | 'file' | 'view' | 'render' | 'visuals'>('presets');
+
+  // Active HTML image/video/canvas element reference for media rasterizer
+  const mediaElementRef = useRef<HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null>(null);
 
   // Display & Resolution
   const [cols, setCols] = useState<number>(sharedState?.cols || 100);
@@ -218,13 +271,13 @@ export const App: React.FC = () => {
   const currentFpsRef = useRef<number>(30);
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'presets' | 'synth' | 'particles' | 'optimize' | 'visuals'>('presets');
+  const [activeTab, setActiveTab] = useState<'presets' | 'synth' | 'particles' | 'render' | 'visuals'>('presets');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii'>('prompt');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
   const [userPresets, setUserPresets] = useState<Preset[]>([]);
 
-  // Undo / Redo History Stack (Separate stacks for Synth and Model modes)
+  // Undo / Redo History Stack (Separate stacks for Synth, Media, and Model modes)
   const synthHistoryRef = useRef<HistorySnapshot[]>([]);
   const synthHistoryIndexRef = useRef<number>(-1);
   const synthHistoryDebounceTimer = useRef<any>(null);
@@ -233,6 +286,10 @@ export const App: React.FC = () => {
   const modelHistoryIndexRef = useRef<number>(-1);
   const modelHistoryDebounceTimer = useRef<any>(null);
 
+  const mediaHistoryRef = useRef<MediaHistorySnapshot[]>([]);
+  const mediaHistoryIndexRef = useRef<number>(-1);
+  const mediaHistoryDebounceTimer = useRef<any>(null);
+
   const [canUndo, setCanUndo] = useState<boolean>(false);
   const [canRedo, setCanRedo] = useState<boolean>(false);
 
@@ -240,6 +297,9 @@ export const App: React.FC = () => {
     if (appMode === 'synth') {
       setCanUndo(synthHistoryIndexRef.current > 0);
       setCanRedo(synthHistoryIndexRef.current < synthHistoryRef.current.length - 1);
+    } else if (appMode === 'media') {
+      setCanUndo(mediaHistoryIndexRef.current > 0);
+      setCanRedo(mediaHistoryIndexRef.current < mediaHistoryRef.current.length - 1);
     } else {
       setCanUndo(modelHistoryIndexRef.current > 0);
       setCanRedo(modelHistoryIndexRef.current < modelHistoryRef.current.length - 1);
@@ -324,6 +384,52 @@ export const App: React.FC = () => {
     [theme, customThemeColor, gradientConfig, density, crtConfig, optimizeConfig, updateHistoryButtons]
   );
 
+  const pushMediaHistorySnapshot = useCallback(
+    (
+      mConfig: MediaConfig,
+      vConfig: MediaViewConfig,
+      preset: MediaPreset,
+      optConfig?: OptimizeConfig,
+      crt?: CrtConfig,
+      thm?: PhosphorTheme,
+      cColor?: string,
+      grad?: PhosphorGradient | null,
+      dens?: string
+    ) => {
+      const nextIndex = mediaHistoryIndexRef.current + 1;
+      const newHistory = mediaHistoryRef.current.slice(0, nextIndex);
+      newHistory.push({
+        mediaConfig: { ...mConfig },
+        mediaViewConfig: { ...vConfig },
+        activePreset: { ...preset },
+        theme: thm !== undefined ? thm : theme,
+        customThemeColor: cColor !== undefined ? cColor : customThemeColor,
+        gradientConfig: grad !== undefined ? grad : gradientConfig,
+        density: dens !== undefined ? dens : density,
+        crtConfig: crt !== undefined ? { ...crt } : { ...crtConfig },
+        optimizeConfig: optConfig !== undefined ? { ...optConfig } : { ...optimizeConfig },
+      });
+      if (newHistory.length > 50) newHistory.shift();
+      mediaHistoryRef.current = newHistory;
+      mediaHistoryIndexRef.current = newHistory.length - 1;
+      updateHistoryButtons();
+    },
+    [theme, customThemeColor, gradientConfig, density, crtConfig, optimizeConfig, updateHistoryButtons]
+  );
+
+  // Initialize initial media element on mount
+  useEffect(() => {
+    const dataUrl = mediaConfig.fileData || MEDIA_PRESETS[0].mediaConfig.fileData;
+    if (dataUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        mediaElementRef.current = img;
+      };
+      img.src = dataUrl;
+    }
+  }, []);
+
   // Initialize first history entries
   useEffect(() => {
     if (synthHistoryRef.current.length === 0) {
@@ -354,6 +460,22 @@ export const App: React.FC = () => {
         },
       ];
       modelHistoryIndexRef.current = 0;
+    }
+    if (mediaHistoryRef.current.length === 0) {
+      mediaHistoryRef.current = [
+        {
+          mediaConfig: { ...mediaConfig },
+          mediaViewConfig: { ...mediaViewConfig },
+          activePreset: activeMediaPreset,
+          theme,
+          customThemeColor,
+          gradientConfig,
+          density,
+          crtConfig: { ...crtConfig },
+          optimizeConfig: { ...optimizeConfig },
+        },
+      ];
+      mediaHistoryIndexRef.current = 0;
     }
     updateHistoryButtons();
   }, [updateHistoryButtons]);
@@ -392,6 +514,28 @@ export const App: React.FC = () => {
     if (snapshot.optimizeConfig) setOptimizeConfig({ ...snapshot.optimizeConfig });
   }, []);
 
+  const restoreMediaSnapshot = useCallback((snapshot: MediaHistorySnapshot) => {
+    setMediaConfig({ ...snapshot.mediaConfig });
+    setMediaViewConfig({ ...snapshot.mediaViewConfig });
+    setActiveMediaPreset(snapshot.activePreset);
+
+    if (snapshot.mediaConfig.fileData) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        mediaElementRef.current = img;
+      };
+      img.src = snapshot.mediaConfig.fileData;
+    }
+
+    if (snapshot.theme) setTheme(snapshot.theme);
+    if (snapshot.customThemeColor !== undefined) setCustomThemeColor(snapshot.customThemeColor);
+    if (snapshot.gradientConfig !== undefined) setGradientConfig(snapshot.gradientConfig);
+    if (snapshot.density) setDensity(snapshot.density);
+    if (snapshot.crtConfig) setCrtConfig({ ...snapshot.crtConfig });
+    if (snapshot.optimizeConfig) setOptimizeConfig({ ...snapshot.optimizeConfig });
+  }, []);
+
   const handleUndo = useCallback(() => {
     if (appMode === 'synth') {
       if (synthHistoryIndexRef.current > 0) {
@@ -404,6 +548,13 @@ export const App: React.FC = () => {
         recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
         updateHistoryButtons();
       }
+    } else if (appMode === 'media') {
+      if (mediaHistoryIndexRef.current > 0) {
+        mediaHistoryIndexRef.current -= 1;
+        const snapshot = mediaHistoryRef.current[mediaHistoryIndexRef.current];
+        restoreMediaSnapshot(snapshot);
+        updateHistoryButtons();
+      }
     } else {
       if (modelHistoryIndexRef.current > 0) {
         modelHistoryIndexRef.current -= 1;
@@ -412,7 +563,7 @@ export const App: React.FC = () => {
         updateHistoryButtons();
       }
     }
-  }, [appMode, recompileCustomCode, restoreModelSnapshot, updateHistoryButtons]);
+  }, [appMode, recompileCustomCode, restoreModelSnapshot, restoreMediaSnapshot, updateHistoryButtons]);
 
   const handleRedo = useCallback(() => {
     if (appMode === 'synth') {
@@ -426,6 +577,13 @@ export const App: React.FC = () => {
         recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
         updateHistoryButtons();
       }
+    } else if (appMode === 'media') {
+      if (mediaHistoryIndexRef.current < mediaHistoryRef.current.length - 1) {
+        mediaHistoryIndexRef.current += 1;
+        const snapshot = mediaHistoryRef.current[mediaHistoryIndexRef.current];
+        restoreMediaSnapshot(snapshot);
+        updateHistoryButtons();
+      }
     } else {
       if (modelHistoryIndexRef.current < modelHistoryRef.current.length - 1) {
         modelHistoryIndexRef.current += 1;
@@ -434,7 +592,7 @@ export const App: React.FC = () => {
         updateHistoryButtons();
       }
     }
-  }, [appMode, recompileCustomCode, restoreModelSnapshot, updateHistoryButtons]);
+  }, [appMode, recompileCustomCode, restoreModelSnapshot, restoreMediaSnapshot, updateHistoryButtons]);
 
   // Load user presets from localStorage
   useEffect(() => {
@@ -446,6 +604,10 @@ export const App: React.FC = () => {
       const savedModels = localStorage.getItem(LOCAL_STORAGE_MODEL_PRESETS_KEY);
       if (savedModels) {
         setUserModelPresets(JSON.parse(savedModels));
+      }
+      const savedMedia = localStorage.getItem(LOCAL_STORAGE_MEDIA_PRESETS_KEY);
+      if (savedMedia) {
+        setUserMediaPresets(JSON.parse(savedMedia));
       }
     } catch {
       // LocalStorage error ignored
@@ -969,6 +1131,216 @@ export const App: React.FC = () => {
     pushModelHistorySnapshot(modelConfig, updated, activeModelPreset);
   }, [modelConfig, modelViewConfig, activeModelPreset, pushModelHistorySnapshot]);
 
+  // Media Handlers
+  const handleSelectMediaPreset = useCallback((preset: MediaPreset) => {
+    setActiveMediaPreset(preset);
+    setMediaConfig({ ...preset.mediaConfig });
+    setMediaViewConfig({ ...preset.viewConfig });
+
+    if (preset.mediaConfig.fileData) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        mediaElementRef.current = img;
+      };
+      img.src = preset.mediaConfig.fileData;
+    }
+
+    if (preset.theme) setTheme(preset.theme);
+    if (preset.customThemeColor !== undefined) setCustomThemeColor(preset.customThemeColor || '');
+    if (preset.gradientConfig !== undefined) setGradientConfig(preset.gradientConfig || null);
+    if (preset.densityCharset) setDensity(preset.densityCharset);
+    if (preset.crtConfig) setCrtConfig({ ...preset.crtConfig });
+    if (preset.optimizeConfig) setOptimizeConfig({ ...preset.optimizeConfig });
+    pushMediaHistorySnapshot(preset.mediaConfig, preset.viewConfig, preset);
+  }, [pushMediaHistorySnapshot]);
+
+  const handleSaveCustomMediaPreset = (name: string) => {
+    const newPreset: MediaPreset = {
+      id: `user-media-${Date.now()}`,
+      name,
+      description: `Custom 2D media preset created on ${new Date().toLocaleDateString()}`,
+      mediaConfig: { ...mediaConfig },
+      viewConfig: { ...mediaViewConfig },
+      theme,
+      customThemeColor: customThemeColor || undefined,
+      densityCharset: density,
+      optimizeConfig: { ...optimizeConfig },
+      crtConfig: { ...crtConfig },
+    };
+
+    const updated = [newPreset, ...userMediaPresets];
+    setUserMediaPresets(updated);
+    setActiveMediaPreset(newPreset);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_MEDIA_PRESETS_KEY, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleDeleteUserMediaPreset = (id: string) => {
+    const updated = userMediaPresets.filter((p) => p.id !== id);
+    setUserMediaPresets(updated);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_MEDIA_PRESETS_KEY, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleChangeMediaConfig = useCallback((newConfig: MediaConfig) => {
+    setMediaConfig(newConfig);
+    clearTimeout(mediaHistoryDebounceTimer.current);
+    mediaHistoryDebounceTimer.current = setTimeout(() => {
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+    }, 400);
+  }, [mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+
+  const handleChangeMediaViewConfig = useCallback((newViewConfig: MediaViewConfig) => {
+    setMediaViewConfig(newViewConfig);
+    clearTimeout(mediaHistoryDebounceTimer.current);
+    mediaHistoryDebounceTimer.current = setTimeout(() => {
+      pushMediaHistorySnapshot(mediaConfig, newViewConfig, activeMediaPreset);
+    }, 400);
+  }, [mediaConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+
+  const handleMediaFileUpload = useCallback((file: File) => {
+    const isVid = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.webm') || file.name.endsWith('.mov');
+    const objectUrl = URL.createObjectURL(file);
+
+    if (isVid) {
+      const vid = document.createElement('video');
+      vid.src = objectUrl;
+      vid.crossOrigin = 'anonymous';
+      vid.autoplay = true;
+      vid.loop = mediaConfig.loop;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.play().catch(() => {});
+      mediaElementRef.current = vid;
+
+      const newConfig: MediaConfig = {
+        ...mediaConfig,
+        sourceType: 'file',
+        mediaType: 'video',
+        fileName: file.name,
+        fileData: objectUrl,
+      };
+      setMediaConfig(newConfig);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+    } else {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        mediaElementRef.current = img;
+      };
+      img.src = objectUrl;
+
+      const newConfig: MediaConfig = {
+        ...mediaConfig,
+        sourceType: 'file',
+        mediaType: 'image',
+        fileName: file.name,
+        fileData: objectUrl,
+      };
+      setMediaConfig(newConfig);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+    }
+  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+
+  const handleMediaUrlLoad = useCallback((url: string) => {
+    const isVid = url.match(/\.(mp4|webm|mov|ogg)($|\?)/i);
+    if (isVid) {
+      const vid = document.createElement('video');
+      vid.src = url;
+      vid.crossOrigin = 'anonymous';
+      vid.autoplay = true;
+      vid.loop = mediaConfig.loop;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.play().catch(() => {});
+      mediaElementRef.current = vid;
+
+      const newConfig: MediaConfig = {
+        ...mediaConfig,
+        sourceType: 'url',
+        mediaType: 'video',
+        fileName: url.split('/').pop() || 'Remote Video',
+        remoteUrl: url,
+      };
+      setMediaConfig(newConfig);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+    } else {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        mediaElementRef.current = img;
+      };
+      img.src = url;
+
+      const newConfig: MediaConfig = {
+        ...mediaConfig,
+        sourceType: 'url',
+        mediaType: 'image',
+        fileName: url.split('/').pop() || 'Remote Image',
+        remoteUrl: url,
+      };
+      setMediaConfig(newConfig);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+    }
+  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+
+  const handleMediaPan = useCallback((deltaX: number, deltaY: number) => {
+    setMediaConfig((prev) => {
+      const next = {
+        ...prev,
+        offsetX: Math.max(-150, Math.min(150, prev.offsetX + Math.round(deltaX))),
+        offsetY: Math.max(-150, Math.min(150, prev.offsetY + Math.round(deltaY))),
+      };
+      clearTimeout(mediaHistoryDebounceTimer.current);
+      mediaHistoryDebounceTimer.current = setTimeout(() => {
+        pushMediaHistorySnapshot(next, mediaViewConfig, activeMediaPreset);
+      }, 500);
+      return next;
+    });
+  }, [mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+
+  const handleMediaZoom = useCallback((deltaScale: number) => {
+    setMediaConfig((prev) => {
+      const next = {
+        ...prev,
+        scale: Math.max(0.1, Math.min(4.0, Number((prev.scale + deltaScale).toFixed(2)))),
+      };
+      clearTimeout(mediaHistoryDebounceTimer.current);
+      mediaHistoryDebounceTimer.current = setTimeout(() => {
+        pushMediaHistorySnapshot(next, mediaViewConfig, activeMediaPreset);
+      }, 500);
+      return next;
+    });
+  }, [mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+
+  const handleResetMediaDefaults = useCallback(() => {
+    setMediaViewConfig({ ...DEFAULT_MEDIA_VIEW_CONFIG });
+    pushMediaHistorySnapshot(mediaConfig, DEFAULT_MEDIA_VIEW_CONFIG, activeMediaPreset);
+  }, [mediaConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+
+  // Global Clipboard Paste Listener (Image/Video Paste)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const target = e.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+
+      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+        const file = e.clipboardData.files[0];
+        if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+          e.preventDefault();
+          setAppMode('media');
+          handleMediaFileUpload(file);
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [handleMediaFileUpload]);
+
   // Fun Randomizer Handler
   const handleRandomize = useCallback(() => {
     setIsRandomizing(true);
@@ -977,6 +1349,12 @@ export const App: React.FC = () => {
     if (appMode === 'model') {
       const randomPreset = MODEL_PRESETS[Math.floor(Math.random() * MODEL_PRESETS.length)];
       handleSelectModelPreset(randomPreset);
+      return;
+    }
+
+    if (appMode === 'media') {
+      const randomPreset = MEDIA_PRESETS[Math.floor(Math.random() * MEDIA_PRESETS.length)];
+      handleSelectMediaPreset(randomPreset);
       return;
     }
 
@@ -1002,7 +1380,7 @@ export const App: React.FC = () => {
     };
     setActivePreset(randomPreset);
     pushHistorySnapshot(randomized.params, formula, randomized.name, '', 'parametric');
-  }, [appMode, handleSelectModelPreset, recompileCustomCode, pushHistorySnapshot]);
+  }, [appMode, handleSelectModelPreset, handleSelectMediaPreset, recompileCustomCode, pushHistorySnapshot]);
 
   // Save Custom User Preset
   const handleSaveCustomPreset = (name: string) => {
@@ -1198,6 +1576,15 @@ export const App: React.FC = () => {
           modelConfig,
           viewConfig: modelViewConfig,
         });
+      } else if (appMode === 'media') {
+        frameText = renderAsciiMediaFrame({
+          cols,
+          rows,
+          mediaElement: mediaElementRef.current,
+          mediaConfig,
+          viewConfig: mediaViewConfig,
+          density,
+        });
       } else {
         frameText = renderAsciiFrame({
           cols,
@@ -1228,6 +1615,8 @@ export const App: React.FC = () => {
     appMode,
     modelConfig,
     modelViewConfig,
+    mediaConfig,
+    mediaViewConfig,
     waveParams,
     presetType,
     particleConfig,
@@ -1288,12 +1677,29 @@ export const App: React.FC = () => {
     return false;
   }, [activeModelPreset, modelConfig, modelViewConfig]);
 
+  const isMediaEdited = useMemo(() => {
+    if (!activeMediaPreset) return false;
+    if (mediaConfig.scale !== activeMediaPreset.mediaConfig.scale) return true;
+    if (mediaConfig.offsetX !== activeMediaPreset.mediaConfig.offsetX) return true;
+    if (mediaConfig.offsetY !== activeMediaPreset.mediaConfig.offsetY) return true;
+    if (mediaConfig.rotation !== activeMediaPreset.mediaConfig.rotation) return true;
+    if (mediaConfig.flipX !== activeMediaPreset.mediaConfig.flipX) return true;
+    if (mediaConfig.flipY !== activeMediaPreset.mediaConfig.flipY) return true;
+    if (mediaConfig.fit !== activeMediaPreset.mediaConfig.fit) return true;
+    if (mediaViewConfig.algorithm !== activeMediaPreset.viewConfig.algorithm) return true;
+    if (mediaViewConfig.sharpenStrength !== activeMediaPreset.viewConfig.sharpenStrength) return true;
+    if (mediaViewConfig.contrast !== activeMediaPreset.viewConfig.contrast) return true;
+    return false;
+  }, [activeMediaPreset, mediaConfig, mediaViewConfig]);
+
   // Complete snapshot of the current animation state for sharing / deep-linking
   const currentFullState: FullAnimationState = useMemo(
     () => ({
       appMode,
       name: appMode === 'model'
         ? (isModelEdited ? `${activeModelPreset.name} (Edited)` : activeModelPreset.name)
+        : appMode === 'media'
+        ? (isMediaEdited ? `${activeMediaPreset.name} (Edited)` : activeMediaPreset.name)
         : (isEdited ? `${activePreset.name} (Edited)` : activePreset.name),
       type: appMode === 'synth' ? presetType : undefined,
       params: appMode === 'synth' ? waveParams : undefined,
@@ -1311,11 +1717,15 @@ export const App: React.FC = () => {
       crtConfig,
       modelConfig: appMode === 'model' ? modelConfig : undefined,
       modelViewConfig: appMode === 'model' ? modelViewConfig : undefined,
+      mediaConfig: appMode === 'media' ? mediaConfig : undefined,
+      mediaViewConfig: appMode === 'media' ? mediaViewConfig : undefined,
     }),
     [
       appMode,
       activeModelPreset.name,
       isModelEdited,
+      activeMediaPreset.name,
+      isMediaEdited,
       activePreset.name,
       isEdited,
       presetType,
@@ -1334,6 +1744,8 @@ export const App: React.FC = () => {
       crtConfig,
       modelConfig,
       modelViewConfig,
+      mediaConfig,
+      mediaViewConfig,
     ]
   );
 
@@ -1474,9 +1886,11 @@ export const App: React.FC = () => {
                 : modelConfig.sourceType === 'file'
                 ? modelConfig.fileName || 'Custom 3D File'
                 : activeModelPreset.name
+              : appMode === 'media'
+              ? mediaConfig.fileName || activeMediaPreset.name
               : activePreset.name
           }
-          isEdited={appMode === 'model' ? isModelEdited : isEdited}
+          isEdited={appMode === 'model' ? isModelEdited : appMode === 'media' ? isMediaEdited : isEdited}
           targetFps={optimizeConfig.targetFps}
           viewMode={viewMode}
           onToggleViewMode={handleToggleViewMode}
@@ -1491,6 +1905,8 @@ export const App: React.FC = () => {
           appMode={appMode}
           onOrbitRotate={handleOrbitRotate}
           onWheelZoom={handleWheelZoom}
+          onMediaPan={handleMediaPan}
+          onMediaZoom={handleMediaZoom}
         />
 
         {/* Right Sidebar Control Panel */}
@@ -1507,12 +1923,20 @@ export const App: React.FC = () => {
                 SYNTH
               </button>
               <button
+                className={`sidebar-mode-btn ${appMode === 'media' ? 'active' : ''}`}
+                onClick={() => setAppMode('media')}
+                title="2D Image & Video ASCII Rasterizer"
+              >
+                <ImageIcon size={13} style={{ marginRight: '6px' }} />
+                MEDIA
+              </button>
+              <button
                 className={`sidebar-mode-btn ${appMode === 'model' ? 'active' : ''}`}
                 onClick={() => setAppMode('model')}
                 title="3D Model to 2D ASCII Visualizer (Beta)"
               >
                 <Box size={13} style={{ marginRight: '6px' }} />
-                MODEL (BETA)
+                MODEL
               </button>
             </div>
 
@@ -1542,15 +1966,7 @@ export const App: React.FC = () => {
                     title="Particle Physics & Mouse Trail"
                   >
                     <Sparkles size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    PARTICLES
-                  </button>
-                  <button
-                    className={`tab-btn ${activeTab === 'optimize' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('optimize')}
-                    title="Performance Profiles & CPU Optimization"
-                  >
-                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    OPTIMIZE
+                    PHYSICS
                   </button>
                   <button
                     className={`tab-btn ${activeTab === 'visuals' ? 'active' : ''}`}
@@ -1559,6 +1975,14 @@ export const App: React.FC = () => {
                   >
                     <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
                     THEME
+                  </button>
+                  <button
+                    className={`tab-btn ${activeTab === 'render' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('render')}
+                    title="Render Settings, Framerate Limiter & Resolution"
+                  >
+                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    RENDER
                   </button>
                 </div>
 
@@ -1597,7 +2021,7 @@ export const App: React.FC = () => {
                   />
                 )}
 
-                {activeTab === 'optimize' && (
+                {activeTab === 'render' && (
                   <OptimizeControls
                     config={optimizeConfig}
                     onChangeConfig={setOptimizeConfig}
@@ -1610,6 +2034,119 @@ export const App: React.FC = () => {
                 )}
 
                 {activeTab === 'visuals' && (
+                  <CharsetThemeBar
+                    currentCharset={density}
+                    onChangeCharset={setDensity}
+                    currentTheme={theme}
+                    onChangeTheme={(t) => {
+                      setCustomThemeColor('');
+                      setGradientConfig(null);
+                      setTheme(t);
+                    }}
+                    customThemeColor={customThemeColor}
+                    onChangeCustomColor={(c) => {
+                      setGradientConfig(null);
+                      setCustomThemeColor(c);
+                    }}
+                    gradientConfig={gradientConfig}
+                    onChangeGradient={(g) => {
+                      setCustomThemeColor('');
+                      setGradientConfig(g);
+                    }}
+                    crtConfig={crtConfig}
+                    onChangeCrtConfig={setCrtConfig}
+                  />
+                )}
+              </>
+            ) : appMode === 'media' ? (
+              /* MEDIA MODE TABS */
+              <>
+                <div className="tab-nav">
+                  <button
+                    className={`tab-btn ${mediaTab === 'presets' ? 'active' : ''}`}
+                    onClick={() => setMediaTab('presets')}
+                    title="2D Media Presets"
+                  >
+                    <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    PRESETS
+                  </button>
+                  <button
+                    className={`tab-btn ${mediaTab === 'file' ? 'active' : ''}`}
+                    onClick={() => setMediaTab('file')}
+                    title="Upload Image/Video & Framing Transforms"
+                  >
+                    <ImageIcon size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    FILE
+                  </button>
+                  <button
+                    className={`tab-btn ${mediaTab === 'view' ? 'active' : ''}`}
+                    onClick={() => setMediaTab('view')}
+                    title="Dithering, Filters & Tonal Controls"
+                  >
+                    <Eye size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    VIEW
+                  </button>
+                  <button
+                    className={`tab-btn ${mediaTab === 'visuals' ? 'active' : ''}`}
+                    onClick={() => setMediaTab('visuals')}
+                    title="Charsets & Color Themes"
+                  >
+                    <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    THEME
+                  </button>
+                  <button
+                    className={`tab-btn ${mediaTab === 'render' ? 'active' : ''}`}
+                    onClick={() => setMediaTab('render')}
+                    title="Render Settings, Framerate Limiter & Resolution"
+                  >
+                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    RENDER
+                  </button>
+                </div>
+
+                {/* Active 2D Media Tab Views */}
+                {mediaTab === 'presets' && (
+                  <MediaPresetSelector
+                    activePresetId={activeMediaPreset.id}
+                    activeMediaConfig={mediaConfig}
+                    onSelectPreset={handleSelectMediaPreset}
+                    onSaveCustomPreset={handleSaveCustomMediaPreset}
+                    userPresets={userMediaPresets}
+                    onDeleteUserPreset={handleDeleteUserMediaPreset}
+                  />
+                )}
+
+                {mediaTab === 'file' && (
+                  <MediaFileControls
+                    config={mediaConfig}
+                    onChangeConfig={handleChangeMediaConfig}
+                    mediaElement={mediaElementRef.current}
+                    onFileUpload={handleMediaFileUpload}
+                    onUrlLoad={handleMediaUrlLoad}
+                  />
+                )}
+
+                {mediaTab === 'view' && (
+                  <MediaViewControls
+                    config={mediaViewConfig}
+                    onChangeConfig={handleChangeMediaViewConfig}
+                    onResetDefaults={handleResetMediaDefaults}
+                  />
+                )}
+
+                {mediaTab === 'render' && (
+                  <OptimizeControls
+                    config={optimizeConfig}
+                    onChangeConfig={setOptimizeConfig}
+                    cols={cols}
+                    rows={rows}
+                    onChangeResolution={handleManualResolutionChange}
+                    autoRes={autoRes}
+                    onToggleAutoRes={handleToggleAutoRes}
+                  />
+                )}
+
+                {mediaTab === 'visuals' && (
                   <CharsetThemeBar
                     currentCharset={density}
                     onChangeCharset={setDensity}
@@ -1652,7 +2189,7 @@ export const App: React.FC = () => {
                     title="Upload & 3D Geometry Settings"
                   >
                     <Box size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    MODEL
+                    FILE
                   </button>
                   <button
                     className={`tab-btn ${modelTab === 'view' ? 'active' : ''}`}
@@ -1663,20 +2200,20 @@ export const App: React.FC = () => {
                     VIEW
                   </button>
                   <button
-                    className={`tab-btn ${modelTab === 'optimize' ? 'active' : ''}`}
-                    onClick={() => setModelTab('optimize')}
-                    title="Performance Profiles & Resolution"
-                  >
-                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    OPTIMIZE
-                  </button>
-                  <button
                     className={`tab-btn ${modelTab === 'visuals' ? 'active' : ''}`}
                     onClick={() => setModelTab('visuals')}
                     title="Charsets & Color Themes"
                   >
                     <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
                     THEME
+                  </button>
+                  <button
+                    className={`tab-btn ${modelTab === 'render' ? 'active' : ''}`}
+                    onClick={() => setModelTab('render')}
+                    title="Render Settings, Framerate Limiter & Resolution"
+                  >
+                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                    RENDER
                   </button>
                 </div>
 
@@ -1710,7 +2247,7 @@ export const App: React.FC = () => {
                   />
                 )}
 
-                {modelTab === 'optimize' && (
+                {modelTab === 'render' && (
                   <OptimizeControls
                     config={optimizeConfig}
                     onChangeConfig={setOptimizeConfig}
@@ -1770,7 +2307,13 @@ export const App: React.FC = () => {
       <ExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
-        name={appMode === 'model' ? (isModelEdited ? `${activeModelPreset.name} (Edited)` : activeModelPreset.name) : (isEdited ? `${activePreset.name} (Edited)` : activePreset.name)}
+        name={
+          appMode === 'model'
+            ? (isModelEdited ? `${activeModelPreset.name} (Edited)` : activeModelPreset.name)
+            : appMode === 'media'
+            ? (isMediaEdited ? `${activeMediaPreset.name} (Edited)` : activeMediaPreset.name)
+            : (isEdited ? `${activePreset.name} (Edited)` : activePreset.name)
+        }
         type={appMode === 'synth' ? presetType : 'parametric'}
         params={waveParams}
         customCode={customCode}
@@ -1790,6 +2333,9 @@ export const App: React.FC = () => {
         modelConfig={modelConfig}
         modelViewConfig={modelViewConfig}
         geometry={currentGeometryRef.current}
+        mediaConfig={mediaConfig}
+        mediaViewConfig={mediaViewConfig}
+        mediaElement={mediaElementRef.current}
       />
 
       {/* Share Modal */}

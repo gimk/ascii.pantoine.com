@@ -28,7 +28,7 @@ interface AsciiViewportProps {
   onAutoResolutionChange?: (cols: number, rows: number) => void;
   crtConfig?: CrtConfig;
   gradientConfig?: PhosphorGradient | null;
-  appMode?: 'synth' | 'model';
+  appMode?: 'synth' | 'media' | 'model';
   onOrbitRotate?: (
     prevX: number,
     prevY: number,
@@ -38,6 +38,8 @@ interface AsciiViewportProps {
     height: number
   ) => void;
   onWheelZoom?: (deltaZoom: number) => void;
+  onMediaPan?: (deltaX: number, deltaY: number) => void;
+  onMediaZoom?: (deltaScale: number) => void;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -62,6 +64,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   appMode = 'synth',
   onOrbitRotate,
   onWheelZoom,
+  onMediaPan,
+  onMediaZoom,
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -206,7 +210,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const rect = targetElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
-    if (appMode === 'model') {
+    if (appMode === 'model' || appMode === 'media') {
       isDraggingRef.current = true;
       lastPosRef.current = { x: e.clientX, y: e.clientY };
       try {
@@ -234,6 +238,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         lastPosRef.current = { x: e.clientX, y: e.clientY };
         onOrbitRotate(prevX, prevY, currX, currY, rect.width, rect.height);
       }
+    } else if (appMode === 'media') {
+      if (isDraggingRef.current && onMediaPan) {
+        const deltaX = ((e.clientX - lastPosRef.current.x) / rect.width) * 100;
+        const deltaY = ((e.clientY - lastPosRef.current.y) / rect.height) * 100;
+        lastPosRef.current = { x: e.clientX, y: e.clientY };
+        onMediaPan(deltaX, deltaY);
+      }
     } else {
       const mouseX = ((e.clientX - rect.left) / rect.width) * cols;
       const mouseY = ((e.clientY - rect.top) / rect.height) * rows;
@@ -244,7 +255,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (appMode === 'model') {
+    if (appMode === 'model' || appMode === 'media') {
       isDraggingRef.current = false;
       try {
         (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -256,6 +267,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     if (appMode === 'model' && onWheelZoom) {
       e.preventDefault();
       onWheelZoom(e.deltaY > 0 ? 0.2 : -0.2);
+    } else if (appMode === 'media' && onMediaZoom) {
+      e.preventDefault();
+      onMediaZoom(e.deltaY > 0 ? -0.1 : 0.1);
     }
   };
 

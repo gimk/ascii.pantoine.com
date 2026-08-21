@@ -162,7 +162,77 @@ export interface RenderContext {
   luminanceBoost?: number;
 }
 
-export type AppMode = 'synth' | 'model';
+export type AppMode = 'synth' | 'media' | 'model';
+
+// --- 2D Media (Images & Videos) Types ---
+export type MediaSourceType = 'preset' | 'file' | 'url' | 'clipboard';
+export type MediaType = 'image' | 'video';
+export type MediaFitMode = 'contain' | 'cover' | 'stretch' | 'original';
+export type DitherAlgorithm = 'none' | 'floyd-steinberg' | 'bayer-4x4' | 'bayer-8x8' | 'atkinson' | 'sierra' | 'noise';
+export type ResamplingMode = 'bilinear' | 'nearest' | 'preserve-details';
+export type TonalMappingMode = '1-color' | '2-color' | 'multi-tone' | 'grayscale';
+export type BackgroundMode = 'black' | 'white' | 'transparent';
+
+export interface MediaConfig {
+  sourceType: MediaSourceType;
+  mediaType: MediaType;
+  mediaId: string;
+  fileName?: string;
+  fileData?: string; // base64 or object URL / data URL for image or video
+  remoteUrl?: string;
+  scale: number;
+  fit: MediaFitMode;
+  offsetX: number;
+  offsetY: number;
+  rotation: number; // in degrees
+  flipX: boolean;
+  flipY: boolean;
+  loop: boolean;
+  playbackSpeed: number;
+}
+
+export interface MediaViewConfig {
+  // 1. Render / Sampling Settings
+  inputDpi: number; // 36 to 300
+  resampling: ResamplingMode;
+  algorithm: DitherAlgorithm;
+  invert: boolean;
+  edgeDetection: boolean;
+  edgeThreshold: number; // 0 to 100
+  edgeStrength: number; // 0 to 200
+
+  // 2. Effect Controls
+  sharpenStrength: number; // 0 to 300
+  sharpenRadius: number; // 1 to 10
+  noise: number; // 0 to 100
+  denoise: number; // 0 to 100
+  blur: number; // 0 to 20
+  brightness: number; // -100 to 100
+  contrast: number; // -100 to 100
+
+  // 3. Tonal Controls
+  tonalMapping: TonalMappingMode;
+  highlights: number; // 0 to 100
+  midtones: number; // -50 to 50
+  shadows: number; // 0 to 100
+  background: BackgroundMode;
+  alphaThreshold: number; // 0 to 255
+}
+
+export interface MediaPreset {
+  id: string;
+  name: string;
+  description: string;
+  mediaConfig: MediaConfig;
+  viewConfig: MediaViewConfig;
+  theme?: PhosphorTheme;
+  customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
+  densityCharset?: string;
+  optimizeConfig?: OptimizeConfig;
+  crtConfig?: CrtConfig;
+  author?: string;
+}
 
 export type ModelShadingMode = 'shaded' | 'wireframe' | 'depth' | 'normals' | 'outline' | 'points';
 

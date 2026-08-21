@@ -14,6 +14,8 @@ import {
   AppMode,
   ModelConfig,
   ModelViewConfig,
+  MediaConfig,
+  MediaViewConfig,
 } from '../types/ascii';
 
 interface ExportModalProps {
@@ -39,6 +41,9 @@ interface ExportModalProps {
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
   geometry?: THREE.BufferGeometry;
+  mediaConfig?: MediaConfig;
+  mediaViewConfig?: MediaViewConfig;
+  mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
 type ExportTab = 'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'gif' | 'video';
@@ -73,6 +78,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   modelConfig,
   modelViewConfig,
   geometry,
+  mediaConfig,
+  mediaViewConfig,
+  mediaElement,
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
   const [activeCategory, setActiveCategory] = useState<ExportCategory>(getCategoryForTab(initialTab));
@@ -197,6 +205,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           modelConfig,
           modelViewConfig,
           geometry,
+          mediaConfig,
+          mediaViewConfig,
+          mediaElement,
         },
         (progress, frame, total) => {
           setRecordProgressGif(progress);
@@ -245,6 +256,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           modelConfig,
           modelViewConfig,
           geometry,
+          mediaConfig,
+          mediaViewConfig,
+          mediaElement,
         },
         (progress, frame, total) => {
           setRecordProgressVideo(progress);

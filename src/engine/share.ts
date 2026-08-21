@@ -8,6 +8,8 @@ import {
   AppMode,
   ModelConfig,
   ModelViewConfig,
+  MediaConfig,
+  MediaViewConfig,
 } from '../types/ascii';
 
 export interface FullAnimationState {
@@ -30,6 +32,8 @@ export interface FullAnimationState {
   crtConfig?: CrtConfig;
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
+  mediaConfig?: MediaConfig;
+  mediaViewConfig?: MediaViewConfig;
 }
 
 // UTF-8 safe base64 encoding/decoding helper

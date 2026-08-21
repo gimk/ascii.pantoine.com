@@ -8,9 +8,12 @@ import {
   AppMode,
   ModelConfig,
   ModelViewConfig,
+  MediaConfig,
+  MediaViewConfig,
 } from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
 import { renderModelAsciiFrame } from './modelRenderer';
+import { renderAsciiMediaFrame } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 
 export interface VideoExportOptions {
@@ -34,6 +37,9 @@ export interface VideoExportOptions {
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
   geometry?: THREE.BufferGeometry;
+  mediaConfig?: MediaConfig;
+  mediaViewConfig?: MediaViewConfig;
+  mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
 export interface VideoExportResult {
@@ -244,6 +250,15 @@ export async function exportVideoAnimation(
         geometry: opts.geometry,
         modelConfig: opts.modelConfig,
         viewConfig: opts.modelViewConfig,
+      });
+    } else if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
+      frameText = renderAsciiMediaFrame({
+        cols,
+        rows,
+        mediaElement: opts.mediaElement,
+        mediaConfig: opts.mediaConfig,
+        viewConfig: opts.mediaViewConfig,
+        density,
       });
     } else {
       frameText = renderAsciiFrame({
