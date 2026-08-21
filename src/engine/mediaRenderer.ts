@@ -40,6 +40,81 @@ const BAYER_8X8 = [
   [63, 31, 55, 23, 61, 29, 53, 21],
 ];
 
+/**
+ * Fritsch-Carlson Monotone Cubic Spline Interpolation for Tone Curves
+ */
+export function evaluateMonotoneCubicSpline(points: [number, number][], x: number): number {
+  if (!points || points.length === 0) return x;
+  if (points.length === 1) return points[0][1];
+
+  const sorted = [...points].sort((a, b) => a[0] - b[0]);
+  const n = sorted.length;
+
+  if (x <= sorted[0][0]) return Math.max(0, Math.min(1, sorted[0][1]));
+  if (x >= sorted[n - 1][0]) return Math.max(0, Math.min(1, sorted[n - 1][1]));
+
+  let i = 0;
+  for (let k = 0; k < n - 1; k++) {
+    if (x >= sorted[k][0] && x <= sorted[k + 1][0]) {
+      i = k;
+      break;
+    }
+  }
+
+  const dx = sorted[i + 1][0] - sorted[i][0];
+  if (dx === 0) return sorted[i][1];
+
+  const deltas = new Float64Array(n - 1);
+  for (let k = 0; k < n - 1; k++) {
+    const segDx = sorted[k + 1][0] - sorted[k][0];
+    deltas[k] = segDx === 0 ? 0 : (sorted[k + 1][1] - sorted[k][1]) / segDx;
+  }
+
+  const m = new Float64Array(n);
+  m[0] = deltas[0];
+  for (let k = 1; k < n - 1; k++) {
+    m[k] = (deltas[k - 1] + deltas[k]) * 0.5;
+  }
+  m[n - 1] = deltas[n - 2];
+
+  for (let k = 0; k < n - 1; k++) {
+    if (deltas[k] === 0) {
+      m[k] = 0;
+      m[k + 1] = 0;
+    } else {
+      const alpha = m[k] / deltas[k];
+      const beta = m[k + 1] / deltas[k];
+      const dist = alpha * alpha + beta * beta;
+      if (dist > 9) {
+        const tau = 3 / Math.sqrt(dist);
+        m[k] = tau * alpha * deltas[k];
+        m[k + 1] = tau * beta * deltas[k];
+      }
+    }
+  }
+
+  const t = (x - sorted[i][0]) / dx;
+  const t2 = t * t;
+  const t3 = t2 * t;
+
+  const h00 = 2 * t3 - 3 * t2 + 1;
+  const h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 = t3 - t2;
+
+  const y = h00 * sorted[i][1] + h10 * dx * m[i] + h01 * sorted[i + 1][1] + h11 * dx * m[i + 1];
+  return Math.max(0, Math.min(1, y));
+}
+
+export function createToneCurveLUT(points?: [number, number][]): Float32Array | null {
+  if (!points || points.length < 2) return null;
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    lut[i] = evaluateMonotoneCubicSpline(points, i / 255.0);
+  }
+  return lut;
+}
+
 function getOffscreenCanvas(width: number, height: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null } {
   if (!offscreenCanvas && typeof document !== 'undefined') {
     offscreenCanvas = document.createElement('canvas');
@@ -357,6 +432,11 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
   const highlightAdj = (viewConfig.highlights || 0) / 100.0; // [-1..1]
   const midtoneGamma = Math.pow(2.0, -(viewConfig.midtones || 0) / 50.0); // [-100..100] -> gamma
 
+  // Spline Tone Curve LUT precomputation
+  const curveLut = viewConfig.curvePoints && viewConfig.curvePoints.length >= 2
+    ? createToneCurveLUT(viewConfig.curvePoints)
+    : null;
+
   // Noise injection
   const noiseAmp = (viewConfig.noise || 0) / 200.0;
 
@@ -364,16 +444,22 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     let val = lumBuffer[i];
     if (val < 0) continue;
 
-    // 1. Levels Remapping
+    // 1. Spline Tone Curve
+    if (curveLut) {
+      const lutIdx = Math.max(0, Math.min(255, Math.round(val * 255)));
+      val = curveLut[lutIdx];
+    }
+
+    // 2. Levels Remapping
     val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
     if (levelsGamma !== 1.0 && val > 0 && val < 1) {
       val = Math.pow(val, 1 / levelsGamma);
     }
 
-    // 2. Contrast & Brightness
+    // 3. Contrast & Brightness
     val = (val - 0.5) * contrastFactor + 0.5 + brightnessOffset;
 
-    // 3. Tonal Curves (Shadows, Highlights, Midtones)
+    // 4. Tonal Curves (Shadows, Highlights, Midtones)
     if (shadowAdj !== 0) {
       val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
     }
@@ -384,12 +470,12 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
       val = Math.pow(val, midtoneGamma);
     }
 
-    // 4. Noise
+    // 5. Noise
     if (noiseAmp > 0) {
       val += (Math.random() - 0.5) * noiseAmp;
     }
 
-    // 5. Invert
+    // 6. Invert
     if (viewConfig.invert) {
       val = 1.0 - val;
     }

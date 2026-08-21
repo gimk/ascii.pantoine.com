@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MediaViewConfig, BackgroundMode } from '../types/ascii';
+import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
 import { Sliders, Sparkles, RotateCcw } from 'lucide-react';
 
 interface MediaViewControlsProps {
@@ -345,159 +346,145 @@ interface ToneCurveGraphProps {
   onChangeConfig: (newConfig: MediaViewConfig) => void;
 }
 
+const DEFAULT_CURVE_POINTS: [number, number][] = [
+  [0, 0],
+  [0.25, 0.25],
+  [0.5, 0.5],
+  [0.75, 0.75],
+  [1, 1],
+];
+
 const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig }) => {
-  const svgRef = React.useRef<SVGSVGElement>(null);
-  const [activeDrag, setActiveDrag] = useState<'black' | 'mid' | 'white' | 'curve' | null>(null);
-  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [activePointIdx, setActivePointIdx] = useState<number | null>(null);
+  const [hoveredPointIdx, setHoveredPointIdx] = useState<number | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ inVal: number; outVal: number } | null>(null);
 
-  const inBlack = Math.max(0, Math.min(0.95, (config.levelBlack ?? 0) / 100.0));
-  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (config.levelWhite ?? 100) / 100.0));
-  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (config.levelMidtones ?? 50) / 100.0));
-  const midNorm = (inMid - inBlack) / (inWhite - inBlack);
-  const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+  const rawPoints = config.curvePoints && config.curvePoints.length >= 2 ? config.curvePoints : DEFAULT_CURVE_POINTS;
+  // Ensure points are sorted by X coordinate
+  const sortedPoints = [...rawPoints].sort((a, b) => a[0] - b[0]);
 
-  const contrastFactor = Math.tan(((config.contrast + 100) * Math.PI) / 400);
-  const brightnessOffset = config.brightness / 100.0;
-  const shadowAdj = (config.shadows || 0) / 100.0;
-  const highlightAdj = (config.highlights || 0) / 100.0;
-  const midtoneGamma = Math.pow(2.0, -(config.midtones || 0) / 50.0);
-
-  const samples = 64;
-  const points: [number, number][] = [];
-
-  const evaluateTransfer = (x: number) => {
-    let val = x;
-    val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
-    if (levelsGamma !== 1.0 && val > 0 && val < 1) {
-      val = Math.pow(val, 1 / levelsGamma);
-    }
-    val = (val - 0.5) * contrastFactor + 0.5 + brightnessOffset;
-    if (shadowAdj !== 0) {
-      val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
-    }
-    if (highlightAdj !== 0) {
-      val = val + highlightAdj * val * val * 0.5;
-    }
-    if (midtoneGamma !== 1.0 && val > 0 && val < 1) {
-      val = Math.pow(val, midtoneGamma);
-    }
-    if (config.invert) {
-      val = 1.0 - val;
-    }
-    return Math.max(0, Math.min(1, val));
-  };
+  const samples = 96;
+  const pathPoints: [number, number][] = [];
 
   for (let i = 0; i <= samples; i++) {
     const x = i / samples;
-    const y = evaluateTransfer(x);
-    points.push([x * 100, 100 - y * 100]);
+    const y = evaluateMonotoneCubicSpline(sortedPoints, x);
+    pathPoints.push([x * 100, 100 - y * 100]);
   }
 
-  const pathD = points.reduce((acc, [px, py], idx) => {
+  const pathD = pathPoints.reduce((acc, [px, py], idx) => {
     return idx === 0 ? `M ${px.toFixed(1)} ${py.toFixed(1)}` : `${acc} L ${px.toFixed(1)} ${py.toFixed(1)}`;
   }, '');
 
   const areaD = `${pathD} L 100 100 L 0 100 Z`;
 
-  const getSvgCoordinates = (e: React.PointerEvent<SVGSVGElement | HTMLDivElement>) => {
+  const getSvgNormalizedCoords = (e: React.PointerEvent<SVGSVGElement | HTMLDivElement>) => {
     if (!svgRef.current) return { normX: 0.5, normY: 0.5 };
     const rect = svgRef.current.getBoundingClientRect();
     const clientX = Math.max(rect.left, Math.min(rect.right, e.clientX));
     const clientY = Math.max(rect.top, Math.min(rect.bottom, e.clientY));
     const normX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const normY = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height));
+    const normY = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height)); // 0=bottom, 1=top
     return { normX, normY };
   };
 
-  const handlePointerDown = (type: 'black' | 'mid' | 'white' | 'curve', e: React.PointerEvent) => {
+  const handlePointPointerDown = (idx: number, e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setActiveDrag(type);
+    setActivePointIdx(idx);
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    const { normX, normY } = getSvgCoordinates(e);
-    setHoverPos({ x: normX * 100, y: 100 - normY * 100 });
+  const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    // If clicking on graph background (not on an existing point), add a new point
+    if (activePointIdx !== null) return;
+    const { normX, normY } = getSvgNormalizedCoords(e);
+    if (sortedPoints.length >= 12) return;
 
-    if (!activeDrag) return;
+    // Check if clicking close to an existing point
+    const threshold = 0.04;
+    for (let k = 0; k < sortedPoints.length; k++) {
+      const dist = Math.hypot(sortedPoints[k][0] - normX, sortedPoints[k][1] - normY);
+      if (dist < threshold) return;
+    }
 
-    if (activeDrag === 'black') {
-      const newBlack = Math.max(0, Math.min(Math.round((config.levelMidtones ?? 50) - 2), Math.round(normX * 100)));
-      onChangeConfig({ ...config, levelBlack: newBlack });
-    } else if (activeDrag === 'white') {
-      const newWhite = Math.max(Math.round((config.levelMidtones ?? 50) + 2), Math.min(100, Math.round(normX * 100)));
-      onChangeConfig({ ...config, levelWhite: newWhite });
-    } else if (activeDrag === 'mid') {
-      const minM = (config.levelBlack ?? 0) + 1;
-      const maxM = (config.levelWhite ?? 100) - 1;
-      const newMid = Math.max(minM, Math.min(maxM, Math.round(normX * 100)));
-      onChangeConfig({ ...config, levelMidtones: newMid });
-    } else if (activeDrag === 'curve') {
-      const targetY = normY;
-      const linearY = normX;
-      const delta = Math.round((targetY - linearY) * 200);
-
-      if (normX < 0.35) {
-        onChangeConfig({
-          ...config,
-          shadows: Math.max(-100, Math.min(100, delta)),
-        });
-      } else if (normX > 0.65) {
-        onChangeConfig({
-          ...config,
-          highlights: Math.max(-100, Math.min(100, delta)),
-        });
-      } else {
-        onChangeConfig({
-          ...config,
-          midtones: Math.max(-100, Math.min(100, delta)),
-        });
-      }
+    const newPoints = [...sortedPoints, [normX, normY] as [number, number]].sort((a, b) => a[0] - b[0]);
+    onChangeConfig({ ...config, curvePoints: newPoints });
+    const insertedIdx = newPoints.findIndex((p) => Math.abs(p[0] - normX) < 0.001 && Math.abs(p[1] - normY) < 0.001);
+    if (insertedIdx >= 0) {
+      setActivePointIdx(insertedIdx);
     }
   };
 
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const { normX, normY } = getSvgNormalizedCoords(e);
+    setCursorPos({
+      inVal: Math.round(normX * 255),
+      outVal: Math.round(normY * 255),
+    });
+
+    if (activePointIdx === null || activePointIdx < 0 || activePointIdx >= sortedPoints.length) return;
+
+    const n = sortedPoints.length;
+    let clampedX = normX;
+
+    if (activePointIdx === 0) {
+      // First point (can move X up to second point - 0.01, and Y freely 0..1)
+      clampedX = Math.max(0, Math.min(sortedPoints[1][0] - 0.01, normX));
+    } else if (activePointIdx === n - 1) {
+      // Last point (can move X down to previous point + 0.01, and Y freely 0..1)
+      clampedX = Math.max(sortedPoints[n - 2][0] + 0.01, Math.min(1, normX));
+    } else {
+      // Intermediate points (can move X freely between neighbors, and Y freely 0..1)
+      const minX = sortedPoints[activePointIdx - 1][0] + 0.01;
+      const maxX = sortedPoints[activePointIdx + 1][0] - 0.01;
+      clampedX = Math.max(minX, Math.min(maxX, normX));
+    }
+
+    const clampedY = Math.max(0, Math.min(1, normY));
+    const newPoints = [...sortedPoints];
+    newPoints[activePointIdx] = [Number(clampedX.toFixed(4)), Number(clampedY.toFixed(4))];
+
+    onChangeConfig({ ...config, curvePoints: newPoints });
+  };
+
   const handlePointerUp = (e: React.PointerEvent) => {
-    setActiveDrag(null);
+    setActivePointIdx(null);
     try {
       (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
     } catch {}
   };
 
+  const handlePointDoubleClick = (idx: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Cannot delete first or last endpoint
+    if (idx === 0 || idx === sortedPoints.length - 1) return;
+    const newPoints = sortedPoints.filter((_, i) => i !== idx);
+    onChangeConfig({ ...config, curvePoints: newPoints });
+    setActivePointIdx(null);
+  };
+
   const handleReset = () => {
     onChangeConfig({
       ...config,
-      levelBlack: 0,
-      levelMidtones: 50,
-      levelWhite: 100,
-      shadows: 0,
-      midtones: 0,
-      highlights: 0,
-      brightness: 0,
-      contrast: 0,
+      curvePoints: [...DEFAULT_CURVE_POINTS],
     });
   };
 
-  const blackPointY = 100 - evaluateTransfer(inBlack) * 100;
-  const midPointY = 100 - evaluateTransfer(inMid) * 100;
-  const whitePointY = 100 - evaluateTransfer(inWhite) * 100;
-
-  let curveType = 'LINEAR (1:1)';
-  if (config.invert) curveType = 'INVERTED';
-  else if (config.contrast > 15) curveType = 'S-CURVE (CONTRAST)';
-  else if (config.contrast < -15) curveType = 'COMPRESSED';
-  else if (inBlack > 0.05 || inWhite < 0.95) curveType = 'CLIPPED';
-  else if (config.midtones !== 0 || (config.levelMidtones ?? 50) !== 50) curveType = 'GAMMA LIFT';
-  else if (config.shadows !== 0 || config.highlights !== 0) curveType = 'TONAL SHAPED';
+  const activeOrHoveredPoint = activePointIdx !== null ? sortedPoints[activePointIdx] : hoveredPointIdx !== null ? sortedPoints[hoveredPointIdx] : null;
 
   return (
     <div
       style={{
-        marginBottom: '12px',
+        marginBottom: '14px',
         padding: '10px',
         background: 'var(--bg-primary)',
         border: '1px solid var(--border-color)',
         borderRadius: '3px',
+        width: '100%',
+        boxSizing: 'border-box',
       }}
     >
       <div
@@ -512,12 +499,22 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
           fontFamily: 'var(--font-mono)',
         }}
       >
-        <span>TONE CURVE GRAPH</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>TONE CURVE (X/Y SPLINE)</span>
+          {activeOrHoveredPoint && (
+            <span style={{ color: 'var(--accent)', fontSize: '9px', fontWeight: 600 }}>
+              IN: {Math.round(activeOrHoveredPoint[0] * 255)} • OUT: {Math.round(activeOrHoveredPoint[1] * 255)}
+            </span>
+          )}
+        </span>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ color: 'var(--accent)', fontSize: '8.5px' }}>{curveType}</span>
+          <span style={{ fontSize: '8.5px', color: 'var(--text-dim)' }}>
+            {sortedPoints.length} PTS (CLICK TO ADD)
+          </span>
           <button
             className="btn btn-sm"
-            style={{ padding: '1px 5px', fontSize: '8.5px', height: '18px', color: 'var(--text-muted)' }}
+            style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px', color: 'var(--text-muted)' }}
             onClick={handleReset}
             title="Reset Tone Curve to Linear 1:1"
           >
@@ -530,7 +527,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
       <div
         style={{
           width: '100%',
-          maxWidth: '220px',
+          maxWidth: '260px',
           aspectRatio: '1 / 1',
           margin: '0 auto',
           position: 'relative',
@@ -538,7 +535,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
           border: '1px solid var(--border-color)',
           borderRadius: '3px',
           overflow: 'hidden',
-          cursor: activeDrag ? 'grabbing' : 'crosshair',
+          cursor: activePointIdx !== null ? 'grabbing' : 'crosshair',
           touchAction: 'none',
           userSelect: 'none',
         }}
@@ -548,36 +545,37 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
           ref={svgRef}
           viewBox="0 0 100 100"
           style={{ width: '100%', height: '100%', display: 'block' }}
-          onPointerDown={(e) => handlePointerDown('curve', e)}
+          onPointerDown={handleSvgPointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onPointerLeave={() => {
-            setHoverPos(null);
-            if (!activeDrag) setActiveDrag(null);
+            setCursorPos(null);
+            setHoveredPointIdx(null);
+            if (activePointIdx === null) setActivePointIdx(null);
           }}
         >
           <defs>
-            <linearGradient id="interactiveCurveGrad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id="interactiveSplineGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.01" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
             </linearGradient>
           </defs>
 
           {/* Grid lines (25%, 50%, 75%) */}
           <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.1)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.12)" strokeWidth="0.7" strokeDasharray="2 2" />
           <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
 
           <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.1)" strokeWidth="0.7" strokeDasharray="2 2" />
+          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.12)" strokeWidth="0.7" strokeDasharray="2 2" />
           <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
 
           {/* 45-degree Neutral 1:1 Diagonal */}
-          <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.22)" strokeWidth="0.75" strokeDasharray="3 3" />
+          <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.24)" strokeWidth="0.75" strokeDasharray="3 3" />
 
           {/* Fill under Curve */}
-          <path d={areaD} fill="url(#interactiveCurveGrad)" pointerEvents="none" />
+          <path d={areaD} fill="url(#interactiveSplineGrad)" pointerEvents="none" />
 
           {/* Active Transfer Curve */}
           <path
@@ -590,75 +588,57 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
             pointerEvents="none"
           />
 
-          {/* Interactive Handle: Black Point (Left) */}
-          <g
-            style={{ cursor: 'ew-resize' }}
-            onPointerDown={(e) => handlePointerDown('black', e)}
-          >
-            <circle
-              cx={inBlack * 100}
-              cy={blackPointY}
-              r="4.5"
-              fill="#000000"
-              stroke="var(--accent)"
-              strokeWidth="1.8"
-            />
-            <circle
-              cx={inBlack * 100}
-              cy={blackPointY}
-              r="8"
-              fill="transparent"
-            />
-          </g>
+          {/* Interactive Editable Control Points (Draggable in both X and Y!) */}
+          {sortedPoints.map((pt, idx) => {
+            const svgX = pt[0] * 100;
+            const svgY = 100 - pt[1] * 100;
+            const isSelected = activePointIdx === idx || hoveredPointIdx === idx;
+            const isEndpoint = idx === 0 || idx === sortedPoints.length - 1;
 
-          {/* Interactive Handle: Midtones / Gamma (Center) */}
-          <g
-            style={{ cursor: 'ew-resize' }}
-            onPointerDown={(e) => handlePointerDown('mid', e)}
-          >
-            <circle
-              cx={inMid * 100}
-              cy={midPointY}
-              r="4.5"
-              fill="var(--accent)"
-              stroke="#ffffff"
-              strokeWidth="1.2"
-            />
-            <circle
-              cx={inMid * 100}
-              cy={midPointY}
-              r="8"
-              fill="transparent"
-            />
-          </g>
+            return (
+              <g
+                key={idx}
+                style={{ cursor: isSelected ? 'grabbing' : 'grab' }}
+                onPointerDown={(e) => handlePointPointerDown(idx, e)}
+                onDoubleClick={(e) => handlePointDoubleClick(idx, e)}
+                onPointerEnter={() => setHoveredPointIdx(idx)}
+                onPointerLeave={() => setHoveredPointIdx(null)}
+              >
+                {/* Outer Glow Ring on Hover/Active */}
+                {isSelected && (
+                  <circle
+                    cx={svgX}
+                    cy={svgY}
+                    r="7"
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="1.2"
+                    strokeOpacity="0.7"
+                  />
+                )}
 
-          {/* Interactive Handle: White Point (Right) */}
-          <g
-            style={{ cursor: 'ew-resize' }}
-            onPointerDown={(e) => handlePointerDown('white', e)}
-          >
-            <circle
-              cx={inWhite * 100}
-              cy={whitePointY}
-              r="4.5"
-              fill="#ffffff"
-              stroke="var(--accent)"
-              strokeWidth="1.8"
-            />
-            <circle
-              cx={inWhite * 100}
-              cy={whitePointY}
-              r="8"
-              fill="transparent"
-            />
-          </g>
+                {/* Main Point Handle */}
+                <circle
+                  cx={svgX}
+                  cy={svgY}
+                  r={isEndpoint ? 4.2 : 3.8}
+                  fill={isEndpoint ? (idx === 0 ? '#000000' : '#ffffff') : 'var(--accent)'}
+                  stroke={isEndpoint ? 'var(--accent)' : '#ffffff'}
+                  strokeWidth={1.5}
+                />
+
+                {/* Hit target extension for easy grabbing */}
+                <circle cx={svgX} cy={svgY} r="10" fill="transparent" />
+              </g>
+            );
+          })}
 
           {/* Hover Crosshair / Cursor position */}
-          {hoverPos && (
+          {cursorPos && (
             <circle
-              cx={hoverPos.x}
-              cy={100 - evaluateTransfer(hoverPos.x / 100) * 100}
-              r="2.5"
+              cx={(cursorPos.inVal / 255) * 100}
+              cy={100 - evaluateMonotoneCubicSpline(sortedPoints, cursorPos.inVal / 255) * 100}
+              r="2.2"
               fill="none"
               stroke="var(--text-primary)"
               strokeWidth="0.8"
@@ -673,7 +653,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
       <div
         style={{
           width: '100%',
-          maxWidth: '220px',
+          maxWidth: '260px',
           margin: '4px auto 0',
           display: 'flex',
           justifyContent: 'space-between',
@@ -682,9 +662,9 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
           fontFamily: 'var(--font-mono)',
         }}
       >
-        <span>IN: 0 (BLACK)</span>
-        <span>128 (MID)</span>
-        <span>255 (WHITE)</span>
+        <span>IN: 0</span>
+        <span>128</span>
+        <span>255</span>
       </div>
     </div>
   );
@@ -709,7 +689,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   ];
 
   return (
-    <div className="tab-content">
+    <div style={{ width: '100%' }}>
       {/* 1. EFFECT CONTROLS */}
       <div className="control-section">
         <div className="section-header">

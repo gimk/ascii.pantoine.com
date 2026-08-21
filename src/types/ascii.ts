@@ -209,6 +209,7 @@ export interface MediaViewConfig {
   contrast: number; // -100 to 100
 
   // 3. Tonal Controls
+  curvePoints?: Array<[number, number]>; // editable [x, y] control points in [0..1]
   levelBlack?: number; // 0 to 100, default 0
   levelMidtones?: number; // 0 to 100, default 50 (middle)
   levelWhite?: number; // 0 to 100, default 100

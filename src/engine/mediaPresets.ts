@@ -33,6 +33,13 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   contrast: 0,
 
   // 3. Tonal Controls (all sliders start at center)
+  curvePoints: [
+    [0, 0],
+    [0.25, 0.25],
+    [0.5, 0.5],
+    [0.75, 0.75],
+    [1, 1],
+  ],
   levelBlack: 0,
   levelMidtones: 50,
   levelWhite: 100,
