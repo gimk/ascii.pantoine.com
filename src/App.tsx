@@ -1940,7 +1940,7 @@ export const App: React.FC = () => {
           )}
 
           <button
-            className="btn btn-sm"
+            className="btn btn-sm btn-header-export"
             onClick={() => {
               setExportInitialTab('image');
               setIsExportOpen(true);
@@ -1952,7 +1952,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            className="btn btn-sm"
+            className="btn btn-sm btn-header-share"
             onClick={() => setIsShareOpen(true)}
             title="Share Fullscreen Viewfinder link"
           >

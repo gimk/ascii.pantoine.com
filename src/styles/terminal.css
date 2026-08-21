@@ -241,6 +241,35 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.btn-header-export {
+  background-color: var(--accent);
+  color: var(--bg-primary) !important;
+  border-color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.btn-header-export:hover {
+  background-color: var(--text-primary);
+  border-color: var(--text-primary);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.btn-header-share {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.btn-header-share:hover {
+  background-color: var(--accent);
+  color: var(--bg-primary) !important;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
 @media (max-width: 820px) {
   .header-actions .btn .btn-label {
     display: none;
