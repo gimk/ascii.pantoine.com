@@ -689,7 +689,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   ];
 
   return (
-    <div style={{ width: '100%' }}>
+    <>
       {/* 1. EFFECT CONTROLS */}
       <div className="control-section">
         <div className="section-header">
@@ -980,6 +980,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           RESET VIEW & EFFECT DEFAULTS
         </button>
       )}
-    </div>
+    </>
   );
 };
