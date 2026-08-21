@@ -36,6 +36,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   if (!isOpen) return null;
 
   const isSynthMode = !state.appMode || state.appMode === 'synth';
+  const isMediaMode = state.appMode === 'media';
 
   const modelUrl = (state.modelConfig?.remoteUrl || '').trim();
   const isOnlineModel =
@@ -58,7 +59,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     ? encodeShareUrl(
         {
           ...state,
-          autoRes: shareAutoRes,
+          autoRes: isMediaMode ? false : shareAutoRes,
         },
         'fullscreen'
       )
@@ -273,25 +274,46 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   border: '1px solid var(--border-color)',
                   borderRadius: '3px',
                   gap: '12px',
+                  opacity: isMediaMode ? 0.35 : 1,
+                  cursor: isMediaMode ? 'not-allowed' : 'default',
+                  filter: isMediaMode ? 'grayscale(1)' : 'none',
                 }}
+                title={
+                  isMediaMode
+                    ? 'Auto Resolution is disabled for Media mode to preserve exact pixel aspect ratio.'
+                    : undefined
+                }
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    Share with Auto Resolution
+                    Share with Auto Resolution{' '}
+                    {isMediaMode && (
+                      <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                        [FIXED ASPECT RATIO]
+                      </span>
+                    )}
                   </span>
                   <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                    {shareAutoRes
+                    {isMediaMode
+                      ? `Preserves fixed media aspect ratio (${state.cols}x${state.rows}) on recipient’s screen.`
+                      : shareAutoRes
                       ? 'Recipient’s screen will automatically adapt grid resolution to match their device size.'
                       : `Preserves fixed grid resolution (${state.cols}x${state.rows}) on the recipient’s screen.`}
                   </span>
                 </div>
                 <button
-                  className={`btn btn-sm ${shareAutoRes ? 'btn-primary' : ''}`}
-                  onClick={() => setShareAutoRes((v) => !v)}
-                  style={{ whiteSpace: 'nowrap', minWidth: '105px' }}
+                  disabled={isMediaMode}
+                  className={`btn btn-sm ${!isMediaMode && shareAutoRes ? 'btn-primary' : ''}`}
+                  onClick={() => !isMediaMode && setShareAutoRes((v) => !v)}
+                  style={{
+                    whiteSpace: 'nowrap',
+                    minWidth: '105px',
+                    opacity: isMediaMode ? 0.5 : 1,
+                    cursor: isMediaMode ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   <Crop size={11} style={{ marginRight: '4px' }} />
-                  {shareAutoRes ? 'AUTO RES [ON]' : 'AUTO RES [OFF]'}
+                  {isMediaMode ? 'AUTO RES [OFF]' : shareAutoRes ? 'AUTO RES [ON]' : 'AUTO RES [OFF]'}
                 </button>
               </div>
 
