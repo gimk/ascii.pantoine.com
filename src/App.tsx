@@ -280,7 +280,7 @@ export const App: React.FC = () => {
       cols: (isMediaShared && sharedState?.cols) || savedSettings.media?.cols || 240,
       rows: (isMediaShared && sharedState?.rows) || savedSettings.media?.rows || 120,
       autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : false),
-      density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || (CHARSETS[2]?.chars || CHARSETS[0].chars),
+      density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || CHARSETS[0].chars,
       theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'green',
       customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
       gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
@@ -1546,16 +1546,8 @@ export const App: React.FC = () => {
   const autoSetMediaResolution = useCallback((w: number, h: number) => {
     if (w <= 0 || h <= 0) return;
     const srcAspect = w / h;
-    // Pick high crisp detail by default (targeting 180-280 cols)
-    let targetCols = 240;
-    if (w >= 1600) targetCols = Math.round(w / 8);
-    else if (w >= 800) targetCols = Math.round(w / 4);
-    else if (w >= 400) targetCols = Math.round(w / 2);
-    else targetCols = Math.max(80, w);
-
-    if (targetCols < 140) targetCols = Math.min(280, Math.round(targetCols * 2));
-    if (targetCols > 320) targetCols = 320;
-
+    // Default grid resolution to 1/6 fraction of original media dimensions
+    const targetCols = Math.max(20, Math.round(w * (1 / 6)));
     const targetRows = Math.max(10, Math.round((targetCols * 0.55) / srcAspect));
     setRenderSettingsByMode((prev) => ({
       ...prev,

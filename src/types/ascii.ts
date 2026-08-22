@@ -205,7 +205,7 @@ export interface MediaColorConfig {
 
 export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
   mode: 'fixed',
-  sampling: 'average',
+  sampling: 'center',
   bgPreset: 'dark',
   customBg: '#0a0a0a',
   saturation: 200,

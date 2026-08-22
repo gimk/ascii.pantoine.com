@@ -543,7 +543,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     }
   }
 
-  const samplingMethod = colorConfig.sampling || 'average';
+  const samplingMethod = colorConfig.sampling || 'center';
   const saturationFactor = colorConfig.saturation !== undefined ? colorConfig.saturation / 100.0 : 2.0;
 
   for (let y = 0; y < rows; y++) {
