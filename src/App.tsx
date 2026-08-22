@@ -17,6 +17,9 @@ import {
   MediaConfig,
   MediaViewConfig,
   MediaPreset,
+  RenderSettings,
+  MediaColorConfig,
+  DEFAULT_MEDIA_COLOR_CONFIG,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -41,7 +44,7 @@ import {
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelAsciiFrame, applyTrackballRotationWithTime } from './engine/modelRenderer';
-import { renderAsciiMediaFrame } from './engine/mediaRenderer';
+import { renderAsciiMediaFrameData } from './engine/mediaRenderer';
 import { CHARSETS, renderAsciiFrame } from './engine/renderer';
 import {
   createTrailPoint,
@@ -88,6 +91,7 @@ import {
 const LOCAL_STORAGE_PRESETS_KEY = 'ascii_builder_user_presets';
 const LOCAL_STORAGE_MODEL_PRESETS_KEY = 'ascii_builder_user_model_presets';
 const LOCAL_STORAGE_MEDIA_PRESETS_KEY = 'ascii_builder_user_media_presets';
+const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
 
 interface HistorySnapshot {
   waveParams: WaveParams;
@@ -95,6 +99,12 @@ interface HistorySnapshot {
   customPrepare?: string;
   presetName: string;
   presetType?: 'parametric' | 'custom';
+  theme?: PhosphorTheme;
+  customThemeColor?: string;
+  gradientConfig?: PhosphorGradient | null;
+  density?: string;
+  crtConfig?: CrtConfig;
+  optimizeConfig?: OptimizeConfig;
 }
 
 interface ModelHistorySnapshot {
@@ -231,36 +241,245 @@ export const App: React.FC = () => {
   // Active HTML image/video/canvas element reference for media rasterizer
   const mediaElementRef = useRef<HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null>(null);
 
-  // Display & Resolution
-  const [cols, setCols] = useState<number>(sharedState?.cols || 100);
-  const [rows, setRows] = useState<number>(sharedState?.rows || 50);
-  const [density, setDensity] = useState<string>(sharedState?.density || CHARSETS[0].chars);
-  const [theme, setTheme] = useState<PhosphorTheme>(sharedState?.theme || 'green');
-  const [customThemeColor, setCustomThemeColor] = useState<string>(sharedState?.customThemeColor || '');
-  const [gradientConfig, setGradientConfig] = useState<PhosphorGradient | null>(sharedState?.gradientConfig || null);
+  // Isolated Render Settings for each mode (Synth, Media, Model)
+  const [renderSettingsByMode, setRenderSettingsByMode] = useState<Record<AppMode, RenderSettings>>(() => {
+    let savedSettings: Partial<Record<AppMode, Partial<RenderSettings>>> = {};
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_RENDER_SETTINGS_KEY);
+      if (raw) {
+        savedSettings = JSON.parse(raw);
+      }
+    } catch {}
 
-  // CRT Display Effects
-  const [crtConfig, setCrtConfig] = useState<CrtConfig>(() => ({
-    scanlines: sharedState?.crtConfig?.scanlines ?? true,
-    crtGlow: sharedState?.crtConfig?.crtGlow ?? true,
-    vignette: sharedState?.crtConfig?.vignette ?? false,
-    phosphorBloom: sharedState?.crtConfig?.phosphorBloom ?? false,
-  }));
+    const isSynthShared = sharedState?.appMode === 'synth' || !sharedState?.appMode;
+    const isMediaShared = sharedState?.appMode === 'media';
+    const isModelShared = sharedState?.appMode === 'model';
+
+    const defaultSynthSettings: RenderSettings = {
+      cols: (isSynthShared && sharedState?.cols) || savedSettings.synth?.cols || 100,
+      rows: (isSynthShared && sharedState?.rows) || savedSettings.synth?.rows || 50,
+      autoRes: (isSynthShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.synth?.autoRes !== undefined ? savedSettings.synth.autoRes : true),
+      density: (isSynthShared && sharedState?.density) || savedSettings.synth?.density || CHARSETS[0].chars,
+      theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'green',
+      customThemeColor: (isSynthShared && sharedState?.customThemeColor) || savedSettings.synth?.customThemeColor || '',
+      gradientConfig: (isSynthShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.synth?.gradientConfig ?? null),
+      crtConfig: (isSynthShared && sharedState?.crtConfig) || savedSettings.synth?.crtConfig || {
+        scanlines: true,
+        crtGlow: true,
+        vignette: false,
+        phosphorBloom: false,
+      },
+      optimizeConfig: (isSynthShared && sharedState?.optimizeConfig) || savedSettings.synth?.optimizeConfig || {
+        targetFps: 60,
+        pauseWhenHidden: true,
+        idleThrottle: false,
+      },
+    };
+
+    const defaultMediaSettings: RenderSettings = {
+      cols: (isMediaShared && sharedState?.cols) || savedSettings.media?.cols || 240,
+      rows: (isMediaShared && sharedState?.rows) || savedSettings.media?.rows || 120,
+      autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : false),
+      density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || (CHARSETS[2]?.chars || CHARSETS[0].chars),
+      theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'green',
+      customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
+      gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
+      crtConfig: (isMediaShared && sharedState?.crtConfig) || savedSettings.media?.crtConfig || {
+        scanlines: true,
+        crtGlow: true,
+        vignette: false,
+        phosphorBloom: false,
+      },
+      optimizeConfig: (isMediaShared && sharedState?.optimizeConfig) || savedSettings.media?.optimizeConfig || {
+        targetFps: 60,
+        pauseWhenHidden: true,
+        idleThrottle: false,
+      },
+      mediaColorConfig: (isMediaShared && sharedState?.mediaColorConfig) || savedSettings.media?.mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG,
+    };
+
+    const defaultModelSettings: RenderSettings = {
+      cols: (isModelShared && sharedState?.cols) || savedSettings.model?.cols || 100,
+      rows: (isModelShared && sharedState?.rows) || savedSettings.model?.rows || 50,
+      autoRes: (isModelShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.model?.autoRes !== undefined ? savedSettings.model.autoRes : true),
+      density: (isModelShared && sharedState?.density) || savedSettings.model?.density || CHARSETS[0].chars,
+      theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'green',
+      customThemeColor: (isModelShared && sharedState?.customThemeColor) || savedSettings.model?.customThemeColor || '',
+      gradientConfig: (isModelShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.model?.gradientConfig ?? null),
+      crtConfig: (isModelShared && sharedState?.crtConfig) || savedSettings.model?.crtConfig || {
+        scanlines: true,
+        crtGlow: true,
+        vignette: false,
+        phosphorBloom: false,
+      },
+      optimizeConfig: (isModelShared && sharedState?.optimizeConfig) || savedSettings.model?.optimizeConfig || {
+        targetFps: 60,
+        pauseWhenHidden: true,
+        idleThrottle: false,
+      },
+    };
+
+    return {
+      synth: defaultSynthSettings,
+      media: defaultMediaSettings,
+      model: defaultModelSettings,
+    };
+  });
+
+  // Current active render settings derived from active appMode
+  const currentRenderSettings = renderSettingsByMode[appMode];
+  const {
+    cols,
+    rows,
+    autoRes,
+    density,
+    theme,
+    customThemeColor,
+    gradientConfig,
+    crtConfig,
+    optimizeConfig,
+    mediaColorConfig,
+  } = currentRenderSettings;
+
+  // Active appMode ref for stable callback access
+  const appModeRef = useRef<AppMode>(appMode);
+  appModeRef.current = appMode;
+
+  // Persist render settings per mode in localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_RENDER_SETTINGS_KEY, JSON.stringify(renderSettingsByMode));
+    } catch {}
+  }, [renderSettingsByMode]);
+
+  // Render setting setters operating on the current appMode
+  const setDensity = useCallback((d: string | ((prev: string) => string)) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      const val = typeof d === 'function' ? d(prev[mode].density) : d;
+      return {
+        ...prev,
+        [mode]: { ...prev[mode], density: val },
+      };
+    });
+  }, []);
+
+  const setTheme = useCallback((t: PhosphorTheme | ((prev: PhosphorTheme) => PhosphorTheme)) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      const val = typeof t === 'function' ? t(prev[mode].theme) : t;
+      return {
+        ...prev,
+        [mode]: { ...prev[mode], theme: val },
+      };
+    });
+  }, []);
+
+  const setCustomThemeColor = useCallback((c: string | ((prev: string) => string)) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      const val = typeof c === 'function' ? c(prev[mode].customThemeColor) : c;
+      return {
+        ...prev,
+        [mode]: { ...prev[mode], customThemeColor: val },
+      };
+    });
+  }, []);
+
+  const setGradientConfig = useCallback((g: (PhosphorGradient | null) | ((prev: PhosphorGradient | null) => (PhosphorGradient | null))) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      const val = typeof g === 'function' ? g(prev[mode].gradientConfig) : g;
+      return {
+        ...prev,
+        [mode]: { ...prev[mode], gradientConfig: val },
+      };
+    });
+  }, []);
+
+  const setCrtConfig = useCallback((cfg: CrtConfig | ((prev: CrtConfig) => CrtConfig)) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      const val = typeof cfg === 'function' ? cfg(prev[mode].crtConfig) : cfg;
+      return {
+        ...prev,
+        [mode]: { ...prev[mode], crtConfig: val },
+      };
+    });
+  }, []);
+
+  const setOptimizeConfig = useCallback((opt: OptimizeConfig | ((prev: OptimizeConfig) => OptimizeConfig)) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      const val = typeof opt === 'function' ? opt(prev[mode].optimizeConfig) : opt;
+      return {
+        ...prev,
+        [mode]: { ...prev[mode], optimizeConfig: val },
+      };
+    });
+  }, []);
+
+  const handleSelectTheme = useCallback((t: PhosphorTheme) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          theme: t,
+          customThemeColor: '',
+          gradientConfig: null,
+        },
+      };
+    });
+  }, []);
+
+  const handleSelectCustomColor = useCallback((c: string) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          customThemeColor: c,
+          gradientConfig: null,
+        },
+      };
+    });
+  }, []);
+
+  const handleSelectGradient = useCallback((g: PhosphorGradient | null) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          gradientConfig: g,
+          customThemeColor: '',
+        },
+      };
+    });
+  }, []);
+
+  const handleSelectMediaColorConfig = useCallback((cfg: MediaColorConfig) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          mediaColorConfig: cfg,
+        },
+      };
+    });
+  }, []);
 
   // Particles & Interaction
   const [particleConfig, setParticleConfig] = useState<ParticleConfig>(
     sharedState?.particleConfig || DEFAULT_PARTICLE_CONFIG
   );
   const trailPointsRef = useRef<TrailPoint[]>([]);
-
-  // Optimization & Performance Config
-  const [optimizeConfig, setOptimizeConfig] = useState<OptimizeConfig>(
-    sharedState?.optimizeConfig || {
-      targetFps: 60,
-      pauseWhenHidden: true,
-      idleThrottle: false,
-    }
-  );
 
   // View Mode: 'editor' or 'fullscreen'
   const [viewMode, setViewMode] = useState<'editor' | 'fullscreen'>(
@@ -335,23 +554,36 @@ export const App: React.FC = () => {
       code: string,
       name: string,
       prepare?: string,
-      type?: 'parametric' | 'custom'
+      type?: 'parametric' | 'custom',
+      optConfig?: OptimizeConfig,
+      crt?: CrtConfig,
+      thm?: PhosphorTheme,
+      cColor?: string,
+      grad?: PhosphorGradient | null,
+      dens?: string
     ) => {
       const nextIndex = synthHistoryIndexRef.current + 1;
       const newHistory = synthHistoryRef.current.slice(0, nextIndex);
+      const curSynth = renderSettingsByMode.synth;
       newHistory.push({
         waveParams: { ...params },
         customCode: code,
         customPrepare: prepare || '',
         presetName: name,
         presetType: type || 'parametric',
+        theme: thm !== undefined ? thm : curSynth.theme,
+        customThemeColor: cColor !== undefined ? cColor : curSynth.customThemeColor,
+        gradientConfig: grad !== undefined ? grad : curSynth.gradientConfig,
+        density: dens !== undefined ? dens : curSynth.density,
+        crtConfig: crt !== undefined ? { ...crt } : { ...curSynth.crtConfig },
+        optimizeConfig: optConfig !== undefined ? { ...optConfig } : { ...curSynth.optimizeConfig },
       });
       if (newHistory.length > 50) newHistory.shift();
       synthHistoryRef.current = newHistory;
       synthHistoryIndexRef.current = newHistory.length - 1;
       updateHistoryButtons();
     },
-    [updateHistoryButtons]
+    [renderSettingsByMode.synth, updateHistoryButtons]
   );
 
   const pushModelHistorySnapshot = useCallback(
@@ -368,23 +600,24 @@ export const App: React.FC = () => {
     ) => {
       const nextIndex = modelHistoryIndexRef.current + 1;
       const newHistory = modelHistoryRef.current.slice(0, nextIndex);
+      const curModel = renderSettingsByMode.model;
       newHistory.push({
         modelConfig: { ...mConfig },
         modelViewConfig: { ...vConfig },
         activePreset: { ...preset },
-        theme: thm !== undefined ? thm : theme,
-        customThemeColor: cColor !== undefined ? cColor : customThemeColor,
-        gradientConfig: grad !== undefined ? grad : gradientConfig,
-        density: dens !== undefined ? dens : density,
-        crtConfig: crt !== undefined ? { ...crt } : { ...crtConfig },
-        optimizeConfig: optConfig !== undefined ? { ...optConfig } : { ...optimizeConfig },
+        theme: thm !== undefined ? thm : curModel.theme,
+        customThemeColor: cColor !== undefined ? cColor : curModel.customThemeColor,
+        gradientConfig: grad !== undefined ? grad : curModel.gradientConfig,
+        density: dens !== undefined ? dens : curModel.density,
+        crtConfig: crt !== undefined ? { ...crt } : { ...curModel.crtConfig },
+        optimizeConfig: optConfig !== undefined ? { ...optConfig } : { ...curModel.optimizeConfig },
       });
       if (newHistory.length > 50) newHistory.shift();
       modelHistoryRef.current = newHistory;
       modelHistoryIndexRef.current = newHistory.length - 1;
       updateHistoryButtons();
     },
-    [theme, customThemeColor, gradientConfig, density, crtConfig, optimizeConfig, updateHistoryButtons]
+    [renderSettingsByMode.model, updateHistoryButtons]
   );
 
   const pushMediaHistorySnapshot = useCallback(
@@ -401,23 +634,24 @@ export const App: React.FC = () => {
     ) => {
       const nextIndex = mediaHistoryIndexRef.current + 1;
       const newHistory = mediaHistoryRef.current.slice(0, nextIndex);
+      const curMedia = renderSettingsByMode.media;
       newHistory.push({
         mediaConfig: { ...mConfig },
         mediaViewConfig: { ...vConfig },
         activePreset: { ...preset },
-        theme: thm !== undefined ? thm : theme,
-        customThemeColor: cColor !== undefined ? cColor : customThemeColor,
-        gradientConfig: grad !== undefined ? grad : gradientConfig,
-        density: dens !== undefined ? dens : density,
-        crtConfig: crt !== undefined ? { ...crt } : { ...crtConfig },
-        optimizeConfig: optConfig !== undefined ? { ...optConfig } : { ...optimizeConfig },
+        theme: thm !== undefined ? thm : curMedia.theme,
+        customThemeColor: cColor !== undefined ? cColor : curMedia.customThemeColor,
+        gradientConfig: grad !== undefined ? grad : curMedia.gradientConfig,
+        density: dens !== undefined ? dens : curMedia.density,
+        crtConfig: crt !== undefined ? { ...crt } : { ...curMedia.crtConfig },
+        optimizeConfig: optConfig !== undefined ? { ...optConfig } : { ...curMedia.optimizeConfig },
       });
       if (newHistory.length > 50) newHistory.shift();
       mediaHistoryRef.current = newHistory;
       mediaHistoryIndexRef.current = newHistory.length - 1;
       updateHistoryButtons();
     },
-    [theme, customThemeColor, gradientConfig, density, crtConfig, optimizeConfig, updateHistoryButtons]
+    [renderSettingsByMode.media, updateHistoryButtons]
   );
 
   // Initialize initial media element on mount
@@ -445,6 +679,12 @@ export const App: React.FC = () => {
           customPrepare: '',
           presetName: PRESETS[0].name,
           presetType: 'parametric',
+          theme: renderSettingsByMode.synth.theme,
+          customThemeColor: renderSettingsByMode.synth.customThemeColor,
+          gradientConfig: renderSettingsByMode.synth.gradientConfig,
+          density: renderSettingsByMode.synth.density,
+          crtConfig: { ...renderSettingsByMode.synth.crtConfig },
+          optimizeConfig: { ...renderSettingsByMode.synth.optimizeConfig },
         },
       ];
       synthHistoryIndexRef.current = 0;
@@ -455,12 +695,12 @@ export const App: React.FC = () => {
           modelConfig: { ...modelConfig },
           modelViewConfig: { ...modelViewConfig },
           activePreset: activeModelPreset,
-          theme,
-          customThemeColor,
-          gradientConfig,
-          density,
-          crtConfig: { ...crtConfig },
-          optimizeConfig: { ...optimizeConfig },
+          theme: renderSettingsByMode.model.theme,
+          customThemeColor: renderSettingsByMode.model.customThemeColor,
+          gradientConfig: renderSettingsByMode.model.gradientConfig,
+          density: renderSettingsByMode.model.density,
+          crtConfig: { ...renderSettingsByMode.model.crtConfig },
+          optimizeConfig: { ...renderSettingsByMode.model.optimizeConfig },
         },
       ];
       modelHistoryIndexRef.current = 0;
@@ -471,12 +711,12 @@ export const App: React.FC = () => {
           mediaConfig: { ...mediaConfig },
           mediaViewConfig: { ...mediaViewConfig },
           activePreset: activeMediaPreset,
-          theme,
-          customThemeColor,
-          gradientConfig,
-          density,
-          crtConfig: { ...crtConfig },
-          optimizeConfig: { ...optimizeConfig },
+          theme: renderSettingsByMode.media.theme,
+          customThemeColor: renderSettingsByMode.media.customThemeColor,
+          gradientConfig: renderSettingsByMode.media.gradientConfig,
+          density: renderSettingsByMode.media.density,
+          crtConfig: { ...renderSettingsByMode.media.crtConfig },
+          optimizeConfig: { ...renderSettingsByMode.media.optimizeConfig },
         },
       ];
       mediaHistoryIndexRef.current = 0;
@@ -510,12 +750,18 @@ export const App: React.FC = () => {
       });
     }
 
-    if (snapshot.theme) setTheme(snapshot.theme);
-    if (snapshot.customThemeColor !== undefined) setCustomThemeColor(snapshot.customThemeColor);
-    if (snapshot.gradientConfig !== undefined) setGradientConfig(snapshot.gradientConfig);
-    if (snapshot.density) setDensity(snapshot.density);
-    if (snapshot.crtConfig) setCrtConfig({ ...snapshot.crtConfig });
-    if (snapshot.optimizeConfig) setOptimizeConfig({ ...snapshot.optimizeConfig });
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      model: {
+        ...prev.model,
+        theme: snapshot.theme !== undefined ? snapshot.theme : prev.model.theme,
+        customThemeColor: snapshot.customThemeColor !== undefined ? snapshot.customThemeColor : prev.model.customThemeColor,
+        gradientConfig: snapshot.gradientConfig !== undefined ? snapshot.gradientConfig : prev.model.gradientConfig,
+        density: snapshot.density !== undefined ? snapshot.density : prev.model.density,
+        crtConfig: snapshot.crtConfig ? { ...snapshot.crtConfig } : prev.model.crtConfig,
+        optimizeConfig: snapshot.optimizeConfig ? { ...snapshot.optimizeConfig } : prev.model.optimizeConfig,
+      },
+    }));
   }, []);
 
   const restoreMediaSnapshot = useCallback((snapshot: MediaHistorySnapshot) => {
@@ -533,12 +779,18 @@ export const App: React.FC = () => {
       img.src = snapshot.mediaConfig.fileData;
     }
 
-    if (snapshot.theme) setTheme(snapshot.theme);
-    if (snapshot.customThemeColor !== undefined) setCustomThemeColor(snapshot.customThemeColor);
-    if (snapshot.gradientConfig !== undefined) setGradientConfig(snapshot.gradientConfig);
-    if (snapshot.density) setDensity(snapshot.density);
-    if (snapshot.crtConfig) setCrtConfig({ ...snapshot.crtConfig });
-    if (snapshot.optimizeConfig) setOptimizeConfig({ ...snapshot.optimizeConfig });
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      media: {
+        ...prev.media,
+        theme: snapshot.theme !== undefined ? snapshot.theme : prev.media.theme,
+        customThemeColor: snapshot.customThemeColor !== undefined ? snapshot.customThemeColor : prev.media.customThemeColor,
+        gradientConfig: snapshot.gradientConfig !== undefined ? snapshot.gradientConfig : prev.media.gradientConfig,
+        density: snapshot.density !== undefined ? snapshot.density : prev.media.density,
+        crtConfig: snapshot.crtConfig ? { ...snapshot.crtConfig } : prev.media.crtConfig,
+        optimizeConfig: snapshot.optimizeConfig ? { ...snapshot.optimizeConfig } : prev.media.optimizeConfig,
+      },
+    }));
   }, []);
 
   const handleUndo = useCallback(() => {
@@ -550,6 +802,18 @@ export const App: React.FC = () => {
         setCustomCode(snapshot.customCode);
         setCustomPrepare(snapshot.customPrepare || '');
         setPresetType(snapshot.presetType || 'parametric');
+        setRenderSettingsByMode((prev) => ({
+          ...prev,
+          synth: {
+            ...prev.synth,
+            theme: snapshot.theme !== undefined ? snapshot.theme : prev.synth.theme,
+            customThemeColor: snapshot.customThemeColor !== undefined ? snapshot.customThemeColor : prev.synth.customThemeColor,
+            gradientConfig: snapshot.gradientConfig !== undefined ? snapshot.gradientConfig : prev.synth.gradientConfig,
+            density: snapshot.density !== undefined ? snapshot.density : prev.synth.density,
+            crtConfig: snapshot.crtConfig ? { ...snapshot.crtConfig } : prev.synth.crtConfig,
+            optimizeConfig: snapshot.optimizeConfig ? { ...snapshot.optimizeConfig } : prev.synth.optimizeConfig,
+          },
+        }));
         recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
         updateHistoryButtons();
       }
@@ -579,6 +843,18 @@ export const App: React.FC = () => {
         setCustomCode(snapshot.customCode);
         setCustomPrepare(snapshot.customPrepare || '');
         setPresetType(snapshot.presetType || 'parametric');
+        setRenderSettingsByMode((prev) => ({
+          ...prev,
+          synth: {
+            ...prev.synth,
+            theme: snapshot.theme !== undefined ? snapshot.theme : prev.synth.theme,
+            customThemeColor: snapshot.customThemeColor !== undefined ? snapshot.customThemeColor : prev.synth.customThemeColor,
+            gradientConfig: snapshot.gradientConfig !== undefined ? snapshot.gradientConfig : prev.synth.gradientConfig,
+            density: snapshot.density !== undefined ? snapshot.density : prev.synth.density,
+            crtConfig: snapshot.crtConfig ? { ...snapshot.crtConfig } : prev.synth.crtConfig,
+            optimizeConfig: snapshot.optimizeConfig ? { ...snapshot.optimizeConfig } : prev.synth.optimizeConfig,
+          },
+        }));
         recompileCustomCode(snapshot.customCode, snapshot.customPrepare);
         updateHistoryButtons();
       }
@@ -621,6 +897,103 @@ export const App: React.FC = () => {
 
   // Update theme class and custom color CSS variables on body
   useEffect(() => {
+    const isContentColor = appMode === 'media' && mediaColorConfig?.mode === 'content';
+
+    if (isContentColor) {
+      document.body.style.removeProperty('--text-gradient');
+      document.body.style.removeProperty('--grad-color-1');
+      document.body.style.removeProperty('--grad-color-2');
+
+      const allVars = [
+        '--bg-primary',
+        '--bg-panel',
+        '--bg-control',
+        '--bg-control-hover',
+        '--border-color',
+        '--border-active',
+        '--text-primary',
+        '--text-muted',
+        '--text-dim',
+        '--accent',
+        '--accent-glow',
+      ];
+
+      if (mediaColorConfig.bgPreset === 'white') {
+        document.body.className = 'theme-paper';
+        allVars.forEach((v) => document.body.style.removeProperty(v));
+      } else if (mediaColorConfig.bgPreset === 'dark') {
+        // Pure Neutral Monochrome White-on-Black UI for Content Color Dark mode (no green tint)
+        document.body.className = 'theme-custom';
+        document.body.style.setProperty('--bg-primary', '#0a0a0a');
+        document.body.style.setProperty('--bg-panel', '#141414');
+        document.body.style.setProperty('--bg-control', '#1c1c1c');
+        document.body.style.setProperty('--bg-control-hover', '#262626');
+        document.body.style.setProperty('--border-color', '#2a2a2a');
+        document.body.style.setProperty('--border-active', '#e6e6e6');
+        document.body.style.setProperty('--text-primary', '#f0f0f0');
+        document.body.style.setProperty('--text-muted', '#8e8e8e');
+        document.body.style.setProperty('--text-dim', '#585858');
+        document.body.style.setProperty('--accent', '#ffffff');
+        document.body.style.setProperty('--accent-glow', 'rgba(255, 255, 255, 0.08)');
+      } else {
+        // Custom background color mode
+        let cleaned = (mediaColorConfig.customBg || '#0a0a0a').replace('#', '').trim();
+        if (cleaned.length === 3) {
+          cleaned = cleaned.split('').map((c) => c + c).join('');
+        }
+        const num = parseInt(cleaned, 16);
+        const [r, g, b] = (Number.isNaN(num) || cleaned.length !== 6)
+          ? [10, 10, 10]
+          : [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        const isLightMode = luminance > 128;
+
+        document.body.className = isLightMode ? 'theme-custom theme-paper' : 'theme-custom';
+
+        if (isLightMode) {
+          // Custom Light Mode: Custom BG, dark text and controls
+          const bgPrimary = `rgb(${r}, ${g}, ${b})`;
+          const bgPanel = `rgb(${Math.max(0, Math.round(r * 0.93 - 4))}, ${Math.max(0, Math.round(g * 0.93 - 4))}, ${Math.max(0, Math.round(b * 0.93 - 4))})`;
+          const bgControl = `rgb(${Math.max(0, Math.round(r * 0.86 - 8))}, ${Math.max(0, Math.round(g * 0.86 - 8))}, ${Math.max(0, Math.round(b * 0.86 - 8))})`;
+          const bgControlHover = `rgb(${Math.max(0, Math.round(r * 0.78 - 12))}, ${Math.max(0, Math.round(g * 0.78 - 12))}, ${Math.max(0, Math.round(g * 0.78 - 12))})`;
+          const borderColor = `rgb(${Math.max(0, Math.round(r * 0.68 - 16))}, ${Math.max(0, Math.round(g * 0.68 - 16))}, ${Math.max(0, Math.round(g * 0.68 - 16))})`;
+
+          document.body.style.setProperty('--bg-primary', bgPrimary);
+          document.body.style.setProperty('--bg-panel', bgPanel);
+          document.body.style.setProperty('--bg-control', bgControl);
+          document.body.style.setProperty('--bg-control-hover', bgControlHover);
+          document.body.style.setProperty('--border-color', borderColor);
+          document.body.style.setProperty('--border-active', '#151515');
+          document.body.style.setProperty('--text-primary', '#151515');
+          document.body.style.setProperty('--text-muted', '#444238');
+          document.body.style.setProperty('--text-dim', '#787364');
+          document.body.style.setProperty('--accent', '#151515');
+          document.body.style.setProperty('--accent-glow', 'rgba(0, 0, 0, 0.05)');
+        } else {
+          // Custom Dark Mode: Custom BG, neutral white-on-dark text and controls
+          const bgPrimary = `rgb(${r}, ${g}, ${b})`;
+          const bgPanel = `rgb(${Math.min(255, Math.round(r * 1.25 + 6))}, ${Math.min(255, Math.round(g * 1.25 + 6))}, ${Math.min(255, Math.round(b * 1.25 + 6))})`;
+          const bgControl = `rgb(${Math.min(255, Math.round(r * 1.5 + 14))}, ${Math.min(255, Math.round(g * 1.5 + 14))}, ${Math.min(255, Math.round(b * 1.5 + 14))})`;
+          const bgControlHover = `rgb(${Math.min(255, Math.round(r * 1.75 + 24))}, ${Math.min(255, Math.round(g * 1.75 + 24))}, ${Math.min(255, Math.round(b * 1.75 + 24))})`;
+          const borderColor = `rgb(${Math.min(255, Math.round(r * 2.0 + 38))}, ${Math.min(255, Math.round(g * 2.0 + 38))}, ${Math.min(255, Math.round(b * 2.0 + 38))})`;
+
+          document.body.style.setProperty('--bg-primary', bgPrimary);
+          document.body.style.setProperty('--bg-panel', bgPanel);
+          document.body.style.setProperty('--bg-control', bgControl);
+          document.body.style.setProperty('--bg-control-hover', bgControlHover);
+          document.body.style.setProperty('--border-color', borderColor);
+          document.body.style.setProperty('--border-active', '#e6e6e6');
+          document.body.style.setProperty('--text-primary', '#f0f0f0');
+          document.body.style.setProperty('--text-muted', '#8e8e8e');
+          document.body.style.setProperty('--text-dim', '#585858');
+          document.body.style.setProperty('--accent', '#ffffff');
+          document.body.style.setProperty('--accent-glow', 'rgba(255, 255, 255, 0.08)');
+        }
+      }
+      return;
+    }
+
     if (gradientConfig) {
       let cleaned = gradientConfig.color1.replace('#', '').trim();
       if (cleaned.length === 3) {
@@ -638,8 +1011,8 @@ export const App: React.FC = () => {
 
       if (!isLightMode) {
         // Dark CRT mode: very dark tint of color1
-        const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(b * 0.035 + 2))})`;
-        const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(b * 0.06 + 5))})`;
+        const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))})`;
+        const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))})`;
         const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))})`;
         const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))})`;
         const borderColor = `rgb(${Math.max(24, Math.round(r * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))})`;
@@ -764,7 +1137,7 @@ export const App: React.FC = () => {
       ];
       vars.forEach((v) => document.body.style.removeProperty(v));
     }
-  }, [theme, customThemeColor, gradientConfig]);
+  }, [appMode, theme, customThemeColor, gradientConfig, mediaColorConfig]);
 
   // If shared state had custom code on load, compile it immediately
   useEffect(() => {
@@ -1172,7 +1545,6 @@ export const App: React.FC = () => {
   // Media Handlers
   const autoSetMediaResolution = useCallback((w: number, h: number) => {
     if (w <= 0 || h <= 0) return;
-    setAutoRes(false);
     const srcAspect = w / h;
     // Pick high crisp detail by default (targeting 180-280 cols)
     let targetCols = 240;
@@ -1185,8 +1557,15 @@ export const App: React.FC = () => {
     if (targetCols > 320) targetCols = 320;
 
     const targetRows = Math.max(10, Math.round((targetCols * 0.55) / srcAspect));
-    setCols(targetCols);
-    setRows(targetRows);
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      media: {
+        ...prev.media,
+        cols: targetCols,
+        rows: targetRows,
+        autoRes: false,
+      },
+    }));
 
     setTimeout(() => {
       viewportRef.current?.autoFit();
@@ -1562,15 +1941,16 @@ export const App: React.FC = () => {
 
     // If static 2D image mode, render once reactively on state changes without continuous RAF polling
     if (isStaticImage) {
-      const frameText = renderAsciiMediaFrame({
+      const result = renderAsciiMediaFrameData({
         cols,
         rows,
         mediaElement: mediaElementRef.current,
         mediaConfig,
         viewConfig: mediaViewConfig,
         density,
+        colorConfig: mediaColorConfig,
       });
-      viewportRef.current?.setFrame(frameText, 0, 0);
+      viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor);
       return;
     }
 
@@ -1682,6 +2062,9 @@ export const App: React.FC = () => {
 
       // Render ASCII frame
       let frameText = '';
+      let frameColors: Uint8ClampedArray | null = null;
+      let frameBgColor: string | undefined = undefined;
+
       if (appMode === 'model') {
         frameText = renderModelAsciiFrame({
           cols,
@@ -1693,14 +2076,18 @@ export const App: React.FC = () => {
           viewConfig: modelViewConfig,
         });
       } else if (appMode === 'media') {
-        frameText = renderAsciiMediaFrame({
+        const result = renderAsciiMediaFrameData({
           cols,
           rows,
           mediaElement: mediaElementRef.current,
           mediaConfig,
           viewConfig: mediaViewConfig,
           density,
+          colorConfig: mediaColorConfig,
         });
+        frameText = result.text;
+        frameColors = result.colors;
+        frameBgColor = result.bgColor;
       } else {
         frameText = renderAsciiFrame({
           cols,
@@ -1717,7 +2104,7 @@ export const App: React.FC = () => {
         });
       }
 
-      viewportRef.current?.setFrame(frameText, timeRef.current, currentFpsRef.current);
+      viewportRef.current?.setFrame(frameText, timeRef.current, currentFpsRef.current, frameColors, frameBgColor);
       animFrameId = requestAnimationFrame(loop);
     };
 
@@ -1733,6 +2120,7 @@ export const App: React.FC = () => {
     modelViewConfig,
     mediaConfig,
     mediaViewConfig,
+    mediaColorConfig,
     mediaRenderTrigger,
     waveParams,
     presetType,
@@ -1785,10 +2173,6 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const [autoRes, setAutoRes] = useState<boolean>(
-    sharedState?.autoRes !== undefined ? sharedState.autoRes : true
-  );
-
   const isModelEdited = useMemo(() => {
     if (!activeModelPreset) return false;
     if (modelConfig.modelId !== activeModelPreset.modelConfig.modelId) return true;
@@ -1840,6 +2224,7 @@ export const App: React.FC = () => {
       modelViewConfig: appMode === 'model' ? modelViewConfig : undefined,
       mediaConfig: appMode === 'media' ? mediaConfig : undefined,
       mediaViewConfig: appMode === 'media' ? mediaViewConfig : undefined,
+      mediaColorConfig: appMode === 'media' ? mediaColorConfig : undefined,
     }),
     [
       appMode,
@@ -1867,35 +2252,66 @@ export const App: React.FC = () => {
       modelViewConfig,
       mediaConfig,
       mediaViewConfig,
+      mediaColorConfig,
     ]
   );
 
-  // Match viewport aspect ratio to optimal grid dimensions
-  const handleMatchViewfinderRatio = useCallback(() => {
-    const optimal = viewportRef.current?.getOptimalResolution();
-    if (optimal) {
-      setCols(optimal.cols);
-      setRows(optimal.rows);
-      setTimeout(() => {
-        viewportRef.current?.autoFit();
-      }, 50);
-    }
+  const handleToggleAutoRes = useCallback(() => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      const nextAutoRes = !prev[mode].autoRes;
+      if (nextAutoRes) {
+        const optimal = viewportRef.current?.getOptimalResolution();
+        if (optimal) {
+          return {
+            ...prev,
+            [mode]: {
+              ...prev[mode],
+              autoRes: true,
+              cols: optimal.cols,
+              rows: optimal.rows,
+            },
+          };
+        }
+      }
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          autoRes: nextAutoRes,
+        },
+      };
+    });
   }, []);
 
-  const handleToggleAutoRes = useCallback(() => {
-    setAutoRes((prev) => {
-      const next = !prev;
-      if (next) {
-        handleMatchViewfinderRatio();
-      }
-      return next;
-    });
-  }, [handleMatchViewfinderRatio]);
-
   const handleManualResolutionChange = useCallback((c: number, r: number) => {
-    setAutoRes(false);
-    setCols(c);
-    setRows(r);
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          cols: c,
+          rows: r,
+          autoRes: false,
+        },
+      };
+    });
+  }, []);
+
+  const handleAutoResolutionChange = useCallback((c: number, r: number) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      if (prev[mode].cols === c && prev[mode].rows === r) return prev;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          cols: c,
+          rows: r,
+        },
+      };
+    });
   }, []);
 
   return (
@@ -1996,10 +2412,7 @@ export const App: React.FC = () => {
           onToggleViewMode={handleToggleViewMode}
           autoRes={autoRes}
           onToggleAutoRes={handleToggleAutoRes}
-          onAutoResolutionChange={(c, r) => {
-            setCols(c);
-            setRows(r);
-          }}
+          onAutoResolutionChange={handleAutoResolutionChange}
           crtConfig={crtConfig}
           gradientConfig={gradientConfig}
           appMode={appMode}
@@ -2018,7 +2431,12 @@ export const App: React.FC = () => {
             <div className="sidebar-mode-switcher">
               <button
                 className={`sidebar-mode-btn ${appMode === 'synth' ? 'active' : ''}`}
-                onClick={() => setAppMode('synth')}
+                onClick={() => {
+                  setAppMode('synth');
+                  setTimeout(() => {
+                    viewportRef.current?.autoFit();
+                  }, 50);
+                }}
                 title="Parametric Wave & Particle Synthesizer"
               >
                 <Sliders size={13} style={{ marginRight: '6px' }} />
@@ -2038,10 +2456,13 @@ export const App: React.FC = () => {
                       w = mediaElementRef.current.videoWidth || mediaElementRef.current.width || 256;
                       h = mediaElementRef.current.videoHeight || mediaElementRef.current.height || 256;
                     }
-                    if (cols <= 120) {
+                    if (!renderSettingsByMode.media.cols || renderSettingsByMode.media.cols === 100) {
                       autoSetMediaResolution(w, h);
                     }
                   }
+                  setTimeout(() => {
+                    viewportRef.current?.autoFit();
+                  }, 50);
                 }}
                 title="2D Image & Video ASCII Rasterizer"
               >
@@ -2050,7 +2471,12 @@ export const App: React.FC = () => {
               </button>
               <button
                 className={`sidebar-mode-btn ${appMode === 'model' ? 'active' : ''}`}
-                onClick={() => setAppMode('model')}
+                onClick={() => {
+                  setAppMode('model');
+                  setTimeout(() => {
+                    viewportRef.current?.autoFit();
+                  }, 50);
+                }}
                 title="3D Model to 2D ASCII Visualizer (Beta)"
               >
                 <Box size={13} style={{ marginRight: '6px' }} />
@@ -2161,23 +2587,16 @@ export const App: React.FC = () => {
                     currentCharset={density}
                     onChangeCharset={setDensity}
                     currentTheme={theme}
-                    onChangeTheme={(t) => {
-                      setCustomThemeColor('');
-                      setGradientConfig(null);
-                      setTheme(t);
-                    }}
+                    onChangeTheme={handleSelectTheme}
                     customThemeColor={customThemeColor}
-                    onChangeCustomColor={(c) => {
-                      setGradientConfig(null);
-                      setCustomThemeColor(c);
-                    }}
+                    onChangeCustomColor={handleSelectCustomColor}
                     gradientConfig={gradientConfig}
-                    onChangeGradient={(g) => {
-                      setCustomThemeColor('');
-                      setGradientConfig(g);
-                    }}
+                    onChangeGradient={handleSelectGradient}
                     crtConfig={crtConfig}
                     onChangeCrtConfig={setCrtConfig}
+                    appMode={appMode}
+                    mediaColorConfig={mediaColorConfig}
+                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
                   />
                 )}
               </>
@@ -2266,23 +2685,16 @@ export const App: React.FC = () => {
                     currentCharset={density}
                     onChangeCharset={setDensity}
                     currentTheme={theme}
-                    onChangeTheme={(t) => {
-                      setCustomThemeColor('');
-                      setGradientConfig(null);
-                      setTheme(t);
-                    }}
+                    onChangeTheme={handleSelectTheme}
                     customThemeColor={customThemeColor}
-                    onChangeCustomColor={(c) => {
-                      setGradientConfig(null);
-                      setCustomThemeColor(c);
-                    }}
+                    onChangeCustomColor={handleSelectCustomColor}
                     gradientConfig={gradientConfig}
-                    onChangeGradient={(g) => {
-                      setCustomThemeColor('');
-                      setGradientConfig(g);
-                    }}
+                    onChangeGradient={handleSelectGradient}
                     crtConfig={crtConfig}
                     onChangeCrtConfig={setCrtConfig}
+                    appMode={appMode}
+                    mediaColorConfig={mediaColorConfig}
+                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
                   />
                 )}
               </>
@@ -2388,23 +2800,16 @@ export const App: React.FC = () => {
                     currentCharset={density}
                     onChangeCharset={setDensity}
                     currentTheme={theme}
-                    onChangeTheme={(t) => {
-                      setCustomThemeColor('');
-                      setGradientConfig(null);
-                      setTheme(t);
-                    }}
+                    onChangeTheme={handleSelectTheme}
                     customThemeColor={customThemeColor}
-                    onChangeCustomColor={(c) => {
-                      setGradientConfig(null);
-                      setCustomThemeColor(c);
-                    }}
+                    onChangeCustomColor={handleSelectCustomColor}
                     gradientConfig={gradientConfig}
-                    onChangeGradient={(g) => {
-                      setCustomThemeColor('');
-                      setGradientConfig(g);
-                    }}
+                    onChangeGradient={handleSelectGradient}
                     crtConfig={crtConfig}
                     onChangeCrtConfig={setCrtConfig}
+                    appMode={appMode}
+                    mediaColorConfig={mediaColorConfig}
+                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
                   />
                 )}
               </>
@@ -2460,6 +2865,7 @@ export const App: React.FC = () => {
         geometry={currentGeometryRef.current}
         mediaConfig={mediaConfig}
         mediaViewConfig={mediaViewConfig}
+        mediaColorConfig={mediaColorConfig}
         mediaElement={mediaElementRef.current}
       />
 

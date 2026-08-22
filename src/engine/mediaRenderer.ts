@@ -1,4 +1,4 @@
-import { MediaConfig, MediaViewConfig } from '../types/ascii';
+import { MediaConfig, MediaViewConfig, MediaColorConfig, DEFAULT_MEDIA_COLOR_CONFIG } from '../types/ascii';
 
 export interface RenderMediaContext {
   cols: number;
@@ -7,6 +7,26 @@ export interface RenderMediaContext {
   mediaConfig: MediaConfig;
   viewConfig: MediaViewConfig;
   density: string;
+  colorConfig?: MediaColorConfig;
+}
+
+export interface AsciiMediaFrameResult {
+  text: string;
+  colors: Uint8ClampedArray | null; // RGB buffer (size = cols * rows * 3)
+  bgColor: string;
+  isColored: boolean;
+  cols: number;
+  rows: number;
+}
+
+export function resolveMediaBackgroundColor(colorConfig?: MediaColorConfig, viewConfigBackground?: string): string {
+  if (colorConfig?.mode === 'content') {
+    if (colorConfig.bgPreset === 'white') return '#ffffff';
+    if (colorConfig.bgPreset === 'dark') return '#0a0a0a';
+    if (colorConfig.bgPreset === 'custom') return colorConfig.customBg || '#0a0a0a';
+  }
+  if (viewConfigBackground === 'white') return '#ffffff';
+  return '#0a0a0a';
 }
 
 // Scratch and cached buffers for zero-allocation rendering
@@ -19,6 +39,7 @@ let lumBuffer = new Float32Array(0);
 let ditherBuffer = new Float32Array(0);
 let blurBuffer = new Float32Array(0);
 let edgeBuffer = new Float32Array(0);
+let colorsBuffer = new Uint8ClampedArray(0);
 
 // Bayer 4x4 Matrix
 const BAYER_4X4 = [
@@ -182,14 +203,18 @@ function applyFastBoxBlur(src: Float32Array, dest: Float32Array, width: number, 
 }
 
 /**
- * Computes a single full ASCII frame from a 2D image or video element
- * using aspect-compensated sampling and advanced dithering algorithms.
+ * Computes a single full ASCII frame and optional per-character RGB color data
+ * from a 2D image or video element using aspect-compensated sampling and dithering.
  */
-export function renderAsciiMediaFrame(context: RenderMediaContext): string {
+export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMediaFrameResult {
   const { cols, rows, mediaElement, mediaConfig, viewConfig, density } = context;
+  const colorConfig = context.colorConfig || viewConfig.colorConfig || DEFAULT_MEDIA_COLOR_CONFIG;
+  const isColored = colorConfig.mode === 'content';
+  const bgColor = resolveMediaBackgroundColor(colorConfig, viewConfig.background);
 
-  if (cols <= 0 || rows <= 0) return '';
-  if (!mediaElement) return '';
+  if (cols <= 0 || rows <= 0) {
+    return { text: '', colors: null, bgColor, isColored: false, cols: 0, rows: 0 };
+  }
 
   const totalCells = cols * rows;
   const densityLength = density.length;
@@ -202,6 +227,9 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     ditherBuffer = new Float32Array(totalCells);
     blurBuffer = new Float32Array(totalCells);
     edgeBuffer = new Float32Array(totalCells);
+  }
+  if (isColored && colorsBuffer.length !== totalCells * 3) {
+    colorsBuffer = new Uint8ClampedArray(totalCells * 3);
   }
 
   // Placeholder when no image or video is loaded yet
@@ -227,11 +255,13 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
       }
       lines.push(line.slice(0, cols));
     }
-    return lines.join('\n');
+    return { text: lines.join('\n'), colors: null, bgColor, isColored: false, cols, rows };
   }
 
   const { ctx } = getOffscreenCanvas(cols, rows);
-  if (!ctx) return '';
+  if (!ctx) {
+    return { text: '', colors: null, bgColor, isColored: false, cols, rows };
+  }
 
   // 1. Clear background
   ctx.fillStyle = viewConfig.background === 'white' ? '#ffffff' : '#000000';
@@ -251,7 +281,6 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     srcHeight = mediaElement.height || 100;
   }
 
-  // Monospace cell aspect ratio compensation factor (standard ~0.55 width/height)
   const cellAspect = 0.55;
   const virtualCanvasWidth = cols;
   const virtualCanvasHeight = rows / cellAspect;
@@ -282,20 +311,16 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     drawW = srcWidth;
     drawH = srcHeight;
   } else {
-    // stretch
     drawW = virtualCanvasWidth;
     drawH = virtualCanvasHeight;
   }
 
-  // Apply user scale / zoom
   drawW *= mediaConfig.scale || 1.0;
   drawH *= mediaConfig.scale || 1.0;
 
-  // Compute pan offsets in grid coordinates
   const cx = cols / 2 + (mediaConfig.offsetX / 100) * (cols / 2);
   const cy = rows / 2 + (mediaConfig.offsetY / 100) * (rows / 2);
 
-  // Set Resampling Smoothing Mode
   ctx.imageSmoothingEnabled = viewConfig.resampling !== 'nearest';
   if (ctx.imageSmoothingEnabled) {
     ctx.imageSmoothingQuality = viewConfig.resampling === 'preserve-details' ? 'high' : 'medium';
@@ -303,14 +328,10 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
 
   ctx.save();
   ctx.translate(cx, cy);
-  // Compress vertical dimension to account for monospace cell aspect ratio (tall characters)
   ctx.scale(1, cellAspect);
-
-  // Perform rotation & flips in isotropic visual space so orientation never distorts aspect ratio
   if (mediaConfig.rotation !== 0) {
     ctx.rotate((mediaConfig.rotation * Math.PI) / 180);
   }
-
   const scaleFactorX = mediaConfig.flipX ? -1 : 1;
   const scaleFactorY = mediaConfig.flipY ? -1 : 1;
   if (scaleFactorX !== 1 || scaleFactorY !== 1) {
@@ -320,15 +341,12 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
   try {
     ctx.drawImage(mediaElement, -drawW / 2, -drawH / 2, drawW, drawH);
   } catch {
-    // drawing error (e.g. video not ready)
   }
   ctx.restore();
 
-  // 3. Extract Pixel Data
   const imageData = ctx.getImageData(0, 0, cols, rows);
   const data = imageData.data;
 
-  // 4. Initial Luminance Extraction & Alpha Handling
   const alphaThreshold = viewConfig.alphaThreshold ?? 10;
   for (let i = 0; i < totalCells; i++) {
     const p = i * 4;
@@ -338,18 +356,15 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     const a = data[p + 3];
 
     if (a <= alphaThreshold) {
-      lumBuffer[i] = -1; // Flag as transparent
+      lumBuffer[i] = -1;
       continue;
     }
 
-    // ITU-R BT.709 relative luminance
     const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
     lumBuffer[i] = lum;
   }
 
-  // 5. Blur Pre-Filtering
   const blurRadius = viewConfig.blur > 0 ? Math.max(1, Math.round(viewConfig.blur / 2)) : 0;
-
   if (blurRadius > 0) {
     applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, blurRadius);
     for (let i = 0; i < totalCells; i++) {
@@ -357,57 +372,46 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     }
   }
 
-  // 6. Sharpen Filter (Unsharp Mask: Original + Strength * (Original - Blurred))
-  if (viewConfig.sharpenStrength > 0) {
-    const sRadius = Math.max(1, viewConfig.sharpenRadius || 2);
-    applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, sRadius);
-    const amount = (viewConfig.sharpenStrength / 100.0) * 1.5;
+  const sharpenStrength = (viewConfig.sharpenStrength || 0) / 100.0;
+  const sharpenRadius = Math.max(1, Math.min(10, viewConfig.sharpenRadius || 2));
 
+  if (sharpenStrength > 0) {
+    applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, sharpenRadius);
     for (let i = 0; i < totalCells; i++) {
       if (lumBuffer[i] >= 0) {
-        const diff = lumBuffer[i] - blurBuffer[i];
-        lumBuffer[i] = Math.max(0, Math.min(1, lumBuffer[i] + diff * amount));
+        const orig = lumBuffer[i];
+        const blurred = blurBuffer[i];
+        const unsharp = orig + sharpenStrength * (orig - blurred);
+        lumBuffer[i] = Math.max(0, Math.min(1, unsharp));
       }
     }
   }
 
-  // 7. Sobel Edge Detection (if enabled)
   if (viewConfig.edgeDetection) {
-    edgeBuffer.fill(0);
-    const edgeThreshold = (viewConfig.edgeThreshold || 30) / 100.0;
+    const edgeThreshold = (viewConfig.edgeThreshold || 25) / 100.0;
     const edgeStrength = (viewConfig.edgeStrength || 100) / 100.0;
-
+    edgeBuffer.fill(0);
     for (let y = 1; y < rows - 1; y++) {
       const rowOffset = y * cols;
+      const prevRow = (y - 1) * cols;
+      const nextRow = (y + 1) * cols;
       for (let x = 1; x < cols - 1; x++) {
-        const i00 = (y - 1) * cols + (x - 1);
-        const i01 = (y - 1) * cols + x;
-        const i02 = (y - 1) * cols + (x + 1);
-        const i10 = rowOffset + (x - 1);
-        const i12 = rowOffset + (x + 1);
-        const i20 = (y + 1) * cols + (x - 1);
-        const i21 = (y + 1) * cols + x;
-        const i22 = (y + 1) * cols + (x + 1);
-
-        const l00 = Math.max(0, lumBuffer[i00]);
-        const l01 = Math.max(0, lumBuffer[i01]);
-        const l02 = Math.max(0, lumBuffer[i02]);
-        const l10 = Math.max(0, lumBuffer[i10]);
-        const l12 = Math.max(0, lumBuffer[i12]);
-        const l20 = Math.max(0, lumBuffer[i20]);
-        const l21 = Math.max(0, lumBuffer[i21]);
-        const l22 = Math.max(0, lumBuffer[i22]);
-
+        const l00 = Math.max(0, lumBuffer[prevRow + x - 1]);
+        const l01 = Math.max(0, lumBuffer[prevRow + x]);
+        const l02 = Math.max(0, lumBuffer[prevRow + x + 1]);
+        const l10 = Math.max(0, lumBuffer[rowOffset + x - 1]);
+        const l12 = Math.max(0, lumBuffer[rowOffset + x + 1]);
+        const l20 = Math.max(0, lumBuffer[nextRow + x - 1]);
+        const l21 = Math.max(0, lumBuffer[nextRow + x]);
+        const l22 = Math.max(0, lumBuffer[nextRow + x + 1]);
         const gx = -l00 - 2 * l10 - l20 + l02 + 2 * l12 + l22;
         const gy = -l00 - 2 * l01 - l02 + l20 + 2 * l21 + l22;
         const mag = Math.hypot(gx, gy);
-
         if (mag > edgeThreshold) {
           edgeBuffer[rowOffset + x] = Math.min(1, (mag - edgeThreshold) * edgeStrength * 2);
         }
       }
     }
-
     for (let i = 0; i < totalCells; i++) {
       if (lumBuffer[i] >= 0) {
         lumBuffer[i] = Math.max(0, Math.min(1, lumBuffer[i] + edgeBuffer[i]));
@@ -415,74 +419,37 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     }
   }
 
-  // 8. Levels, Brightness, Contrast & Tonal Level Curves
-  const contrastFactor = Math.tan(((viewConfig.contrast + 100) * Math.PI) / 400); // [-100..100] -> [0..inf]
+  const contrastFactor = Math.tan(((viewConfig.contrast + 100) * Math.PI) / 400);
   const brightnessOffset = viewConfig.brightness / 100.0;
-
-  // Levels parameters: black point, white point, and midtones gamma
   const inBlack = Math.max(0, Math.min(0.95, (viewConfig.levelBlack ?? 0) / 100.0));
   const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (viewConfig.levelWhite ?? 100) / 100.0));
   const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (viewConfig.levelMidtones ?? 50) / 100.0));
   const midNorm = (inMid - inBlack) / (inWhite - inBlack);
   const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
-
-  // Symmetrical tonal adjustments centered at 0 (range: -100 to 100)
-  const shadowAdj = (viewConfig.shadows || 0) / 100.0; // [-1..1]
-  const highlightAdj = (viewConfig.highlights || 0) / 100.0; // [-1..1]
-  const midtoneGamma = Math.pow(2.0, -(viewConfig.midtones || 0) / 50.0); // [-100..100] -> gamma
-
-  // Spline Tone Curve LUT precomputation
-  const curveLut = viewConfig.curvePoints && viewConfig.curvePoints.length >= 2
-    ? createToneCurveLUT(viewConfig.curvePoints)
-    : null;
-
-  // Noise injection
+  const shadowAdj = (viewConfig.shadows || 0) / 100.0;
+  const highlightAdj = (viewConfig.highlights || 0) / 100.0;
+  const midtoneGamma = Math.pow(2.0, -(viewConfig.midtones || 0) / 50.0);
+  const curveLut = viewConfig.curvePoints && viewConfig.curvePoints.length >= 2 ? createToneCurveLUT(viewConfig.curvePoints) : null;
   const noiseAmp = (viewConfig.noise || 0) / 200.0;
 
   for (let i = 0; i < totalCells; i++) {
     let val = lumBuffer[i];
     if (val < 0) continue;
-
-    // 1. Spline Tone Curve
     if (curveLut) {
       const lutIdx = Math.max(0, Math.min(255, Math.round(val * 255)));
       val = curveLut[lutIdx];
     }
-
-    // 2. Levels Remapping
     val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
-    if (levelsGamma !== 1.0 && val > 0 && val < 1) {
-      val = Math.pow(val, 1 / levelsGamma);
-    }
-
-    // 3. Contrast & Brightness
+    if (levelsGamma !== 1.0 && val > 0 && val < 1) val = Math.pow(val, 1 / levelsGamma);
     val = (val - 0.5) * contrastFactor + 0.5 + brightnessOffset;
-
-    // 4. Tonal Curves (Shadows, Highlights, Midtones)
-    if (shadowAdj !== 0) {
-      val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
-    }
-    if (highlightAdj !== 0) {
-      val = val + highlightAdj * val * val * 0.5;
-    }
-    if (midtoneGamma !== 1.0 && val > 0 && val < 1) {
-      val = Math.pow(val, midtoneGamma);
-    }
-
-    // 5. Noise
-    if (noiseAmp > 0) {
-      val += (Math.random() - 0.5) * noiseAmp;
-    }
-
-    // 6. Invert
-    if (viewConfig.invert) {
-      val = 1.0 - val;
-    }
-
+    if (shadowAdj !== 0) val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
+    if (highlightAdj !== 0) val = val + highlightAdj * val * val * 0.5;
+    if (midtoneGamma !== 1.0 && val > 0 && val < 1) val = Math.pow(val, midtoneGamma);
+    if (noiseAmp > 0) val += (Math.random() - 0.5) * noiseAmp;
+    if (viewConfig.invert) val = 1.0 - val;
     lumBuffer[i] = Math.max(0, Math.min(1, val));
   }
 
-  // 9. Dithering Algorithms
   ditherBuffer.set(lumBuffer);
   const algorithm = viewConfig.algorithm || 'floyd-steinberg';
 
@@ -493,11 +460,9 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
         const idx = rowOffset + x;
         const oldVal = ditherBuffer[idx];
         if (oldVal < 0) continue;
-
         const quantized = Math.round(oldVal * (densityLength - 1)) / (densityLength - 1);
         ditherBuffer[idx] = quantized;
         const err = oldVal - quantized;
-
         if (x + 1 < cols) ditherBuffer[rowOffset + x + 1] += (err * 7) / 16;
         if (y + 1 < rows) {
           const nextRow = (y + 1) * cols;
@@ -508,19 +473,16 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
       }
     }
   } else if (algorithm === 'atkinson') {
-    // 1/8 to 6 neighboring pixels
     for (let y = 0; y < rows; y++) {
       const rowOffset = y * cols;
       for (let x = 0; x < cols; x++) {
         const idx = rowOffset + x;
         const oldVal = ditherBuffer[idx];
         if (oldVal < 0) continue;
-
         const quantized = Math.round(oldVal * (densityLength - 1)) / (densityLength - 1);
         ditherBuffer[idx] = quantized;
         const err = oldVal - quantized;
         const fraction = err / 8;
-
         if (x + 1 < cols) ditherBuffer[rowOffset + x + 1] += fraction;
         if (x + 2 < cols) ditherBuffer[rowOffset + x + 2] += fraction;
         if (y + 1 < rows) {
@@ -529,24 +491,19 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
           ditherBuffer[nextRow + x] += fraction;
           if (x + 1 < cols) ditherBuffer[nextRow + x + 1] += fraction;
         }
-        if (y + 2 < rows) {
-          ditherBuffer[(y + 2) * cols + x] += fraction;
-        }
+        if (y + 2 < rows) ditherBuffer[(y + 2) * cols + x] += fraction;
       }
     }
   } else if (algorithm === 'sierra') {
-    // Sierra Lite error diffusion
     for (let y = 0; y < rows; y++) {
       const rowOffset = y * cols;
       for (let x = 0; x < cols; x++) {
         const idx = rowOffset + x;
         const oldVal = ditherBuffer[idx];
         if (oldVal < 0) continue;
-
         const quantized = Math.round(oldVal * (densityLength - 1)) / (densityLength - 1);
         ditherBuffer[idx] = quantized;
         const err = oldVal - quantized;
-
         if (x + 1 < cols) ditherBuffer[rowOffset + x + 1] += (err * 2) / 4;
         if (y + 1 < rows) {
           const nextRow = (y + 1) * cols;
@@ -562,7 +519,6 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
         const idx = rowOffset + x;
         const val = ditherBuffer[idx];
         if (val < 0) continue;
-
         const matrixVal = (BAYER_4X4[y % 4][x % 4] / 16.0 - 0.5) * (1.0 / (densityLength - 1));
         ditherBuffer[idx] = Math.max(0, Math.min(1, val + matrixVal));
       }
@@ -574,7 +530,6 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
         const idx = rowOffset + x;
         const val = ditherBuffer[idx];
         if (val < 0) continue;
-
         const matrixVal = (BAYER_8X8[y % 8][x % 8] / 64.0 - 0.5) * (1.0 / (densityLength - 1));
         ditherBuffer[idx] = Math.max(0, Math.min(1, val + matrixVal));
       }
@@ -588,26 +543,108 @@ export function renderAsciiMediaFrame(context: RenderMediaContext): string {
     }
   }
 
-  // 10. Density Charset Mapping & Line Assembly
+  const samplingMethod = colorConfig.sampling || 'average';
+  const saturationFactor = colorConfig.saturation !== undefined ? colorConfig.saturation / 100.0 : 2.0;
+
   for (let y = 0; y < rows; y++) {
     const rowOffset = y * cols;
     for (let x = 0; x < cols; x++) {
       const idx = rowOffset + x;
       const val = ditherBuffer[idx];
+      const p = idx * 4;
 
       if (val < 0) {
         lineBuffer[x] = ' ';
+        if (isColored) {
+          colorsBuffer[idx * 3] = 0;
+          colorsBuffer[idx * 3 + 1] = 0;
+          colorsBuffer[idx * 3 + 2] = 0;
+        }
         continue;
       }
 
       let charIndex = Math.floor(val * densityLength);
       if (charIndex < 0) charIndex = 0;
       else if (charIndex >= densityLength) charIndex = densityLength - 1;
-
       lineBuffer[x] = density[charIndex] || ' ';
+
+      if (isColored) {
+        let r = data[p];
+        let g = data[p + 1];
+        let b = data[p + 2];
+
+        if (samplingMethod === 'average') {
+          let sumR = 0;
+          let sumG = 0;
+          let sumB = 0;
+          let count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            const ny = Math.max(0, Math.min(rows - 1, y + dy));
+            const nRowOff = ny * cols;
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = Math.max(0, Math.min(cols - 1, x + dx));
+              const np = (nRowOff + nx) * 4;
+              if (data[np + 3] > alphaThreshold) {
+                const weight = dx === 0 && dy === 0 ? 2 : 1;
+                sumR += data[np] * weight;
+                sumG += data[np + 1] * weight;
+                sumB += data[np + 2] * weight;
+                count += weight;
+              }
+            }
+          }
+          if (count > 0) { r = sumR / count; g = sumG / count; b = sumB / count; }
+        } else if (samplingMethod === 'weighted') {
+          let sumR = 0;
+          let sumG = 0;
+          let sumB = 0;
+          let totalW = 0;
+          const centerLum = 0.2126 * data[p] + 0.7152 * data[p + 1] + 0.0722 * data[p + 2];
+          for (let dy = -1; dy <= 1; dy++) {
+            const ny = Math.max(0, Math.min(rows - 1, y + dy));
+            const nRowOff = ny * cols;
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = Math.max(0, Math.min(cols - 1, x + dx));
+              const np = (nRowOff + nx) * 4;
+              if (data[np + 3] > alphaThreshold) {
+                const l = 0.2126 * data[np] + 0.7152 * data[np + 1] + 0.0722 * data[np + 2];
+                const diff = Math.abs(l - centerLum);
+                const w = 1.0 + (l / 255.0) * 1.5 + 1.0 / (1.0 + diff * 0.05);
+                sumR += data[np] * w;
+                sumG += data[np + 1] * w;
+                sumB += data[np + 2] * w;
+                totalW += w;
+              }
+            }
+          }
+          if (totalW > 0) { r = sumR / totalW; g = sumG / totalW; b = sumB / totalW; }
+        }
+
+        if (saturationFactor !== 1.0) {
+          const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          r = gray + (r - gray) * saturationFactor;
+          g = gray + (g - gray) * saturationFactor;
+          b = gray + (b - gray) * saturationFactor;
+        }
+
+        colorsBuffer[idx * 3] = Math.max(0, Math.min(255, Math.round(r)));
+        colorsBuffer[idx * 3 + 1] = Math.max(0, Math.min(255, Math.round(g)));
+        colorsBuffer[idx * 3 + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      }
     }
     cachedLines[y] = lineBuffer.join('');
   }
 
-  return cachedLines.join('\n');
+  return {
+    text: cachedLines.join('\n'),
+    colors: isColored ? colorsBuffer : null,
+    bgColor,
+    isColored,
+    cols,
+    rows,
+  };
+}
+
+export function renderAsciiMediaFrame(context: RenderMediaContext): string {
+  return renderAsciiMediaFrameData(context).text;
 }

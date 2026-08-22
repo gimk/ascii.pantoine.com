@@ -10,6 +10,7 @@ import {
   ModelViewConfig,
   MediaConfig,
   MediaViewConfig,
+  MediaColorConfig,
 } from '../types/ascii';
 
 export interface ExportConfig {
@@ -33,6 +34,7 @@ export interface ExportConfig {
   modelViewConfig?: ModelViewConfig;
   mediaConfig?: MediaConfig;
   mediaViewConfig?: MediaViewConfig;
+  mediaColorConfig?: MediaColorConfig;
 }
 
 /**

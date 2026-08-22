@@ -1,7 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { CHARSETS } from '../engine/renderer';
-import { PhosphorTheme, CrtConfig, PhosphorGradient } from '../types/ascii';
-import { Tv, Sparkles, Pipette, Palette, Sliders, Compass } from 'lucide-react';
+import {
+  PhosphorTheme,
+  CrtConfig,
+  PhosphorGradient,
+  MediaColorConfig,
+  AppMode,
+  DEFAULT_MEDIA_COLOR_CONFIG,
+} from '../types/ascii';
+import { Tv, Sparkles, Pipette, Palette, Sliders, Compass, Sun, Moon, BoxSelect, Zap, Paintbrush } from 'lucide-react';
 
 interface CharsetThemeBarProps {
   currentCharset: string;
@@ -14,6 +21,9 @@ interface CharsetThemeBarProps {
   onChangeGradient?: (grad: PhosphorGradient | null) => void;
   crtConfig: CrtConfig;
   onChangeCrtConfig: (cfg: CrtConfig) => void;
+  appMode?: AppMode;
+  mediaColorConfig?: MediaColorConfig;
+  onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
 }
 
 const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
@@ -25,7 +35,7 @@ const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
   { id: 'paper', name: 'Paper Print', color: '#151515' },
 ];
 
-export const GRADIENT_PRESETS: PhosphorGradient[] = [
+const GRADIENT_PRESETS: PhosphorGradient[] = [
   { id: 'cyberpunk', name: 'Cyberpunk Neon', color1: '#ff007f', color2: '#00f0ff', angle: 135 },
   { id: 'synthwave', name: 'Synthwave Sunset', color1: '#ff7700', color2: '#9900ff', angle: 135 },
   { id: 'aurora', name: 'Aurora Borealis', color1: '#00ff99', color2: '#0066ff', angle: 90 },
@@ -128,6 +138,9 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   onChangeGradient,
   crtConfig,
   onChangeCrtConfig,
+  appMode = 'synth',
+  mediaColorConfig = DEFAULT_MEDIA_COLOR_CONFIG,
+  onChangeMediaColorConfig,
 }) => {
   const [themeMode, setThemeMode] = useState<'single' | 'gradient'>(gradientConfig ? 'gradient' : 'single');
   const [customHex, setCustomHex] = useState<string>(customThemeColor || '#00ff66');
@@ -197,34 +210,339 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
     }
   };
 
+  const isContentColorActive = appMode === 'media' && mediaColorConfig.mode === 'content';
+
+  const updateMediaColor = (patch: Partial<MediaColorConfig>) => {
+    if (onChangeMediaColorConfig) {
+      onChangeMediaColorConfig({
+        ...mediaColorConfig,
+        ...patch,
+      });
+    }
+  };
+
   return (
     <div className="tab-content">
-      {/* 1. Phosphor Theme */}
+      {/* For Media Mode: Master Mode Toggle at very top */}
+      {appMode === 'media' && (
+        <div
+          style={{
+            display: 'flex',
+            background: 'var(--bg-control)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '4px',
+            padding: '2px',
+            marginBottom: '14px',
+            gap: '2px',
+          }}
+        >
+          <button
+            className={`btn btn-sm ${!isContentColorActive ? 'btn-primary' : ''}`}
+            style={{
+              flex: 1,
+              justifyContent: 'center',
+              fontSize: '11px',
+              fontWeight: 600,
+              border: !isContentColorActive ? '1px solid var(--border-active)' : 'none',
+              background: !isContentColorActive ? 'var(--accent)' : 'transparent',
+              color: !isContentColorActive ? 'var(--bg-primary)' : 'var(--text-muted)',
+              boxShadow: !isContentColorActive ? '0 0 8px var(--accent-glow)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+            onClick={() => updateMediaColor({ mode: 'fixed' })}
+            title="Use uniform CRT Phosphor themes or linear gradients"
+          >
+            <Palette size={12} />
+            FIXED THEME
+          </button>
+          <button
+            className={`btn btn-sm ${isContentColorActive ? 'btn-primary' : ''}`}
+            style={{
+              flex: 1,
+              justifyContent: 'center',
+              fontSize: '11px',
+              fontWeight: 600,
+              border: isContentColorActive ? '1px solid var(--border-active)' : 'none',
+              background: isContentColorActive ? 'var(--accent)' : 'transparent',
+              color: isContentColorActive ? 'var(--bg-primary)' : 'var(--text-muted)',
+              boxShadow: isContentColorActive ? '0 0 8px var(--accent-glow)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+            onClick={() => updateMediaColor({ mode: 'content' })}
+            title="Sample character colors directly from source image/video pixels"
+          >
+            <Sparkles size={12} />
+            CONTENT COLOR
+          </button>
+        </div>
+      )}
+
+      {/* 1. Theme or Content Color Section */}
       <div className="control-section">
         <div className="section-header">
-          <span>Phosphor Color Theme</span>
+          <span>{isContentColorActive ? 'Content Color Settings' : 'Phosphor Color Theme'}</span>
           <Sparkles size={12} style={{ color: 'var(--accent)' }} />
         </div>
 
-        {/* Section Segmented Mode Tabs: Single Color vs Gradient */}
-        <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
-          <button
-            className={`btn ${themeMode === 'single' ? 'btn-primary' : ''}`}
-            style={{ flex: 1, justifyContent: 'center', fontSize: '11px' }}
-            onClick={handleSwitchToSingle}
-          >
-            <Palette size={12} />
-            SINGLE COLOR
-          </button>
-          <button
-            className={`btn ${themeMode === 'gradient' ? 'btn-primary' : ''}`}
-            style={{ flex: 1, justifyContent: 'center', fontSize: '11px' }}
-            onClick={handleSwitchToGradient}
-          >
-            <Sliders size={12} />
-            GRADIENT
-          </button>
-        </div>
+        {isContentColorActive ? (
+          /* CONTENT COLOR SETTINGS */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* 1. Color Sampling Algorithm */}
+            <div className="control-row">
+              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <BoxSelect size={11} /> Sampling
+              </span>
+              <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-control)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                <button
+                  className={`btn btn-sm ${mediaColorConfig.sampling === 'average' ? 'btn-primary' : ''}`}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    height: '23px',
+                    fontWeight: mediaColorConfig.sampling === 'average' ? 600 : 500,
+                    background: mediaColorConfig.sampling === 'average' ? 'var(--accent)' : 'transparent',
+                    color: mediaColorConfig.sampling === 'average' ? 'var(--bg-primary)' : 'var(--text-primary)',
+                    opacity: mediaColorConfig.sampling === 'average' ? 1 : 0.78,
+                    border: mediaColorConfig.sampling === 'average' ? '1px solid var(--border-active)' : '1px solid transparent',
+                    boxShadow: mediaColorConfig.sampling === 'average' ? '0 0 6px var(--accent-glow)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => updateMediaColor({ sampling: 'average' })}
+                  title="Area Box Average: Smooth spatial pixel average under each character"
+                >
+                  Area Avg
+                </button>
+                <button
+                  className={`btn btn-sm ${mediaColorConfig.sampling === 'center' ? 'btn-primary' : ''}`}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    height: '23px',
+                    fontWeight: mediaColorConfig.sampling === 'center' ? 600 : 500,
+                    background: mediaColorConfig.sampling === 'center' ? 'var(--accent)' : 'transparent',
+                    color: mediaColorConfig.sampling === 'center' ? 'var(--bg-primary)' : 'var(--text-primary)',
+                    opacity: mediaColorConfig.sampling === 'center' ? 1 : 0.78,
+                    border: mediaColorConfig.sampling === 'center' ? '1px solid var(--border-active)' : '1px solid transparent',
+                    boxShadow: mediaColorConfig.sampling === 'center' ? '0 0 6px var(--accent-glow)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => updateMediaColor({ sampling: 'center' })}
+                  title="Center Pixel: Sharp single-point sample at cell center"
+                >
+                  Center
+                </button>
+                <button
+                  className={`btn btn-sm ${mediaColorConfig.sampling === 'weighted' ? 'btn-primary' : ''}`}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    height: '23px',
+                    fontWeight: mediaColorConfig.sampling === 'weighted' ? 600 : 500,
+                    background: mediaColorConfig.sampling === 'weighted' ? 'var(--accent)' : 'transparent',
+                    color: mediaColorConfig.sampling === 'weighted' ? 'var(--bg-primary)' : 'var(--text-primary)',
+                    opacity: mediaColorConfig.sampling === 'weighted' ? 1 : 0.78,
+                    border: mediaColorConfig.sampling === 'weighted' ? '1px solid var(--border-active)' : '1px solid transparent',
+                    boxShadow: mediaColorConfig.sampling === 'weighted' ? '0 0 6px var(--accent-glow)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => updateMediaColor({ sampling: 'weighted' })}
+                  title="Luminance Weighted: Preserves sharp foreground details and high-contrast edges"
+                >
+                  Weighted
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Background Color Controls */}
+            <div className="control-row">
+              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Palette size={11} /> Background
+              </span>
+              <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-control)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                <button
+                  className={`btn btn-sm ${mediaColorConfig.bgPreset === 'dark' ? 'btn-primary' : ''}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    height: '23px',
+                    fontWeight: mediaColorConfig.bgPreset === 'dark' ? 600 : 500,
+                    background: mediaColorConfig.bgPreset === 'dark' ? 'var(--accent)' : 'transparent',
+                    color: mediaColorConfig.bgPreset === 'dark' ? 'var(--bg-primary)' : 'var(--text-primary)',
+                    opacity: mediaColorConfig.bgPreset === 'dark' ? 1 : 0.78,
+                    border: mediaColorConfig.bgPreset === 'dark' ? '1px solid var(--border-active)' : '1px solid transparent',
+                    boxShadow: mediaColorConfig.bgPreset === 'dark' ? '0 0 6px var(--accent-glow)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => updateMediaColor({ bgPreset: 'dark' })}
+                  title="Dark Terminal Background (#0a0a0a) & Terminal Dark UI"
+                >
+                  <Moon size={11} /> Dark
+                </button>
+                <button
+                  className={`btn btn-sm ${mediaColorConfig.bgPreset === 'white' ? 'btn-primary' : ''}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    height: '23px',
+                    fontWeight: mediaColorConfig.bgPreset === 'white' ? 600 : 500,
+                    background: mediaColorConfig.bgPreset === 'white' ? 'var(--accent)' : 'transparent',
+                    color: mediaColorConfig.bgPreset === 'white' ? 'var(--bg-primary)' : 'var(--text-primary)',
+                    opacity: mediaColorConfig.bgPreset === 'white' ? 1 : 0.78,
+                    border: mediaColorConfig.bgPreset === 'white' ? '1px solid var(--border-active)' : '1px solid transparent',
+                    boxShadow: mediaColorConfig.bgPreset === 'white' ? '0 0 6px var(--accent-glow)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => updateMediaColor({ bgPreset: 'white' })}
+                  title="White Paper Background (#ffffff) & Paper Light UI"
+                >
+                  <Sun size={11} /> White
+                </button>
+                <button
+                  className={`btn btn-sm ${mediaColorConfig.bgPreset === 'custom' ? 'btn-primary' : ''}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 8px',
+                    fontSize: '10px',
+                    height: '23px',
+                    fontWeight: mediaColorConfig.bgPreset === 'custom' ? 600 : 500,
+                    background: mediaColorConfig.bgPreset === 'custom' ? 'var(--accent)' : 'transparent',
+                    color: mediaColorConfig.bgPreset === 'custom' ? 'var(--bg-primary)' : 'var(--text-primary)',
+                    opacity: mediaColorConfig.bgPreset === 'custom' ? 1 : 0.78,
+                    border: mediaColorConfig.bgPreset === 'custom' ? '1px solid var(--border-active)' : '1px solid transparent',
+                    boxShadow: mediaColorConfig.bgPreset === 'custom' ? '0 0 6px var(--accent-glow)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => updateMediaColor({ bgPreset: 'custom' })}
+                  title="Custom Background Color & Adaptive UI Theme"
+                >
+                  <Pipette size={11} /> Custom
+                </button>
+              </div>
+            </div>
+
+            {/* Custom Background Color Picker (When 'custom' is active) */}
+            {mediaColorConfig.bgPreset === 'custom' && (
+              <div className="control-row" style={{ paddingLeft: '8px' }}>
+                <span className="control-label" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                  Custom BG Hex
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="color"
+                    style={{
+                      width: '24px',
+                      height: '20px',
+                      padding: 0,
+                      border: '1px solid var(--border-color)',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      borderRadius: '2px',
+                    }}
+                    value={mediaColorConfig.customBg || '#0a0a0a'}
+                    onChange={(e) => updateMediaColor({ customBg: e.target.value, bgPreset: 'custom' })}
+                  />
+                  <input
+                    type="text"
+                    className="number-input"
+                    style={{ width: '68px', textAlign: 'center', padding: '2px 4px', fontSize: '10.5px' }}
+                    value={mediaColorConfig.customBg || '#0a0a0a'}
+                    onChange={(e) => updateMediaColor({ customBg: e.target.value, bgPreset: 'custom' })}
+                    placeholder="#0a0a0a"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 3. Saturation / Color Vibrance Slider */}
+            <div className="control-row" style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Zap size={11} /> Vibrance
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
+                <input
+                  type="range"
+                  className="range-slider"
+                  min={0}
+                  max={400}
+                  step={5}
+                  value={Math.min(400, mediaColorConfig.saturation !== undefined ? mediaColorConfig.saturation : 200)}
+                  onChange={(e) => updateMediaColor({ saturation: parseInt(e.target.value, 10) || 0 })}
+                  style={{ width: '90px' }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <input
+                    type="number"
+                    min={0}
+                    className="number-input"
+                    style={{ width: '46px', textAlign: 'center', padding: '2px 4px', fontSize: '10.5px' }}
+                    value={mediaColorConfig.saturation !== undefined ? mediaColorConfig.saturation : 200}
+                    onChange={(e) => updateMediaColor({ saturation: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* FIXED THEME CONTROLS (Single Color vs Gradient) */
+          <>
+            {/* Coherent Segmented Tabs: Single Color vs Gradient */}
+            <div
+              style={{
+                display: 'flex',
+                background: 'var(--bg-control)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '4px',
+                padding: '2px',
+                marginBottom: '12px',
+                gap: '2px',
+              }}
+            >
+              <button
+                className={`btn btn-sm ${themeMode === 'single' ? 'btn-primary' : ''}`}
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  border: themeMode === 'single' ? '1px solid var(--border-active)' : 'none',
+                  background: themeMode === 'single' ? 'var(--accent)' : 'transparent',
+                  color: themeMode === 'single' ? 'var(--bg-primary)' : 'var(--text-muted)',
+                  boxShadow: themeMode === 'single' ? '0 0 8px var(--accent-glow)' : 'none',
+                  transition: 'all 0.15s ease',
+                }}
+                onClick={handleSwitchToSingle}
+              >
+                <Paintbrush size={11} />
+                SINGLE COLOR
+              </button>
+              <button
+                className={`btn btn-sm ${themeMode === 'gradient' ? 'btn-primary' : ''}`}
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  fontSize: '10.5px',
+                  fontWeight: 600,
+                  border: themeMode === 'gradient' ? '1px solid var(--border-active)' : 'none',
+                  background: themeMode === 'gradient' ? 'var(--accent)' : 'transparent',
+                  color: themeMode === 'gradient' ? 'var(--bg-primary)' : 'var(--text-muted)',
+                  boxShadow: themeMode === 'gradient' ? '0 0 8px var(--accent-glow)' : 'none',
+                  transition: 'all 0.15s ease',
+                }}
+                onClick={handleSwitchToGradient}
+              >
+                <Sliders size={11} />
+                GRADIENT
+              </button>
+            </div>
 
         {themeMode === 'single' ? (
           <div>
@@ -390,6 +708,8 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
             </div>
           </div>
         )}
+          </>
+        )}
       </div>
 
       {/* 2. Character Density Ramp */}
@@ -447,13 +767,17 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
         </div>
 
         {/* 2. CRT Glow (Centered Background Ambient Glow) */}
-        <div className="control-row">
-          <span className="control-label">CRT Glow</span>
+        <div className="control-row" style={{ opacity: isContentColorActive ? 0.45 : 1 }}>
+          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            CRT Glow
+            {isContentColorActive && <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>(Disabled in Content Color)</span>}
+          </span>
           <button
-            className={`btn btn-sm ${crtConfig.crtGlow ? 'btn-primary' : ''}`}
+            className={`btn btn-sm ${crtConfig.crtGlow && !isContentColorActive ? 'btn-primary' : ''}`}
+            disabled={isContentColorActive}
             onClick={() => updateCrt('crtGlow', !crtConfig.crtGlow)}
           >
-            {crtConfig.crtGlow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+            {isContentColorActive ? 'DISABLED [OFF]' : crtConfig.crtGlow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
           </button>
         </div>
 
@@ -469,13 +793,17 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
         </div>
 
         {/* 4. Phosphor Bloom (Character Soft Blur) */}
-        <div className="control-row">
-          <span className="control-label">Phosphor Bloom</span>
+        <div className="control-row" style={{ opacity: isContentColorActive ? 0.45 : 1 }}>
+          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Phosphor Bloom
+            {isContentColorActive && <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>(Disabled in Content Color)</span>}
+          </span>
           <button
-            className={`btn btn-sm ${crtConfig.phosphorBloom ? 'btn-primary' : ''}`}
+            className={`btn btn-sm ${crtConfig.phosphorBloom && !isContentColorActive ? 'btn-primary' : ''}`}
+            disabled={isContentColorActive}
             onClick={() => updateCrt('phosphorBloom', !crtConfig.phosphorBloom)}
           >
-            {crtConfig.phosphorBloom ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+            {isContentColorActive ? 'DISABLED [OFF]' : crtConfig.phosphorBloom ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
           </button>
         </div>
       </div>

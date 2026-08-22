@@ -10,6 +10,7 @@ import {
   ModelViewConfig,
   MediaConfig,
   MediaViewConfig,
+  MediaColorConfig,
 } from '../types/ascii';
 
 export interface FullAnimationState {
@@ -34,6 +35,7 @@ export interface FullAnimationState {
   modelViewConfig?: ModelViewConfig;
   mediaConfig?: MediaConfig;
   mediaViewConfig?: MediaViewConfig;
+  mediaColorConfig?: MediaColorConfig;
 }
 
 // UTF-8 safe base64 encoding/decoding helper

@@ -396,6 +396,15 @@ html, body, #root {
   z-index: 2;
 }
 
+.ascii-canvas {
+  pointer-events: none;
+  position: relative;
+  z-index: 2;
+  border-radius: 2px;
+  max-width: none;
+  max-height: none;
+}
+
 .ascii-bloom-pre {
   position: absolute;
   z-index: 1;

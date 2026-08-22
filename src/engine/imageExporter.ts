@@ -10,10 +10,11 @@ import {
   ModelViewConfig,
   MediaConfig,
   MediaViewConfig,
+  MediaColorConfig,
 } from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
 import { renderModelAsciiFrame } from './modelRenderer';
-import { renderAsciiMediaFrame } from './mediaRenderer';
+import { renderAsciiMediaFrameData, AsciiMediaFrameResult } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectPngMetadata, injectJpegComment } from './mediaMetadata';
 
@@ -52,6 +53,7 @@ export interface ImageExportOptions {
   geometry?: THREE.BufferGeometry;
   mediaConfig?: MediaConfig;
   mediaViewConfig?: MediaViewConfig;
+  mediaColorConfig?: MediaColorConfig;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
@@ -166,7 +168,22 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
 
   // Generate or use frameText
   let frameText = currentAsciiFrame || '';
-  if (!frameText) {
+  let mediaFrameResult: AsciiMediaFrameResult | null = null;
+
+  if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
+    mediaFrameResult = renderAsciiMediaFrameData({
+      cols,
+      rows,
+      mediaElement: opts.mediaElement,
+      mediaConfig: opts.mediaConfig,
+      viewConfig: opts.mediaViewConfig,
+      density,
+      colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
+    });
+    if (!frameText) {
+      frameText = mediaFrameResult.text;
+    }
+  } else if (!frameText) {
     if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
       frameText = renderModelAsciiFrame({
         cols,
@@ -176,15 +193,6 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
         geometry: opts.geometry,
         modelConfig: opts.modelConfig,
         viewConfig: opts.modelViewConfig,
-      });
-    } else if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
-      frameText = renderAsciiMediaFrame({
-        cols,
-        rows,
-        mediaElement: opts.mediaElement,
-        mediaConfig: opts.mediaConfig,
-        viewConfig: opts.mediaViewConfig,
-        density,
       });
     } else {
       let customRenderFn: any;
@@ -219,14 +227,16 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   }
 
   const lines = frameText.split('\n');
+  const isColored = Boolean(mediaFrameResult?.isColored && mediaFrameResult?.colors);
+  const effectiveBg = isColored && mediaFrameResult ? mediaFrameResult.bgColor : bg;
 
   // 1. Draw Canvas Background
   if (format === 'jpg' || !transparentBg) {
-    ctx.fillStyle = bg;
+    ctx.fillStyle = effectiveBg;
     ctx.fillRect(0, 0, width, height);
 
     // Optional CRT Centered Ambient Background Glow
-    if (showCrtGlow) {
+    if (showCrtGlow && !isColored) {
       const ambientGlow = ctx.createRadialGradient(
         width / 2, height / 2, 0,
         width / 2, height / 2, Math.max(width, height) * 0.7
@@ -257,7 +267,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
 
-  if (showPhosphorBloom && gradientConfig) {
+  if (!isColored && showPhosphorBloom && gradientConfig) {
     ctx.save();
     ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
     ctx.fillStyle = textFillStyle;
@@ -266,19 +276,34 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
     }
     ctx.restore();
-  } else if (showPhosphorBloom) {
+  } else if (!isColored && showPhosphorBloom) {
     ctx.shadowColor = text;
     ctx.shadowBlur = Math.round(3 * scale);
   } else {
     ctx.shadowBlur = 0;
   }
 
-  // Main sharp text render with linear gradient
-  ctx.fillStyle = textFillStyle;
-  for (let row = 0; row < lines.length && row < rows; row++) {
-    const line = lines[row];
-    if (line) {
-      ctx.fillText(line, 0, Math.round(row * charHeight));
+  // Main sharp text render
+  if (isColored && mediaFrameResult?.colors) {
+    const colors = mediaFrameResult.colors;
+    for (let row = 0; row < rows; row++) {
+      const line = lines[row] || '';
+      for (let col = 0; col < cols && col < line.length; col++) {
+        const ch = line[col];
+        if (ch && ch !== ' ') {
+          const cIdx = (row * cols + col) * 3;
+          ctx.fillStyle = `rgb(${colors[cIdx]}, ${colors[cIdx + 1]}, ${colors[cIdx + 2]})`;
+          ctx.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+        }
+      }
+    }
+  } else {
+    ctx.fillStyle = textFillStyle;
+    for (let row = 0; row < lines.length && row < rows; row++) {
+      const line = lines[row];
+      if (line) {
+        ctx.fillText(line, 0, Math.round(row * charHeight));
+      }
     }
   }
 

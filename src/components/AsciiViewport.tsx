@@ -4,7 +4,13 @@ import { CrtConfig, PhosphorGradient } from '../types/ascii';
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 
 export interface AsciiViewportHandle {
-  setFrame: (frameText: string, time: number, fps: number) => void;
+  setFrame: (
+    frameText: string,
+    time: number,
+    fps: number,
+    colors?: Uint8ClampedArray | null,
+    bgColor?: string
+  ) => void;
   getFrameText: () => string;
   autoFit: () => void;
   getOptimalResolution: () => { cols: number; rows: number } | null;
@@ -76,6 +82,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const containerRef = useRef<HTMLDivElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const bloomPreRef = useRef<HTMLPreElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isColoredViewRef = useRef<boolean>(false);
+  const [isColoredView, setIsColoredView] = useState<boolean>(false);
+  const latestColorsRef = useRef<Uint8ClampedArray | null>(null);
+  const latestBgColorRef = useRef<string | undefined>(undefined);
+
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
   const latestFrameTextRef = useRef<string>('');
@@ -83,6 +95,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const [zoom, setZoom] = useState<number>(1.0);
+  const zoomRef = useRef<number>(1.0);
+  zoomRef.current = zoom;
   const [copied, setCopied] = useState<boolean>(false);
 
   const getOptimalResolution = useCallback((): { cols: number; rows: number } | null => {
@@ -153,15 +167,122 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     setZoom(Number(fitScale.toFixed(2)));
   }, [cols, rows]);
 
+  // High-DPI Vector-Grade Canvas Renderer for Colored ASCII
+  const drawColoredCanvas = useCallback(
+    (
+      frameText: string,
+      colors: Uint8ClampedArray | null,
+      bgColor: string | undefined,
+      currentZoom: number
+    ) => {
+      if (!canvasRef.current || !colors || colors.length === 0) return;
+      const canvas = canvasRef.current;
+      const charW = 6.015;
+      const charH = 10.0;
+      const unscaledW = Math.max(1, Math.round(cols * charW));
+      const unscaledH = Math.max(1, Math.round(rows * charH));
+      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+
+      // Calculate physical bitmap resolution scaled by zoom and retina DPR
+      const targetW = Math.max(1, Math.round(unscaledW * currentZoom * dpr));
+      const targetH = Math.max(1, Math.round(unscaledH * currentZoom * dpr));
+
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      // Explicit CSS layout size for exact 1:1 screen mapping without CSS stretching
+      const cssW = `${Math.round(unscaledW * currentZoom)}px`;
+      const cssH = `${Math.round(unscaledH * currentZoom)}px`;
+      if (canvas.style.width !== cssW) canvas.style.width = cssW;
+      if (canvas.style.height !== cssH) canvas.style.height = cssH;
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.save();
+        // Scale canvas context to match physical zoom & DPR
+        ctx.scale(currentZoom * dpr, currentZoom * dpr);
+        ctx.fillStyle = bgColor || '#0a0a0a';
+        ctx.fillRect(0, 0, unscaledW, unscaledH);
+        ctx.font = '10px "JuliaMono", "JetBrains Mono", "Courier New", monospace';
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+
+        let curX = 0;
+        let curY = 0;
+        const len = frameText.length;
+        for (let i = 0; i < len; i++) {
+          const ch = frameText[i];
+          if (ch === '\n') {
+            curY++;
+            curX = 0;
+            continue;
+          }
+          if (curX < cols && curY < rows) {
+            if (ch !== ' ') {
+              const cIdx = (curY * cols + curX) * 3;
+              const r = colors[cIdx];
+              const g = colors[cIdx + 1];
+              const b = colors[cIdx + 2];
+              ctx.fillStyle = `rgb(${r},${g},${b})`;
+              ctx.fillText(ch, curX * charW, curY * charH);
+            }
+            curX++;
+          }
+        }
+        ctx.restore();
+      }
+    },
+    [cols, rows]
+  );
+
+  // Redraw colored canvas immediately whenever zoom changes for vector-crisp clarity
+  useEffect(() => {
+    if (isColoredViewRef.current && latestColorsRef.current && latestFrameTextRef.current) {
+      drawColoredCanvas(
+        latestFrameTextRef.current,
+        latestColorsRef.current,
+        latestBgColorRef.current,
+        zoom
+      );
+    }
+  }, [zoom, drawColoredCanvas]);
+
   useImperativeHandle(ref, () => ({
-    setFrame: (frameText: string, time: number, fps: number) => {
+    setFrame: (
+      frameText: string,
+      time: number,
+      fps: number,
+      colors?: Uint8ClampedArray | null,
+      bgColor?: string
+    ) => {
       latestFrameTextRef.current = frameText;
-      if (preRef.current) {
-        preRef.current.textContent = frameText;
+      const isColored = Boolean(colors && colors.length > 0);
+
+      if (isColored && colors) {
+        latestColorsRef.current = colors;
+        latestBgColorRef.current = bgColor;
+        if (!isColoredViewRef.current) {
+          isColoredViewRef.current = true;
+          setIsColoredView(true);
+        }
+        drawColoredCanvas(frameText, colors, bgColor, zoomRef.current);
+      } else {
+        latestColorsRef.current = null;
+        latestBgColorRef.current = undefined;
+        if (isColoredViewRef.current) {
+          isColoredViewRef.current = false;
+          setIsColoredView(false);
+        }
+        if (preRef.current) {
+          preRef.current.textContent = frameText;
+        }
+        if (bloomPreRef.current) {
+          bloomPreRef.current.textContent = frameText;
+        }
       }
-      if (bloomPreRef.current) {
-        bloomPreRef.current.textContent = frameText;
-      }
+
       if (timeSpanRef.current) {
         timeSpanRef.current.textContent = isTimelineDisabled ? '0.00s' : `${time.toFixed(2)}s`;
       }
@@ -277,9 +398,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   const showScanlines = crtConfig ? crtConfig.scanlines : true;
-  const showCrtGlow = crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
+  const showCrtGlow = crtConfig && !isColoredView ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
   const showVignette = crtConfig ? crtConfig.vignette : false;
-  const showPhosphorBloom = crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
+  const showPhosphorBloom = crtConfig && !isColoredView ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
 
   return (
     <div className="viewport-pane">
@@ -295,8 +416,17 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       >
         {showScanlines && <div className="scanline-overlay" />}
         {showVignette && <div className="crt-vignette-overlay" />}
+        {/* Hardware-Accelerated Monospace Colored ASCII Canvas */}
+        <canvas
+          ref={canvasRef}
+          className="ascii-canvas"
+          style={{
+            display: isColoredView ? 'block' : 'none',
+          }}
+        />
+
         {/* Directional Phosphor Bloom Underlayer (Character Bloom) */}
-        {showPhosphorBloom && (
+        {showPhosphorBloom && !isColoredView && (
           <pre
             ref={bloomPreRef}
             aria-hidden="true"
@@ -316,6 +446,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           ref={preRef}
           className={`ascii-pre ${gradientConfig ? 'gradient-enabled' : ''} ${showPhosphorBloom && !gradientConfig ? 'single-glow-enabled' : ''}`}
           style={{
+            display: isColoredView ? 'none' : 'block',
             transform: `scale(${zoom})`,
             fontSize: '10px',
             ...(gradientConfig ? ({

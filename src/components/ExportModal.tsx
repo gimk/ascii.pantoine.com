@@ -42,6 +42,7 @@ import {
   ModelViewConfig,
   MediaConfig,
   MediaViewConfig,
+  MediaColorConfig,
 } from '../types/ascii';
 
 interface ExportModalProps {
@@ -70,6 +71,7 @@ interface ExportModalProps {
   geometry?: THREE.BufferGeometry;
   mediaConfig?: MediaConfig;
   mediaViewConfig?: MediaViewConfig;
+  mediaColorConfig?: MediaColorConfig;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
@@ -119,6 +121,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   geometry,
   mediaConfig,
   mediaViewConfig,
+  mediaColorConfig,
   mediaElement,
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
@@ -200,6 +203,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         geometry,
         mediaConfig,
         mediaViewConfig,
+        mediaColorConfig,
         mediaElement,
       });
 
@@ -238,6 +242,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     geometry,
     mediaConfig,
     mediaViewConfig,
+    mediaColorConfig,
     mediaElement,
     imageUrl,
   ]);
@@ -316,6 +321,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     modelViewConfig,
     mediaConfig,
     mediaViewConfig,
+    mediaColorConfig,
   };
 
   const getExtension = (): string => {
@@ -391,6 +397,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           geometry,
           mediaConfig,
           mediaViewConfig,
+          mediaColorConfig,
           mediaElement,
         },
         (progress, frame, total) => {
@@ -442,6 +449,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           geometry,
           mediaConfig,
           mediaViewConfig,
+          mediaColorConfig,
           mediaElement,
         },
         (progress, frame, total) => {

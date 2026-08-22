@@ -11,10 +11,11 @@ import {
   ModelViewConfig,
   MediaConfig,
   MediaViewConfig,
+  MediaColorConfig,
 } from '../types/ascii';
 import { renderAsciiFrame } from './renderer';
 import { renderModelAsciiFrame } from './modelRenderer';
-import { renderAsciiMediaFrame } from './mediaRenderer';
+import { renderAsciiMediaFrameData, AsciiMediaFrameResult } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectGifComment } from './mediaMetadata';
 
@@ -40,6 +41,7 @@ export interface GifExportOptions {
   geometry?: THREE.BufferGeometry;
   mediaConfig?: MediaConfig;
   mediaViewConfig?: MediaViewConfig;
+  mediaColorConfig?: MediaColorConfig;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
@@ -170,6 +172,8 @@ export async function exportAnimatedGif(
     const t = i * (1 / fps) * timeSpeed;
 
     let frameText = '';
+    let mediaFrameResult: AsciiMediaFrameResult | null = null;
+
     if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
       frameText = renderModelAsciiFrame({
         cols,
@@ -181,14 +185,16 @@ export async function exportAnimatedGif(
         viewConfig: opts.modelViewConfig,
       });
     } else if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
-      frameText = renderAsciiMediaFrame({
+      mediaFrameResult = renderAsciiMediaFrameData({
         cols,
         rows,
         mediaElement: opts.mediaElement,
         mediaConfig: opts.mediaConfig,
         viewConfig: opts.mediaViewConfig,
         density,
+        colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
       });
+      frameText = mediaFrameResult.text;
     } else {
       frameText = renderAsciiFrame({
         cols,
@@ -205,13 +211,15 @@ export async function exportAnimatedGif(
     }
 
     const lines = frameText.split('\n');
+    const isColored = Boolean(mediaFrameResult?.isColored && mediaFrameResult?.colors);
+    const effectiveBg = isColored && mediaFrameResult ? mediaFrameResult.bgColor : bg;
 
     // 1. Draw Canvas Background
-    ctx.fillStyle = bg;
+    ctx.fillStyle = effectiveBg;
     ctx.fillRect(0, 0, width, height);
 
     // Optional CRT Centered Ambient Background Glow
-    if (showCrtGlow) {
+    if (showCrtGlow && !isColored) {
       const ambientGlow = ctx.createRadialGradient(
         width / 2, height / 2, 0,
         width / 2, height / 2, Math.max(width, height) * 0.7
@@ -239,7 +247,7 @@ export async function exportAnimatedGif(
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
 
-    if (showPhosphorBloom && gradientConfig) {
+    if (!isColored && showPhosphorBloom && gradientConfig) {
       // Direct directional gradient bloom matching character gradient
       ctx.save();
       ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
@@ -249,19 +257,34 @@ export async function exportAnimatedGif(
         if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
       }
       ctx.restore();
-    } else if (showPhosphorBloom) {
+    } else if (!isColored && showPhosphorBloom) {
       ctx.shadowColor = text;
       ctx.shadowBlur = Math.round(3 * scale);
     } else {
       ctx.shadowBlur = 0;
     }
 
-    // Main sharp text render with linear gradient
-    ctx.fillStyle = textFillStyle;
-    for (let row = 0; row < lines.length && row < rows; row++) {
-      const line = lines[row];
-      if (line) {
-        ctx.fillText(line, 0, Math.round(row * charHeight));
+    // Main sharp text render
+    if (isColored && mediaFrameResult?.colors) {
+      const colors = mediaFrameResult.colors;
+      for (let row = 0; row < rows; row++) {
+        const line = lines[row] || '';
+        for (let col = 0; col < cols && col < line.length; col++) {
+          const ch = line[col];
+          if (ch && ch !== ' ') {
+            const cIdx = (row * cols + col) * 3;
+            ctx.fillStyle = `rgb(${colors[cIdx]}, ${colors[cIdx + 1]}, ${colors[cIdx + 2]})`;
+            ctx.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+          }
+        }
+      }
+    } else {
+      ctx.fillStyle = textFillStyle;
+      for (let row = 0; row < lines.length && row < rows; row++) {
+        const line = lines[row];
+        if (line) {
+          ctx.fillText(line, 0, Math.round(row * charHeight));
+        }
       }
     }
 

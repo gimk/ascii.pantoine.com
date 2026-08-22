@@ -191,6 +191,26 @@ export interface MediaConfig {
   playbackSpeed: number;
 }
 
+export type ColorMode = 'fixed' | 'content';
+export type ColorSamplingMethod = 'average' | 'center' | 'weighted';
+export type ColorBgPreset = 'dark' | 'white' | 'custom';
+
+export interface MediaColorConfig {
+  mode: ColorMode;
+  sampling: ColorSamplingMethod;
+  bgPreset: ColorBgPreset;
+  customBg: string;
+  saturation: number; // 0 to 400, default 200
+}
+
+export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
+  mode: 'fixed',
+  sampling: 'average',
+  bgPreset: 'dark',
+  customBg: '#0a0a0a',
+  saturation: 200,
+};
+
 export interface MediaViewConfig {
   // 1. Render / Sampling Settings
   resampling: ResamplingMode;
@@ -218,6 +238,7 @@ export interface MediaViewConfig {
   shadows: number; // -100 to 100, default 0 (middle)
   background: BackgroundMode;
   alphaThreshold: number; // 0 to 255
+  colorConfig?: MediaColorConfig;
 }
 
 export interface MediaPreset {
@@ -230,6 +251,7 @@ export interface MediaPreset {
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
   densityCharset?: string;
+  colorConfig?: MediaColorConfig;
   optimizeConfig?: OptimizeConfig;
   crtConfig?: CrtConfig;
   author?: string;
@@ -313,3 +335,17 @@ export interface OptimizeConfig {
   pauseWhenHidden: boolean; // Pause when tab is inactive
   idleThrottle: boolean; // Throttle framerate when mouse is idle
 }
+
+export interface RenderSettings {
+  cols: number;
+  rows: number;
+  autoRes: boolean;
+  density: string;
+  theme: PhosphorTheme;
+  customThemeColor: string;
+  gradientConfig: PhosphorGradient | null;
+  crtConfig: CrtConfig;
+  optimizeConfig: OptimizeConfig;
+  mediaColorConfig?: MediaColorConfig;
+}
+
