@@ -168,7 +168,131 @@ export type AppMode = 'synth' | 'media' | 'model';
 export type MediaSourceType = 'preset' | 'file' | 'url' | 'clipboard';
 export type MediaType = 'image' | 'video';
 export type MediaFitMode = 'contain' | 'cover' | 'stretch' | 'original';
-export type DitherAlgorithm = 'none' | 'floyd-steinberg' | 'bayer-4x4' | 'bayer-8x8' | 'atkinson' | 'sierra' | 'noise';
+// --- v1.6 Raster Modalities & Advanced Engine Types ---
+export type RasterOutputMode =
+  | 'ascii'
+  | 'braille'
+  | 'halftone-dot'
+  | 'halftone-line'
+  | 'halftone-crosshatch'
+  | 'halftone-cmyk'
+  | 'pixel';
+
+export type DitherFamily = 'error-diffusion' | 'ordered' | 'blue-noise' | 'algorithmic' | 'modulation';
+
+export type DitherAlgorithm =
+  // Error Diffusion (12)
+  | 'none'
+  | 'floyd-steinberg'
+  | 'false-floyd-steinberg'
+  | 'atkinson'
+  | 'sierra-3'
+  | 'sierra-2'
+  | 'sierra-lite'
+  | 'stucki'
+  | 'jjn'
+  | 'burkes'
+  | 'fan'
+  | 'shiau-fan'
+  | 'ostromoukhov'
+  // Ordered & Clustered Matrices (12)
+  | 'bayer-2x2'
+  | 'bayer-4x4'
+  | 'bayer-8x8'
+  | 'bayer-16x16'
+  | 'cluster-4x4'
+  | 'cluster-8x8'
+  | 'diagonal-4x4'
+  | 'diagonal-8x8'
+  | 'horizontal-lines'
+  | 'vertical-lines'
+  | 'crosshatch-8x8'
+  | 'spiral-dot'
+  // Blue Noise & Stochastic (5)
+  | 'blue-noise'
+  | 'void-cluster'
+  | 'white-noise'
+  | 'gaussian-noise'
+  | 'interleaved-gradient'
+  // Algorithmic & Space-Filling (4)
+  | 'dot-diffusion'
+  | 'hilbert'
+  | 'peano'
+  | 'r-sequence'
+  // Modulation & Glitch (4)
+  | 'scanline-shift'
+  | 'sine-drift'
+  | 'glitch-displacement'
+  | 'threshold-mod';
+
+export type PaletteCategory = 'retro' | 'print' | 'design' | 'custom';
+
+export interface ColorPalette {
+  id: string;
+  name: string;
+  category: PaletteCategory;
+  colors: string[];
+}
+
+export type PaletteMode =
+  | 'phosphor'
+  | 'gradient'
+  | 'duotone'
+  | 'tritone'
+  | 'quadtone'
+  | 'indexed'
+  | 'extracted'
+  | 'content';
+
+export interface MultiToneConfig {
+  shadow: string;
+  midtone?: string;
+  highlight: string;
+  highlight2?: string;
+  contrast?: number;
+}
+
+export interface HalftoneConfig {
+  dotScale: number; // 0.2 to 2.5, default 1.0
+  lineAngle: number; // 0 to 180 degrees
+  dotShape: 'circle' | 'square' | 'diamond';
+  minSize: number; // 0 to 1
+  maxSize: number; // 0 to 1
+  cmykAngles: { c: number; m: number; y: number; k: number };
+}
+
+export const DEFAULT_HALFTONE_CONFIG: HalftoneConfig = {
+  dotScale: 1.0,
+  lineAngle: 45,
+  dotShape: 'circle',
+  minSize: 0.05,
+  maxSize: 1.0,
+  cmykAngles: { c: 15, m: 75, y: 0, k: 45 },
+};
+
+export interface ToneMappingConfig {
+  levelsBlack: number; // 0..100
+  levelsMidtones: number; // 0..100 (50 default)
+  levelsWhite: number; // 0..100
+  channelMixerR: number; // 0..200 (100 default)
+  channelMixerG: number; // 0..200 (100 default)
+  channelMixerB: number; // 0..200 (100 default)
+  posterizeBits: number; // 0 (off), 1, 2, 3, 4, 8
+  inkBleed: number; // 0..100 (dot gain / print spread)
+  curvePoints?: Array<[number, number]>;
+}
+
+export const DEFAULT_TONE_MAPPING_CONFIG: ToneMappingConfig = {
+  levelsBlack: 0,
+  levelsMidtones: 50,
+  levelsWhite: 100,
+  channelMixerR: 100,
+  channelMixerG: 100,
+  channelMixerB: 100,
+  posterizeBits: 0,
+  inkBleed: 0,
+};
+
 export type ResamplingMode = 'bilinear' | 'nearest' | 'preserve-details';
 export type TonalMappingMode = '1-color' | '2-color' | 'multi-tone' | 'grayscale';
 export type BackgroundMode = 'black' | 'white' | 'transparent';
@@ -201,6 +325,10 @@ export interface MediaColorConfig {
   bgPreset: ColorBgPreset;
   customBg: string;
   saturation: number; // 0 to 400, default 200
+  paletteMode?: PaletteMode;
+  activePaletteId?: string;
+  customPalette?: string[];
+  multiTone?: MultiToneConfig;
 }
 
 export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
@@ -209,12 +337,17 @@ export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
   bgPreset: 'dark',
   customBg: '#0a0a0a',
   saturation: 200,
+  paletteMode: 'phosphor',
+  activePaletteId: 'gameboy-classic',
 };
 
 export interface MediaViewConfig {
   // 1. Render / Sampling Settings
   resampling: ResamplingMode;
   algorithm: DitherAlgorithm;
+  rasterMode?: RasterOutputMode;
+  halftoneConfig?: HalftoneConfig;
+  toneConfig?: ToneMappingConfig;
   invert: boolean;
   edgeDetection: boolean;
   edgeThreshold: number; // 0 to 100
@@ -309,6 +442,10 @@ export interface ModelViewConfig {
   cameraDistance: number;
   fov: number;
   isOrthographic: boolean;
+  rasterMode?: RasterOutputMode;
+  algorithm?: DitherAlgorithm;
+  halftoneConfig?: HalftoneConfig;
+  toneConfig?: ToneMappingConfig;
 }
 
 export interface ModelPreset {
@@ -343,5 +480,9 @@ export interface RenderSettings {
   crtConfig: CrtConfig;
   optimizeConfig: OptimizeConfig;
   mediaColorConfig?: MediaColorConfig;
+  rasterMode?: RasterOutputMode;
+  ditherAlgorithm?: DitherAlgorithm;
+  halftoneConfig?: HalftoneConfig;
+  toneConfig?: ToneMappingConfig;
 }
 

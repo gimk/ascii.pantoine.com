@@ -109,10 +109,11 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     { id: 'atkinson', label: 'Atkinson (Mac 1-Bit)' },
     { id: 'bayer-4x4', label: 'Bayer 4x4 (Matrix)' },
     { id: 'bayer-8x8', label: 'Bayer 8x8 (Smooth)' },
-    { id: 'sierra', label: 'Sierra Lite' },
-    { id: 'noise', label: 'Random Noise' },
+    { id: 'sierra-3', label: 'Sierra-3' },
+    { id: 'white-noise', label: 'White Noise' },
     { id: 'none', label: 'None (Direct Quantize)' },
   ];
+
 
   const resamplingModes: { id: ResamplingMode; label: string }[] = [
     { id: 'preserve-details', label: 'Preserve Details (High)' },

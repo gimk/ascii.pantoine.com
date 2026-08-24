@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ModelConfig, ModelViewConfig } from '../types/ascii';
+import { applyDitherAlgorithm } from './ditherAlgorithms';
 
 export interface ModelRenderContext {
   cols: number;
@@ -554,7 +555,20 @@ class HeadlessModelRenderer {
           }
         }
 
-        // Map luminance to character ramp
+        luminanceBuffer[rowOffset + x] = finalLum;
+      }
+    }
+
+    // Step 3: Universal Dithering Suite (if algorithm set)
+    const algorithm = viewConfig.algorithm || 'none';
+    if (algorithm !== 'none') {
+      applyDitherAlgorithm(luminanceBuffer, luminanceBuffer, cols, rows, algorithm, densityLength, 1.0);
+    }
+
+    for (let y = 0; y < rows; y++) {
+      const rowOffset = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const finalLum = Math.max(0, Math.min(1, luminanceBuffer[rowOffset + x]));
         let charIndex = Math.floor(finalLum * densityLength);
         if (charIndex < 0) charIndex = 0;
         else if (charIndex >= densityLength) charIndex = densityLength - 1;
@@ -567,6 +581,24 @@ class HeadlessModelRenderer {
 
     return cachedLines.join('\n');
   }
+
+
+  renderData(context: ModelRenderContext): {
+    text: string;
+    colors: Uint8ClampedArray | null;
+    luminance: Float32Array;
+    cols: number;
+    rows: number;
+  } {
+    const text = this.render(context);
+    return {
+      text,
+      colors: null,
+      luminance: luminanceBuffer,
+      cols: context.cols,
+      rows: context.rows,
+    };
+  }
 }
 
 // Global Singleton Instance
@@ -575,3 +607,14 @@ const globalHeadlessRenderer = new HeadlessModelRenderer();
 export function renderModelAsciiFrame(ctx: ModelRenderContext): string {
   return globalHeadlessRenderer.render(ctx);
 }
+
+export function renderModelFrameData(ctx: ModelRenderContext): {
+  text: string;
+  colors: Uint8ClampedArray | null;
+  luminance: Float32Array;
+  cols: number;
+  rows: number;
+} {
+  return globalHeadlessRenderer.renderData(ctx);
+}
+

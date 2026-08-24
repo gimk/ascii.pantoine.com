@@ -11,16 +11,20 @@ import {
   MediaConfig,
   MediaViewConfig,
   MediaColorConfig,
+  RasterOutputMode,
+  DEFAULT_HALFTONE_CONFIG,
 } from '../types/ascii';
-import { renderAsciiFrame } from './renderer';
-import { renderModelAsciiFrame } from './modelRenderer';
-import { renderAsciiMediaFrameData, AsciiMediaFrameResult } from './mediaRenderer';
+import { renderSynthFrameData } from './renderer';
+import { renderModelFrameData } from './modelRenderer';
+import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectPngMetadata, injectJpegComment } from './mediaMetadata';
+import { drawHalftoneToCanvas, exportHalftoneToSvg } from './halftoneRenderer';
+
 
 export interface ImageExportOptions {
   name: string;
-  format?: 'png' | 'jpg';
+  format?: 'png' | 'jpg' | 'svg';
   quality?: number; // 0.1 to 1.0 (for JPEG)
   scale?: number; // 1.0, 1.5, 2.0, 3.0, 4.0
   transparentBg?: boolean;
@@ -48,6 +52,7 @@ export interface ImageExportOptions {
 
   // Feature Modes
   appMode?: AppMode;
+  rasterMode?: RasterOutputMode;
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
   geometry?: THREE.BufferGeometry;
@@ -63,7 +68,14 @@ export interface ImageExportResult {
   width: number;
   height: number;
   mimeType: string;
-  extension: '.png' | '.jpg';
+  extension: '.png' | '.jpg' | '.svg';
+}
+
+export interface PrintPlateResult {
+  name: string;
+  colorHex: string;
+  blob: Blob;
+  url: string;
 }
 
 const THEME_COLORS: Record<PhosphorTheme, { bg: string; text: string }> = {
@@ -103,11 +115,11 @@ function getThemeColors(
 }
 
 /**
- * Renders a single crisp high-resolution still image (PNG or JPG) of the current viewport.
+ * Renders a single crisp high-resolution still image (PNG, JPG or Vector SVG) of the current viewport.
  */
 export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageExportResult> {
   const {
-    name = 'ascii-art',
+    name = 'raster-art',
     format = 'png',
     quality = 0.95,
     scale = 2.0,
@@ -127,16 +139,133 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     currentAsciiFrame,
   } = opts;
 
+  const rasterMode: RasterOutputMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
   const showScanlines = opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true);
   const showCrtGlow = opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
   const showVignette = opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false);
   const showPhosphorBloom = opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
 
-  // Wait for web fonts to load
-  if (typeof document !== 'undefined' && document.fonts) {
-    try {
-      await document.fonts.ready;
-    } catch {}
+  const { bg, text } = getThemeColors(theme, customThemeColor, gradientConfig);
+
+  // Generate frameText, colors & luminance buffers
+  let frameText = currentAsciiFrame || '';
+  let frameLuminance: Float32Array | null = null;
+  let frameColors: Uint8ClampedArray | null = null;
+  let effectiveBg = bg;
+
+  if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
+    const res = renderAsciiMediaFrameData({
+      cols,
+      rows,
+      mediaElement: opts.mediaElement,
+      mediaConfig: opts.mediaConfig,
+      viewConfig: opts.mediaViewConfig,
+      density,
+      colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
+    });
+    frameText = res.text;
+    frameLuminance = res.luminance;
+    frameColors = res.colors;
+    if (res.isColored) effectiveBg = res.bgColor;
+  } else if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
+    const res = renderModelFrameData({
+      cols,
+      rows,
+      time,
+      density,
+      geometry: opts.geometry,
+      modelConfig: opts.modelConfig,
+      viewConfig: opts.modelViewConfig,
+    });
+    frameText = res.text;
+    frameLuminance = res.luminance;
+    frameColors = res.colors;
+  } else {
+    let customRenderFn: any;
+    let prepareFn: any;
+    let customContext: CustomRenderContext = {};
+    if (type === 'custom' && customCode) {
+      try {
+        customRenderFn = new Function(
+          'x', 'y', 'time', 'dist', 'dx', 'dy', 'cols', 'rows', 'angle', 'ctx',
+          customCode
+        );
+        if (customPrepare) {
+          prepareFn = new Function('time', 'cols', 'rows', 'ctx', customPrepare);
+          prepareFn(time, cols, rows, customContext);
+        }
+      } catch {}
+    }
+
+    const res = renderSynthFrameData({
+      cols,
+      rows,
+      time,
+      density,
+      trailPoints: [],
+      waveParams: params || DEFAULT_WAVE_PARAMS,
+      customRenderFn,
+      prepareFn,
+      customContext,
+      interactiveInfluence: false,
+    });
+    frameText = res.text;
+    frameLuminance = res.luminance;
+  }
+
+  // If Vector SVG export is requested
+  if (format === 'svg') {
+    const halftoneCfg = opts.mediaViewConfig?.halftoneConfig || DEFAULT_HALFTONE_CONFIG;
+    let svgContent = '';
+
+    if (rasterMode === 'ascii' || rasterMode === 'braille') {
+      const charWidth = 6.015 * scale;
+      const charHeight = 10.0 * scale;
+      const width = cols * charWidth;
+      const height = rows * charHeight;
+      const lines = frameText.split('\n');
+
+      const textNodes: string[] = [];
+      textNodes.push(`<?xml version="1.0" encoding="UTF-8"?>`);
+      textNodes.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`);
+      textNodes.push(`  <rect width="100%" height="100%" fill="${effectiveBg}"/>`);
+      textNodes.push(`  <g font-family="monospace" font-size="${10 * scale}px" fill="${text}" xml:space="preserve">`);
+
+      for (let r = 0; r < lines.length && r < rows; r++) {
+        const line = lines[r];
+        if (line) {
+          const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          textNodes.push(`    <text x="0" y="${((r + 0.8) * charHeight).toFixed(2)}">${escaped}</text>`);
+        }
+      }
+      textNodes.push(`  </g>`);
+      textNodes.push(`</svg>`);
+      svgContent = textNodes.join('\n');
+    } else {
+      svgContent = exportHalftoneToSvg({
+        cols,
+        rows,
+        luminance: frameLuminance || new Float32Array(cols * rows).fill(0.5),
+        colors: frameColors,
+        bgColor: effectiveBg,
+        fgColor: text,
+        config: halftoneCfg,
+        mode: rasterMode,
+        width: cols * 6.015 * scale,
+        height: rows * 10.0 * scale,
+      });
+    }
+
+    const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    return {
+      blob,
+      url,
+      width: Math.round(cols * 6.015 * scale),
+      height: Math.round(rows * 10.0 * scale),
+      mimeType: 'image/svg+xml',
+      extension: '.svg',
+    };
   }
 
   // Character cell dimensions on canvas
@@ -152,8 +281,6 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('Could not create 2D canvas context');
 
-  const { bg, text } = getThemeColors(theme, customThemeColor, gradientConfig);
-
   // Pre-generate linear gradient for text if active
   let textFillStyle: string | CanvasGradient = text;
   if (gradientConfig) {
@@ -166,148 +293,85 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     textFillStyle = grad;
   }
 
-  // Generate or use frameText
-  let frameText = currentAsciiFrame || '';
-  let mediaFrameResult: AsciiMediaFrameResult | null = null;
-
-  if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
-    mediaFrameResult = renderAsciiMediaFrameData({
+  // Check if Halftone or Pixel Dither Mode
+  if (rasterMode !== 'ascii' && rasterMode !== 'braille' && frameLuminance) {
+    const halftoneCfg = opts.mediaViewConfig?.halftoneConfig || DEFAULT_HALFTONE_CONFIG;
+    drawHalftoneToCanvas({
+      canvas,
+      ctx,
       cols,
       rows,
-      mediaElement: opts.mediaElement,
-      mediaConfig: opts.mediaConfig,
-      viewConfig: opts.mediaViewConfig,
-      density,
-      colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
+      luminance: frameLuminance,
+      colors: frameColors,
+      bgColor: transparentBg ? 'transparent' : effectiveBg,
+      fgColor: text,
+      config: halftoneCfg,
+      mode: rasterMode,
+      cellWidth: 6.015 * scale,
+      cellHeight: 10.0 * scale,
+      dpr: 1,
     });
-    if (!frameText) {
-      frameText = mediaFrameResult.text;
-    }
-  } else if (!frameText) {
-    if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
-      frameText = renderModelAsciiFrame({
-        cols,
-        rows,
-        time,
-        density,
-        geometry: opts.geometry,
-        modelConfig: opts.modelConfig,
-        viewConfig: opts.modelViewConfig,
-      });
-    } else {
-      let customRenderFn: any;
-      let prepareFn: any;
-      let customContext: CustomRenderContext = {};
-      if (type === 'custom' && customCode) {
-        try {
-          customRenderFn = new Function(
-            'x', 'y', 'time', 'dist', 'dx', 'dy', 'cols', 'rows', 'angle', 'ctx',
-            customCode
-          );
-          if (customPrepare) {
-            prepareFn = new Function('time', 'cols', 'rows', 'ctx', customPrepare);
-            prepareFn(time, cols, rows, customContext);
-          }
-        } catch {}
-      }
+  } else {
+    // Standard ASCII text rendering
+    const lines = frameText.split('\n');
 
-      frameText = renderAsciiFrame({
-        cols,
-        rows,
-        time,
-        density,
-        trailPoints: [],
-        waveParams: params || DEFAULT_WAVE_PARAMS,
-        customRenderFn,
-        prepareFn,
-        customContext,
-        interactiveInfluence: false,
-      });
-    }
-  }
-
-  const lines = frameText.split('\n');
-  const isColored = Boolean(mediaFrameResult?.isColored && mediaFrameResult?.colors);
-  const effectiveBg = isColored && mediaFrameResult ? mediaFrameResult.bgColor : bg;
-
-  // 1. Draw Canvas Background
-  if (format === 'jpg' || !transparentBg) {
-    ctx.fillStyle = effectiveBg;
-    ctx.fillRect(0, 0, width, height);
-
-    // Optional CRT Centered Ambient Background Glow
-    if (showCrtGlow && !isColored) {
-      const ambientGlow = ctx.createRadialGradient(
-        width / 2, height / 2, 0,
-        width / 2, height / 2, Math.max(width, height) * 0.7
-      );
-      const baseGlowHex = gradientConfig ? gradientConfig.color1 : (customThemeColor || text);
-      let glowColor = baseGlowHex;
-      if (baseGlowHex.startsWith('#')) {
-        const hex = baseGlowHex.slice(1);
-        const fullHex = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
-        if (fullHex.length === 6) {
-          const r = parseInt(fullHex.slice(0, 2), 16);
-          const g = parseInt(fullHex.slice(2, 4), 16);
-          const b = parseInt(fullHex.slice(4, 6), 16);
-          glowColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
-        }
-      }
-      ambientGlow.addColorStop(0, glowColor);
-      ambientGlow.addColorStop(1, 'transparent');
-      ctx.fillStyle = ambientGlow;
+    // 1. Draw Canvas Background
+    if (format === 'jpg' || !transparentBg) {
+      ctx.fillStyle = effectiveBg;
       ctx.fillRect(0, 0, width, height);
+
+      // CRT Glow
+      if (showCrtGlow && !frameColors) {
+        const ambientGlow = ctx.createRadialGradient(
+          width / 2, height / 2, 0,
+          width / 2, height / 2, Math.max(width, height) * 0.7
+        );
+        ambientGlow.addColorStop(0, `rgba(0, 255, 102, 0.18)`);
+        ambientGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = ambientGlow;
+        ctx.fillRect(0, 0, width, height);
+      }
+    } else {
+      ctx.clearRect(0, 0, width, height);
     }
-  } else {
-    ctx.clearRect(0, 0, width, height);
-  }
 
-  // 2. Draw ASCII Text Lines (with Phosphor Bloom if enabled)
-  ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', monospace`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
+    // 2. Draw Text Lines
+    ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'JetBrains Mono', 'DejaVu Sans Mono', monospace`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
 
-  if (!isColored && showPhosphorBloom && gradientConfig) {
-    ctx.save();
-    ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
-    ctx.fillStyle = textFillStyle;
-    for (let row = 0; row < lines.length && row < rows; row++) {
-      const line = lines[row];
-      if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
+    if (showPhosphorBloom && !frameColors) {
+      ctx.shadowColor = text;
+      ctx.shadowBlur = Math.round(3 * scale);
+    } else {
+      ctx.shadowBlur = 0;
     }
-    ctx.restore();
-  } else if (!isColored && showPhosphorBloom) {
-    ctx.shadowColor = text;
-    ctx.shadowBlur = Math.round(3 * scale);
-  } else {
-    ctx.shadowBlur = 0;
-  }
 
-  // Main sharp text render
-  if (isColored && mediaFrameResult?.colors) {
-    const colors = mediaFrameResult.colors;
-    for (let row = 0; row < rows; row++) {
-      const line = lines[row] || '';
-      for (let col = 0; col < cols && col < line.length; col++) {
-        const ch = line[col];
-        if (ch && ch !== ' ') {
-          const cIdx = (row * cols + col) * 3;
-          ctx.fillStyle = `rgb(${colors[cIdx]}, ${colors[cIdx + 1]}, ${colors[cIdx + 2]})`;
-          ctx.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+
+    if (frameColors) {
+      for (let row = 0; row < rows; row++) {
+        const line = lines[row] || '';
+        for (let col = 0; col < cols && col < line.length; col++) {
+          const ch = line[col];
+          if (ch && ch !== ' ') {
+            const cIdx = (row * cols + col) * 3;
+            ctx.fillStyle = `rgb(${frameColors[cIdx]}, ${frameColors[cIdx + 1]}, ${frameColors[cIdx + 2]})`;
+            ctx.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+          }
+        }
+      }
+    } else {
+      ctx.fillStyle = textFillStyle;
+      for (let row = 0; row < lines.length && row < rows; row++) {
+        const line = lines[row];
+        if (line) {
+          ctx.fillText(line, 0, Math.round(row * charHeight));
         }
       }
     }
-  } else {
-    ctx.fillStyle = textFillStyle;
-    for (let row = 0; row < lines.length && row < rows; row++) {
-      const line = lines[row];
-      if (line) {
-        ctx.fillText(line, 0, Math.round(row * charHeight));
-      }
-    }
   }
 
-  // 3. CRT Scanline Overlay
+  // CRT Scanlines
   if (showScanlines) {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
     const scanlineHeight = Math.max(1, Math.round(1.5 * scale));
@@ -317,7 +381,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     }
   }
 
-  // 4. CRT Vignette
+  // CRT Vignette
   if (showVignette) {
     const vignette = ctx.createRadialGradient(
       width / 2, height / 2, Math.min(width, height) * 0.4,
@@ -329,7 +393,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     ctx.fillRect(0, 0, width, height);
   }
 
-  // 5. Convert to Blob & Inject Container Metadata
+  // Convert to Blob & Inject Container Metadata
   const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
   const extension = format === 'jpg' ? '.jpg' : '.png';
 
@@ -349,16 +413,16 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
             if (format === 'png') {
               finalBlob = injectPngMetadata(arrayBuffer, {
                 Title: name,
-                Author: 'ASCII Studio',
-                Software: 'ASCII Studio (https://ascii.pantoine.com)',
+                Author: 'Raster Studio',
+                Software: 'Raster Studio (https://ascii.pantoine.com)',
                 Source: 'https://ascii.pantoine.com',
-                Comment: `Generated with ASCII Studio (https://ascii.pantoine.com) - ${cols}x${rows}`,
-                Description: `ASCII art rendered via ASCII Studio: ${name} (${opts.appMode || 'synth'})`,
+                Comment: `Generated with Raster Studio (https://ascii.pantoine.com) - ${cols}x${rows} (${rasterMode})`,
+                Description: `Raster visual rendered via Raster Studio: ${name} (${opts.appMode || 'synth'})`,
               });
             } else {
               finalBlob = injectJpegComment(
                 arrayBuffer,
-                `ASCII Studio (https://ascii.pantoine.com) - ${name} (${opts.appMode || 'synth'})`
+                `Raster Studio (https://ascii.pantoine.com) - ${name} (${opts.appMode || 'synth'})`
               );
             }
 
@@ -389,3 +453,4 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     );
   });
 }
+

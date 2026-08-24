@@ -7,9 +7,18 @@ import {
   PhosphorGradient,
   MediaColorConfig,
   AppMode,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  HalftoneConfig,
   DEFAULT_MEDIA_COLOR_CONFIG,
 } from '../types/ascii';
-import { Sparkles, Pipette, Palette, Sliders, Compass, Sun, Moon, BoxSelect, Zap, Paintbrush, Type } from 'lucide-react';
+
+import { RasterModeSelector } from './RasterModeSelector';
+import { DitherControls } from './DitherControls';
+import { PaletteControls } from './PaletteControls';
+import { ToneControls } from './ToneControls';
+import { Sparkles, Sliders, Compass, Zap, Type } from 'lucide-react';
 
 interface CharsetThemeBarProps {
   currentCharset: string;
@@ -25,7 +34,18 @@ interface CharsetThemeBarProps {
   appMode?: AppMode;
   mediaColorConfig?: MediaColorConfig;
   onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
+  rasterMode?: RasterOutputMode;
+  onChangeRasterMode?: (mode: RasterOutputMode) => void;
+  ditherAlgorithm?: DitherAlgorithm;
+  onChangeDitherAlgorithm?: (algo: DitherAlgorithm) => void;
+  noise?: number;
+  onChangeNoise?: (noise: number) => void;
+  toneConfig?: ToneMappingConfig;
+  onChangeToneConfig?: (cfg: ToneMappingConfig) => void;
+  halftoneConfig?: HalftoneConfig;
+  onChangeHalftoneConfig?: (cfg: HalftoneConfig) => void;
 }
+
 
 const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
   { id: 'green', name: 'Matrix Green', color: '#00ff66' },
@@ -65,7 +85,6 @@ const AngleDial: React.FC<{
       const cy = rect.top + rect.height / 2;
       const dx = clientX - cx;
       const dy = clientY - cy;
-      // Angle in degrees clockwise from 12 o'clock (UP) matching CSS linear-gradient
       let deg = Math.round((Math.atan2(dx, -dy) * 180) / Math.PI);
       if (deg < 0) deg += 360;
       onChange(deg);
@@ -140,9 +159,16 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   appMode = 'synth',
   mediaColorConfig = DEFAULT_MEDIA_COLOR_CONFIG,
   onChangeMediaColorConfig,
+  rasterMode = 'ascii',
+  onChangeRasterMode,
+  ditherAlgorithm = 'floyd-steinberg',
+  onChangeDitherAlgorithm,
+  noise = 0,
+  onChangeNoise,
+  toneConfig,
+  onChangeToneConfig,
 }) => {
   const [themeMode, setThemeMode] = useState<'single' | 'gradient'>(gradientConfig ? 'gradient' : 'single');
-  const [customHex, setCustomHex] = useState<string>(customThemeColor || '#00ff66');
 
   // Custom Gradient builder state
   const [customGradColor1, setCustomGradColor1] = useState<string>(gradientConfig?.color1 || '#ff007f');
@@ -157,14 +183,6 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
       setThemeMode('gradient');
     }
   }, [gradientConfig]);
-
-  const handleCustomColorChange = (hex: string) => {
-    setCustomHex(hex);
-    if (onChangeGradient) onChangeGradient(null);
-    if (onChangeCustomColor) {
-      onChangeCustomColor(hex);
-    }
-  };
 
   const handleSelectGradient = (grad: PhosphorGradient) => {
     setCustomGradColor1(grad.color1);
@@ -190,21 +208,8 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
     }
   };
 
-  const handleSwitchToSingle = () => {
-    setThemeMode('single');
-    if (onChangeGradient) onChangeGradient(null);
-  };
-
-  const handleSwitchToGradient = () => {
-    setThemeMode('gradient');
-    if (!gradientConfig && onChangeGradient) {
-      handleSelectGradient(GRADIENT_PRESETS[0]);
-    }
-  };
-
   const isContentColorActive = appMode === 'media' && mediaColorConfig.mode === 'content';
 
-  // Shown in the collapsed headers so a shut group still reports its choice.
   const activeCharsetName = CHARSETS.find((cs) => cs.chars === currentCharset)?.name || 'Custom';
   const activeColorName = isContentColorActive
     ? 'From Content'
@@ -214,544 +219,151 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
         ? 'Custom Colour'
         : THEMES.find((t) => t.id === currentTheme)?.name || '';
 
-  const updateMediaColor = (patch: Partial<MediaColorConfig>) => {
-    if (onChangeMediaColorConfig) {
-      onChangeMediaColorConfig({
-        ...mediaColorConfig,
-        ...patch,
-      });
-    }
-  };
 
   return (
+
     <div className="tab-content">
-      {/* For Media Mode: Master Mode Toggle at very top */}
-      {appMode === 'media' && (
-        <div
-          style={{
-            display: 'flex',
-            background: 'var(--bg-control)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '4px',
-            padding: '2px',
-            marginBottom: '14px',
-            gap: '2px',
-          }}
-        >
-          <button
-            className={`btn btn-sm ${!isContentColorActive ? 'btn-primary' : ''}`}
-            style={{
-              flex: 1,
-              justifyContent: 'center',
-              fontSize: '11px',
-              fontWeight: 600,
-              border: !isContentColorActive ? '1px solid var(--border-active)' : 'none',
-              background: !isContentColorActive ? 'var(--accent)' : 'transparent',
-              color: !isContentColorActive ? 'var(--bg-primary)' : 'var(--text-muted)',
-              boxShadow: !isContentColorActive ? '0 0 8px var(--accent-glow)' : 'none',
-              transition: 'all 0.15s ease',
-            }}
-            onClick={() => updateMediaColor({ mode: 'fixed' })}
-            title="Use uniform CRT Phosphor themes or linear gradients"
-          >
-            <Palette size={12} />
-            FIXED THEME
-          </button>
-          <button
-            className={`btn btn-sm ${isContentColorActive ? 'btn-primary' : ''}`}
-            style={{
-              flex: 1,
-              justifyContent: 'center',
-              fontSize: '11px',
-              fontWeight: 600,
-              border: isContentColorActive ? '1px solid var(--border-active)' : 'none',
-              background: isContentColorActive ? 'var(--accent)' : 'transparent',
-              color: isContentColorActive ? 'var(--bg-primary)' : 'var(--text-muted)',
-              boxShadow: isContentColorActive ? '0 0 8px var(--accent-glow)' : 'none',
-              transition: 'all 0.15s ease',
-            }}
-            onClick={() => updateMediaColor({ mode: 'content' })}
-            title="Sample character colors directly from source image/video pixels"
-          >
-            <Sparkles size={12} />
-            CONTENT COLOR
-          </button>
-        </div>
+      {/* 1. Output Modality Selector */}
+      {onChangeRasterMode && (
+        <RasterModeSelector
+          currentMode={rasterMode || 'ascii'}
+          onChangeMode={onChangeRasterMode}
+        />
       )}
 
-      {/* 1. Theme or Content Color Section */}
+      {/* 2. Dithering Engine Section (40+ Algorithms) */}
+      {ditherAlgorithm && onChangeDitherAlgorithm && (
+        <CollapsibleSection
+          title="Dithering Algorithms (40+)"
+          icon={<Sliders size={12} />}
+          persistKey="CharsetThemeBar-dither"
+          badge={ditherAlgorithm.toUpperCase()}
+        >
+          <DitherControls
+            algorithm={ditherAlgorithm}
+            onChangeAlgorithm={onChangeDitherAlgorithm}
+            noise={noise}
+            onChangeNoise={onChangeNoise}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* 3. Color, Themes & Palettes Section */}
       <CollapsibleSection
-        title={isContentColorActive ? 'Content Color Settings' : 'Phosphor Color Theme'}
+        title="Color Palettes & Themes"
         icon={<Sparkles size={12} />}
         persistKey="CharsetThemeBar-color"
         badge={activeColorName}
       >
-
-        {isContentColorActive ? (
-          /* CONTENT COLOR SETTINGS */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {/* 1. Color Sampling Algorithm */}
-            <div className="control-row">
-              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <BoxSelect size={11} /> Sampling
-              </span>
-              <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-control)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-                <button
-                  className={`btn btn-sm ${mediaColorConfig.sampling === 'average' ? 'btn-primary' : ''}`}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    height: '23px',
-                    fontWeight: mediaColorConfig.sampling === 'average' ? 600 : 500,
-                    background: mediaColorConfig.sampling === 'average' ? 'var(--accent)' : 'transparent',
-                    color: mediaColorConfig.sampling === 'average' ? 'var(--bg-primary)' : 'var(--text-primary)',
-                    opacity: mediaColorConfig.sampling === 'average' ? 1 : 0.78,
-                    border: mediaColorConfig.sampling === 'average' ? '1px solid var(--border-active)' : '1px solid transparent',
-                    boxShadow: mediaColorConfig.sampling === 'average' ? '0 0 6px var(--accent-glow)' : 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onClick={() => updateMediaColor({ sampling: 'average' })}
-                  title="Area Box Average: Smooth spatial pixel average under each character"
-                >
-                  Area Avg
-                </button>
-                <button
-                  className={`btn btn-sm ${mediaColorConfig.sampling === 'center' ? 'btn-primary' : ''}`}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    height: '23px',
-                    fontWeight: mediaColorConfig.sampling === 'center' ? 600 : 500,
-                    background: mediaColorConfig.sampling === 'center' ? 'var(--accent)' : 'transparent',
-                    color: mediaColorConfig.sampling === 'center' ? 'var(--bg-primary)' : 'var(--text-primary)',
-                    opacity: mediaColorConfig.sampling === 'center' ? 1 : 0.78,
-                    border: mediaColorConfig.sampling === 'center' ? '1px solid var(--border-active)' : '1px solid transparent',
-                    boxShadow: mediaColorConfig.sampling === 'center' ? '0 0 6px var(--accent-glow)' : 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onClick={() => updateMediaColor({ sampling: 'center' })}
-                  title="Center Pixel: Sharp single-point sample at cell center"
-                >
-                  Center
-                </button>
-                <button
-                  className={`btn btn-sm ${mediaColorConfig.sampling === 'weighted' ? 'btn-primary' : ''}`}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    height: '23px',
-                    fontWeight: mediaColorConfig.sampling === 'weighted' ? 600 : 500,
-                    background: mediaColorConfig.sampling === 'weighted' ? 'var(--accent)' : 'transparent',
-                    color: mediaColorConfig.sampling === 'weighted' ? 'var(--bg-primary)' : 'var(--text-primary)',
-                    opacity: mediaColorConfig.sampling === 'weighted' ? 1 : 0.78,
-                    border: mediaColorConfig.sampling === 'weighted' ? '1px solid var(--border-active)' : '1px solid transparent',
-                    boxShadow: mediaColorConfig.sampling === 'weighted' ? '0 0 6px var(--accent-glow)' : 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onClick={() => updateMediaColor({ sampling: 'weighted' })}
-                  title="Luminance Weighted: Preserves sharp foreground details and high-contrast edges"
-                >
-                  Weighted
-                </button>
-              </div>
-            </div>
-
-            {/* 2. Background Color Controls */}
-            <div className="control-row">
-              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <Palette size={11} /> Background
-              </span>
-              <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-control)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-                <button
-                  className={`btn btn-sm ${mediaColorConfig.bgPreset === 'dark' ? 'btn-primary' : ''}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    height: '23px',
-                    fontWeight: mediaColorConfig.bgPreset === 'dark' ? 600 : 500,
-                    background: mediaColorConfig.bgPreset === 'dark' ? 'var(--accent)' : 'transparent',
-                    color: mediaColorConfig.bgPreset === 'dark' ? 'var(--bg-primary)' : 'var(--text-primary)',
-                    opacity: mediaColorConfig.bgPreset === 'dark' ? 1 : 0.78,
-                    border: mediaColorConfig.bgPreset === 'dark' ? '1px solid var(--border-active)' : '1px solid transparent',
-                    boxShadow: mediaColorConfig.bgPreset === 'dark' ? '0 0 6px var(--accent-glow)' : 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onClick={() => updateMediaColor({ bgPreset: 'dark' })}
-                  title="Dark Terminal Background (#0a0a0a) & Terminal Dark UI"
-                >
-                  <Moon size={11} /> Dark
-                </button>
-                <button
-                  className={`btn btn-sm ${mediaColorConfig.bgPreset === 'white' ? 'btn-primary' : ''}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    height: '23px',
-                    fontWeight: mediaColorConfig.bgPreset === 'white' ? 600 : 500,
-                    background: mediaColorConfig.bgPreset === 'white' ? 'var(--accent)' : 'transparent',
-                    color: mediaColorConfig.bgPreset === 'white' ? 'var(--bg-primary)' : 'var(--text-primary)',
-                    opacity: mediaColorConfig.bgPreset === 'white' ? 1 : 0.78,
-                    border: mediaColorConfig.bgPreset === 'white' ? '1px solid var(--border-active)' : '1px solid transparent',
-                    boxShadow: mediaColorConfig.bgPreset === 'white' ? '0 0 6px var(--accent-glow)' : 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onClick={() => updateMediaColor({ bgPreset: 'white' })}
-                  title="White Paper Background (#ffffff) & Paper Light UI"
-                >
-                  <Sun size={11} /> White
-                </button>
-                <button
-                  className={`btn btn-sm ${mediaColorConfig.bgPreset === 'custom' ? 'btn-primary' : ''}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '2px 8px',
-                    fontSize: '10px',
-                    height: '23px',
-                    fontWeight: mediaColorConfig.bgPreset === 'custom' ? 600 : 500,
-                    background: mediaColorConfig.bgPreset === 'custom' ? 'var(--accent)' : 'transparent',
-                    color: mediaColorConfig.bgPreset === 'custom' ? 'var(--bg-primary)' : 'var(--text-primary)',
-                    opacity: mediaColorConfig.bgPreset === 'custom' ? 1 : 0.78,
-                    border: mediaColorConfig.bgPreset === 'custom' ? '1px solid var(--border-active)' : '1px solid transparent',
-                    boxShadow: mediaColorConfig.bgPreset === 'custom' ? '0 0 6px var(--accent-glow)' : 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onClick={() => updateMediaColor({ bgPreset: 'custom' })}
-                  title="Custom Background Color & Adaptive UI Theme"
-                >
-                  <Pipette size={11} /> Custom
-                </button>
-              </div>
-            </div>
-
-            {/* Custom Background Color Picker (When 'custom' is active) */}
-            {mediaColorConfig.bgPreset === 'custom' && (
-              <div className="control-row" style={{ paddingLeft: '8px' }}>
-                <span className="control-label" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                  Custom BG Hex
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <input
-                    type="color"
-                    style={{
-                      width: '24px',
-                      height: '20px',
-                      padding: 0,
-                      border: '1px solid var(--border-color)',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      borderRadius: '2px',
-                    }}
-                    value={mediaColorConfig.customBg || '#0a0a0a'}
-                    onChange={(e) => updateMediaColor({ customBg: e.target.value, bgPreset: 'custom' })}
-                  />
-                  <input
-                    type="text"
-                    className="number-input"
-                    style={{ width: '68px', textAlign: 'center', padding: '2px 4px', fontSize: '10.5px' }}
-                    value={mediaColorConfig.customBg || '#0a0a0a'}
-                    onChange={(e) => updateMediaColor({ customBg: e.target.value, bgPreset: 'custom' })}
-                    placeholder="#0a0a0a"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 3. Saturation / Color Vibrance Slider */}
-            <div className="control-row" style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <Zap size={11} /> Vibrance
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
-                <input
-                  type="range"
-                  className="range-slider"
-                  min={0}
-                  max={400}
-                  step={5}
-                  value={Math.min(400, mediaColorConfig.saturation !== undefined ? mediaColorConfig.saturation : 200)}
-                  onChange={(e) => updateMediaColor({ saturation: parseInt(e.target.value, 10) || 0 })}
-                  style={{ width: '90px' }}
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                  <input
-                    type="number"
-                    min={0}
-                    className="number-input"
-                    style={{ width: '46px', textAlign: 'center', padding: '2px 4px', fontSize: '10.5px' }}
-                    value={mediaColorConfig.saturation !== undefined ? mediaColorConfig.saturation : 200}
-                    onChange={(e) => updateMediaColor({ saturation: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                  />
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* FIXED THEME CONTROLS (Single Color vs Gradient) */
-          <>
-            {/* Coherent Segmented Tabs: Single Color vs Gradient */}
-            <div
-              style={{
-                display: 'flex',
-                background: 'var(--bg-control)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
-                padding: '2px',
-                marginBottom: '12px',
-                gap: '2px',
-              }}
-            >
-              <button
-                className={`btn btn-sm ${themeMode === 'single' ? 'btn-primary' : ''}`}
-                style={{
-                  flex: 1,
-                  justifyContent: 'center',
-                  fontSize: '10.5px',
-                  fontWeight: 600,
-                  border: themeMode === 'single' ? '1px solid var(--border-active)' : 'none',
-                  background: themeMode === 'single' ? 'var(--accent)' : 'transparent',
-                  color: themeMode === 'single' ? 'var(--bg-primary)' : 'var(--text-muted)',
-                  boxShadow: themeMode === 'single' ? '0 0 8px var(--accent-glow)' : 'none',
-                  transition: 'all 0.15s ease',
-                }}
-                onClick={handleSwitchToSingle}
-              >
-                <Paintbrush size={11} />
-                SINGLE COLOR
-              </button>
-              <button
-                className={`btn btn-sm ${themeMode === 'gradient' ? 'btn-primary' : ''}`}
-                style={{
-                  flex: 1,
-                  justifyContent: 'center',
-                  fontSize: '10.5px',
-                  fontWeight: 600,
-                  border: themeMode === 'gradient' ? '1px solid var(--border-active)' : 'none',
-                  background: themeMode === 'gradient' ? 'var(--accent)' : 'transparent',
-                  color: themeMode === 'gradient' ? 'var(--bg-primary)' : 'var(--text-muted)',
-                  boxShadow: themeMode === 'gradient' ? '0 0 8px var(--accent-glow)' : 'none',
-                  transition: 'all 0.15s ease',
-                }}
-                onClick={handleSwitchToGradient}
-              >
-                <Sliders size={11} />
-                GRADIENT
-              </button>
-            </div>
-
-        {themeMode === 'single' ? (
-          <div>
-            {/* Single Color Theme Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', marginBottom: '10px' }}>
-              {THEMES.map((t) => {
-                const isSelected = !customThemeColor && !gradientConfig && currentTheme === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    className={`btn ${isSelected ? 'btn-primary' : ''}`}
-                    style={{
-                      justifyContent: 'flex-start',
-                      borderLeft: `4px solid ${t.color}`,
-                    }}
-                    onClick={() => {
-                      if (onChangeGradient) onChangeGradient(null);
-                      if (onChangeCustomColor) onChangeCustomColor('');
-                      onChangeTheme(t.id);
-                    }}
-                  >
-                    {t.name}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Custom Phosphor Accent Color */}
-            <div className="control-row" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <Pipette size={11} /> Custom Color
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input
-                  type="color"
-                  style={{
-                    width: '28px',
-                    height: '24px',
-                    padding: 0,
-                    border: '1px solid var(--border-color)',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    borderRadius: '2px',
-                  }}
-                  value={customHex}
-                  onChange={(e) => handleCustomColorChange(e.target.value)}
-                  title="Pick a custom phosphor color"
-                />
-                <input
-                  type="text"
-                  className="number-input"
-                  style={{ width: '68px', textAlign: 'center', padding: '2px 4px', fontSize: '10.5px' }}
-                  value={customHex}
-                  onChange={(e) => handleCustomColorChange(e.target.value)}
-                  placeholder="#00ff66"
-                />
-                {customThemeColor && (
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => {
-                      if (onChangeCustomColor) onChangeCustomColor('');
-                    }}
-                    title="Reset to default theme"
-                  >
-                    RESET
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div>
-            {/* Gradient Presets Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', marginBottom: '10px' }}>
-              {GRADIENT_PRESETS.map((g) => {
-                const isSelected = gradientConfig?.id === g.id || (
-                  gradientConfig &&
-                  gradientConfig.color1.toLowerCase() === g.color1.toLowerCase() &&
-                  gradientConfig.color2.toLowerCase() === g.color2.toLowerCase()
-                );
-                return (
-                  <button
-                    key={g.id}
-                    className={`btn ${isSelected ? 'btn-primary' : ''}`}
-                    style={{
-                      justifyContent: 'flex-start',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      paddingLeft: '18px',
-                    }}
-                    onClick={() => handleSelectGradient(g)}
-                  >
-                    <span
-                      style={{
-                        position: 'absolute',
-                        left: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: '8px',
-                        background: `linear-gradient(${g.angle}deg, ${g.color1}, ${g.color2})`,
-                      }}
-                    />
-                    <span style={{ fontSize: '10.5px' }}>{g.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Custom Gradient Builder */}
-            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-              <div className="control-row" style={{ marginBottom: '6px' }}>
-                <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Pipette size={11} /> Gradient Colors
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {/* Color 1 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <input
-                      type="color"
-                      style={{ width: '22px', height: '22px', padding: 0, border: '1px solid var(--border-color)', background: 'transparent', cursor: 'pointer' }}
-                      value={customGradColor1}
-                      onChange={(e) => handleCustomGradientChange(e.target.value, customGradColor2, customGradAngle)}
-                    />
-                    <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>C1</span>
-                  </div>
-                  {/* Color 2 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <input
-                      type="color"
-                      style={{ width: '22px', height: '22px', padding: 0, border: '1px solid var(--border-color)', background: 'transparent', cursor: 'pointer' }}
-                      value={customGradColor2}
-                      onChange={(e) => handleCustomGradientChange(customGradColor1, e.target.value, customGradAngle)}
-                    />
-                    <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>C2</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rotative Angle Dial + Presets */}
-              <div className="control-row">
-                <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Compass size={11} /> Angle Dial
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AngleDial
-                    value={customGradAngle}
-                    onChange={(deg) => handleCustomGradientChange(customGradColor1, customGradColor2, deg)}
-                  />
-                  <div style={{ display: 'flex', gap: '2px' }}>
-                    {[0, 90, 135, 180, 270].map((deg) => (
-                      <button
-                        key={deg}
-                        className={`btn btn-sm ${customGradAngle === deg ? 'btn-primary' : ''}`}
-                        style={{ padding: '2px 4px', fontSize: '9px' }}
-                        onClick={() => handleCustomGradientChange(customGradColor1, customGradColor2, deg)}
-                      >
-                        {deg}°
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-          </>
-        )}
-      </CollapsibleSection>
-
-      {/* 2. Character Density Ramp */}
-      <CollapsibleSection
-        title="Character Density Presets"
-        icon={<Type size={12} />}
-        persistKey="CharsetThemeBar-character-density-presets"
-        badge={activeCharsetName}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
-          {CHARSETS.map((cs) => {
-            const isSelected = currentCharset === cs.chars;
-            return (
-              <button
-                key={cs.id}
-                className={`preset-card ${isSelected ? 'active' : ''}`}
-                onClick={() => onChangeCharset(cs.chars)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="preset-card-title">{cs.name}</span>
-                  <code style={{ fontSize: '11px', color: 'var(--accent)' }}>"{cs.chars}"</code>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="control-row">
-          <span className="control-label">Custom Density Ramp</span>
-        </div>
-        <input
-          type="text"
-          className="number-input"
-          style={{ width: '100%', textAlign: 'left', padding: '6px' }}
-          value={currentCharset}
-          onChange={(e) => onChangeCharset(e.target.value || ' ')}
-          placeholder="e.g.  .:-=+*#%@"
+        <PaletteControls
+          currentTheme={currentTheme}
+          onChangeTheme={onChangeTheme}
+          customThemeColor={customThemeColor}
+          onChangeCustomColor={onChangeCustomColor}
+          gradientConfig={gradientConfig}
+          onChangeGradient={onChangeGradient}
+          mediaColorConfig={mediaColorConfig}
+          onChangeMediaColorConfig={onChangeMediaColorConfig}
         />
+
+        {/* Gradient Presets & Dial when gradient active */}
+        {themeMode === 'gradient' && (
+          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', marginBottom: '8px' }}>
+              {GRADIENT_PRESETS.map((g) => (
+                <button
+                  key={g.id}
+                  className="btn btn-sm"
+                  style={{
+                    justifyContent: 'flex-start',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    paddingLeft: '16px',
+                    fontSize: '9.5px',
+                  }}
+                  onClick={() => handleSelectGradient(g)}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: '6px',
+                      background: `linear-gradient(${g.angle}deg, ${g.color1}, ${g.color2})`,
+                    }}
+                  />
+                  <span>{g.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="control-row">
+              <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Compass size={11} /> Gradient Angle
+              </span>
+              <AngleDial
+                value={customGradAngle}
+                onChange={(deg) => handleCustomGradientChange(customGradColor1, customGradColor2, deg)}
+              />
+            </div>
+          </div>
+        )}
       </CollapsibleSection>
+
+      {/* 4. Tone Mapping & Bit Depth */}
+      {toneConfig && onChangeToneConfig && (
+        <CollapsibleSection
+          title="Tone Mapping & Bit Depth"
+          icon={<Zap size={12} />}
+          persistKey="CharsetThemeBar-tone"
+          badge={toneConfig.posterizeBits > 0 ? `${toneConfig.posterizeBits}-BIT` : '8-BIT'}
+        >
+          <ToneControls
+            config={toneConfig}
+            onChangeConfig={onChangeToneConfig}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* 5. Character Density Ramp (Visible in ASCII mode) */}
+      {(!rasterMode || rasterMode === 'ascii') && (
+        <CollapsibleSection
+          title="Character Density Ramp"
+          icon={<Type size={12} />}
+          persistKey="CharsetThemeBar-character-density-presets"
+          badge={activeCharsetName}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+            {CHARSETS.map((cs) => {
+              const isSelected = currentCharset === cs.chars;
+              return (
+                <button
+                  key={cs.id}
+                  className={`preset-card ${isSelected ? 'active' : ''}`}
+                  onClick={() => onChangeCharset(cs.chars)}
+                  style={{ padding: '4px 6px' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="preset-card-title" style={{ fontSize: '10px' }}>{cs.name}</span>
+                    <code style={{ fontSize: '10px', color: 'var(--accent)' }}>"{cs.chars}"</code>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <input
+            type="text"
+            className="number-input"
+            style={{ width: '100%', textAlign: 'left', padding: '4px 6px', fontSize: '10.5px' }}
+            value={currentCharset}
+            onChange={(e) => onChangeCharset(e.target.value || ' ')}
+            placeholder="e.g.  .:-=+*#%@"
+          />
+        </CollapsibleSection>
+      )}
     </div>
   );
 };
+

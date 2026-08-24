@@ -11,6 +11,10 @@ import {
   MediaConfig,
   MediaViewConfig,
   MediaColorConfig,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  HalftoneConfig,
 } from '../types/ascii';
 
 export interface FullAnimationState {
@@ -21,6 +25,10 @@ export interface FullAnimationState {
   customCode?: string;
   customPrepare?: string;
   density: string;
+  rasterMode?: RasterOutputMode;
+  ditherAlgorithm?: DitherAlgorithm;
+  toneConfig?: ToneMappingConfig;
+  halftoneConfig?: HalftoneConfig;
   theme: PhosphorTheme;
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
@@ -37,6 +45,7 @@ export interface FullAnimationState {
   mediaViewConfig?: MediaViewConfig;
   mediaColorConfig?: MediaColorConfig;
 }
+
 
 // UTF-8 safe base64 encoding/decoding helper
 function utf8ToBase64(str: string): string {

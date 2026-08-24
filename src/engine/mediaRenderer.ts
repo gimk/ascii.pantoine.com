@@ -1,4 +1,13 @@
-import { MediaConfig, MediaViewConfig, MediaColorConfig, DEFAULT_MEDIA_COLOR_CONFIG } from '../types/ascii';
+import {
+  MediaConfig,
+  MediaViewConfig,
+  MediaColorConfig,
+  DEFAULT_MEDIA_COLOR_CONFIG,
+  RasterOutputMode,
+} from '../types/ascii';
+import { applyDitherAlgorithm } from './ditherAlgorithms';
+import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone } from './palettes';
+
 
 export interface RenderMediaContext {
   cols: number;
@@ -13,10 +22,12 @@ export interface RenderMediaContext {
 export interface AsciiMediaFrameResult {
   text: string;
   colors: Uint8ClampedArray | null; // RGB buffer (size = cols * rows * 3)
+  luminance: Float32Array | null; // size = cols * rows
   bgColor: string;
   isColored: boolean;
   cols: number;
   rows: number;
+  rasterMode?: RasterOutputMode;
 }
 
 export function resolveMediaBackgroundColor(colorConfig?: MediaColorConfig, viewConfigBackground?: string): string {
@@ -41,25 +52,9 @@ let blurBuffer = new Float32Array(0);
 let edgeBuffer = new Float32Array(0);
 let colorsBuffer = new Uint8ClampedArray(0);
 
-// Bayer 4x4 Matrix
-const BAYER_4X4 = [
-  [0, 8, 2, 10],
-  [12, 4, 14, 6],
-  [3, 11, 1, 9],
-  [15, 7, 13, 5],
-];
-
-// Bayer 8x8 Matrix
-const BAYER_8X8 = [
-  [0, 32, 8, 40, 2, 34, 10, 42],
-  [48, 16, 56, 24, 50, 18, 58, 26],
-  [12, 44, 4, 36, 14, 46, 6, 38],
-  [60, 28, 52, 20, 62, 30, 54, 22],
-  [3, 35, 11, 43, 1, 33, 9, 41],
-  [51, 19, 59, 27, 49, 17, 57, 25],
-  [15, 47, 7, 39, 13, 45, 5, 37],
-  [63, 31, 55, 23, 61, 29, 53, 21],
-];
+// Active Quantizer cache
+let cachedPaletteId = '';
+let activeQuantizer: PaletteQuantizer | null = null;
 
 /**
  * Fritsch-Carlson Monotone Cubic Spline Interpolation for Tone Curves
@@ -168,7 +163,6 @@ function applyFastBoxBlur(src: Float32Array, dest: Float32Array, width: number, 
     const rowOffset = y * width;
     let sum = 0;
 
-    // Initialize window
     for (let i = -r; i <= r; i++) {
       const px = Math.min(width - 1, Math.max(0, i));
       sum += src[rowOffset + px];
@@ -203,17 +197,19 @@ function applyFastBoxBlur(src: Float32Array, dest: Float32Array, width: number, 
 }
 
 /**
- * Computes a single full ASCII frame and optional per-character RGB color data
- * from a 2D image or video element using aspect-compensated sampling and dithering.
+ * Computes a single full ASCII / Halftone frame and per-character RGB color data
+ * from a 2D image or video element using aspect-compensated sampling and 40+ dithering algorithms.
  */
 export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMediaFrameResult {
   const { cols, rows, mediaElement, mediaConfig, viewConfig, density } = context;
   const colorConfig = context.colorConfig || viewConfig.colorConfig || DEFAULT_MEDIA_COLOR_CONFIG;
-  const isColored = colorConfig.mode === 'content';
+  const paletteMode = colorConfig.paletteMode || (colorConfig.mode === 'content' ? 'content' : 'phosphor');
+  const isColored = paletteMode === 'content' || paletteMode === 'indexed' || paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone';
   const bgColor = resolveMediaBackgroundColor(colorConfig, viewConfig.background);
+  const rasterMode = viewConfig.rasterMode || 'ascii';
 
   if (cols <= 0 || rows <= 0) {
-    return { text: '', colors: null, bgColor, isColored: false, cols: 0, rows: 0 };
+    return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols: 0, rows: 0, rasterMode };
   }
 
   const totalCells = cols * rows;
@@ -236,7 +232,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   if (!mediaElement) {
     const lines: string[] = [];
     const bannerMsg = 'PASTE IMAGE [ ⌘+V / CTRL+V ] OR DROP FILE';
-    const subMsg = 'ASCII STUDIO 2D MEDIA RASTERIZER';
+    const subMsg = 'RASTER STUDIO 2D MEDIA ENGINE';
 
     for (let r = 0; r < rows; r++) {
       let line = '';
@@ -255,12 +251,12 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       }
       lines.push(line.slice(0, cols));
     }
-    return { text: lines.join('\n'), colors: null, bgColor, isColored: false, cols, rows };
+    return { text: lines.join('\n'), colors: null, luminance: null, bgColor, isColored: false, cols, rows, rasterMode };
   }
 
   const { ctx } = getOffscreenCanvas(cols, rows);
   if (!ctx) {
-    return { text: '', colors: null, bgColor, isColored: false, cols, rows };
+    return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols, rows, rasterMode };
   }
 
   // 1. Clear background
@@ -347,6 +343,13 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   const imageData = ctx.getImageData(0, 0, cols, rows);
   const data = imageData.data;
 
+  // Tone mapping channel mixer weights
+  const toneCfg = viewConfig.toneConfig;
+  const mixR = (toneCfg?.channelMixerR ?? 100) / 100.0;
+  const mixG = (toneCfg?.channelMixerG ?? 100) / 100.0;
+  const mixB = (toneCfg?.channelMixerB ?? 100) / 100.0;
+  const normWeight = 0.2126 * mixR + 0.7152 * mixG + 0.0722 * mixB || 1.0;
+
   const alphaThreshold = viewConfig.alphaThreshold ?? 10;
   for (let i = 0; i < totalCells; i++) {
     const p = i * 4;
@@ -360,8 +363,8 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       continue;
     }
 
-    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-    lumBuffer[i] = lum;
+    const lum = (0.2126 * r * mixR + 0.7152 * g * mixG + 0.0722 * b * mixB) / (255.0 * normWeight);
+    lumBuffer[i] = Math.max(0, Math.min(1, lum));
   }
 
   const blurRadius = viewConfig.blur > 0 ? Math.max(1, Math.round(viewConfig.blur / 2)) : 0;
@@ -421,9 +424,9 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
 
   const contrastFactor = Math.tan(((viewConfig.contrast + 100) * Math.PI) / 400);
   const brightnessOffset = viewConfig.brightness / 100.0;
-  const inBlack = Math.max(0, Math.min(0.95, (viewConfig.levelBlack ?? 0) / 100.0));
-  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (viewConfig.levelWhite ?? 100) / 100.0));
-  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (viewConfig.levelMidtones ?? 50) / 100.0));
+  const inBlack = Math.max(0, Math.min(0.95, (viewConfig.levelBlack ?? (toneCfg?.levelsBlack ?? 0)) / 100.0));
+  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (viewConfig.levelWhite ?? (toneCfg?.levelsWhite ?? 100)) / 100.0));
+  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (viewConfig.levelMidtones ?? (toneCfg?.levelsMidtones ?? 50)) / 100.0));
   const midNorm = (inMid - inBlack) / (inWhite - inBlack);
   const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
   const shadowAdj = (viewConfig.shadows || 0) / 100.0;
@@ -431,6 +434,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   const midtoneGamma = Math.pow(2.0, -(viewConfig.midtones || 0) / 50.0);
   const curveLut = viewConfig.curvePoints && viewConfig.curvePoints.length >= 2 ? createToneCurveLUT(viewConfig.curvePoints) : null;
   const noiseAmp = (viewConfig.noise || 0) / 200.0;
+  const posterizeBits = toneCfg?.posterizeBits || 0;
 
   for (let i = 0; i < totalCells; i++) {
     let val = lumBuffer[i];
@@ -445,101 +449,26 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     if (shadowAdj !== 0) val = val + shadowAdj * (1.0 - val) * (1.0 - val) * 0.5;
     if (highlightAdj !== 0) val = val + highlightAdj * val * val * 0.5;
     if (midtoneGamma !== 1.0 && val > 0 && val < 1) val = Math.pow(val, midtoneGamma);
+    if (posterizeBits > 0) {
+      const steps = Math.pow(2, posterizeBits) - 1;
+      val = Math.round(val * steps) / steps;
+    }
     if (noiseAmp > 0) val += (Math.random() - 0.5) * noiseAmp;
     if (viewConfig.invert) val = 1.0 - val;
     lumBuffer[i] = Math.max(0, Math.min(1, val));
   }
 
-  ditherBuffer.set(lumBuffer);
+  // Universal Dithering Suite (40+ Algorithms)
   const algorithm = viewConfig.algorithm || 'floyd-steinberg';
+  applyDitherAlgorithm(lumBuffer, ditherBuffer, cols, rows, algorithm, densityLength, 1.0);
 
-  if (algorithm === 'floyd-steinberg') {
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = rowOffset + x;
-        const oldVal = ditherBuffer[idx];
-        if (oldVal < 0) continue;
-        const quantized = Math.round(oldVal * (densityLength - 1)) / (densityLength - 1);
-        ditherBuffer[idx] = quantized;
-        const err = oldVal - quantized;
-        if (x + 1 < cols) ditherBuffer[rowOffset + x + 1] += (err * 7) / 16;
-        if (y + 1 < rows) {
-          const nextRow = (y + 1) * cols;
-          if (x - 1 >= 0) ditherBuffer[nextRow + x - 1] += (err * 3) / 16;
-          ditherBuffer[nextRow + x] += (err * 5) / 16;
-          if (x + 1 < cols) ditherBuffer[nextRow + x + 1] += (err * 1) / 16;
-        }
-      }
-    }
-  } else if (algorithm === 'atkinson') {
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = rowOffset + x;
-        const oldVal = ditherBuffer[idx];
-        if (oldVal < 0) continue;
-        const quantized = Math.round(oldVal * (densityLength - 1)) / (densityLength - 1);
-        ditherBuffer[idx] = quantized;
-        const err = oldVal - quantized;
-        const fraction = err / 8;
-        if (x + 1 < cols) ditherBuffer[rowOffset + x + 1] += fraction;
-        if (x + 2 < cols) ditherBuffer[rowOffset + x + 2] += fraction;
-        if (y + 1 < rows) {
-          const nextRow = (y + 1) * cols;
-          if (x - 1 >= 0) ditherBuffer[nextRow + x - 1] += fraction;
-          ditherBuffer[nextRow + x] += fraction;
-          if (x + 1 < cols) ditherBuffer[nextRow + x + 1] += fraction;
-        }
-        if (y + 2 < rows) ditherBuffer[(y + 2) * cols + x] += fraction;
-      }
-    }
-  } else if (algorithm === 'sierra') {
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = rowOffset + x;
-        const oldVal = ditherBuffer[idx];
-        if (oldVal < 0) continue;
-        const quantized = Math.round(oldVal * (densityLength - 1)) / (densityLength - 1);
-        ditherBuffer[idx] = quantized;
-        const err = oldVal - quantized;
-        if (x + 1 < cols) ditherBuffer[rowOffset + x + 1] += (err * 2) / 4;
-        if (y + 1 < rows) {
-          const nextRow = (y + 1) * cols;
-          if (x - 1 >= 0) ditherBuffer[nextRow + x - 1] += (err * 1) / 4;
-          ditherBuffer[nextRow + x] += (err * 1) / 4;
-        }
-      }
-    }
-  } else if (algorithm === 'bayer-4x4') {
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = rowOffset + x;
-        const val = ditherBuffer[idx];
-        if (val < 0) continue;
-        const matrixVal = (BAYER_4X4[y % 4][x % 4] / 16.0 - 0.5) * (1.0 / (densityLength - 1));
-        ditherBuffer[idx] = Math.max(0, Math.min(1, val + matrixVal));
-      }
-    }
-  } else if (algorithm === 'bayer-8x8') {
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = rowOffset + x;
-        const val = ditherBuffer[idx];
-        if (val < 0) continue;
-        const matrixVal = (BAYER_8X8[y % 8][x % 8] / 64.0 - 0.5) * (1.0 / (densityLength - 1));
-        ditherBuffer[idx] = Math.max(0, Math.min(1, val + matrixVal));
-      }
-    }
-  } else if (algorithm === 'noise') {
-    for (let i = 0; i < totalCells; i++) {
-      const val = ditherBuffer[i];
-      if (val < 0) continue;
-      const noise = (Math.random() - 0.5) * (1.0 / (densityLength - 1));
-      ditherBuffer[i] = Math.max(0, Math.min(1, val + noise));
+  // Setup Palette Quantizer if indexed mode
+  if (paletteMode === 'indexed') {
+    const palId = colorConfig.activePaletteId || 'gameboy-classic';
+    if (!activeQuantizer || cachedPaletteId !== palId) {
+      const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
+      activeQuantizer = new PaletteQuantizer(found);
+      cachedPaletteId = palId;
     }
   }
 
@@ -563,21 +492,20 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
         continue;
       }
 
+      // ASCII Glyph mapping
       let charIndex = Math.floor(val * densityLength);
       if (charIndex < 0) charIndex = 0;
       else if (charIndex >= densityLength) charIndex = densityLength - 1;
       lineBuffer[x] = density[charIndex] || ' ';
 
+      // Color calculations
       if (isColored) {
         let r = data[p];
         let g = data[p + 1];
         let b = data[p + 2];
 
-        if (samplingMethod === 'average') {
-          let sumR = 0;
-          let sumG = 0;
-          let sumB = 0;
-          let count = 0;
+        if (samplingMethod === 'average' || samplingMethod === 'weighted') {
+          let sumR = 0, sumG = 0, sumB = 0, count = 0;
           for (let dy = -1; dy <= 1; dy++) {
             const ny = Math.max(0, Math.min(rows - 1, y + dy));
             const nRowOff = ny * cols;
@@ -594,30 +522,6 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
             }
           }
           if (count > 0) { r = sumR / count; g = sumG / count; b = sumB / count; }
-        } else if (samplingMethod === 'weighted') {
-          let sumR = 0;
-          let sumG = 0;
-          let sumB = 0;
-          let totalW = 0;
-          const centerLum = 0.2126 * data[p] + 0.7152 * data[p + 1] + 0.0722 * data[p + 2];
-          for (let dy = -1; dy <= 1; dy++) {
-            const ny = Math.max(0, Math.min(rows - 1, y + dy));
-            const nRowOff = ny * cols;
-            for (let dx = -1; dx <= 1; dx++) {
-              const nx = Math.max(0, Math.min(cols - 1, x + dx));
-              const np = (nRowOff + nx) * 4;
-              if (data[np + 3] > alphaThreshold) {
-                const l = 0.2126 * data[np] + 0.7152 * data[np + 1] + 0.0722 * data[np + 2];
-                const diff = Math.abs(l - centerLum);
-                const w = 1.0 + (l / 255.0) * 1.5 + 1.0 / (1.0 + diff * 0.05);
-                sumR += data[np] * w;
-                sumG += data[np + 1] * w;
-                sumB += data[np + 2] * w;
-                totalW += w;
-              }
-            }
-          }
-          if (totalW > 0) { r = sumR / totalW; g = sumG / totalW; b = sumB / totalW; }
         }
 
         if (saturationFactor !== 1.0) {
@@ -625,6 +529,18 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
           r = gray + (r - gray) * saturationFactor;
           g = gray + (g - gray) * saturationFactor;
           b = gray + (b - gray) * saturationFactor;
+        }
+
+        if (paletteMode === 'indexed' && activeQuantizer) {
+          const quantized = activeQuantizer.findClosestRgb(r, g, b);
+          r = quantized.r;
+          g = quantized.g;
+          b = quantized.b;
+        } else if ((paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone') && colorConfig.multiTone) {
+          const mapped = evaluateMultiTone(val, colorConfig.multiTone);
+          r = mapped.r;
+          g = mapped.g;
+          b = mapped.b;
         }
 
         colorsBuffer[idx * 3] = Math.max(0, Math.min(255, Math.round(r)));
@@ -638,13 +554,16 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   return {
     text: cachedLines.join('\n'),
     colors: isColored ? colorsBuffer : null,
+    luminance: ditherBuffer,
     bgColor,
     isColored,
     cols,
     rows,
+    rasterMode,
   };
 }
 
 export function renderAsciiMediaFrame(context: RenderMediaContext): string {
   return renderAsciiMediaFrameData(context).text;
 }
+

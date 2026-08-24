@@ -1,8 +1,16 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings } from 'lucide-react';
-import { CrtConfig, PhosphorGradient, OptimizeConfig } from '../types/ascii';
+import {
+  CrtConfig,
+  PhosphorGradient,
+  OptimizeConfig,
+  RasterOutputMode,
+  HalftoneConfig,
+  DEFAULT_HALFTONE_CONFIG,
+} from '../types/ascii';
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
+import { drawHalftoneToCanvas } from '../engine/halftoneRenderer';
 
 export interface AsciiViewportHandle {
   setFrame: (
@@ -10,7 +18,10 @@ export interface AsciiViewportHandle {
     time: number,
     fps: number,
     colors?: Uint8ClampedArray | null,
-    bgColor?: string
+    bgColor?: string,
+    luminance?: Float32Array | null,
+    rasterMode?: RasterOutputMode,
+    halftoneConfig?: HalftoneConfig
   ) => void;
   getFrameText: () => string;
   autoFit: () => void;
@@ -65,7 +76,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onMouseMove,
   onClick,
   presetName,
-  isEdited,
+  isEdited = false,
   viewMode = 'editor',
   onToggleViewMode,
   autoRes = false,
@@ -90,16 +101,19 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const preRef = useRef<HTMLPreElement>(null);
   const bloomPreRef = useRef<HTMLPreElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const isColoredViewRef = useRef<boolean>(false);
-  const [isColoredView, setIsColoredView] = useState<boolean>(false);
-  const latestColorsRef = useRef<Uint8ClampedArray | null>(null);
-  const latestBgColorRef = useRef<string | undefined>(undefined);
-
-  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-
+  
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
+  
   const latestFrameTextRef = useRef<string>('');
+  const latestColorsRef = useRef<Uint8ClampedArray | null>(null);
+  const latestBgColorRef = useRef<string | undefined>(undefined);
+  const latestLuminanceRef = useRef<Float32Array | null>(null);
+  const latestRasterModeRef = useRef<RasterOutputMode>('ascii');
+  const latestHalftoneConfigRef = useRef<HalftoneConfig>(DEFAULT_HALFTONE_CONFIG);
+  
+  const [isColoredView, setIsColoredView] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const isDraggingRef = useRef<boolean>(false);
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -155,7 +169,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return { cols: bestCols, rows: bestRows };
   }, []);
 
-  // Auto-fit zoom on demand based on current cols and rows
   const autoFit = useCallback(() => {
     if (!containerRef.current) return;
     const { clientWidth, clientHeight } = containerRef.current;
@@ -176,15 +189,17 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     setZoom(Number(fitScale.toFixed(2)));
   }, [cols, rows]);
 
-  // High-DPI Vector-Grade Canvas Renderer for Colored ASCII
-  const drawColoredCanvas = useCallback(
+  const drawCanvas = useCallback(
     (
       frameText: string,
       colors: Uint8ClampedArray | null,
       bgColor: string | undefined,
+      luminance: Float32Array | null,
+      rasterMode: RasterOutputMode,
+      halftoneConfig: HalftoneConfig,
       currentZoom: number
     ) => {
-      if (!canvasRef.current || !colors || colors.length === 0) return;
+      if (!canvasRef.current) return;
       const canvas = canvasRef.current;
       const charW = 6.015;
       const charH = 10.0;
@@ -192,7 +207,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       const unscaledH = Math.max(1, Math.round(rows * charH));
       const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
 
-      // Calculate physical bitmap resolution scaled by zoom and retina DPR
       const targetW = Math.max(1, Math.round(unscaledW * currentZoom * dpr));
       const targetH = Math.max(1, Math.round(unscaledH * currentZoom * dpr));
 
@@ -201,16 +215,32 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         canvas.height = targetH;
       }
 
-      // Explicit CSS layout size for exact 1:1 screen mapping without CSS stretching
       const cssW = `${Math.round(unscaledW * currentZoom)}px`;
       const cssH = `${Math.round(unscaledH * currentZoom)}px`;
       if (canvas.style.width !== cssW) canvas.style.width = cssW;
       if (canvas.style.height !== cssH) canvas.style.height = cssH;
 
       const ctx = canvas.getContext('2d');
-      if (ctx) {
+      if (!ctx) return;
+
+      if (rasterMode !== 'ascii' && luminance) {
+        drawHalftoneToCanvas({
+          canvas,
+          ctx,
+          cols,
+          rows,
+          luminance,
+          colors,
+          bgColor: bgColor || '#0a0a0a',
+          fgColor: '#ffffff',
+          config: halftoneConfig,
+          mode: rasterMode,
+          cellWidth: charW,
+          cellHeight: charH,
+          dpr: currentZoom * dpr,
+        });
+      } else if (colors && colors.length > 0) {
         ctx.save();
-        // Scale canvas context to match physical zoom & DPR
         ctx.scale(currentZoom * dpr, currentZoom * dpr);
         ctx.fillStyle = bgColor || '#0a0a0a';
         ctx.fillRect(0, 0, unscaledW, unscaledH);
@@ -246,17 +276,20 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     [cols, rows]
   );
 
-  // Redraw colored canvas immediately whenever zoom changes for vector-crisp clarity
   useEffect(() => {
-    if (isColoredViewRef.current && latestColorsRef.current && latestFrameTextRef.current) {
-      drawColoredCanvas(
+    if (isColoredView && latestFrameTextRef.current) {
+      drawCanvas(
         latestFrameTextRef.current,
         latestColorsRef.current,
         latestBgColorRef.current,
+        latestLuminanceRef.current,
+        latestRasterModeRef.current,
+        latestHalftoneConfigRef.current,
         zoom
       );
     }
-  }, [zoom, drawColoredCanvas]);
+  }, [zoom, drawCanvas, isColoredView]);
+
 
   useImperativeHandle(ref, () => ({
     setFrame: (
@@ -264,24 +297,38 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       time: number,
       fps: number,
       colors?: Uint8ClampedArray | null,
-      bgColor?: string
+      bgColor?: string,
+      luminance?: Float32Array | null,
+      rasterMode: RasterOutputMode = 'ascii',
+      halftoneConfig?: HalftoneConfig
     ) => {
       latestFrameTextRef.current = frameText;
-      const isColored = Boolean(colors && colors.length > 0);
+      latestColorsRef.current = colors || null;
+      latestBgColorRef.current = bgColor;
+      latestLuminanceRef.current = luminance || null;
+      latestRasterModeRef.current = rasterMode;
+      if (halftoneConfig) latestHalftoneConfigRef.current = halftoneConfig;
 
-      if (isColored && colors) {
-        latestColorsRef.current = colors;
-        latestBgColorRef.current = bgColor;
-        if (!isColoredViewRef.current) {
-          isColoredViewRef.current = true;
+      const isCanvasMode = Boolean(
+        (colors && colors.length > 0) ||
+        (rasterMode !== 'ascii' && rasterMode !== 'braille' && luminance)
+      );
+
+      if (isCanvasMode) {
+        if (!isColoredView) {
           setIsColoredView(true);
         }
-        drawColoredCanvas(frameText, colors, bgColor, zoomRef.current);
+        drawCanvas(
+          frameText,
+          colors || null,
+          bgColor,
+          luminance || null,
+          rasterMode,
+          halftoneConfig || latestHalftoneConfigRef.current,
+          zoom
+        );
       } else {
-        latestColorsRef.current = null;
-        latestBgColorRef.current = undefined;
-        if (isColoredViewRef.current) {
-          isColoredViewRef.current = false;
+        if (isColoredView) {
           setIsColoredView(false);
         }
         if (preRef.current) {
@@ -293,13 +340,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
 
       if (timeSpanRef.current) {
-        timeSpanRef.current.textContent = isTimelineDisabled ? '0s' : `${Math.floor(time)}s`;
+        timeSpanRef.current.textContent = `${time.toFixed(2)}s`;
       }
       if (fpsSpanRef.current) {
-        fpsSpanRef.current.textContent = isTimelineDisabled ? 'STATIC' : `${fps}`;
+        fpsSpanRef.current.textContent = `${Math.round(fps)} FPS`;
       }
     },
-    getFrameText: () => latestFrameTextRef.current || '',
+    getFrameText: () => latestFrameTextRef.current,
     autoFit,
     getOptimalResolution,
   }));

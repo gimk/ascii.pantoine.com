@@ -20,6 +20,12 @@ import {
   RenderSettings,
   MediaColorConfig,
   DEFAULT_MEDIA_COLOR_CONFIG,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  HalftoneConfig,
+  DEFAULT_TONE_MAPPING_CONFIG,
+  DEFAULT_HALFTONE_CONFIG,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -41,15 +47,17 @@ import {
 } from './engine/mediaPresets';
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
 import { Khronos3DModel } from './engine/khronos3dModels';
-import { renderModelAsciiFrame, applyTrackballRotationWithTime } from './engine/modelRenderer';
+import { renderModelFrameData, applyTrackballRotationWithTime } from './engine/modelRenderer';
 import { renderAsciiMediaFrameData } from './engine/mediaRenderer';
-import { CHARSETS, renderAsciiFrame } from './engine/renderer';
+import { CHARSETS, renderSynthFrameData } from './engine/renderer';
 import {
+
   createTrailPoint,
   updateParticleWithField,
   generateClickParticles,
   DEFAULT_PARTICLE_CONFIG,
 } from './engine/particles';
+
 
 import { AsciiViewport, AsciiViewportHandle } from './components/AsciiViewport';
 import { SynthControls } from './components/SynthControls';
@@ -264,6 +272,10 @@ export const App: React.FC = () => {
       rows: (isSynthShared && sharedState?.rows) || savedSettings.synth?.rows || 50,
       autoRes: (isSynthShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.synth?.autoRes !== undefined ? savedSettings.synth.autoRes : true),
       density: (isSynthShared && sharedState?.density) || savedSettings.synth?.density || CHARSETS[0].chars,
+      rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'ascii',
+      ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'floyd-steinberg',
+      toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
+      halftoneConfig: (isSynthShared && sharedState?.halftoneConfig) || savedSettings.synth?.halftoneConfig || DEFAULT_HALFTONE_CONFIG,
       theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'green',
       customThemeColor: (isSynthShared && sharedState?.customThemeColor) || savedSettings.synth?.customThemeColor || '',
       gradientConfig: (isSynthShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.synth?.gradientConfig ?? null),
@@ -285,6 +297,10 @@ export const App: React.FC = () => {
       rows: (isMediaShared && sharedState?.rows) || savedSettings.media?.rows || 120,
       autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : false),
       density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || CHARSETS[0].chars,
+      rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'ascii',
+      ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
+      toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
+      halftoneConfig: (isMediaShared && sharedState?.halftoneConfig) || savedSettings.media?.halftoneConfig || DEFAULT_HALFTONE_CONFIG,
       theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'green',
       customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
       gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
@@ -307,6 +323,10 @@ export const App: React.FC = () => {
       rows: (isModelShared && sharedState?.rows) || savedSettings.model?.rows || 50,
       autoRes: (isModelShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.model?.autoRes !== undefined ? savedSettings.model.autoRes : true),
       density: (isModelShared && sharedState?.density) || savedSettings.model?.density || CHARSETS[0].chars,
+      rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'ascii',
+      ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
+      toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
+      halftoneConfig: (isModelShared && sharedState?.halftoneConfig) || savedSettings.model?.halftoneConfig || DEFAULT_HALFTONE_CONFIG,
       theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'green',
       customThemeColor: (isModelShared && sharedState?.customThemeColor) || savedSettings.model?.customThemeColor || '',
       gradientConfig: (isModelShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.model?.gradientConfig ?? null),
@@ -322,6 +342,7 @@ export const App: React.FC = () => {
         idleThrottle: false,
       },
     };
+
 
     return {
       synth: defaultSynthSettings,
@@ -478,6 +499,59 @@ export const App: React.FC = () => {
       };
     });
   }, []);
+
+  const setRasterMode = useCallback((r: RasterOutputMode) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          rasterMode: r,
+        },
+      };
+    });
+  }, []);
+
+  const setDitherAlgorithm = useCallback((a: DitherAlgorithm) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          ditherAlgorithm: a,
+        },
+      };
+    });
+  }, []);
+
+  const setToneConfig = useCallback((t: ToneMappingConfig) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          toneConfig: t,
+        },
+      };
+    });
+  }, []);
+
+  const setHalftoneConfig = useCallback((h: HalftoneConfig) => {
+    setRenderSettingsByMode((prev) => {
+      const mode = appModeRef.current;
+      return {
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          halftoneConfig: h,
+        },
+      };
+    });
+  }, []);
+
 
   // Particles & Interaction
   const [particleConfig, setParticleConfig] = useState<ParticleConfig>(
@@ -1697,7 +1771,16 @@ export const App: React.FC = () => {
         density,
         colorConfig: mediaColorConfig,
       });
-      viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor);
+      viewportRef.current?.setFrame(
+        result.text,
+        0,
+        0,
+        result.colors,
+        result.bgColor,
+        result.luminance,
+        mediaViewConfig.rasterMode || currentRenderSettings.rasterMode || 'ascii',
+        mediaViewConfig.halftoneConfig || currentRenderSettings.halftoneConfig
+      );
       return;
     }
 
@@ -1725,65 +1808,65 @@ export const App: React.FC = () => {
         lastFrameRenderTimeRef.current = timestamp;
       }
 
-      // FPS Calculation (measured rolling every 500ms)
+      // Compute FPS dynamically
       frameCountRef.current++;
-      const timeSinceLastFpsCalc = timestamp - fpsTimerRef.current;
-      if (timeSinceLastFpsCalc >= 500) {
-        currentFpsRef.current = Math.round((frameCountRef.current * 1000) / timeSinceLastFpsCalc);
+      const now = performance.now();
+      if (now - fpsTimerRef.current >= 500) {
+        currentFpsRef.current = Math.round((frameCountRef.current * 1000) / (now - fpsTimerRef.current));
         frameCountRef.current = 0;
-        fpsTimerRef.current = timestamp;
+        fpsTimerRef.current = now;
       }
 
+      // Advance clock time
       if (isPlaying) {
-        const delta = lastTimeRef.current ? Math.min(0.1, (timestamp - lastTimeRef.current) / 1000) : 0.016;
-        timeRef.current += delta * (waveParams.timeSpeed || 1.0);
-        lastTimeRef.current = timestamp;
+        const dt = lastTimeRef.current ? Math.min(0.1, (now - lastTimeRef.current) / 1000) : 0.016;
+        timeRef.current += dt * (waveParams.timeSpeed || 1.0);
 
-        // Vector field sampling function
-        const sampleField = (px: number, py: number, t: number): number => {
-          const cx = cols / 2;
-          const cy = rows / 2;
-          const dx = (px - cx) * (waveParams.aspectRatio || 0.55);
-          const dy = py - cy;
-          const dist = Math.hypot(dx, dy);
-          const angle = Math.atan2(dy, dx);
+        // Particle physics update
 
-          if (presetType === 'custom' && compiledFnRef.current) {
-            try {
-              return compiledFnRef.current(
-                px,
-                py,
-                t,
-                dist,
-                dx,
-                dy,
-                cols,
-                rows,
-                angle,
-                customContextRef.current
-              );
-            } catch {
-              return 0;
-            }
-          }
-          return evaluateParametricWave(
-            px,
-            py,
-            t,
-            dist,
-            dx,
-            dy,
-            cols,
-            rows,
-            angle,
-            waveParams
-          );
-        };
-
-        // Update trail particles
         if (particleConfig.enabled) {
           const pts = trailPointsRef.current;
           const t = timeRef.current;
+          const sampleField = (px: number, py: number, sampleT: number): number => {
+            const cx = cols / 2;
+            const cy = rows / 2;
+            const dx = (px - cx) * (waveParams.aspectRatio || 0.55);
+            const dy = py - cy;
+            const dist = Math.hypot(dx, dy);
+            const angle = Math.atan2(dy, dx);
+
+            if (presetType === 'custom' && compiledFnRef.current) {
+              try {
+                return compiledFnRef.current(
+                  px,
+                  py,
+                  sampleT,
+                  dist,
+                  dx,
+                  dy,
+                  cols,
+                  rows,
+                  angle,
+                  customContextRef.current
+                );
+              } catch {
+                return 0;
+              }
+            }
+            return evaluateParametricWave(
+              px,
+              py,
+              sampleT,
+              dist,
+              dx,
+              dy,
+              cols,
+              rows,
+              angle,
+              waveParams
+            );
+          };
+
           for (let i = 0; i < pts.length; i++) {
             updateParticleWithField(
               pts[i],
@@ -1792,7 +1875,7 @@ export const App: React.FC = () => {
               t,
               sampleField,
               particleConfig,
-              delta
+              dt
             );
           }
           let aliveCount = 0;
@@ -1803,17 +1886,24 @@ export const App: React.FC = () => {
           }
           pts.length = aliveCount;
         }
-      } else {
-        lastTimeRef.current = timestamp;
       }
+      lastTimeRef.current = now;
 
-      // Render ASCII frame
+
+      // Render raster / ASCII frame
       let frameText = '';
       let frameColors: Uint8ClampedArray | null = null;
       let frameBgColor: string | undefined = undefined;
+      let frameLuminance: Float32Array | null = null;
+      const activeRasterMode: RasterOutputMode =
+        appMode === 'media'
+          ? mediaViewConfig.rasterMode || currentRenderSettings.rasterMode || 'ascii'
+          : appMode === 'model'
+          ? modelViewConfig.rasterMode || currentRenderSettings.rasterMode || 'ascii'
+          : currentRenderSettings.rasterMode || 'ascii';
 
       if (appMode === 'model') {
-        frameText = renderModelAsciiFrame({
+        const res = renderModelFrameData({
           cols,
           rows,
           time: timeRef.current,
@@ -1822,6 +1912,9 @@ export const App: React.FC = () => {
           modelConfig,
           viewConfig: modelViewConfig,
         });
+        frameText = res.text;
+        frameColors = res.colors;
+        frameLuminance = res.luminance;
       } else if (appMode === 'media') {
         const result = renderAsciiMediaFrameData({
           cols,
@@ -1835,8 +1928,9 @@ export const App: React.FC = () => {
         frameText = result.text;
         frameColors = result.colors;
         frameBgColor = result.bgColor;
+        frameLuminance = result.luminance;
       } else {
-        frameText = renderAsciiFrame({
+        const res = renderSynthFrameData({
           cols,
           rows,
           time: timeRef.current,
@@ -1848,10 +1942,22 @@ export const App: React.FC = () => {
           customContext: customContextRef.current,
           interactiveInfluence: particleConfig.enabled,
           luminanceBoost: particleConfig.luminanceBoost,
+          algorithm: currentRenderSettings.ditherAlgorithm,
         });
+        frameText = res.text;
+        frameLuminance = res.luminance;
       }
 
-      viewportRef.current?.setFrame(frameText, timeRef.current, currentFpsRef.current, frameColors, frameBgColor);
+      viewportRef.current?.setFrame(
+        frameText,
+        timeRef.current,
+        currentFpsRef.current,
+        frameColors,
+        frameBgColor,
+        frameLuminance,
+        activeRasterMode,
+        currentRenderSettings.halftoneConfig || mediaViewConfig.halftoneConfig
+      );
       animFrameId = requestAnimationFrame(loop);
     };
 
@@ -2107,11 +2213,12 @@ export const App: React.FC = () => {
           <span className="brand-logo" style={{ color: 'var(--accent)' }}>▓▒░</span>
           <div className="brand-text-block">
             <div className="brand-main">
-              <span className="brand-full">ASCII STUDIO</span>
+              <span className="brand-full">RASTER STUDIO</span>
             </div>
           </div>
-          <span className="brand-version">v1.5</span>
+          <span className="brand-version">v1.6</span>
         </div>
+
 
         {/* Header Tools: Undo, Redo, Export, Share */}
         <div className="header-actions">
@@ -2408,7 +2515,19 @@ export const App: React.FC = () => {
                   appMode={appMode}
                   mediaColorConfig={mediaColorConfig}
                   onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                  rasterMode={currentRenderSettings.rasterMode || 'ascii'}
+                  onChangeRasterMode={setRasterMode}
+                  ditherAlgorithm={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
+                  onChangeDitherAlgorithm={setDitherAlgorithm}
+                  toneConfig={currentRenderSettings.toneConfig}
+                  onChangeToneConfig={setToneConfig}
+                  halftoneConfig={currentRenderSettings.halftoneConfig}
+                  onChangeHalftoneConfig={setHalftoneConfig}
+                  noise={appMode === 'media' ? mediaViewConfig.noise : 0}
+                  onChangeNoise={appMode === 'media' ? (n) => handleChangeMediaViewConfig({ ...mediaViewConfig, noise: n }) : undefined}
                 />
+
+
                 <OptimizeControls
                   cols={cols}
                   rows={rows}

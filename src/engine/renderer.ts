@@ -35,15 +35,38 @@ export const CHARSETS = [
   // Uses strictly 6-dot Braille (up to U+283F) to avoid row-4 dot-7/8 vertical bleed into the row below
   { id: 'braille-dense', name: 'Braille Density', chars: ' ⠁⠂⠄⠃⠉⠅⠇⠋⠍⠏⠛⠟⠷⠿' },
 
+  // --- Quadrants & Micro-Blocks ---
+  { id: 'quadrants', name: 'Quadrant Blocks', chars: ' ▖▗▘▝▚▞█' },
+  { id: 'box-drawing', name: 'Box & Pipe Matrix', chars: ' ·─│┌┐└┘├┤┬┴┼═║' },
+
   // --- Typographic ---
   { id: 'punct', name: 'Punctuation Ramp', chars: ' .,:;!|Il1+*#' },
 
-  // --- Stylistic (not tonal ramps: sequences chosen for texture, like Matrix) ---
+  // --- Stylistic ---
   { id: 'hex', name: 'Hex Rain', chars: ' 0123456789ABCDEF' },
-  // Half-width katakana (U+FF66..) was tried here for a Matrix-rain look and
-  // removed: JuliaMono advances it at 5px against a 6px ASCII cell, which
-  // skews every row that contains one.
 ];
+
+/**
+ * Maps a 2x4 subpixel binary matrix into an authentic Unicode Braille character (U+2800..U+28FF).
+ * subpixels is an array or indexed values of length 8 in order:
+ * [ (0,0), (0,1), (0,2), (1,0), (1,1), (1,2), (0,3), (1,3) ]
+ */
+export function getBrailleCharFromSubpixels(
+  d1: boolean, d2: boolean, d3: boolean, d4: boolean,
+  d5: boolean, d6: boolean, d7: boolean, d8: boolean
+): string {
+  let mask = 0;
+  if (d1) mask |= 0x01; // Dot 1 (col 0, row 0)
+  if (d2) mask |= 0x02; // Dot 2 (col 0, row 1)
+  if (d3) mask |= 0x04; // Dot 3 (col 0, row 2)
+  if (d4) mask |= 0x08; // Dot 4 (col 1, row 0)
+  if (d5) mask |= 0x10; // Dot 5 (col 1, row 1)
+  if (d6) mask |= 0x20; // Dot 6 (col 1, row 2)
+  if (d7) mask |= 0x40; // Dot 7 (col 0, row 3)
+  if (d8) mask |= 0x80; // Dot 8 (col 1, row 3)
+  return String.fromCharCode(0x2800 + mask);
+}
+
 
 let cachedLines: string[] = [];
 let lineBuffer: string[] = [];
@@ -217,3 +240,41 @@ export function renderAsciiFrame(ctx: RenderContext): string {
 
   return cachedLines.join('\n');
 }
+
+let synthLuminanceBuffer = new Float32Array(0);
+
+
+export function renderSynthFrameData(ctx: RenderContext & { algorithm?: string }): {
+  text: string;
+  luminance: Float32Array;
+  cols: number;
+  rows: number;
+} {
+  const { cols, rows } = ctx;
+  const totalCells = cols * rows;
+  if (synthLuminanceBuffer.length !== totalCells) {
+    synthLuminanceBuffer = new Float32Array(totalCells);
+  }
+
+  const text = renderAsciiFrame(ctx);
+
+  // Fill normalized luminance from rendered frame or direct math
+  const densityLen = ctx.density.length;
+  let idx = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\n') continue;
+    if (idx < totalCells) {
+      const charPos = ctx.density.indexOf(ch);
+      synthLuminanceBuffer[idx++] = charPos >= 0 ? charPos / Math.max(1, densityLen - 1) : 0;
+    }
+  }
+
+  return {
+    text,
+    luminance: synthLuminanceBuffer,
+    cols,
+    rows,
+  };
+}
+

@@ -130,7 +130,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [customBaseName, setCustomBaseName] = useState<string>('');
 
   // Still Image Export States
-  const [imageFormat, setImageFormat] = useState<'png' | 'jpg'>('png');
+  const [imageFormat, setImageFormat] = useState<'png' | 'jpg' | 'svg'>('png');
+
   const [imageQuality, setImageQuality] = useState<number>(0.95);
   const [imageScale, setImageScale] = useState<number>(2.0);
   const [imageTransparentBg, setImageTransparentBg] = useState<boolean>(false);
@@ -326,7 +327,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const getExtension = (): string => {
     switch (activeTab) {
-      case 'image': return imageFormat === 'jpg' ? '.jpg' : '.png';
+      case 'image': return imageFormat === 'jpg' ? '.jpg' : imageFormat === 'svg' ? '.svg' : '.png';
+
       case 'prompt': return '-ai-prompt.txt';
       case 'astro': return '.astro';
       case 'html': return '-standalone.html';
@@ -867,8 +869,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   <span className="gif-config-label">Image Format</span>
                   <div className="gif-btn-group">
                     {[
-                      { id: 'png', label: 'PNG (Lossless)' },
+                      { id: 'png', label: 'PNG (Raster)' },
                       { id: 'jpg', label: 'JPG (Photo)' },
+                      { id: 'svg', label: 'SVG (Vector)' },
                     ].map((f) => (
                       <button
                         key={f.id}
@@ -878,6 +881,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                         {f.label}
                       </button>
                     ))}
+
                   </div>
                 </div>
 
