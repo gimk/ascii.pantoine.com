@@ -30,30 +30,8 @@ export async function fetchPresetObjGeometry(path: string): Promise<THREE.Buffer
   return geo.clone();
 }
 
-export function getBuiltinGeometry(id: BuiltinModelId): THREE.BufferGeometry {
-  if (id === 'skull') {
-    const cached = geometryCache.get('skull') || geometryCache.get('/presets/skull.obj');
-    if (cached) return cached.clone();
-    // Return empty BufferGeometry so no sphere flashes while OBJ fetches
-    return new THREE.BufferGeometry();
-  }
-
-  let geo: THREE.BufferGeometry;
-
-  switch (id) {
-    case 'torus-knot':
-      geo = new THREE.TorusKnotGeometry(0.85, 0.28, 128, 24, 2, 3);
-      break;
-    case 'cube':
-      geo = new THREE.BoxGeometry(1.4, 1.4, 1.4);
-      break;
-    case 'cylinder':
-      geo = new THREE.CylinderGeometry(0.8, 0.8, 1.8, 32);
-      break;
-    default:
-      geo = new THREE.TorusKnotGeometry(0.85, 0.28, 128, 24, 2, 3);
-  }
-
+export function getBuiltinGeometry(_id?: BuiltinModelId): THREE.BufferGeometry {
+  const geo = new THREE.TorusKnotGeometry(0.85, 0.28, 128, 24, 2, 3);
   normalizeGeometryBounds(geo);
   return geo;
 }
@@ -61,28 +39,7 @@ export function getBuiltinGeometry(id: BuiltinModelId): THREE.BufferGeometry {
 /**
  * Loads a built-in or preset geometry asynchronously (supporting static OBJ assets)
  */
-export async function loadBuiltinGeometryAsync(id: BuiltinModelId): Promise<THREE.BufferGeometry> {
-  if (id === 'skull') {
-    const cached = geometryCache.get('skull');
-    if (cached) return cached.clone();
-
-    const basePath = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL)
-      ? (import.meta as any).env.BASE_URL.replace(/\/$/, '')
-      : '';
-    const presetUrl = `${basePath}/presets/skull.obj`;
-
-    try {
-      const geo = await fetchPresetObjGeometry(presetUrl);
-      geometryCache.set('skull', geo);
-      return geo.clone();
-    } catch {
-      // Fallback relative path
-      const geo = await fetchPresetObjGeometry('./presets/skull.obj');
-      geometryCache.set('skull', geo);
-      return geo.clone();
-    }
-  }
-
+export async function loadBuiltinGeometryAsync(id?: BuiltinModelId): Promise<THREE.BufferGeometry> {
   return getBuiltinGeometry(id);
 }
 

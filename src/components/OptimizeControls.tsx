@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { OptimizeConfig, AppMode, MediaConfig, MediaViewConfig, DitherAlgorithm, ResamplingMode } from '../types/ascii';
-import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Settings2, Moon, Sun, Activity } from 'lucide-react';
+import { AppMode, MediaConfig, MediaViewConfig, DitherAlgorithm, ResamplingMode } from '../types/ascii';
+import { Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Settings2, Moon, Sun, Activity, Grid } from 'lucide-react';
 
 interface OptimizeControlsProps {
-  config: OptimizeConfig;
-  onChangeConfig: (cfg: OptimizeConfig) => void;
   cols: number;
   rows: number;
   onChangeResolution: (cols: number, rows: number) => void;
@@ -89,8 +87,6 @@ const NumberInput: React.FC<{
 };
 
 export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
-  config,
-  onChangeConfig,
   cols,
   rows,
   onChangeResolution,
@@ -103,6 +99,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   mediaViewConfig,
   onChangeMediaViewConfig,
 }) => {
+  const totalCells = cols * rows;
   const [draftCols, setDraftCols] = useState<number>(cols);
   const [draftRows, setDraftRows] = useState<number>(rows);
   const [lockAspectRatio, setLockAspectRatio] = useState<boolean>(true);
@@ -122,8 +119,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     { id: 'bilinear', label: 'Bilinear (Smooth)' },
     { id: 'nearest', label: 'Nearest (Pixelated)' },
   ];
-
-  const isStaticImage = appMode === 'media' && (mediaConfig?.mediaType === 'image' || !mediaConfig?.mediaType);
 
   useEffect(() => {
     setDraftCols(cols);
@@ -234,48 +229,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     onChangeResolution(draftCols, draftRows);
   };
 
-  const update = <K extends keyof OptimizeConfig>(key: K, val: OptimizeConfig[K]) => {
-    onChangeConfig({
-      ...config,
-      [key]: val,
-    });
-  };
-
-  // Performance Profile Presets (For Synth & Model modes)
-  const applyProfile = (profile: 'main' | 'background' | 'secondary' | 'eco') => {
-    if (profile === 'main') {
-      onChangeResolution(120, 60);
-      onChangeConfig({
-        targetFps: 60,
-        pauseWhenHidden: true,
-        idleThrottle: false,
-      });
-    } else if (profile === 'background') {
-      onChangeResolution(90, 45);
-      onChangeConfig({
-        targetFps: 30,
-        pauseWhenHidden: true,
-        idleThrottle: true,
-      });
-    } else if (profile === 'secondary') {
-      onChangeResolution(70, 35);
-      onChangeConfig({
-        targetFps: 20,
-        pauseWhenHidden: true,
-        idleThrottle: true,
-      });
-    } else if (profile === 'eco') {
-      onChangeResolution(50, 25);
-      onChangeConfig({
-        targetFps: 15,
-        pauseWhenHidden: true,
-        idleThrottle: true,
-      });
-    }
-  };
-
-  const totalCells = cols * rows;
-
   return (
     <div className="tab-content">
       {appMode === 'media' ? (
@@ -381,7 +334,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
           )}
 
           {/* 2. Grid Resolution */}
-          <CollapsibleSection title="Grid Resolution" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          <CollapsibleSection title="Grid Resolution" icon={<Grid size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
                 {cols}×{rows} ({totalCells.toLocaleString()} chars)
               </span></>} persistKey="OptimizeControls-grid-resolution">
             {/* Media Source & Ratio Info Card */}
@@ -556,61 +509,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
       ) : (
         /* SYNTH & MODEL RESOLUTION CONTROLS */
         <>
-          {/* 1. Target Performance Profiles */}
-          <CollapsibleSection title="Performance Profiles" icon={<Cpu size={12} />} persistKey="OptimizeControls-performance-profiles">
-            <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
-              1-click presets optimized for different website contexts and CPU budgets.
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-              <button
-                className="btn btn-sm"
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                onClick={() => applyProfile('main')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                  <Zap size={11} /> MAIN / HERO
-                </div>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>60 FPS • 120x60 • High Fidelity</div>
-              </button>
-
-              <button
-                className="btn btn-sm"
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                onClick={() => applyProfile('background')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                  <MonitorPlay size={11} /> BACKGROUND
-                </div>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>30 FPS • 90x45 • Balanced Ambient</div>
-              </button>
-
-              <button
-                className="btn btn-sm"
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                onClick={() => applyProfile('secondary')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                  <Gauge size={11} /> SECONDARY
-                </div>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>20 FPS • 70x35 • Light Widget</div>
-              </button>
-
-              <button
-                className="btn btn-sm"
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                onClick={() => applyProfile('eco')}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                  <BatteryCharging size={11} /> ECO / MOBILE
-                </div>
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>15 FPS • 50x25 • Min Battery</div>
-              </button>
-            </div>
-          </CollapsibleSection>
-
-          {/* 2. Resolution & Grid Dimensions */}
-          <CollapsibleSection title="Grid Resolution" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          {/* Resolution & Grid Dimensions */}
+          <CollapsibleSection title="Grid Resolution" icon={<Grid size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
                 {cols}x{rows} ({totalCells.toLocaleString()} chars)
               </span></>} persistKey="OptimizeControls-grid-resolution">
             {/* Quick Resolution buttons */}
@@ -738,100 +638,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
           </CollapsibleSection>
         </>
       )}
-
-      {/* 3. Framerate Limiter */}
-      <CollapsibleSection
-        title="FPS Limiter"
-        persistKey="OptimizeControls-fps-limiter"
-        style={{
-          opacity: isStaticImage ? 0.35 : 1,
-          pointerEvents: isStaticImage ? 'none' : 'auto',
-        }}
-        badge={
-          <span style={{ color: isStaticImage ? 'var(--text-muted)' : 'var(--accent)' }}>
-            {isStaticImage ? 'N/A (STATIC FRAME)' : config.targetFps === 0 ? 'UNCAPPED (VSYNC)' : `${config.targetFps} FPS`}
-          </span>
-        }
-      >
-
-        {isStaticImage && (
-          <div style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px' }}>
-            Continuous rendering is disabled for static 2D images (rendered once at 0% CPU).
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
-          {[15, 20, 24, 30, 45, 60, 0].map((fpsVal) => (
-            <button
-              key={fpsVal}
-              disabled={isStaticImage}
-              className={`btn btn-sm ${config.targetFps === fpsVal ? 'btn-primary' : ''}`}
-              onClick={() => update('targetFps', fpsVal)}
-            >
-              {fpsVal === 0 ? 'MAX' : `${fpsVal}`}
-            </button>
-          ))}
-        </div>
-
-        <div className="control-row">
-          <span className="control-label">Target Framerate</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={10}
-              max={60}
-              step={1}
-              disabled={isStaticImage}
-              value={config.targetFps || 60}
-              onChange={(e) => update('targetFps', parseInt(e.target.value, 10) || 60)}
-            />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
-              {config.targetFps === 0 ? 'MAX' : `${config.targetFps}fps`}
-            </span>
-          </div>
-        </div>
-      </CollapsibleSection>
-
-      {/* 4. Smart CPU & Battery Throttling */}
-      <CollapsibleSection
-        title="Smart Throttling"
-        persistKey="OptimizeControls-smart-throttling"
-        style={{
-          opacity: isStaticImage ? 0.35 : 1,
-          pointerEvents: isStaticImage ? 'none' : 'auto',
-        }}
-        badge={isStaticImage ? 'PAUSED (STATIC)' : undefined}
-      >
-
-        <div className="control-row">
-          <span className="control-label">
-            Pause when Tab is Inactive
-            <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>0% CPU when switched away</div>
-          </span>
-          <button
-            disabled={isStaticImage}
-            className={`btn btn-sm ${config.pauseWhenHidden ? 'btn-primary' : ''}`}
-            onClick={() => update('pauseWhenHidden', !config.pauseWhenHidden)}
-          >
-            {config.pauseWhenHidden ? 'ENABLED' : 'DISABLED'}
-          </button>
-        </div>
-
-        <div className="control-row" style={{ marginTop: '6px' }}>
-          <span className="control-label">
-            Idle Framerate Throttle
-            <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>Drops to 12 FPS when user is idle</div>
-          </span>
-          <button
-            disabled={isStaticImage}
-            className={`btn btn-sm ${config.idleThrottle ? 'btn-primary' : ''}`}
-            onClick={() => update('idleThrottle', !config.idleThrottle)}
-          >
-            {config.idleThrottle ? 'ENABLED' : 'DISABLED'}
-          </button>
-        </div>
-      </CollapsibleSection>
     </div>
   );
 };

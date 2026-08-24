@@ -10,6 +10,14 @@ import {
   AlertTriangle,
   Plus,
   RefreshCw,
+  CircleDot,
+  Waves,
+  Move,
+  RotateCw,
+  Eye,
+  Disc,
+  Radio,
+  Sparkles,
 } from 'lucide-react';
 
 interface SynthControlsProps {
@@ -315,7 +323,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               }}
             >
               {/* Global & Matrix Settings */}
-              <CollapsibleSection title="Global Dynamics" persistKey="SynthControls-global-dynamics">
+              <CollapsibleSection title="Global Dynamics" icon={<Sliders size={12} />} persistKey="SynthControls-global-dynamics">
                 {renderSlider('Time Speed', 'timeSpeed', 0.0, 3.0, 0.05)}
                 {renderSlider('Aspect Compensation', 'aspectRatio', 0.1, 2.0, 0.01)}
                 {renderSlider('Contrast', 'contrast', 0.2, 3.0, 0.1)}
@@ -338,8 +346,8 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 </div>
               </CollapsibleSection>
 
-              {/* 1. Primary Radial Wave */}
-              <CollapsibleSection title="1. Primary Radial Wave" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(dist)</span></>} persistKey="SynthControls-1-primary-radial-wave">
+              {/* Primary Radial Wave */}
+              <CollapsibleSection title="Primary Radial Wave" icon={<CircleDot size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(dist)</span></>} persistKey="SynthControls-1-primary-radial-wave">
                 {renderSlider('Amplitude', 'radialAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Frequency', 'radialFreq', 0.01, 0.4, 0.01)}
                 {renderSlider('Wave Speed', 'radialSpeed', -3.0, 3.0, 0.1)}
@@ -347,15 +355,15 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 {renderSlider('Center Offset Y', 'radialCenterOffsetY', -20, 20, 1, 0)}
               </CollapsibleSection>
 
-              {/* 2. Secondary Harmonic Ripple */}
-              <CollapsibleSection title="2. Secondary Harmonic Ripple" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Cell Interference</span></>} persistKey="SynthControls-2-secondary-harmonic-ripple">
+              {/* Secondary Harmonic Ripple */}
+              <CollapsibleSection title="Secondary Harmonic Ripple" icon={<Waves size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Cell Interference</span></>} persistKey="SynthControls-2-secondary-harmonic-ripple">
                 {renderSlider('Harmonic Amplitude', 'radial2Amp', 0.0, 2.0, 0.05)}
                 {renderSlider('Harmonic Frequency', 'radial2Freq', 0.02, 0.6, 0.01)}
                 {renderSlider('Harmonic Speed', 'radial2Speed', -4.0, 4.0, 0.1)}
               </CollapsibleSection>
 
-              {/* 3. Directional Waves */}
-              <CollapsibleSection title="3. Directional Waves (X, Y, Diagonal)" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span></>} persistKey="SynthControls-3-directional-waves-x-y-diagonal">
+              {/* Directional Waves */}
+              <CollapsibleSection title="Directional Waves (X, Y, Diagonal)" icon={<Move size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span></>} persistKey="SynthControls-3-directional-waves-x-y-diagonal">
                 {renderSlider('X Amplitude', 'xAmp', 0.0, 1.5, 0.05)}
                 {renderSlider('X Frequency', 'xFreq', 0.01, 0.3, 0.01)}
                 {renderSlider('X Speed', 'xSpeed', -2.0, 2.0, 0.1)}
@@ -369,39 +377,39 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 {renderSlider('Diagonal Speed', 'diagSpeed', -2.0, 2.0, 0.1)}
               </CollapsibleSection>
 
-              {/* 4. Spiral / Vortex */}
-              <CollapsibleSection title="4. Angular Spiral Vortex" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(θ * arms)</span></>} persistKey="SynthControls-4-angular-spiral-vortex">
+              {/* Spiral / Vortex */}
+              <CollapsibleSection title="Angular Spiral Vortex" icon={<RotateCw size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(θ * arms)</span></>} persistKey="SynthControls-4-angular-spiral-vortex">
                 {renderSlider('Spiral Amplitude', 'spiralAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Arm Count', 'spiralArms', 1, 12, 1, 0)}
                 {renderSlider('Rotation Speed', 'spiralSpeed', -5.0, 5.0, 0.1)}
                 {renderSlider('Spiral Twist', 'spiralTwist', 0.0, 0.4, 0.01)}
               </CollapsibleSection>
 
-              {/* 5. Depth / Tunnel Warp */}
-              <CollapsibleSection title="5. Wormhole Tunnel [1 / dist]" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>3D Perspective</span></>} persistKey="SynthControls-5-wormhole-tunnel-1-dist">
+              {/* Depth / Tunnel Warp */}
+              <CollapsibleSection title="Wormhole Tunnel [1 / dist]" icon={<Eye size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>3D Perspective</span></>} persistKey="SynthControls-5-wormhole-tunnel-1-dist">
                 {renderSlider('Tunnel Amplitude', 'tunnelAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Warp Power', 'tunnelPower', 5, 80, 1, 0)}
                 {renderSlider('Tunnel Speed', 'tunnelSpeed', -4.0, 4.0, 0.1)}
               </CollapsibleSection>
 
-              {/* 6. Concentric Rings */}
-              <CollapsibleSection title="6. Concentric Rings" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Harmonic Bands</span></>} persistKey="SynthControls-6-concentric-rings">
+              {/* Concentric Rings */}
+              <CollapsibleSection title="Concentric Rings" icon={<Disc size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Harmonic Bands</span></>} persistKey="SynthControls-6-concentric-rings">
                 {renderSlider('Rings Amplitude', 'ringsAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Base Radius', 'ringsRadius', 5, 80, 1, 0)}
                 {renderSlider('Pulse Speed', 'ringsSpeed', -4.0, 4.0, 0.1)}
                 {renderSlider('Ring Multiplier', 'ringsCount', 1, 6, 1, 0)}
               </CollapsibleSection>
 
-              {/* 7. Dual Interference */}
-              <CollapsibleSection title="7. Dual Interference Moiré" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Dual Emitters</span></>} persistKey="SynthControls-7-dual-interference-moir">
+              {/* Dual Interference */}
+              <CollapsibleSection title="Dual Interference Moiré" icon={<Radio size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Dual Emitters</span></>} persistKey="SynthControls-7-dual-interference-moir">
                 {renderSlider('Interference Amp', 'dualEmitterAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Emitter Spacing', 'dualEmitterSpacing', 5, 60, 1, 0)}
                 {renderSlider('Wave Frequency', 'dualEmitterFreq', 0.02, 0.4, 0.01)}
                 {renderSlider('Wave Speed', 'dualEmitterSpeed', -4.0, 4.0, 0.1)}
               </CollapsibleSection>
 
-              {/* 8. Starfield & Cosmic Sparkle */}
-              <CollapsibleSection title="8. Starfield &amp; Cosmic Sparkle" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Procedural Sky</span></>} persistKey="SynthControls-8-starfield-cosmic-sparkle">
+              {/* Starfield & Cosmic Sparkle */}
+              <CollapsibleSection title="Starfield &amp; Cosmic Sparkle" icon={<Sparkles size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Procedural Sky</span></>} persistKey="SynthControls-8-starfield-cosmic-sparkle">
                 {renderSlider('Star Brightness', 'starfieldIntensity', 0.0, 2.0, 0.05)}
                 {renderSlider('Star Quantity', 'starfieldDensity', 0.1, 5.0, 0.1)}
                 {renderSlider('Sparkle Frequency', 'starfieldSpeed', 0.0, 8.0, 0.1)}

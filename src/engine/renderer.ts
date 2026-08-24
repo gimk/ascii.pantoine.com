@@ -32,11 +32,8 @@ export const CHARSETS = [
   // than filled ones of the same size.
   { id: 'circles', name: 'Dot Circles', chars: ' .·∘○◉●' },
   { id: 'geometric', name: 'Geometric Phases', chars: ' ·○◔◑◕●' },
-  // Stops at U+283F, the densest six-dot cell. U+287F and U+28FF followed it
-  // here and were removed: the dot-7 and dot-8 row sits below the 10px line box
-  // and overlaps the row beneath, so the ramp gives up its darkest two steps to
-  // keep the grid clean.
-  { id: 'braille-dense', name: 'Braille Density', chars: ' ⠀⠁⠉⠋⠛⠟⠿' },
+  // Uses strictly 6-dot Braille (up to U+283F) to avoid row-4 dot-7/8 vertical bleed into the row below
+  { id: 'braille-dense', name: 'Braille Density', chars: ' ⠁⠂⠄⠃⠉⠅⠇⠋⠍⠏⠛⠟⠷⠿' },
 
   // --- Typographic ---
   { id: 'punct', name: 'Punctuation Ramp', chars: ' .,:;!|Il1+*#' },

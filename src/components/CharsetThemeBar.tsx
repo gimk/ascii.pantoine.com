@@ -9,7 +9,7 @@ import {
   AppMode,
   DEFAULT_MEDIA_COLOR_CONFIG,
 } from '../types/ascii';
-import { Tv, Sparkles, Pipette, Palette, Sliders, Compass, Sun, Moon, BoxSelect, Zap, Paintbrush } from 'lucide-react';
+import { Sparkles, Pipette, Palette, Sliders, Compass, Sun, Moon, BoxSelect, Zap, Paintbrush, Type } from 'lucide-react';
 
 interface CharsetThemeBarProps {
   currentCharset: string;
@@ -20,8 +20,8 @@ interface CharsetThemeBarProps {
   onChangeCustomColor?: (color: string) => void;
   gradientConfig?: PhosphorGradient | null;
   onChangeGradient?: (grad: PhosphorGradient | null) => void;
-  crtConfig: CrtConfig;
-  onChangeCrtConfig: (cfg: CrtConfig) => void;
+  crtConfig?: CrtConfig;
+  onChangeCrtConfig?: (cfg: CrtConfig) => void;
   appMode?: AppMode;
   mediaColorConfig?: MediaColorConfig;
   onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
@@ -137,8 +137,6 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   onChangeCustomColor,
   gradientConfig = null,
   onChangeGradient,
-  crtConfig,
-  onChangeCrtConfig,
   appMode = 'synth',
   mediaColorConfig = DEFAULT_MEDIA_COLOR_CONFIG,
   onChangeMediaColorConfig,
@@ -159,13 +157,6 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
       setThemeMode('gradient');
     }
   }, [gradientConfig]);
-
-  const updateCrt = <K extends keyof CrtConfig>(key: K, val: CrtConfig[K]) => {
-    onChangeCrtConfig({
-      ...crtConfig,
-      [key]: val,
-    });
-  };
 
   const handleCustomColorChange = (hex: string) => {
     setCustomHex(hex);
@@ -727,6 +718,7 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
       {/* 2. Character Density Ramp */}
       <CollapsibleSection
         title="Character Density Presets"
+        icon={<Type size={12} />}
         persistKey="CharsetThemeBar-character-density-presets"
         badge={activeCharsetName}
       >
@@ -759,61 +751,6 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
           onChange={(e) => onChangeCharset(e.target.value || ' ')}
           placeholder="e.g.  .:-=+*#%@"
         />
-      </CollapsibleSection>
-
-      {/* 3. CRT & Display Effects */}
-      <CollapsibleSection title="CRT &amp; Display Effects" icon={<Tv size={12} />} persistKey="CharsetThemeBar-crt-display-effects">
-        {/* 1. CRT Scanlines */}
-        <div className="control-row">
-          <span className="control-label">CRT Scanlines</span>
-          <button
-            className={`btn btn-sm ${crtConfig.scanlines ? 'btn-primary' : ''}`}
-            onClick={() => updateCrt('scanlines', !crtConfig.scanlines)}
-          >
-            {crtConfig.scanlines ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
-          </button>
-        </div>
-
-        {/* 2. CRT Glow (Centered Background Ambient Glow) */}
-        <div className="control-row" style={{ opacity: isContentColorActive ? 0.45 : 1 }}>
-          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            CRT Glow
-            {isContentColorActive && <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>(Disabled in Content Color)</span>}
-          </span>
-          <button
-            className={`btn btn-sm ${crtConfig.crtGlow && !isContentColorActive ? 'btn-primary' : ''}`}
-            disabled={isContentColorActive}
-            onClick={() => updateCrt('crtGlow', !crtConfig.crtGlow)}
-          >
-            {isContentColorActive ? 'DISABLED [OFF]' : crtConfig.crtGlow ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
-          </button>
-        </div>
-
-        {/* 3. CRT Corner Vignette */}
-        <div className="control-row">
-          <span className="control-label">CRT Corner Vignette</span>
-          <button
-            className={`btn btn-sm ${crtConfig.vignette ? 'btn-primary' : ''}`}
-            onClick={() => updateCrt('vignette', !crtConfig.vignette)}
-          >
-            {crtConfig.vignette ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
-          </button>
-        </div>
-
-        {/* 4. Phosphor Bloom (Character Soft Blur) */}
-        <div className="control-row" style={{ opacity: isContentColorActive ? 0.45 : 1 }}>
-          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            Phosphor Bloom
-            {isContentColorActive && <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>(Disabled in Content Color)</span>}
-          </span>
-          <button
-            className={`btn btn-sm ${crtConfig.phosphorBloom && !isContentColorActive ? 'btn-primary' : ''}`}
-            disabled={isContentColorActive}
-            onClick={() => updateCrt('phosphorBloom', !crtConfig.phosphorBloom)}
-          >
-            {isContentColorActive ? 'DISABLED [OFF]' : crtConfig.phosphorBloom ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
-          </button>
-        </div>
       </CollapsibleSection>
     </div>
   );

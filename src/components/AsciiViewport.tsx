@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop } from 'lucide-react';
-import { CrtConfig, PhosphorGradient } from '../types/ascii';
+import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings } from 'lucide-react';
+import { CrtConfig, PhosphorGradient, OptimizeConfig } from '../types/ascii';
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
+import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 
 export interface AsciiViewportHandle {
   setFrame: (
@@ -27,13 +28,16 @@ interface AsciiViewportProps {
   onClick: (x: number, y: number) => void;
   presetName: string;
   isEdited?: boolean;
-  targetFps?: number;
   viewMode?: 'editor' | 'fullscreen';
   onToggleViewMode?: () => void;
   autoRes?: boolean;
   onToggleAutoRes?: () => void;
   onAutoResolutionChange?: (cols: number, rows: number) => void;
+  onChangeResolution?: (cols: number, rows: number) => void;
   crtConfig?: CrtConfig;
+  onChangeCrtConfig?: (cfg: CrtConfig) => void;
+  optimizeConfig?: OptimizeConfig;
+  onChangeOptimizeConfig?: (cfg: OptimizeConfig) => void;
   gradientConfig?: PhosphorGradient | null;
   appMode?: 'synth' | 'media' | 'model';
   mediaType?: 'image' | 'video';
@@ -62,13 +66,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onClick,
   presetName,
   isEdited,
-  targetFps,
   viewMode = 'editor',
   onToggleViewMode,
   autoRes = false,
   onToggleAutoRes,
   onAutoResolutionChange,
+  onChangeResolution,
   crtConfig,
+  onChangeCrtConfig,
+  optimizeConfig,
+  onChangeOptimizeConfig,
   gradientConfig,
   appMode = 'synth',
   mediaType,
@@ -87,6 +94,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const [isColoredView, setIsColoredView] = useState<boolean>(false);
   const latestColorsRef = useRef<Uint8ClampedArray | null>(null);
   const latestBgColorRef = useRef<string | undefined>(undefined);
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
@@ -284,7 +293,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
 
       if (timeSpanRef.current) {
-        timeSpanRef.current.textContent = isTimelineDisabled ? '0.00s' : `${time.toFixed(2)}s`;
+        timeSpanRef.current.textContent = isTimelineDisabled ? '0s' : `${Math.floor(time)}s`;
       }
       if (fpsSpanRef.current) {
         fpsSpanRef.current.textContent = isTimelineDisabled ? 'STATIC' : `${fps}`;
@@ -516,14 +525,15 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           )}
 
           <span className="status-tag">
-            FPS: <strong ref={fpsSpanRef}>{isTimelineDisabled ? 'STATIC' : '0'}</strong>{(!isTimelineDisabled && targetFps && targetFps > 0) ? ` (${targetFps})` : ''}
+            FPS: <strong ref={fpsSpanRef}>{isTimelineDisabled ? 'STATIC' : '0'}</strong>
           </span>
           <span className="status-tag">
-            T: <strong ref={timeSpanRef}>0.00s</strong>
+            T: <strong ref={timeSpanRef}>0s</strong>
           </span>
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
           </span>
+
           {onToggleAutoRes && (
             <button
               className={`btn btn-sm ${autoRes ? 'btn-primary' : ''}`}
@@ -574,6 +584,18 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             {copied ? 'COPIED!' : 'SNAP'}
           </button>
 
+          {/* Viewfinder Display & Performance Settings Button */}
+          {crtConfig && optimizeConfig && onChangeCrtConfig && onChangeOptimizeConfig && (
+            <button
+              className={`btn btn-sm ${isSettingsOpen ? 'btn-primary' : ''}`}
+              onClick={() => setIsSettingsOpen(true)}
+              title="Viewfinder Display & Performance Settings"
+            >
+              <Settings size={12} />
+              <span className="btn-label-sm">SETTINGS</span>
+            </button>
+          )}
+
           {onToggleViewMode && (
             <button
               className={`btn btn-sm ${viewMode === 'fullscreen' ? 'btn-primary' : ''}`}
@@ -592,6 +614,21 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           )}
         </div>
       </div>
+
+      {/* Viewfinder & Hardware Settings Modal */}
+      {crtConfig && optimizeConfig && onChangeCrtConfig && onChangeOptimizeConfig && (
+        <ViewfinderSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          crtConfig={crtConfig}
+          onChangeCrtConfig={onChangeCrtConfig}
+          optimizeConfig={optimizeConfig}
+          onChangeOptimizeConfig={onChangeOptimizeConfig}
+          onChangeResolution={onChangeResolution}
+          isStaticImage={isTimelineDisabled}
+          isContentColorActive={isColoredView}
+        />
+      )}
     </div>
   );
 });

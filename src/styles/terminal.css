@@ -533,13 +533,19 @@ html, body, #root {
 @media (max-width: 768px) {
   .viewport-bottom-bar {
     padding: 6px 10px;
-    gap: 8px;
+    gap: 6px;
     row-gap: 6px;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .status-group {
+  .viewport-bottom-bar .status-group {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
     gap: 6px;
+    flex-wrap: nowrap;
   }
 
   .status-tag {
@@ -550,9 +556,13 @@ html, body, #root {
     display: none;
   }
 
+  .status-tag.res-tag {
+    display: none;
+  }
+
   .viewport-bottom-bar .btn-sm {
-    padding: 6px 10px;
-    font-size: 11px;
+    padding: 5px 8px;
+    font-size: 10.5px;
     min-height: 28px;
     display: inline-flex;
     align-items: center;
@@ -562,18 +572,23 @@ html, body, #root {
 
 @media (max-width: 480px) {
   .viewport-bottom-bar {
-    padding: 6px 8px;
-    gap: 6px;
+    padding: 6px 6px;
+    gap: 5px;
+    row-gap: 5px;
+  }
+
+  .viewport-bottom-bar .status-group {
+    gap: 4px;
   }
 
   .viewport-bottom-bar .btn-sm {
-    padding: 5px 8px;
-    font-size: 10.5px;
-    min-height: 28px;
+    padding: 4px 6px;
+    font-size: 10px;
+    min-height: 26px;
   }
 
-  .status-tag.res-tag {
-    display: none;
+  .status-tag {
+    font-size: 10px;
   }
 }
 
@@ -590,26 +605,15 @@ html, body, #root {
   flex-shrink: 0;
   height: 100%;
   max-height: 100%;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-color) transparent;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
   -webkit-overflow-scrolling: touch;
 }
 
 .sidebar-pane::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sidebar-pane::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sidebar-pane::-webkit-scrollbar-thumb {
-  background-color: var(--border-color);
-  border-radius: 3px;
-}
-
-.sidebar-pane::-webkit-scrollbar-thumb:hover {
-  background-color: var(--accent);
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 @media (max-width: 1100px) {
@@ -714,55 +718,110 @@ html, body, #root {
   color: var(--bg-primary);
 }
 
-/* Tab Navigation (Sub-Tabs Pinned Below Mode Switcher) */
-/*
- * The tab strip is now the topmost element of the sidebar, so it pins at 0.
- * It previously sat at 38px, tucked under the source switcher that used to be
- * above it.
- */
+/* Tab Navigation (Brutalist Tactical Console Rail) */
 .tab-nav {
   position: sticky;
   top: 0;
   z-index: 35;
   display: flex;
-  border-bottom: 1px solid var(--border-color);
   background-color: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 6px 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .tab-btn {
   flex: 1;
-  padding: 9px 6px;
-  background: transparent;
-  border: none;
-  border-right: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  text-align: center;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s ease;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 5px;
+  padding: 7px 8px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
 }
 
-.tab-btn:last-child {
-  border-right: none;
+.tab-btn-index {
+  font-size: 8.5px;
+  font-weight: 800;
+  color: var(--text-dim);
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  padding: 0 4px;
+  line-height: 13px;
+  transition: all 0.15s ease-in-out;
+}
+
+.tab-btn-icon {
+  flex-shrink: 0;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.tab-btn-label {
+  display: inline-block;
+}
+
+.tab-btn-subbadge {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 1px 4px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  color: var(--text-dim);
+  margin-left: 2px;
+  transition: all 0.15s ease-in-out;
 }
 
 .tab-btn:hover {
-  background-color: var(--bg-control);
+  background-color: var(--bg-control-hover);
+  border-color: var(--border-active);
   color: var(--text-primary);
 }
 
+.tab-btn:hover .tab-btn-index {
+  color: var(--text-muted);
+  border-color: var(--text-dim);
+}
+
+.tab-btn:hover .tab-btn-subbadge {
+  color: var(--text-muted);
+  border-color: var(--text-dim);
+}
+
 .tab-btn.active {
-  background-color: var(--bg-panel);
-  color: var(--text-primary);
-  border-bottom: 2px solid var(--accent);
+  background-color: var(--bg-control);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow), inset 0 1px 0 var(--accent);
+}
+
+.tab-btn.active .tab-btn-index {
+  background-color: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+  font-weight: 900;
+}
+
+.tab-btn.active .tab-btn-subbadge {
+  background-color: var(--accent-glow);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Tab Content */
@@ -918,16 +977,188 @@ html, body, #root {
 }
 
 /*
- * Content source picker — three square tiles, deliberately not a tab strip and
- * never inside a disclosure. Picking the source is the first decision on the
- * CONTENT panel, so it stays permanently visible.
+ * Content source picker — tactical command cards with status chips and telemetry.
+ * Sits permanently at the top of the CONTENT panel without disclosures.
  */
+.source-selector-wrapper {
+  padding: 14px 14px 4px 14px;
+}
+
 .source-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  gap: 10px;
 }
 
+.source-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 12px 11px 12px;
+  min-height: 88px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
+}
+
+.source-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 2px;
+}
+
+.source-card-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 2px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  transition: all 0.15s ease-in-out;
+}
+
+.source-card-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  color: var(--text-dim);
+  transition: all 0.15s ease-in-out;
+}
+
+.source-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0 5px 0;
+}
+
+.source-card-name {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  line-height: 1.2;
+  transition: color 0.15s ease-in-out;
+}
+
+.source-card-desc {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease-in-out;
+}
+
+.source-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.source-card-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: all 0.15s ease-in-out;
+  flex-shrink: 0;
+}
+
+.source-card-status {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  transition: color 0.15s ease-in-out;
+}
+
+.source-card:hover {
+  border-color: var(--border-active);
+  background-color: var(--bg-control);
+}
+
+.source-card:hover .source-card-icon-wrap {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
+.source-card:hover .source-card-badge {
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+}
+
+.source-card:hover .source-card-name {
+  color: var(--text-primary);
+}
+
+.source-card:hover .source-card-desc {
+  color: var(--text-muted);
+}
+
+.source-card:hover .source-card-status {
+  color: var(--text-muted);
+}
+
+.source-card.active {
+  border-color: var(--accent);
+  background-color: var(--bg-panel);
+  box-shadow: 0 0 12px var(--accent-glow), inset 0 0 0 1px var(--accent-glow);
+}
+
+.source-card.active .source-card-icon-wrap {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.source-card.active .source-card-badge {
+  background-color: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.source-card.active .source-card-name {
+  color: var(--accent);
+}
+
+.source-card.active .source-card-desc {
+  color: var(--text-muted);
+}
+
+.source-card.active .source-card-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.source-card.active .source-card-status {
+  color: var(--accent);
+}
+
+/* Legacy .source-tile compatibility fallback */
 .source-tile {
   aspect-ratio: 1 / 1;
   display: flex;
@@ -1514,6 +1745,23 @@ input[type="number"] {
     height: auto;
     min-height: unset;
     padding: 18px 14px 16px 14px;
+  }
+}
+
+@media (max-width: 440px) {
+  .source-card-desc {
+    display: none;
+  }
+  .source-card-badge {
+    top: 6px;
+    right: 8px;
+  }
+  .tab-btn-subbadge {
+    display: none;
+  }
+  .source-card {
+    min-height: 58px;
+    padding: 6px 8px;
   }
 }
 

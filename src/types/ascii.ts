@@ -259,11 +259,7 @@ export interface MediaPreset {
 
 export type ModelShadingMode = 'shaded' | 'wireframe' | 'depth' | 'normals' | 'outline' | 'points';
 
-export type BuiltinModelId =
-  | 'torus-knot'
-  | 'skull'
-  | 'cube'
-  | 'cylinder';
+export type BuiltinModelId = 'torus-knot';
 
 export interface ModelConfig {
   sourceType: 'preset' | 'file' | 'url';

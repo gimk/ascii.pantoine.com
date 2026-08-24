@@ -1,15 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { Preset } from '../types/ascii';
 import { PRESETS } from '../engine/presets';
-import { BookmarkPlus, Trash2, Dices } from 'lucide-react';
+import { Dices, Waves } from 'lucide-react';
 
 interface PresetSelectorProps {
   activePresetId: string;
   onSelectPreset: (preset: Preset) => void;
-  onSaveCustomPreset: (name: string) => void;
-  userPresets: Preset[];
-  onDeleteUserPreset: (id: string) => void;
   onRandomize?: () => void;
   isRandomizing?: boolean;
 }
@@ -17,21 +14,9 @@ interface PresetSelectorProps {
 export const PresetSelector: React.FC<PresetSelectorProps> = ({
   activePresetId,
   onSelectPreset,
-  onSaveCustomPreset,
-  userPresets,
-  onDeleteUserPreset,
   onRandomize,
   isRandomizing = false,
 }) => {
-  const [customName, setCustomName] = useState('');
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customName.trim()) return;
-    onSaveCustomPreset(customName.trim());
-    setCustomName('');
-  };
-
   return (
     <div className="tab-content">
       {/* 0. Large Randomize Synthesizer Button */}
@@ -64,6 +49,7 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
       {/* Built-in Presets */}
       <CollapsibleSection
         title="Example wave presets"
+        icon={<Waves size={12} />}
         persistKey="PresetSelector-example-wave-presets"
         badge={PRESETS.find((p) => p.id === activePresetId)?.name || '' + PRESETS.length + ' presets'}
       >
@@ -82,78 +68,6 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
             );
           })}
         </div>
-      </CollapsibleSection>
-
-      {/* User Saved Presets */}
-      <CollapsibleSection title="User Presets" badge={<><span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
-            {userPresets.length} saved
-          </span></>} persistKey="PresetSelector-user-presets">
-        <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
-          Presets are stored locally in your browser and will be cleared if cookies or website storage are deleted.
-        </p>
-
-        {/* Save Current Preset Form */}
-        <form onSubmit={handleSave} style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-          <input
-            type="text"
-            className="number-input"
-            style={{ flex: 1, textAlign: 'left', padding: '4px 8px' }}
-            placeholder="Preset Name..."
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-          />
-          <button type="submit" className="btn btn-primary btn-sm">
-            <BookmarkPlus size={12} />
-            SAVE
-          </button>
-        </form>
-
-        {userPresets.length === 0 ? (
-          <div style={{ fontSize: '10px', color: 'var(--text-dim)', textAlign: 'center', padding: '8px' }}>
-            No custom presets saved yet.
-          </div>
-        ) : (
-          <div className="presets-grid">
-            {userPresets.map((preset) => {
-              const isActive = activePresetId === preset.id;
-              return (
-                <div
-                  key={preset.id}
-                  className={`preset-card ${isActive ? 'active' : ''}`}
-                  style={{ position: 'relative' }}
-                  onClick={() => onSelectPreset(preset)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '22px', marginBottom: '2px' }}>
-                    <div className="preset-card-title">{preset.name}</div>
-                    {preset.type === 'custom' && (
-                      <span style={{ fontSize: '8px', background: 'var(--accent)', color: 'var(--bg-primary)', padding: '1px 4px', borderRadius: '2px', fontWeight: 700 }}>
-                        CODE
-                      </span>
-                    )}
-                  </div>
-                  <div className="preset-card-desc">{preset.description}</div>
-                  <button
-                    className="btn btn-sm"
-                    style={{
-                      position: 'absolute',
-                      top: '4px',
-                      right: '4px',
-                      padding: '2px 4px',
-                      color: '#ff3344',
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteUserPreset(preset.id);
-                    }}
-                    title="Delete Preset"
-                  >
-                    <Trash2 size={10} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </CollapsibleSection>
     </div>
   );

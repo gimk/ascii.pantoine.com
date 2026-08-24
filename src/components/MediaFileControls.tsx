@@ -181,81 +181,59 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const isMac = typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '');
+
+  const handleClipboardPaste = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              const file = new File([blob], `clipboard-paste-${Date.now()}.${type.split('/')[1] || 'png'}`, { type });
+              onFileUpload(file);
+              return;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Clipboard read failed:', err);
+    }
+  };
+
   return (
     <div className="tab-content">
       {showSource && (
         <>
-      {/* 0. High-Visibility Clipboard Paste Hero Banner */}
-      <div
-        className="control-section"
-        style={{
-          background: 'var(--accent-glow)',
-          border: '1.5px solid var(--accent)',
-          borderRadius: '4px',
-          padding: '12px 14px',
-          marginBottom: '12px',
-          boxShadow: '0 0 12px var(--accent-glow)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <ClipboardPaste size={15} color="var(--accent)" />
-            <span style={{ fontWeight: 800, fontSize: '11.5px', letterSpacing: '0.04em', color: 'var(--accent)' }}>
-              INSTANT CLIPBOARD PASTE
-            </span>
+          {/* 0. Large Clipboard Paste Hero Button */}
+          <div style={{ marginBottom: '14px' }}>
+            <button
+              type="button"
+              className="btn btn-randomize"
+              style={{
+                width: '100%',
+                padding: '11px 14px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                letterSpacing: '0.07em',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                borderRadius: '4px',
+              }}
+              onClick={handleClipboardPaste}
+              title="Paste image directly from clipboard (or press Cmd+V / Ctrl+V)"
+            >
+              <ClipboardPaste size={16} className="header-btn-icon" />
+              <span>PASTE FROM CLIPBOARD ({isMac ? '⌘V' : 'CTRL+V'})</span>
+            </button>
           </div>
-          <span
-            style={{
-              padding: '2px 7px',
-              background: 'var(--accent)',
-              color: 'var(--bg-primary)',
-              fontWeight: 800,
-              fontSize: '10px',
-              borderRadius: '2px',
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.05em',
-            }}
-          >
-            {typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? '⌘ + V' : 'CTRL + V'}
-          </span>
-        </div>
 
-        <p style={{ fontSize: '10.5px', color: 'var(--text-primary)', lineHeight: 1.45, marginBottom: '8px' }}>
-          Copy any image, screenshot, or graphic to your clipboard, then press <strong style={{ color: 'var(--accent)' }}>{typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? 'Cmd+V' : 'Ctrl+V'}</strong> anywhere to rasterize it instantly.
-        </p>
-
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          style={{ width: '100%', justifyContent: 'center', padding: '6px 10px', fontSize: '11px', fontWeight: 700 }}
-          onClick={async () => {
-            try {
-              if (navigator.clipboard && navigator.clipboard.read) {
-                const items = await navigator.clipboard.read();
-                for (const item of items) {
-                  for (const type of item.types) {
-                    if (type.startsWith('image/')) {
-                      const blob = await item.getType(type);
-                      const file = new File([blob], `clipboard-paste-${Date.now()}.${type.split('/')[1] || 'png'}`, { type });
-                      onFileUpload(file);
-                      return;
-                    }
-                  }
-                }
-              }
-            } catch {
-              // Browser permission might require shortcut Cmd+V
-            }
-          }}
-          title="Paste image directly from clipboard (or press Cmd+V / Ctrl+V)"
-        >
-          <ClipboardPaste size={13} />
-          PASTE FROM CLIPBOARD ({typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? '⌘V' : 'Ctrl+V'})
-        </button>
-      </div>
-
-      {/* 1. File Upload & Source Dropzone */}
-      <CollapsibleSection title="Or Import From File / URL" icon={<Upload size={12} />} persistKey="MediaFileControls-or-import-from-file-url">
+          {/* 1. File Upload & Source Dropzone */}
+          <CollapsibleSection title="Import From File / URL" icon={<Upload size={12} />} persistKey="MediaFileControls-import-from-file-url">
         <div
           className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
           onDragOver={handleDragOver}

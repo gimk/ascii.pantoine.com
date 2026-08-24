@@ -38,8 +38,6 @@ import {
 import {
   DEFAULT_MEDIA_CONFIG,
   DEFAULT_MEDIA_VIEW_CONFIG,
-  DEFAULT_MEDIA_PRESET,
-  MEDIA_PRESETS,
 } from './engine/mediaPresets';
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
 import { Khronos3DModel } from './engine/khronos3dModels';
@@ -59,10 +57,8 @@ import { PresetSelector } from './components/PresetSelector';
 import { ParticleControls } from './components/ParticleControls';
 import { OptimizeControls } from './components/OptimizeControls';
 import { CharsetThemeBar } from './components/CharsetThemeBar';
-import { ModelPresetSelector } from './components/ModelPresetSelector';
 import { ModelSettingsControls } from './components/ModelSettingsControls';
 import { ModelViewControls } from './components/ModelViewControls';
-import { MediaPresetSelector } from './components/MediaPresetSelector';
 import { MediaFileControls } from './components/MediaFileControls';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
@@ -85,9 +81,6 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 
-const LOCAL_STORAGE_PRESETS_KEY = 'ascii_builder_user_presets';
-const LOCAL_STORAGE_MODEL_PRESETS_KEY = 'ascii_builder_user_model_presets';
-const LOCAL_STORAGE_MEDIA_PRESETS_KEY = 'ascii_builder_user_media_presets';
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
 
 /**
@@ -97,30 +90,34 @@ const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode'
 const SOURCES: {
   id: AppMode;
   name: string;
+  badge: string;
   description: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
   title: string;
 }[] = [
   {
     id: 'synth',
     name: 'SYNTH',
-    description: 'Parametric wave field & particles',
+    badge: 'MATH',
+    description: 'Waves & Particles',
     icon: Sliders,
-    title: 'Parametric Wave & Particle Synthesizer',
+    title: 'Parametric Wave & Particle Synthesizer [1]',
   },
   {
     id: 'media',
     name: 'MEDIA',
-    description: 'Image or video file',
+    badge: '2D',
+    description: 'Image & Video',
     icon: ImageIcon,
-    title: '2D Image & Video ASCII Rasterizer',
+    title: '2D Image & Video ASCII Rasterizer [2]',
   },
   {
     id: 'model',
     name: 'MODEL',
-    description: '3D geometry (beta)',
+    badge: '3D',
+    description: 'WebGL Mesh',
     icon: Box,
-    title: '3D Model to 2D ASCII Visualizer (Beta)',
+    title: '3D Model to 2D ASCII Visualizer [3]',
   },
 ];
 
@@ -141,7 +138,7 @@ interface HistorySnapshot {
 interface ModelHistorySnapshot {
   modelConfig: ModelConfig;
   modelViewConfig: ModelViewConfig;
-  activePreset: ModelPreset;
+  activePreset?: ModelPreset;
   theme?: PhosphorTheme;
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
@@ -153,7 +150,7 @@ interface ModelHistorySnapshot {
 interface MediaHistorySnapshot {
   mediaConfig: MediaConfig;
   mediaViewConfig: MediaViewConfig;
-  activePreset: MediaPreset;
+  activePreset?: MediaPreset;
   theme?: PhosphorTheme;
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
@@ -210,16 +207,6 @@ export const App: React.FC = () => {
   const customContextRef = useRef<Record<string, any>>({});
 
   // 3D Model State for Model Mode
-  const [activeModelPreset, setActiveModelPreset] = useState<ModelPreset>(() => {
-    if (sharedState?.modelConfig?.modelId) {
-      const match = MODEL_PRESETS.find(
-        (p) => p.modelConfig.modelId === sharedState.modelConfig?.modelId
-      );
-      if (match) return match;
-    }
-    return MODEL_PRESETS[0];
-  });
-
   const [modelConfig, setModelConfig] = useState<ModelConfig>(() => ({
     ...DEFAULT_MODEL_CONFIG,
     ...(sharedState?.modelConfig || MODEL_PRESETS[0].modelConfig || {}),
@@ -230,7 +217,6 @@ export const App: React.FC = () => {
     ...(sharedState?.modelViewConfig || MODEL_PRESETS[0].viewConfig || {}),
   }));
 
-  const [userModelPresets, setUserModelPresets] = useState<ModelPreset[]>([]);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(false);
   const [modelLoadingFileName, setModelLoadingFileName] = useState<string>('3D Model');
   const [modelLoadingStatusText, setModelLoadingStatusText] = useState<string>('Downloading');
@@ -243,16 +229,6 @@ export const App: React.FC = () => {
   );
 
   // 2D Media State for Media Mode
-  const [activeMediaPreset, setActiveMediaPreset] = useState<MediaPreset>(() => {
-    if (sharedState?.mediaConfig?.mediaId) {
-      const match = MEDIA_PRESETS.find(
-        (p) => p.mediaConfig.mediaId === sharedState.mediaConfig?.mediaId
-      );
-      if (match) return match;
-    }
-    return DEFAULT_MEDIA_PRESET;
-  });
-
   const [mediaConfig, setMediaConfig] = useState<MediaConfig>(() => ({
     ...DEFAULT_MEDIA_CONFIG,
     ...(sharedState?.mediaConfig || {}),
@@ -263,7 +239,6 @@ export const App: React.FC = () => {
     ...(sharedState?.mediaViewConfig || {}),
   }));
 
-  const [userMediaPresets, setUserMediaPresets] = useState<MediaPreset[]>([]);
   const [mediaRenderTrigger, setMediaRenderTrigger] = useState<number>(0);
   const triggerMediaRender = useCallback(() => setMediaRenderTrigger((v) => v + 1), []);
 
@@ -532,7 +507,6 @@ export const App: React.FC = () => {
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video'>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
-  const [userPresets, setUserPresets] = useState<Preset[]>([]);
 
   // Undo / Redo History Stack (Separate stacks for Synth, Media, and Model modes)
   const synthHistoryRef = useRef<HistorySnapshot[]>([]);
@@ -625,7 +599,7 @@ export const App: React.FC = () => {
     (
       mConfig: ModelConfig,
       vConfig: ModelViewConfig,
-      preset: ModelPreset,
+      preset?: ModelPreset,
       optConfig?: OptimizeConfig,
       crt?: CrtConfig,
       thm?: PhosphorTheme,
@@ -639,7 +613,7 @@ export const App: React.FC = () => {
       newHistory.push({
         modelConfig: { ...mConfig },
         modelViewConfig: { ...vConfig },
-        activePreset: { ...preset },
+        activePreset: preset ? { ...preset } : undefined,
         theme: thm !== undefined ? thm : curModel.theme,
         customThemeColor: cColor !== undefined ? cColor : curModel.customThemeColor,
         gradientConfig: grad !== undefined ? grad : curModel.gradientConfig,
@@ -659,7 +633,7 @@ export const App: React.FC = () => {
     (
       mConfig: MediaConfig,
       vConfig: MediaViewConfig,
-      preset: MediaPreset,
+      preset?: MediaPreset,
       optConfig?: OptimizeConfig,
       crt?: CrtConfig,
       thm?: PhosphorTheme,
@@ -673,7 +647,7 @@ export const App: React.FC = () => {
       newHistory.push({
         mediaConfig: { ...mConfig },
         mediaViewConfig: { ...vConfig },
-        activePreset: { ...preset },
+        activePreset: preset ? { ...preset } : undefined,
         theme: thm !== undefined ? thm : curMedia.theme,
         customThemeColor: cColor !== undefined ? cColor : curMedia.customThemeColor,
         gradientConfig: grad !== undefined ? grad : curMedia.gradientConfig,
@@ -729,7 +703,6 @@ export const App: React.FC = () => {
         {
           modelConfig: { ...modelConfig },
           modelViewConfig: { ...modelViewConfig },
-          activePreset: activeModelPreset,
           theme: renderSettingsByMode.model.theme,
           customThemeColor: renderSettingsByMode.model.customThemeColor,
           gradientConfig: renderSettingsByMode.model.gradientConfig,
@@ -745,7 +718,6 @@ export const App: React.FC = () => {
         {
           mediaConfig: { ...mediaConfig },
           mediaViewConfig: { ...mediaViewConfig },
-          activePreset: activeMediaPreset,
           theme: renderSettingsByMode.media.theme,
           customThemeColor: renderSettingsByMode.media.customThemeColor,
           gradientConfig: renderSettingsByMode.media.gradientConfig,
@@ -774,10 +746,9 @@ export const App: React.FC = () => {
   const restoreModelSnapshot = useCallback((snapshot: ModelHistorySnapshot) => {
     setModelConfig({ ...snapshot.modelConfig });
     setModelViewConfig({ ...snapshot.modelViewConfig });
-    setActiveModelPreset(snapshot.activePreset);
 
     if (snapshot.modelConfig.sourceType === 'preset') {
-      const modelId = snapshot.modelConfig.modelId as BuiltinModelId;
+      const modelId = (snapshot.modelConfig.modelId || 'torus-knot') as BuiltinModelId;
       const initialGeo = getBuiltinGeometry(modelId);
       currentGeometryRef.current = initialGeo;
       loadBuiltinGeometryAsync(modelId).then((geo) => {
@@ -802,7 +773,6 @@ export const App: React.FC = () => {
   const restoreMediaSnapshot = useCallback((snapshot: MediaHistorySnapshot) => {
     setMediaConfig({ ...snapshot.mediaConfig });
     setMediaViewConfig({ ...snapshot.mediaViewConfig });
-    setActiveMediaPreset(snapshot.activePreset);
 
     if (snapshot.mediaConfig.fileData) {
       const img = new Image();
@@ -909,26 +879,6 @@ export const App: React.FC = () => {
       }
     }
   }, [appMode, recompileCustomCode, restoreModelSnapshot, restoreMediaSnapshot, updateHistoryButtons]);
-
-  // Load user presets from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_PRESETS_KEY);
-      if (saved) {
-        setUserPresets(JSON.parse(saved));
-      }
-      const savedModels = localStorage.getItem(LOCAL_STORAGE_MODEL_PRESETS_KEY);
-      if (savedModels) {
-        setUserModelPresets(JSON.parse(savedModels));
-      }
-      const savedMedia = localStorage.getItem(LOCAL_STORAGE_MEDIA_PRESETS_KEY);
-      if (savedMedia) {
-        setUserMediaPresets(JSON.parse(savedMedia));
-      }
-    } catch {
-      // LocalStorage error ignored
-    }
-  }, []);
 
   // Update theme class and custom color CSS variables on body
   useEffect(() => {
@@ -1284,96 +1234,13 @@ export const App: React.FC = () => {
     pushHistorySnapshot(waveParams, pureFormula, activePreset.name, '', 'parametric');
   };
 
-  // Handle 3D Model Preset Selection
-  const handleSelectModelPreset = useCallback((preset: ModelPreset) => {
-    setActiveModelPreset(preset);
-    setModelConfig({ ...preset.modelConfig });
-    setModelViewConfig({ ...preset.viewConfig });
-
-    if (preset.modelConfig.sourceType === 'preset') {
-      const modelId = preset.modelConfig.modelId as BuiltinModelId;
-      const initialGeo = getBuiltinGeometry(modelId);
-      currentGeometryRef.current = initialGeo;
-      const initialStats = getGeometryStats(initialGeo);
-      setModelConfig((prev) => ({
-        ...prev,
-        polyStats: initialStats,
-      }));
-
-      loadBuiltinGeometryAsync(modelId).then((geo) => {
-        currentGeometryRef.current = geo;
-        const stats = getGeometryStats(geo);
-        setModelConfig((prev) => ({
-          ...prev,
-          polyStats: stats,
-        }));
-      });
-    }
-
-    if (preset.theme) {
-      setTheme(preset.theme);
-    }
-    if (preset.customThemeColor !== undefined) {
-      setCustomThemeColor(preset.customThemeColor || '');
-    } else {
-      setCustomThemeColor('');
-    }
-    if (preset.gradientConfig !== undefined) {
-      setGradientConfig(preset.gradientConfig || null);
-    } else {
-      setGradientConfig(null);
-    }
-    if (preset.densityCharset) {
-      setDensity(preset.densityCharset);
-    }
-    if (preset.crtConfig) {
-      setCrtConfig({
-        scanlines: preset.crtConfig.scanlines ?? true,
-        crtGlow: preset.crtConfig.crtGlow ?? (preset.crtConfig.glow ?? false),
-        vignette: preset.crtConfig.vignette ?? false,
-        phosphorBloom: preset.crtConfig.phosphorBloom ?? (preset.crtConfig.glow ?? false),
-      });
-    }
-    if (preset.optimizeConfig) {
-      setOptimizeConfig({ ...preset.optimizeConfig });
-    }
-
-    if (preset.modelConfig.sourceType === 'preset') {
-      setIsModelLoading(true);
-      setModelLoadingFileName(preset.name);
-      setModelLoadingStatusText('Loading');
-      loadBuiltinGeometryAsync(preset.modelConfig.modelId as BuiltinModelId)
-        .then((geo) => {
-          currentGeometryRef.current = geo;
-          const stats = getGeometryStats(geo);
-          setModelConfig((prev) => ({
-            ...prev,
-            polyStats: stats,
-          }));
-        })
-        .finally(() => setIsModelLoading(false));
-    }
-
-    pushModelHistorySnapshot(
-      preset.modelConfig,
-      preset.viewConfig,
-      preset,
-      preset.optimizeConfig,
-      preset.crtConfig,
-      preset.theme,
-      preset.customThemeColor,
-      preset.gradientConfig,
-      preset.densityCharset
-    );
-  }, [pushModelHistorySnapshot]);
-
-  // Initial async geometry loader (for OBJ presets & remote models)
+  // Initial async geometry loader (for Torus Knot & remote models)
   useEffect(() => {
     if (modelConfig.sourceType === 'preset') {
       setIsModelLoading(true);
-      setModelLoadingFileName(modelConfig.fileName || '3D Preset');
+      setModelLoadingFileName('Torus Knot');
       setModelLoadingStatusText('Loading');
-      loadBuiltinGeometryAsync(modelConfig.modelId as BuiltinModelId)
+      loadBuiltinGeometryAsync('torus-knot')
         .then((geo) => {
           currentGeometryRef.current = geo;
           const stats = getGeometryStats(geo);
@@ -1387,7 +1254,8 @@ export const App: React.FC = () => {
       setIsModelLoading(true);
       setModelLoadingFileName(modelConfig.fileName || 'Online Model');
       setModelLoadingStatusText('Downloading');
-      fetchRemoteGeometry(modelConfig.remoteUrl, 'glb')
+      const ext = modelConfig.fileType || 'glb';
+      fetchRemoteGeometry(modelConfig.remoteUrl, ext as any)
         .then((res) => {
           currentGeometryRef.current = res.geometry;
           setModelConfig((prev) => ({
@@ -1400,7 +1268,7 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const handleLoadOnlineModel = useCallback(
+  const handleLoadRemoteModel = useCallback(
     async (model: Khronos3DModel) => {
       setIsModelLoading(true);
       setModelLoadingFileName(model.title);
@@ -1415,51 +1283,20 @@ export const App: React.FC = () => {
           fileName: model.title,
           fileType: 'glb',
           remoteUrl: model.downloadUrl,
-          remoteAttribution: `${model.title} by ${model.author} (${model.license})`,
+          remoteAttribution: `${model.author} (${model.license})`,
           polyStats: result.stats,
         };
         setModelConfig(newConfig);
-        pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
+        pushModelHistorySnapshot(newConfig, modelViewConfig);
       } catch (err) {
         console.error('Failed to load remote 3D model:', err);
-        alert(`Could not load 3D model "${model.title}". Please try another model.`);
+        alert(`Could not download 3D model "${model.title}".`);
       } finally {
         setIsModelLoading(false);
       }
     },
-    [modelConfig, modelViewConfig, activeModelPreset, pushModelHistorySnapshot]
+    [modelConfig, modelViewConfig, pushModelHistorySnapshot]
   );
-
-  // Save Custom User Model Preset
-  const handleSaveCustomModelPreset = (name: string) => {
-    const newPreset: ModelPreset = {
-      id: `user-model-${Date.now()}`,
-      name,
-      description: `Custom 3D model preset created on ${new Date().toLocaleDateString()}`,
-      modelConfig: { ...modelConfig },
-      viewConfig: { ...modelViewConfig },
-      theme,
-      customThemeColor: customThemeColor || undefined,
-      densityCharset: density,
-      optimizeConfig: { ...optimizeConfig },
-      crtConfig: { ...crtConfig },
-    };
-
-    const updated = [newPreset, ...userModelPresets];
-    setUserModelPresets(updated);
-    setActiveModelPreset(newPreset);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_MODEL_PRESETS_KEY, JSON.stringify(updated));
-    } catch {}
-  };
-
-  const handleDeleteUserModelPreset = (id: string) => {
-    const updated = userModelPresets.filter((p) => p.id !== id);
-    setUserModelPresets(updated);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_MODEL_PRESETS_KEY, JSON.stringify(updated));
-    } catch {}
-  };
 
   const handleLoadCustomGeometry = (
     geometry: THREE.BufferGeometry,
@@ -1476,33 +1313,23 @@ export const App: React.FC = () => {
       polyStats: stats,
     };
     setModelConfig(newConfig);
-    pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
+    pushModelHistorySnapshot(newConfig, modelViewConfig);
   };
 
-  const handleSelectBuiltinGeometry = (id: BuiltinModelId) => {
-    if (id === 'skull') {
-      setIsModelLoading(true);
-      setModelLoadingFileName('Skull');
-      setModelLoadingStatusText('Loading');
-    }
-    loadBuiltinGeometryAsync(id)
+  const handleSelectBuiltinGeometry = (_id?: BuiltinModelId) => {
+    loadBuiltinGeometryAsync('torus-knot')
       .then((geo) => {
         currentGeometryRef.current = geo;
         const stats = getGeometryStats(geo);
         const newConfig: ModelConfig = {
           ...modelConfig,
           sourceType: 'preset',
-          modelId: id,
+          modelId: 'torus-knot',
           fileName: undefined,
           polyStats: stats,
         };
         setModelConfig(newConfig);
-        pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
-      })
-      .finally(() => {
-        if (id === 'skull') {
-          setIsModelLoading(false);
-        }
+        pushModelHistorySnapshot(newConfig, modelViewConfig);
       });
   };
 
@@ -1510,17 +1337,17 @@ export const App: React.FC = () => {
     setModelConfig(newConfig);
     clearTimeout(modelHistoryDebounceTimer.current);
     modelHistoryDebounceTimer.current = setTimeout(() => {
-      pushModelHistorySnapshot(newConfig, modelViewConfig, activeModelPreset);
+      pushModelHistorySnapshot(newConfig, modelViewConfig);
     }, 400);
-  }, [modelViewConfig, activeModelPreset, pushModelHistorySnapshot]);
+  }, [modelViewConfig, pushModelHistorySnapshot]);
 
   const handleChangeModelViewConfig = useCallback((newViewConfig: ModelViewConfig) => {
     setModelViewConfig(newViewConfig);
     clearTimeout(modelHistoryDebounceTimer.current);
     modelHistoryDebounceTimer.current = setTimeout(() => {
-      pushModelHistorySnapshot(modelConfig, newViewConfig, activeModelPreset);
+      pushModelHistorySnapshot(modelConfig, newViewConfig);
     }, 400);
-  }, [modelConfig, activeModelPreset, pushModelHistorySnapshot]);
+  }, [modelConfig, pushModelHistorySnapshot]);
 
   const handleOrbitRotate = useCallback(
     (prevX: number, prevY: number, currX: number, currY: number, width: number, height: number) => {
@@ -1533,38 +1360,16 @@ export const App: React.FC = () => {
           currX,
           currY,
           width,
-          height,
-          2.0
+          height
         );
-        const updated = {
+        return {
           ...prev,
-          manualRotationX: nextRot.manualRotationX,
-          manualRotationY: nextRot.manualRotationY,
-          manualRotationZ: nextRot.manualRotationZ,
+          ...nextRot,
         };
-        clearTimeout(modelHistoryDebounceTimer.current);
-        modelHistoryDebounceTimer.current = setTimeout(() => {
-          pushModelHistorySnapshot(modelConfig, updated, activeModelPreset);
-        }, 500);
-        return updated;
       });
     },
-    [modelConfig, activeModelPreset, pushModelHistorySnapshot]
+    []
   );
-
-  const handleWheelZoom = useCallback((deltaZoom: number) => {
-    setModelViewConfig((prev) => {
-      const updated = {
-        ...prev,
-        cameraDistance: Math.max(1.2, Math.min(8.0, prev.cameraDistance + deltaZoom)),
-      };
-      clearTimeout(modelHistoryDebounceTimer.current);
-      modelHistoryDebounceTimer.current = setTimeout(() => {
-        pushModelHistorySnapshot(modelConfig, updated, activeModelPreset);
-      }, 500);
-      return updated;
-    });
-  }, [modelConfig, activeModelPreset, pushModelHistorySnapshot]);
 
   const handleResetModelRotation = useCallback(() => {
     const updated = {
@@ -1574,8 +1379,8 @@ export const App: React.FC = () => {
       manualRotationZ: 0,
     };
     setModelViewConfig(updated);
-    pushModelHistorySnapshot(modelConfig, updated, activeModelPreset);
-  }, [modelConfig, modelViewConfig, activeModelPreset, pushModelHistorySnapshot]);
+    pushModelHistorySnapshot(modelConfig, updated);
+  }, [modelConfig, modelViewConfig, pushModelHistorySnapshot]);
 
   // Media Handlers
   const autoSetMediaResolution = useCallback((w: number, h: number) => {
@@ -1599,76 +1404,21 @@ export const App: React.FC = () => {
     }, 60);
   }, []);
 
-  const handleSelectMediaPreset = useCallback((preset: MediaPreset) => {
-    setActiveMediaPreset(preset);
-    setMediaConfig({ ...preset.mediaConfig });
-    setMediaViewConfig({ ...preset.viewConfig });
-
-    if (preset.mediaConfig.fileData) {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        mediaElementRef.current = img;
-        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
-        triggerMediaRender();
-      };
-      img.src = preset.mediaConfig.fileData;
-    }
-
-    if (preset.theme) setTheme(preset.theme);
-    if (preset.customThemeColor !== undefined) setCustomThemeColor(preset.customThemeColor || '');
-    if (preset.gradientConfig !== undefined) setGradientConfig(preset.gradientConfig || null);
-    if (preset.densityCharset) setDensity(preset.densityCharset);
-    if (preset.crtConfig) setCrtConfig({ ...preset.crtConfig });
-    if (preset.optimizeConfig) setOptimizeConfig({ ...preset.optimizeConfig });
-    pushMediaHistorySnapshot(preset.mediaConfig, preset.viewConfig, preset);
-  }, [pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
-
-  const handleSaveCustomMediaPreset = (name: string) => {
-    const newPreset: MediaPreset = {
-      id: `user-media-${Date.now()}`,
-      name,
-      description: `Custom 2D media preset created on ${new Date().toLocaleDateString()}`,
-      mediaConfig: { ...mediaConfig },
-      viewConfig: { ...mediaViewConfig },
-      theme,
-      customThemeColor: customThemeColor || undefined,
-      densityCharset: density,
-      optimizeConfig: { ...optimizeConfig },
-      crtConfig: { ...crtConfig },
-    };
-
-    const updated = [newPreset, ...userMediaPresets];
-    setUserMediaPresets(updated);
-    setActiveMediaPreset(newPreset);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_MEDIA_PRESETS_KEY, JSON.stringify(updated));
-    } catch {}
-  };
-
-  const handleDeleteUserMediaPreset = (id: string) => {
-    const updated = userMediaPresets.filter((p) => p.id !== id);
-    setUserMediaPresets(updated);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_MEDIA_PRESETS_KEY, JSON.stringify(updated));
-    } catch {}
-  };
-
   const handleChangeMediaConfig = useCallback((newConfig: MediaConfig) => {
     setMediaConfig(newConfig);
     clearTimeout(mediaHistoryDebounceTimer.current);
     mediaHistoryDebounceTimer.current = setTimeout(() => {
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
     }, 400);
-  }, [mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+  }, [mediaViewConfig, pushMediaHistorySnapshot]);
 
   const handleChangeMediaViewConfig = useCallback((newViewConfig: MediaViewConfig) => {
     setMediaViewConfig(newViewConfig);
     clearTimeout(mediaHistoryDebounceTimer.current);
     mediaHistoryDebounceTimer.current = setTimeout(() => {
-      pushMediaHistorySnapshot(mediaConfig, newViewConfig, activeMediaPreset);
+      pushMediaHistorySnapshot(mediaConfig, newViewConfig);
     }, 400);
-  }, [mediaConfig, activeMediaPreset, pushMediaHistorySnapshot]);
+  }, [mediaConfig, pushMediaHistorySnapshot]);
 
   const handleMediaFileUpload = useCallback((file: File) => {
     const isVid = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.webm') || file.name.endsWith('.mov');
@@ -1705,7 +1455,7 @@ export const App: React.FC = () => {
         fileData: objectUrl,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
     } else {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -1724,9 +1474,9 @@ export const App: React.FC = () => {
         fileData: objectUrl,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
     }
-  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
+  }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
   const handleMediaUrlLoad = useCallback((url: string) => {
     const isVid = url.match(/\.(mp4|webm|mov|ogg)($|\?)/i);
@@ -1771,7 +1521,7 @@ export const App: React.FC = () => {
         remoteUrl: url,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
     } else {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -1800,9 +1550,9 @@ export const App: React.FC = () => {
         remoteUrl: url,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig, activeMediaPreset);
+      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
     }
-  }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
+  }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
   // Initial loader for shared remote media URLs
   useEffect(() => {
@@ -1840,22 +1590,20 @@ export const App: React.FC = () => {
     setTimeout(() => setIsRandomizing(false), 400);
 
     if (appMode === 'model') {
-      const randomPreset = MODEL_PRESETS[Math.floor(Math.random() * MODEL_PRESETS.length)];
-      handleSelectModelPreset(randomPreset);
+      const themes: PhosphorTheme[] = ['green', 'amber', 'cyan', 'monochrome', 'matrix', 'blood'];
+      const randTheme = themes[Math.floor(Math.random() * themes.length)];
+      const randCharset = CHARSETS[Math.floor(Math.random() * CHARSETS.length)].chars;
+      setTheme(randTheme);
+      setDensity(randCharset);
       return;
     }
 
     if (appMode === 'media') {
-      if (userMediaPresets.length > 0) {
-        const randomPreset = userMediaPresets[Math.floor(Math.random() * userMediaPresets.length)];
-        handleSelectMediaPreset(randomPreset);
-      } else {
-        const themes: PhosphorTheme[] = ['green', 'amber', 'cyan', 'monochrome', 'matrix', 'blood'];
-        const randTheme = themes[Math.floor(Math.random() * themes.length)];
-        const randCharset = CHARSETS[Math.floor(Math.random() * CHARSETS.length)].chars;
-        setTheme(randTheme);
-        setDensity(randCharset);
-      }
+      const themes: PhosphorTheme[] = ['green', 'amber', 'cyan', 'monochrome', 'matrix', 'blood'];
+      const randTheme = themes[Math.floor(Math.random() * themes.length)];
+      const randCharset = CHARSETS[Math.floor(Math.random() * CHARSETS.length)].chars;
+      setTheme(randTheme);
+      setDensity(randCharset);
       return;
     }
 
@@ -1881,44 +1629,21 @@ export const App: React.FC = () => {
     };
     setActivePreset(randomPreset);
     pushHistorySnapshot(randomized.params, formula, randomized.name, '', 'parametric');
-  }, [appMode, handleSelectModelPreset, handleSelectMediaPreset, recompileCustomCode, pushHistorySnapshot]);
+  }, [appMode, recompileCustomCode, pushHistorySnapshot]);
 
-  // Save Custom User Preset
-  const handleSaveCustomPreset = (name: string) => {
-    const newPreset: Preset = {
-      id: `user-${Date.now()}`,
-      name,
-      description:
-        presetType === 'custom'
-          ? `Custom formula preset created on ${new Date().toLocaleDateString()}`
-          : `Custom preset created on ${new Date().toLocaleDateString()}`,
-      type: presetType,
-      params: { ...waveParams },
-      customCode: customCode,
-      customPrepare: customPrepare || undefined,
-      theme,
-      customThemeColor: customThemeColor || undefined,
-      densityCharset: density,
-      particleConfig: { ...particleConfig },
-      optimizeConfig: { ...optimizeConfig },
-      crtConfig: { ...crtConfig },
-    };
-
-    const updated = [newPreset, ...userPresets];
-    setUserPresets(updated);
-    setActivePreset(newPreset);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_PRESETS_KEY, JSON.stringify(updated));
-    } catch {}
-  };
-
-  const handleDeleteUserPreset = (id: string) => {
-    const updated = userPresets.filter((p) => p.id !== id);
-    setUserPresets(updated);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_PRESETS_KEY, JSON.stringify(updated));
-    } catch {}
-  };
+  const handleWheelZoom = useCallback((deltaZoom: number) => {
+    setModelViewConfig((prev) => {
+      const updated = {
+        ...prev,
+        cameraDistance: Math.max(1.2, Math.min(8.0, prev.cameraDistance + deltaZoom)),
+      };
+      clearTimeout(modelHistoryDebounceTimer.current);
+      modelHistoryDebounceTimer.current = setTimeout(() => {
+        pushModelHistorySnapshot(modelConfig, updated);
+      }, 500);
+      return updated;
+    });
+  }, [modelConfig, pushModelHistorySnapshot]);
 
   // Interaction tracking for idle throttling
   const lastInteractionTimeRef = useRef<number>(Date.now());
@@ -2154,7 +1879,10 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       lastInteractionTimeRef.current = Date.now();
-      const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      const isInput =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable);
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         if (!isInput) {
@@ -2180,11 +1908,22 @@ export const App: React.FC = () => {
           e.preventDefault();
           handleRandomize();
         }
+      } else if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.key === '1') {
+          e.preventDefault();
+          setPanel('content');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          setPanel('controls');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          setPanel('render');
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, handleRandomize, appMode, mediaConfig.mediaType]);
+  }, [handleUndo, handleRedo, handleRandomize, appMode, mediaConfig.mediaType, setPanel]);
 
   // Toggle between editor and fullscreen viewfinder
   const handleToggleViewMode = useCallback(() => {
@@ -2196,37 +1935,29 @@ export const App: React.FC = () => {
   }, []);
 
   const isModelEdited = useMemo(() => {
-    if (!activeModelPreset) return false;
-    if (modelConfig.modelId !== activeModelPreset.modelConfig.modelId) return true;
-    if (modelConfig.sourceType !== activeModelPreset.modelConfig.sourceType) return true;
-    if (modelConfig.scale !== activeModelPreset.modelConfig.scale) return true;
-    if (modelViewConfig.shadingMode !== activeModelPreset.viewConfig.shadingMode) return true;
+    if (modelConfig.sourceType !== 'preset' || modelConfig.modelId !== 'torus-knot') return true;
+    if (modelConfig.scale !== 1.05) return true;
+    if (modelViewConfig.shadingMode !== 'shaded') return true;
     return false;
-  }, [activeModelPreset, modelConfig, modelViewConfig]);
+  }, [modelConfig, modelViewConfig]);
 
   const isMediaEdited = useMemo(() => {
-    if (!activeMediaPreset) return false;
-    if (mediaConfig.scale !== activeMediaPreset.mediaConfig.scale) return true;
-    if (mediaConfig.offsetX !== activeMediaPreset.mediaConfig.offsetX) return true;
-    if (mediaConfig.offsetY !== activeMediaPreset.mediaConfig.offsetY) return true;
-    if (mediaConfig.rotation !== activeMediaPreset.mediaConfig.rotation) return true;
-    if (mediaConfig.flipX !== activeMediaPreset.mediaConfig.flipX) return true;
-    if (mediaConfig.flipY !== activeMediaPreset.mediaConfig.flipY) return true;
-    if (mediaConfig.fit !== activeMediaPreset.mediaConfig.fit) return true;
-    if (mediaViewConfig.algorithm !== activeMediaPreset.viewConfig.algorithm) return true;
-    if (mediaViewConfig.sharpenStrength !== activeMediaPreset.viewConfig.sharpenStrength) return true;
-    if (mediaViewConfig.contrast !== activeMediaPreset.viewConfig.contrast) return true;
+    if (mediaConfig.scale !== 1.0) return true;
+    if (mediaConfig.offsetX !== 0 || mediaConfig.offsetY !== 0) return true;
+    if (mediaConfig.rotation !== 0) return true;
+    if (mediaConfig.flipX || mediaConfig.flipY) return true;
+    if (mediaViewConfig.algorithm !== 'floyd-steinberg') return true;
     return false;
-  }, [activeMediaPreset, mediaConfig, mediaViewConfig]);
+  }, [mediaConfig, mediaViewConfig]);
 
   // Complete snapshot of the current animation state for sharing / deep-linking
   const currentFullState: FullAnimationState = useMemo(
     () => ({
       appMode,
       name: appMode === 'model'
-        ? (isModelEdited ? `${activeModelPreset.name} (Edited)` : activeModelPreset.name)
+        ? (isModelEdited ? `${modelConfig.fileName || 'Torus Knot'} (Edited)` : (modelConfig.fileName || 'Torus Knot'))
         : appMode === 'media'
-        ? (isMediaEdited ? `${activeMediaPreset.name} (Edited)` : activeMediaPreset.name)
+        ? (isMediaEdited ? `${mediaConfig.fileName || '2D Media'} (Edited)` : (mediaConfig.fileName || '2D Media'))
         : (isEdited ? `${activePreset.name} (Edited)` : activePreset.name),
       type: appMode === 'synth' ? presetType : undefined,
       params: appMode === 'synth' ? waveParams : undefined,
@@ -2250,9 +1981,9 @@ export const App: React.FC = () => {
     }),
     [
       appMode,
-      activeModelPreset.name,
+      modelConfig,
       isModelEdited,
-      activeMediaPreset.name,
+      mediaConfig,
       isMediaEdited,
       activePreset.name,
       isEdited,
@@ -2270,9 +2001,7 @@ export const App: React.FC = () => {
       particleConfig,
       optimizeConfig,
       crtConfig,
-      modelConfig,
       modelViewConfig,
-      mediaConfig,
       mediaViewConfig,
       mediaColorConfig,
     ]
@@ -2381,7 +2110,7 @@ export const App: React.FC = () => {
               <span className="brand-full">ASCII STUDIO</span>
             </div>
           </div>
-          <span className="brand-version">v1.3</span>
+          <span className="brand-version">v1.5</span>
         </div>
 
         {/* Header Tools: Undo, Redo, Export, Share */}
@@ -2457,19 +2186,22 @@ export const App: React.FC = () => {
                 ? modelConfig.fileName || 'Online 3D Model'
                 : modelConfig.sourceType === 'file'
                 ? modelConfig.fileName || 'Custom 3D File'
-                : activeModelPreset.name
+                : 'Torus Knot'
               : appMode === 'media'
-              ? mediaConfig.fileName || activeMediaPreset.name
+              ? mediaConfig.fileName || '2D Media'
               : activePreset.name
           }
           isEdited={appMode === 'model' ? isModelEdited : appMode === 'media' ? isMediaEdited : isEdited}
-          targetFps={optimizeConfig.targetFps}
           viewMode={viewMode}
           onToggleViewMode={handleToggleViewMode}
           autoRes={autoRes}
           onToggleAutoRes={handleToggleAutoRes}
           onAutoResolutionChange={handleAutoResolutionChange}
+          onChangeResolution={handleManualResolutionChange}
           crtConfig={crtConfig}
+          onChangeCrtConfig={setCrtConfig}
+          optimizeConfig={optimizeConfig}
+          onChangeOptimizeConfig={setOptimizeConfig}
           gradientConfig={gradientConfig}
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
@@ -2483,39 +2215,34 @@ export const App: React.FC = () => {
         {/* Right Sidebar Control Panel */}
         {viewMode === 'editor' && (
           <div className="sidebar-pane">
-            {/*
-              Three panels, shared across all three content sources.
-
-              The source (synth / media / model) is no longer a top-level mode
-              with its own tab strip. It is a property of the CONTENT panel,
-              which is what it always was conceptually: Visuals and Render were
-              previously mounted three times over, once per source, precisely
-              because they never depended on the source at all.
-            */}
             <div className="tab-nav">
               <button
                 className={`tab-btn ${panel === 'content' ? 'active' : ''}`}
                 onClick={() => setPanel('content')}
-                title="Choose the source and pick a preset or file"
+                title="Choose content source & presets [Hotkeys: 1]"
               >
-                <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                CONTENT
+                <span className="tab-btn-index">1</span>
+                <Layers size={12} className="tab-btn-icon" />
+                <span className="tab-btn-label">CONTENT</span>
               </button>
               <button
                 className={`tab-btn ${panel === 'controls' ? 'active' : ''}`}
                 onClick={() => setPanel('controls')}
-                title="Adjust the active source"
+                title="Adjust active source parameters [Hotkeys: 2]"
               >
-                <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                CONTROLS
+                <span className="tab-btn-index">2</span>
+                <Sliders size={12} className="tab-btn-icon" />
+                <span className="tab-btn-label">CONTROLS</span>
+                <span className="tab-btn-subbadge">{appMode.toUpperCase()}</span>
               </button>
               <button
                 className={`tab-btn ${panel === 'render' ? 'active' : ''}`}
                 onClick={() => setPanel('render')}
-                title="Charset, colour, display effects, resolution and performance"
+                title="Charset, CRT display effects, resolution & performance [Hotkeys: 3]"
               >
-                <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                RENDER
+                <span className="tab-btn-index">3</span>
+                <Palette size={12} className="tab-btn-icon" />
+                <span className="tab-btn-label">RENDER</span>
               </button>
             </div>
 
@@ -2524,89 +2251,75 @@ export const App: React.FC = () => {
             {/* ---------------------------------------------------------- */}
             {panel === 'content' && (
               <>
-                {/*
-                  Square tiles, outside any collapsible group: the source is
-                  the first decision on this panel and should never be hidden
-                  behind a disclosure. Icon over centred label reads as a
-                  choice of thing, not a row of tabs.
-                */}
-                <div className="source-grid">
-                  {SOURCES.map((source) => {
-                    const Icon = source.icon;
-                    return (
-                      <button
-                        key={source.id}
-                        className={`source-tile ${appMode === source.id ? 'active' : ''}`}
-                        onClick={() => handleSelectSource(source.id)}
-                        title={source.title}
-                      >
-                        <Icon size={24} />
-                        <span className="source-tile-name">{source.name}</span>
-                      </button>
-                    );
-                  })}
+                <div className="source-selector-wrapper">
+                  <div className="source-grid">
+                    {SOURCES.map((source) => {
+                      const Icon = source.icon;
+                      const isActive = appMode === source.id;
+                      return (
+                        <button
+                          key={source.id}
+                          className={`source-card ${isActive ? 'active' : ''}`}
+                          onClick={() => handleSelectSource(source.id)}
+                          title={source.title}
+                        >
+                          <div className="source-card-header">
+                            <div className="source-card-icon-wrap">
+                              <Icon size={14} />
+                            </div>
+                            <span className="source-card-badge">{source.badge}</span>
+                          </div>
+                          <div className="source-card-body">
+                            <span className="source-card-name">{source.name}</span>
+                            <span className="source-card-desc">{source.description}</span>
+                          </div>
+                          <div className="source-card-footer">
+                            <span className="source-card-dot" />
+                            <span className="source-card-status">{isActive ? 'ACTIVE' : 'READY'}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {appMode === 'synth' && (
                   <PresetSelector
                     activePresetId={activePreset.id}
                     onSelectPreset={handleSelectPreset}
-                    onSaveCustomPreset={handleSaveCustomPreset}
-                    userPresets={userPresets}
-                    onDeleteUserPreset={handleDeleteUserPreset}
                     onRandomize={handleRandomize}
                     isRandomizing={isRandomizing}
                   />
                 )}
 
                 {appMode === 'media' && (
-                  <>
-                    <MediaPresetSelector
-                      activePresetId={activeMediaPreset.id}
-                      activeMediaConfig={mediaConfig}
-                      onSelectPreset={handleSelectMediaPreset}
-                      onSaveCustomPreset={handleSaveCustomMediaPreset}
-                      userPresets={userMediaPresets}
-                      onDeleteUserPreset={handleDeleteUserMediaPreset}
-                    />
-                    <MediaFileControls
-                      section="source"
-                      config={mediaConfig}
-                      onChangeConfig={handleChangeMediaConfig}
-                      viewConfig={mediaViewConfig}
-                      onChangeViewConfig={handleChangeMediaViewConfig}
-                      mediaElement={mediaElementRef.current}
-                      onFileUpload={handleMediaFileUpload}
-                      onUrlLoad={handleMediaUrlLoad}
-                    />
-                  </>
+                  <MediaFileControls
+                    section="source"
+                    config={mediaConfig}
+                    onChangeConfig={handleChangeMediaConfig}
+                    viewConfig={mediaViewConfig}
+                    onChangeViewConfig={handleChangeMediaViewConfig}
+                    mediaElement={mediaElementRef.current}
+                    onFileUpload={handleMediaFileUpload}
+                    onUrlLoad={handleMediaUrlLoad}
+                  />
                 )}
 
                 {appMode === 'model' && (
-                  <>
-                    <ModelPresetSelector
-                      activePresetId={activeModelPreset.id}
-                      activeModelConfig={modelConfig}
-                      onSelectPreset={handleSelectModelPreset}
-                      onSaveCustomPreset={handleSaveCustomModelPreset}
-                      userPresets={userModelPresets}
-                      onDeleteUserPreset={handleDeleteUserModelPreset}
-                    />
-                    <ModelSettingsControls
-                      section="source"
-                      config={modelConfig}
-                      onChangeConfig={handleChangeModelConfig}
-                      onLoadCustomGeometry={handleLoadCustomGeometry}
-                      onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
-                      onLoadRemoteModel={handleLoadOnlineModel}
-                      onStartLoading={(fileName, statusText) => {
-                        setIsModelLoading(true);
-                        if (fileName) setModelLoadingFileName(fileName);
-                        if (statusText) setModelLoadingStatusText(statusText);
-                      }}
-                      onEndLoading={() => setIsModelLoading(false)}
-                    />
-                  </>
+                  <ModelSettingsControls
+                    section="source"
+                    config={modelConfig}
+                    onChangeConfig={handleChangeModelConfig}
+                    onLoadCustomGeometry={handleLoadCustomGeometry}
+                    onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                    onLoadRemoteModel={handleLoadRemoteModel}
+                    onStartLoading={(fileName, statusText) => {
+                      setIsModelLoading(true);
+                      if (fileName) setModelLoadingFileName(fileName);
+                      if (statusText) setModelLoadingStatusText(statusText);
+                    }}
+                    onEndLoading={() => setIsModelLoading(false)}
+                  />
                 )}
               </>
             )}
@@ -2660,7 +2373,7 @@ export const App: React.FC = () => {
                       onChangeConfig={handleChangeModelConfig}
                       onLoadCustomGeometry={handleLoadCustomGeometry}
                       onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
-                      onLoadRemoteModel={handleLoadOnlineModel}
+                      onLoadRemoteModel={handleLoadRemoteModel}
                       onStartLoading={(fileName, statusText) => {
                         setIsModelLoading(true);
                         if (fileName) setModelLoadingFileName(fileName);
@@ -2692,15 +2405,11 @@ export const App: React.FC = () => {
                   onChangeCustomColor={handleSelectCustomColor}
                   gradientConfig={gradientConfig}
                   onChangeGradient={handleSelectGradient}
-                  crtConfig={crtConfig}
-                  onChangeCrtConfig={setCrtConfig}
                   appMode={appMode}
                   mediaColorConfig={mediaColorConfig}
                   onChangeMediaColorConfig={handleSelectMediaColorConfig}
                 />
                 <OptimizeControls
-                  config={optimizeConfig}
-                  onChangeConfig={setOptimizeConfig}
                   cols={cols}
                   rows={rows}
                   onChangeResolution={handleManualResolutionChange}
@@ -2737,9 +2446,9 @@ export const App: React.FC = () => {
         onClose={() => setIsExportOpen(false)}
         name={
           appMode === 'model'
-            ? (isModelEdited ? `${activeModelPreset.name} (Edited)` : activeModelPreset.name)
+            ? (isModelEdited ? `${modelConfig.fileName || 'Torus Knot'} (Edited)` : (modelConfig.fileName || 'Torus Knot'))
             : appMode === 'media'
-            ? (isMediaEdited ? `${activeMediaPreset.name} (Edited)` : activeMediaPreset.name)
+            ? (isMediaEdited ? `${mediaConfig.fileName || '2D Media'} (Edited)` : (mediaConfig.fileName || '2D Media'))
             : (isEdited ? `${activePreset.name} (Edited)` : activePreset.name)
         }
         type={appMode === 'synth' ? presetType : 'parametric'}

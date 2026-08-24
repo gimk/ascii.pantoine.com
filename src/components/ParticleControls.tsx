@@ -2,6 +2,7 @@ import React from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { ParticleConfig } from '../types/ascii';
 import { DEFAULT_PARTICLE_CONFIG } from '../engine/particles';
+import { Activity, Wind, Zap } from 'lucide-react';
 
 interface ParticleControlsProps {
   config: ParticleConfig;
@@ -26,6 +27,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
       {/* Interaction Status */}
       <CollapsibleSection
         title="Simulation Particle System"
+        icon={<Activity size={12} />}
         persistKey="ParticleControls-simulation-particle-system"
         badge={config.enabled ? 'ON' : 'OFF'}
       >
@@ -46,6 +48,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
           {/* Wave Flow & Dynamics */}
           <CollapsibleSection
             title="Wave Advection &amp; Flow Dynamics"
+            icon={<Wind size={12} />}
             persistKey="ParticleControls-wave-advection-flow-dynamics"
             defaultOpen={false}
           >
@@ -107,6 +110,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
           {/* Lifespan & Emission */}
           <CollapsibleSection
             title="Lifespan &amp; Click Explosions"
+            icon={<Zap size={12} />}
             persistKey="ParticleControls-lifespan-click-explosions"
             defaultOpen={false}
           >
