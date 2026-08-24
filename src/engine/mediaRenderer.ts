@@ -9,7 +9,8 @@ import {
   HalftoneConfig,
 } from '../types/ascii';
 import { applyDitherAlgorithm } from './ditherAlgorithms';
-import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone } from './palettes';
+import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone, quantizeImageToPaletteWithDither } from './palettes';
+
 import { getBrailleCharFromSubpixels } from './renderer';
 
 export interface RenderMediaContext {
@@ -555,24 +556,30 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
         }
 
         if (paletteMode === 'indexed' && activeQuantizer) {
-          const quantized = activeQuantizer.findClosestRgb(r, g, b);
-          r = quantized.r;
-          g = quantized.g;
-          b = quantized.b;
+          // Store saturated RGB for whole-image 3D error-diffusion
+          colorsBuffer[idx * 3] = Math.max(0, Math.min(255, Math.round(r)));
+          colorsBuffer[idx * 3 + 1] = Math.max(0, Math.min(255, Math.round(g)));
+          colorsBuffer[idx * 3 + 2] = Math.max(0, Math.min(255, Math.round(b)));
         } else if ((paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone') && colorConfig.multiTone) {
           const mapped = evaluateMultiTone(val, colorConfig.multiTone);
-          r = mapped.r;
-          g = mapped.g;
-          b = mapped.b;
+          colorsBuffer[idx * 3] = Math.max(0, Math.min(255, Math.round(mapped.r)));
+          colorsBuffer[idx * 3 + 1] = Math.max(0, Math.min(255, Math.round(mapped.g)));
+          colorsBuffer[idx * 3 + 2] = Math.max(0, Math.min(255, Math.round(mapped.b)));
+        } else {
+          colorsBuffer[idx * 3] = Math.max(0, Math.min(255, Math.round(r)));
+          colorsBuffer[idx * 3 + 1] = Math.max(0, Math.min(255, Math.round(g)));
+          colorsBuffer[idx * 3 + 2] = Math.max(0, Math.min(255, Math.round(b)));
         }
-
-        colorsBuffer[idx * 3] = Math.max(0, Math.min(255, Math.round(r)));
-        colorsBuffer[idx * 3 + 1] = Math.max(0, Math.min(255, Math.round(g)));
-        colorsBuffer[idx * 3 + 2] = Math.max(0, Math.min(255, Math.round(b)));
       }
     }
     cachedLines[y] = lineBuffer.join('');
   }
+
+  // 3D Color-Space Error Diffusion for Indexed Palettes
+  if (isColored && paletteMode === 'indexed' && activeQuantizer) {
+    quantizeImageToPaletteWithDither(colorsBuffer, colorsBuffer, cols, rows, activeQuantizer, algorithm, 1.0);
+  }
+
 
   return {
     text: cachedLines.join('\n'),

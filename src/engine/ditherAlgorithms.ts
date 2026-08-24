@@ -462,8 +462,14 @@ export function applyDitherAlgorithm(
     }
   }
 
+  // Helper for threshold quantization into discrete density steps
+  const quantize = (val: number): number => {
+    const steps = Math.max(1, densityLevels - 1);
+    return Math.max(0, Math.min(1, Math.round(val * steps) / steps));
+  };
+
   // --- 2. ORDERED & CLUSTERED MATRICES ---
-  else if (algorithm === 'bayer-2x2') {
+  if (algorithm === 'bayer-2x2') {
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
       for (let x = 0; x < cols; x++) {
@@ -471,7 +477,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (BAYER_2X2[y % 2][x % 2] / 4.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'bayer-4x4') {
@@ -482,7 +488,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (BAYER_4X4[y % 4][x % 4] / 16.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'bayer-8x8' || algorithm === 'bayer-16x16') {
@@ -493,7 +499,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (BAYER_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'cluster-4x4') {
@@ -504,7 +510,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (CLUSTER_4X4[y % 4][x % 4] / 16.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'cluster-8x8') {
@@ -515,7 +521,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (CLUSTER_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'diagonal-4x4') {
@@ -526,7 +532,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (DIAGONAL_4X4[y % 4][x % 4] / 16.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'diagonal-8x8') {
@@ -537,18 +543,18 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (DIAGONAL_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'horizontal-lines') {
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      const lineShift = (y % 2 === 0 ? 0.25 : -0.25) * quantStep * intScale;
+      const lineShift = (y % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        dest[idx] = Math.max(0, Math.min(1, v + lineShift));
+        dest[idx] = quantize(v + lineShift);
       }
     }
   } else if (algorithm === 'vertical-lines') {
@@ -558,8 +564,8 @@ export function applyDitherAlgorithm(
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const lineShift = (x % 2 === 0 ? 0.25 : -0.25) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + lineShift));
+        const lineShift = (x % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;
+        dest[idx] = quantize(v + lineShift);
       }
     }
   } else if (algorithm === 'crosshatch-8x8') {
@@ -570,7 +576,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (CROSSHATCH_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'spiral-dot') {
@@ -581,7 +587,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (SPIRAL_DOT_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   }
@@ -596,24 +602,33 @@ export function applyDitherAlgorithm(
         if (v < 0) continue;
         const bnIdx = (y % 16) * 16 + (x % 16);
         const noise = (BLUE_NOISE_16X16[bnIdx] - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + noise));
+        dest[idx] = quantize(v + noise);
       }
     }
   } else if (algorithm === 'white-noise') {
-    for (let i = 0; i < totalCells; i++) {
-      const v = dest[i];
-      if (v < 0) continue;
-      const noise = (Math.random() - 0.5) * quantStep * intScale;
-      dest[i] = Math.max(0, Math.min(1, v + noise));
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        // Deterministic golden-ratio spatial hash for temporal stability
+        const hash = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1.0 + 1.0) % 1.0 - 0.5;
+        dest[idx] = quantize(v + hash * quantStep * intScale);
+      }
     }
   } else if (algorithm === 'gaussian-noise') {
-    for (let i = 0; i < totalCells; i++) {
-      const v = dest[i];
-      if (v < 0) continue;
-      const u1 = Math.max(1e-6, Math.random());
-      const u2 = Math.random();
-      const g = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2) * 0.4;
-      dest[i] = Math.max(0, Math.min(1, v + g * quantStep * intScale));
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        const h1 = Math.max(1e-5, ((Math.sin(x * 37.1 + y * 91.7) * 43758.5453) % 1.0 + 1.0) % 1.0);
+        const h2 = ((Math.cos(x * 41.3 + y * 17.9) * 23421.631) % 1.0 + 1.0) % 1.0;
+        const g = Math.sqrt(-2.0 * Math.log(h1)) * Math.cos(2.0 * Math.PI * h2) * 0.4;
+        dest[idx] = quantize(v + g * quantStep * intScale);
+      }
     }
   } else if (algorithm === 'interleaved-gradient') {
     for (let y = 0; y < rows; y++) {
@@ -623,7 +638,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const ign = ((52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1)) % 1) - 0.5;
-        dest[idx] = Math.max(0, Math.min(1, v + ign * quantStep * intScale));
+        dest[idx] = quantize(v + ign * quantStep * intScale);
       }
     }
   }
@@ -637,7 +652,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const mat = (KNUTH_DOT_DIFFUSION_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = Math.max(0, Math.min(1, v + mat));
+        dest[idx] = quantize(v + mat);
       }
     }
   } else if (algorithm === 'r-sequence' || algorithm === 'hilbert' || algorithm === 'peano') {
@@ -650,7 +665,7 @@ export function applyDitherAlgorithm(
         const v = dest[idx];
         if (v < 0) continue;
         const seq = ((0.5 + a1 * x + a2 * y) % 1.0) - 0.5;
-        dest[idx] = Math.max(0, Math.min(1, v + seq * quantStep * intScale));
+        dest[idx] = quantize(v + seq * quantStep * intScale);
       }
     }
   }
@@ -664,7 +679,7 @@ export function applyDitherAlgorithm(
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        dest[idx] = Math.max(0, Math.min(1, v + phase));
+        dest[idx] = quantize(v + phase);
       }
     }
   } else if (algorithm === 'sine-drift') {
@@ -675,7 +690,7 @@ export function applyDitherAlgorithm(
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        dest[idx] = Math.max(0, Math.min(1, v + wave));
+        dest[idx] = quantize(v + wave);
       }
     }
   } else if (algorithm === 'glitch-displacement') {
@@ -687,7 +702,7 @@ export function applyDitherAlgorithm(
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        dest[idx] = Math.max(0, Math.min(1, v + shift));
+        dest[idx] = quantize(v + shift);
       }
     }
   } else if (algorithm === 'threshold-mod') {
@@ -695,7 +710,8 @@ export function applyDitherAlgorithm(
       const v = dest[i];
       if (v < 0) continue;
       const curved = Math.pow(v, 1.25);
-      dest[i] = Math.max(0, Math.min(1, curved + (Math.random() - 0.5) * 0.2 * quantStep * intScale));
+      dest[i] = quantize(curved);
     }
   }
 }
+

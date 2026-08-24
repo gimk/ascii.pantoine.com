@@ -27,48 +27,75 @@ const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
   { id: 'paper', name: 'Paper Print', color: '#151515' },
 ];
 
+const GRADIENT_PRESETS: PhosphorGradient[] = [
+  { id: 'cyberpunk', name: 'Cyberpunk Neon', color1: '#ff007f', color2: '#00f0ff', angle: 135 },
+  { id: 'synthwave', name: 'Synthwave Sunset', color1: '#ff7700', color2: '#9900ff', angle: 135 },
+  { id: 'aurora', name: 'Aurora Borealis', color1: '#00ff99', color2: '#0066ff', angle: 90 },
+  { id: 'solar', name: 'Solar Flare', color1: '#ff2a40', color2: '#ffcc00', angle: 180 },
+  { id: 'toxic', name: 'Toxic Slime', color1: '#a8ff00', color2: '#00e5ff', angle: 135 },
+  { id: 'deep-ocean', name: 'Deep Ocean', color1: '#00c6ff', color2: '#002661', angle: 180 },
+  { id: 'laser-violet', name: 'Laser Violet', color1: '#ff2a85', color2: '#4f00bc', angle: 135 },
+  { id: 'matrix-forest', name: 'Matrix Forest', color1: '#00ff88', color2: '#004d25', angle: 180 },
+];
+
 export const PaletteControls: React.FC<PaletteControlsProps> = ({
   currentTheme,
   onChangeTheme,
   customThemeColor = '',
   onChangeCustomColor,
   gradientConfig = null,
+  onChangeGradient,
   mediaColorConfig,
   onChangeMediaColorConfig,
 }) => {
+
 
   const paletteMode: PaletteMode = mediaColorConfig?.paletteMode || (gradientConfig ? 'gradient' : 'phosphor');
   const activePaletteId = mediaColorConfig?.activePaletteId || 'gameboy-classic';
 
   const handleSelectPaletteMode = (mode: PaletteMode) => {
-    if (!onChangeMediaColorConfig) return;
-    onChangeMediaColorConfig({
-      ...(mediaColorConfig || {
-        mode: 'fixed',
-        sampling: 'center',
-        bgPreset: 'dark',
-        customBg: '#0a0a0a',
-        saturation: 200,
-      }),
-      paletteMode: mode,
-      mode: mode === 'content' ? 'content' : 'fixed',
-    });
+    if (mode === 'gradient') {
+      if (onChangeGradient && !gradientConfig) {
+        onChangeGradient(GRADIENT_PRESETS[0]);
+      }
+    } else if (mode === 'phosphor') {
+      if (onChangeGradient) {
+        onChangeGradient(null);
+      }
+    }
+
+    if (onChangeMediaColorConfig) {
+      onChangeMediaColorConfig({
+        ...(mediaColorConfig || {
+          mode: 'fixed',
+          sampling: 'center',
+          bgPreset: 'dark',
+          customBg: '#0a0a0a',
+          saturation: 200,
+        }),
+        paletteMode: mode,
+        mode: mode === 'content' ? 'content' : 'fixed',
+      });
+    }
   };
 
   const handleSelectRetroPalette = (pal: ColorPalette) => {
-    if (!onChangeMediaColorConfig) return;
-    onChangeMediaColorConfig({
-      ...(mediaColorConfig || {
-        mode: 'fixed',
-        sampling: 'center',
-        bgPreset: 'dark',
-        customBg: '#0a0a0a',
-        saturation: 200,
-      }),
-      paletteMode: 'indexed',
-      activePaletteId: pal.id,
-    });
+    if (onChangeGradient) onChangeGradient(null);
+    if (onChangeMediaColorConfig) {
+      onChangeMediaColorConfig({
+        ...(mediaColorConfig || {
+          mode: 'fixed',
+          sampling: 'center',
+          bgPreset: 'dark',
+          customBg: '#0a0a0a',
+          saturation: 200,
+        }),
+        paletteMode: 'indexed',
+        activePaletteId: pal.id,
+      });
+    }
   };
+
 
   return (
     <div style={{ marginBottom: '14px' }}>
@@ -194,6 +221,129 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
           ))}
         </div>
       )}
+
+      {/* 2. Gradient Mode */}
+      {paletteMode === 'gradient' && (
+        <div style={{ marginTop: '6px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', marginBottom: '8px' }}>
+            {GRADIENT_PRESETS.map((g) => {
+              const isSelected = gradientConfig?.id === g.id || (gradientConfig?.color1 === g.color1 && gradientConfig?.color2 === g.color2);
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  className={`btn btn-sm ${isSelected ? 'active' : ''}`}
+                  style={{
+                    justifyContent: 'flex-start',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    paddingLeft: '16px',
+                    fontSize: '9.5px',
+                    borderColor: isSelected ? 'var(--accent)' : 'var(--border-color)',
+                    background: isSelected ? 'var(--bg-control-active, rgba(0,255,102,0.12))' : 'var(--bg-control)',
+                  }}
+                  onClick={() => {
+                    if (onChangeGradient) onChangeGradient(g);
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: '6px',
+                      background: `linear-gradient(${g.angle}deg, ${g.color1}, ${g.color2})`,
+                    }}
+                  />
+                  <span>{g.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+            <div>
+              <span style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>Color 1</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                <input
+                  type="color"
+                  value={gradientConfig?.color1 || '#ff007f'}
+                  onChange={(e) => {
+                    if (onChangeGradient) {
+                      onChangeGradient({
+                        id: 'custom',
+                        name: 'Custom Gradient',
+                        color1: e.target.value,
+                        color2: gradientConfig?.color2 || '#00f0ff',
+                        angle: gradientConfig?.angle || 135,
+                      });
+                    }
+                  }}
+                  style={{ width: '22px', height: '22px', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                />
+                <input
+                  type="text"
+                  className="text-input"
+                  value={gradientConfig?.color1 || '#ff007f'}
+                  onChange={(e) => {
+                    if (onChangeGradient) {
+                      onChangeGradient({
+                        id: 'custom',
+                        name: 'Custom Gradient',
+                        color1: e.target.value,
+                        color2: gradientConfig?.color2 || '#00f0ff',
+                        angle: gradientConfig?.angle || 135,
+                      });
+                    }
+                  }}
+                  style={{ flex: 1, fontSize: '9.5px', padding: '2px 4px' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>Color 2</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                <input
+                  type="color"
+                  value={gradientConfig?.color2 || '#00f0ff'}
+                  onChange={(e) => {
+                    if (onChangeGradient) {
+                      onChangeGradient({
+                        id: 'custom',
+                        name: 'Custom Gradient',
+                        color1: gradientConfig?.color1 || '#ff007f',
+                        color2: e.target.value,
+                        angle: gradientConfig?.angle || 135,
+                      });
+                    }
+                  }}
+                  style={{ width: '22px', height: '22px', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                />
+                <input
+                  type="text"
+                  className="text-input"
+                  value={gradientConfig?.color2 || '#00f0ff'}
+                  onChange={(e) => {
+                    if (onChangeGradient) {
+                      onChangeGradient({
+                        id: 'custom',
+                        name: 'Custom Gradient',
+                        color1: gradientConfig?.color1 || '#ff007f',
+                        color2: e.target.value,
+                        angle: gradientConfig?.angle || 135,
+                      });
+                    }
+                  }}
+                  style={{ flex: 1, fontSize: '9.5px', padding: '2px 4px' }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* 2. Indexed Retro & Print Palettes */}
       {paletteMode === 'indexed' && (

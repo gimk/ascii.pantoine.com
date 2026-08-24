@@ -209,10 +209,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     ) => {
       if (!canvasRef.current) return;
       const canvas = canvasRef.current;
-      const charW = 6.015;
-      const charH = 10.0;
-      const unscaledW = Math.max(1, Math.round(cols * charW));
-      const unscaledH = Math.max(1, Math.round(rows * charH));
+      const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
+
+      const cellW = isTextMode ? 6.015 : (halftoneConfig?.dotPitch || 8.0);
+      const cellH = isTextMode ? 10.0 : (cellW * (halftoneConfig?.cellRatio ?? 1.0));
+      const unscaledW = Math.max(1, Math.round(cols * cellW));
+      const unscaledH = Math.max(1, Math.round(rows * cellH));
       const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
 
       const targetW = Math.max(1, Math.round(unscaledW * currentZoom * dpr));
@@ -241,7 +243,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       };
       const fgHex = customThemeColor || (gradientConfig ? gradientConfig.color1 : (themeHexMap[theme || 'green'] || '#00ff66'));
 
-      if (rasterMode !== 'ascii' && luminance) {
+      if (!isTextMode && luminance) {
         drawHalftoneToCanvas({
           canvas,
           ctx,
@@ -253,12 +255,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           fgColor: fgHex,
           config: halftoneConfig,
           mode: rasterMode,
-          cellWidth: charW,
-          cellHeight: charH,
+          cellWidth: cellW,
+          cellHeight: cellH,
           dpr: currentZoom * dpr,
         });
       } else if (colors && colors.length > 0) {
-
         ctx.save();
         ctx.scale(currentZoom * dpr, currentZoom * dpr);
         ctx.fillStyle = bgColor || '#0a0a0a';
@@ -284,7 +285,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               const g = colors[cIdx + 1];
               const b = colors[cIdx + 2];
               ctx.fillStyle = `rgb(${r},${g},${b})`;
-              ctx.fillText(ch, curX * charW, curY * charH);
+              ctx.fillText(ch, curX * cellW, curY * cellH);
             }
             curX++;
           }
@@ -292,7 +293,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         ctx.restore();
       }
     },
-    [cols, rows]
+    [cols, rows, theme, customThemeColor, gradientConfig]
+
   );
 
   useEffect(() => {

@@ -291,9 +291,11 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): {
 
   const cx = cols / 2;
   const cy = rows / 2;
-  const aspectRatio = waveParams.aspectRatio || 0.55;
+  const isSquareMode = rasterMode !== 'ascii' && rasterMode !== 'braille';
+  const aspectRatio = isSquareMode ? 1.0 : (waveParams.aspectRatio || 0.55);
   const densityLength = density.length;
   const sharedCtx = customContext || {};
+
 
   if (prepareFn) {
     try {

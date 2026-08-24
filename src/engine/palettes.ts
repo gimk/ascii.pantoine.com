@@ -415,3 +415,125 @@ export function extractDominantPalette(
 
   return centroids.map((c) => rgbToHex(c.r, c.g, c.b));
 }
+
+let scratchColorF32 = new Float32Array(0);
+
+/**
+ * Quantizes an RGB image buffer to an indexed palette using true 3D color-space error diffusion
+ * so that all available palette colors (e.g. 4-color Game Boy, 16-color C64, 4-ink Riso) are fully mixed and utilized.
+ */
+export function quantizeImageToPaletteWithDither(
+  srcRgb: Uint8ClampedArray | Uint8Array,
+  destRgb: Uint8ClampedArray,
+  cols: number,
+  rows: number,
+  quantizer: PaletteQuantizer,
+  algorithm: string = 'floyd-steinberg',
+  ditherStrength: number = 1.0
+): void {
+  const totalPixels = cols * rows;
+  if (scratchColorF32.length !== totalPixels * 3) {
+    scratchColorF32 = new Float32Array(totalPixels * 3);
+  }
+
+  for (let i = 0; i < totalPixels * 3; i++) {
+    scratchColorF32[i] = srcRgb[i];
+  }
+
+  const intScale = Math.max(0, Math.min(2.0, ditherStrength));
+
+  if (algorithm === 'none') {
+    for (let i = 0; i < totalPixels; i++) {
+      const p = i * 3;
+      const r = scratchColorF32[p];
+      const g = scratchColorF32[p + 1];
+      const b = scratchColorF32[p + 2];
+      const closest = quantizer.findClosestRgb(r, g, b);
+      destRgb[p] = closest.r;
+      destRgb[p + 1] = closest.g;
+      destRgb[p + 2] = closest.b;
+    }
+    return;
+  }
+
+  const isAtkinson = algorithm === 'atkinson';
+  for (let y = 0; y < rows; y++) {
+    const rowOffset = y * cols * 3;
+    for (let x = 0; x < cols; x++) {
+      const idx = rowOffset + x * 3;
+      const curR = Math.max(0, Math.min(255, scratchColorF32[idx]));
+      const curG = Math.max(0, Math.min(255, scratchColorF32[idx + 1]));
+      const curB = Math.max(0, Math.min(255, scratchColorF32[idx + 2]));
+
+      const closest = quantizer.findClosestRgb(curR, curG, curB);
+      destRgb[idx] = closest.r;
+      destRgb[idx + 1] = closest.g;
+      destRgb[idx + 2] = closest.b;
+
+      const errR = (curR - closest.r) * intScale;
+      const errG = (curG - closest.g) * intScale;
+      const errB = (curB - closest.b) * intScale;
+
+      if (isAtkinson) {
+        const fr = errR / 8;
+        const fg = errG / 8;
+        const fb = errB / 8;
+        if (x + 1 < cols) {
+          scratchColorF32[idx + 3] += fr;
+          scratchColorF32[idx + 4] += fg;
+          scratchColorF32[idx + 5] += fb;
+        }
+        if (x + 2 < cols) {
+          scratchColorF32[idx + 6] += fr;
+          scratchColorF32[idx + 7] += fg;
+          scratchColorF32[idx + 8] += fb;
+        }
+        if (y + 1 < rows) {
+          const nextRow = (y + 1) * cols * 3;
+          if (x - 1 >= 0) {
+            scratchColorF32[nextRow + (x - 1) * 3] += fr;
+            scratchColorF32[nextRow + (x - 1) * 3 + 1] += fg;
+            scratchColorF32[nextRow + (x - 1) * 3 + 2] += fb;
+          }
+          scratchColorF32[nextRow + x * 3] += fr;
+          scratchColorF32[nextRow + x * 3 + 1] += fg;
+          scratchColorF32[nextRow + x * 3 + 2] += fb;
+          if (x + 1 < cols) {
+            scratchColorF32[nextRow + (x + 1) * 3] += fr;
+            scratchColorF32[nextRow + (x + 1) * 3 + 1] += fg;
+            scratchColorF32[nextRow + (x + 1) * 3 + 2] += fb;
+          }
+        }
+        if (y + 2 < rows) {
+          const nextRow2 = (y + 2) * cols * 3;
+          scratchColorF32[nextRow2 + x * 3] += fr;
+          scratchColorF32[nextRow2 + x * 3 + 1] += fg;
+          scratchColorF32[nextRow2 + x * 3 + 2] += fb;
+        }
+      } else {
+        if (x + 1 < cols) {
+          scratchColorF32[idx + 3] += (errR * 7) / 16;
+          scratchColorF32[idx + 4] += (errG * 7) / 16;
+          scratchColorF32[idx + 5] += (errB * 7) / 16;
+        }
+        if (y + 1 < rows) {
+          const nextRow = (y + 1) * cols * 3;
+          if (x - 1 >= 0) {
+            scratchColorF32[nextRow + (x - 1) * 3] += (errR * 3) / 16;
+            scratchColorF32[nextRow + (x - 1) * 3 + 1] += (errG * 3) / 16;
+            scratchColorF32[nextRow + (x - 1) * 3 + 2] += (errB * 3) / 16;
+          }
+          scratchColorF32[nextRow + x * 3] += (errR * 5) / 16;
+          scratchColorF32[nextRow + x * 3 + 1] += (errG * 5) / 16;
+          scratchColorF32[nextRow + x * 3 + 2] += (errB * 5) / 16;
+          if (x + 1 < cols) {
+            scratchColorF32[nextRow + (x + 1) * 3] += (errR * 1) / 16;
+            scratchColorF32[nextRow + (x + 1) * 3 + 1] += (errG * 1) / 16;
+            scratchColorF32[nextRow + (x + 1) * 3 + 2] += (errB * 1) / 16;
+          }
+        }
+      }
+    }
+  }
+}
+

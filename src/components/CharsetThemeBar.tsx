@@ -394,8 +394,59 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
             </div>
           )}
 
+          {/* Cell Ratio & Presets */}
+          <div className="control-row" style={{ marginTop: '4px' }}>
+
+            <span className="control-label">Cell Ratio</span>
+            <div style={{ display: 'flex', gap: '3px' }}>
+              {[
+                { label: '1:1', ratio: 1.0 },
+                { label: '0.6', ratio: 0.6 },
+                { label: '4:3', ratio: 0.75 },
+                { label: '16:9', ratio: 0.5625 },
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  className={`chip-btn ${Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? 'active' : ''}`}
+                  style={{
+                    fontSize: '9px',
+                    padding: '2px 5px',
+                    borderRadius: '2px',
+                    background: Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? 'var(--accent)' : 'var(--bg-control)',
+                    color: Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? '#000' : 'var(--text-muted)',
+                    fontWeight: Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? 700 : 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => onChangeHalftoneConfig({ ...halftoneConfig, cellRatio: preset.ratio })}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="control-row">
+            <span className="control-label">Dot Pitch</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '130px' }}>
+              <input
+                type="range"
+                min="4"
+                max="24"
+                step="1"
+                value={halftoneConfig.dotPitch ?? 8}
+                onChange={(e) => onChangeHalftoneConfig({ ...halftoneConfig, dotPitch: parseInt(e.target.value, 10) || 8 })}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '10px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                {halftoneConfig.dotPitch ?? 8}px
+              </span>
+            </div>
+          </div>
         </CollapsibleSection>
       )}
+
 
       {/* 6. Character Density Ramp (Visible in ASCII mode) */}
       {(!rasterMode || rasterMode === 'ascii') && (

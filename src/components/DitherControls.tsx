@@ -108,7 +108,7 @@ export const DitherControls: React.FC<DitherControlsProps> = ({
         </div>
       </div>
 
-      {/* Algorithm Dropdown & Quick Selector */}
+      {/* Algorithm Dropdown with Categorized Optgroups */}
       <div style={{ marginBottom: '8px' }}>
         <select
           className="select-input"
@@ -116,13 +116,54 @@ export const DitherControls: React.FC<DitherControlsProps> = ({
           onChange={(e) => onChangeAlgorithm(e.target.value as DitherAlgorithm)}
           style={{ width: '100%', fontSize: '11px', padding: '4px 6px', fontFamily: 'var(--font-mono)' }}
         >
-          {filteredAlgorithms.map((algo) => (
-            <option key={algo.id} value={algo.id}>
-              {algo.name} ({algo.family})
-            </option>
-          ))}
+          {activeFamily === 'all' && !searchTerm ? (
+            <>
+              <optgroup label="── ERROR DIFFUSION (13) ──">
+                {DITHER_ALGORITHMS.filter((a) => a.family === 'error-diffusion').map((algo) => (
+                  <option key={algo.id} value={algo.id}>
+                    {algo.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="── ORDERED & CLUSTERED (12) ──">
+                {DITHER_ALGORITHMS.filter((a) => a.family === 'ordered').map((algo) => (
+                  <option key={algo.id} value={algo.id}>
+                    {algo.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="── BLUE NOISE & STOCHASTIC (5) ──">
+                {DITHER_ALGORITHMS.filter((a) => a.family === 'blue-noise').map((algo) => (
+                  <option key={algo.id} value={algo.id}>
+                    {algo.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="── ALGORITHMIC & FRACTAL (4) ──">
+                {DITHER_ALGORITHMS.filter((a) => a.family === 'algorithmic').map((algo) => (
+                  <option key={algo.id} value={algo.id}>
+                    {algo.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="── MODULATION & GLITCH (4) ──">
+                {DITHER_ALGORITHMS.filter((a) => a.family === 'modulation').map((algo) => (
+                  <option key={algo.id} value={algo.id}>
+                    {algo.name}
+                  </option>
+                ))}
+              </optgroup>
+            </>
+          ) : (
+            filteredAlgorithms.map((algo) => (
+              <option key={algo.id} value={algo.id}>
+                {algo.name} ({algo.family})
+              </option>
+            ))
+          )}
         </select>
       </div>
+
 
       {/* Description readout */}
       <div

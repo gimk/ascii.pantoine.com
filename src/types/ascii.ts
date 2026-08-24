@@ -259,6 +259,8 @@ export interface HalftoneConfig {
   minSize: number; // 0 to 1
   maxSize: number; // 0 to 1
   cmykAngles: { c: number; m: number; y: number; k: number };
+  cellRatio?: number; // 1.0 = square (1:1), 0.6 = monospace, etc.
+  dotPitch?: number; // pixel size per cell (e.g. 4 to 20, default 8)
 }
 
 export const DEFAULT_HALFTONE_CONFIG: HalftoneConfig = {
@@ -268,7 +270,10 @@ export const DEFAULT_HALFTONE_CONFIG: HalftoneConfig = {
   minSize: 0.05,
   maxSize: 1.0,
   cmykAngles: { c: 15, m: 75, y: 0, k: 45 },
+  cellRatio: 1.0,
+  dotPitch: 8,
 };
+
 
 export interface ToneMappingConfig {
   levelsBlack: number; // 0..100
