@@ -135,13 +135,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return null;
 
-    const charWidth = 6.015;
-    const charHeight = 10.0;
+    const isTextMode = latestRasterModeRef.current === 'ascii' || latestRasterModeRef.current === 'braille';
+    const charWidth = isTextMode ? 6.015 : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
+    const charHeight = isTextMode ? 10.0 : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
     const pad = 20;
     const availableWidth = Math.max(80, clientWidth - pad);
     const availableHeight = Math.max(60, clientHeight - pad);
     const windowRatio = availableWidth / availableHeight;
-    const charAspectCompensation = charHeight / charWidth; // ~1.6625
+    const charAspectCompensation = charHeight / charWidth;
 
     const targetCells = Math.max(2000, Math.min(7500, Math.round((availableWidth * availableHeight) / 95)));
 
@@ -182,8 +183,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return;
 
-    const charWidth = 6.015;
-    const charHeight = 10.0;
+    const isTextMode = latestRasterModeRef.current === 'ascii' || latestRasterModeRef.current === 'braille';
+    const charWidth = isTextMode ? 6.015 : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
+    const charHeight = isTextMode ? 10.0 : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
     const unscaledWidth = cols * charWidth;
     const unscaledHeight = rows * charHeight;
 
@@ -196,6 +198,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const fitScale = Math.max(0.2, Math.min(5.0, Math.min(scaleX, scaleY)));
     setZoom(Number(fitScale.toFixed(2)));
   }, [cols, rows]);
+
 
   const drawCanvas = useCallback(
     (

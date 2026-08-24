@@ -1928,6 +1928,7 @@ export const App: React.FC = () => {
           geometry: currentGeometryRef.current,
           modelConfig,
           viewConfig: modelViewConfig,
+          colorConfig: mediaColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
           toneConfig: activeSettings.toneConfig,
@@ -1967,13 +1968,16 @@ export const App: React.FC = () => {
           customContext: customContextRef.current,
           interactiveInfluence: particleConfig.enabled,
           luminanceBoost: particleConfig.luminanceBoost,
+          colorConfig: mediaColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
           toneConfig: activeSettings.toneConfig,
         });
         frameText = res.text;
+        frameColors = res.colors;
         frameLuminance = res.luminance;
       }
+
 
       viewportRef.current?.setFrame(
         frameText,

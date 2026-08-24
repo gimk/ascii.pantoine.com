@@ -1,14 +1,17 @@
 import * as THREE from 'three';
 import {
   ModelConfig,
+
   ModelViewConfig,
   RasterOutputMode,
   DitherAlgorithm,
   ToneMappingConfig,
   HalftoneConfig,
+  MediaColorConfig,
 } from '../types/ascii';
 import { applyDitherAlgorithm } from './ditherAlgorithms';
 import { getBrailleCharFromSubpixels } from './renderer';
+import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone, quantizeImageToPaletteWithDither } from './palettes';
 
 export interface ModelRenderContext {
   cols: number;
@@ -18,11 +21,13 @@ export interface ModelRenderContext {
   geometry: THREE.BufferGeometry | null;
   modelConfig: ModelConfig;
   viewConfig: ModelViewConfig;
+  colorConfig?: MediaColorConfig;
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   toneConfig?: ToneMappingConfig;
   halftoneConfig?: HalftoneConfig;
 }
+
 
 
 // Scratch Three.js objects for zero allocations during pointer interaction & trackball calculation
@@ -226,6 +231,8 @@ let cachedLines: string[] = [];
 let lineBuffer: string[] = [];
 let pixelBuffer = new Uint8Array(0);
 let luminanceBuffer = new Float32Array(0);
+let modelColorsBuffer = new Uint8ClampedArray(0);
+
 
 // Offscreen Three.js WebGL rendering context singleton
 class HeadlessModelRenderer {
@@ -421,9 +428,12 @@ class HeadlessModelRenderer {
     this.dirLight.intensity = viewConfig.lightIntensity * 1.5;
     this.ambLight.intensity = viewConfig.ambientLight * 1.2;
 
-    // Aspect ratio compensation for monospace typography (width / height ~ 0.55)
-    const aspectCorrection = 0.55;
+    // Aspect ratio compensation for monospace typography vs square halftones
+    const rasterMode = ctx.rasterMode || viewConfig.rasterMode || 'ascii';
+    const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
+    const aspectCorrection = isTextMode ? 0.55 : (ctx.halftoneConfig?.cellRatio ?? 1.0);
     const viewAspect = (cols / rows) * aspectCorrection;
+
 
     // Setup active Camera
     let activeCamera: THREE.Camera;
@@ -572,9 +582,9 @@ class HeadlessModelRenderer {
       }
     }
 
-    const rasterMode = ctx.rasterMode || viewConfig.rasterMode || 'ascii';
     const algorithm = ctx.algorithm || viewConfig.algorithm || 'none';
     const toneCfg = ctx.toneConfig || viewConfig.toneConfig;
+
 
 
     // Step 2.5: Tone Mapping (Levels & Posterization)
@@ -643,6 +653,7 @@ class HeadlessModelRenderer {
 
 
   renderData(context: ModelRenderContext): {
+
     text: string;
     colors: Uint8ClampedArray | null;
     luminance: Float32Array;
@@ -650,14 +661,67 @@ class HeadlessModelRenderer {
     rows: number;
   } {
     const text = this.render(context);
+    const colorConfig = context.colorConfig;
+    const paletteMode = colorConfig?.paletteMode || (colorConfig?.mode === 'content' ? 'content' : 'phosphor');
+    const isColored = paletteMode === 'content' || paletteMode === 'indexed' || paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone';
+
+    let colorsOut: Uint8ClampedArray | null = null;
+
+    if (isColored) {
+      const totalPixels = context.cols * context.rows;
+      if (modelColorsBuffer.length !== totalPixels * 3) {
+        modelColorsBuffer = new Uint8ClampedArray(totalPixels * 3);
+      }
+
+      // Extract WebGL pixels with Y-flip
+      for (let y = 0; y < context.rows; y++) {
+        const srcY = context.rows - 1 - y;
+        const srcRowOffset = srcY * context.cols * 4;
+        const destRowOffset = y * context.cols * 3;
+        for (let x = 0; x < context.cols; x++) {
+          const pxIdx = srcRowOffset + x * 4;
+          const destIdx = destRowOffset + x * 3;
+          modelColorsBuffer[destIdx] = pixelBuffer[pxIdx];
+          modelColorsBuffer[destIdx + 1] = pixelBuffer[pxIdx + 1];
+          modelColorsBuffer[destIdx + 2] = pixelBuffer[pxIdx + 2];
+        }
+      }
+
+      if (paletteMode === 'indexed') {
+        const palId = colorConfig?.activePaletteId || 'gameboy-classic';
+        const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
+        const quantizer = new PaletteQuantizer(found);
+        quantizeImageToPaletteWithDither(
+          modelColorsBuffer,
+          modelColorsBuffer,
+          context.cols,
+          context.rows,
+          quantizer,
+          context.algorithm || 'none',
+          1.0
+        );
+      } else if ((paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone') && colorConfig?.multiTone) {
+        for (let i = 0; i < totalPixels; i++) {
+          const lum = Math.max(0, Math.min(1, luminanceBuffer[i]));
+          const mapped = evaluateMultiTone(lum, colorConfig.multiTone);
+          modelColorsBuffer[i * 3] = mapped.r;
+          modelColorsBuffer[i * 3 + 1] = mapped.g;
+          modelColorsBuffer[i * 3 + 2] = mapped.b;
+        }
+      }
+
+      colorsOut = modelColorsBuffer;
+    }
+
     return {
       text,
-      colors: null,
+      colors: colorsOut,
       luminance: luminanceBuffer,
       cols: context.cols,
       rows: context.rows,
     };
   }
+
 }
 
 // Global Singleton Instance

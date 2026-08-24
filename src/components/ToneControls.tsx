@@ -169,8 +169,8 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
       {/* 4. Input Levels Sliders */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '10px' }}>
         <div className="control-row">
-          <span className="control-label" style={{ fontSize: '9px' }}>Shadow Cut (Black)</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '130px' }}>
+          <span className="control-label" style={{ fontSize: '9px' }}>Shadow Cut</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
             <input
               type="range"
               min={0}
@@ -187,7 +187,7 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
 
         <div className="control-row">
           <span className="control-label" style={{ fontSize: '9px' }}>Midtones Gamma</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '130px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
             <input
               type="range"
               min={10}
@@ -203,8 +203,8 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
         </div>
 
         <div className="control-row">
-          <span className="control-label" style={{ fontSize: '9px' }}>Highlight Cut (White)</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '130px' }}>
+          <span className="control-label" style={{ fontSize: '9px' }}>Highlight Cut</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
             <input
               type="range"
               min={40}
@@ -219,6 +219,7 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
           </div>
         </div>
       </div>
+
 
       {/* 5. RGB Channel Mixer */}
       <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>

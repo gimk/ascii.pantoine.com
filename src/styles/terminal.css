@@ -1244,16 +1244,20 @@ html, body, #root {
   flex: 1.5;
 }
 
-.range-slider {
-  flex: 1;
+.range-slider,
+.range-input,
+input[type="range"] {
   accent-color: var(--accent);
   cursor: pointer;
   color-scheme: dark;
 }
 
-body.theme-paper .range-slider {
+body.theme-paper .range-slider,
+body.theme-paper .range-input,
+body.theme-paper input[type="range"] {
   color-scheme: light;
 }
+
 
 .number-input {
   width: 58px;

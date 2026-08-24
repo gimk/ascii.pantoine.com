@@ -3,9 +3,12 @@ import {
   RasterOutputMode,
   DitherAlgorithm,
   ToneMappingConfig,
+  MediaColorConfig,
 } from '../types/ascii';
 import { evaluateParametricWave } from './math';
 import { applyDitherAlgorithm } from './ditherAlgorithms';
+import { BUILTIN_PALETTES, hexToRgb, evaluateMultiTone } from './palettes';
+
 
 
 /**
@@ -249,6 +252,7 @@ export function renderAsciiFrame(ctx: RenderContext): string {
 }
 
 export interface SynthRenderOptions extends RenderContext {
+  colorConfig?: MediaColorConfig;
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   toneConfig?: ToneMappingConfig;
@@ -256,13 +260,16 @@ export interface SynthRenderOptions extends RenderContext {
 
 let synthRawLumBuffer = new Float32Array(0);
 let synthDitherBuffer = new Float32Array(0);
+let synthColorsBuffer = new Uint8ClampedArray(0);
 
 export function renderSynthFrameData(ctx: SynthRenderOptions): {
   text: string;
+  colors: Uint8ClampedArray | null;
   luminance: Float32Array;
   cols: number;
   rows: number;
 } {
+
   const {
     cols,
     rows,
@@ -286,8 +293,9 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): {
   }
 
   if (cols <= 0 || rows <= 0) {
-    return { text: '', luminance: synthDitherBuffer, cols: 0, rows: 0 };
+    return { text: '', colors: null, luminance: synthDitherBuffer, cols: 0, rows: 0 };
   }
+
 
   const cx = cols / 2;
   const cy = rows / 2;
@@ -486,12 +494,52 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): {
     }
   }
 
+  const colorConfig = ctx.colorConfig;
+  const paletteMode = colorConfig?.paletteMode || (colorConfig?.mode === 'content' ? 'content' : 'phosphor');
+  const isColored = paletteMode === 'indexed' || paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone';
+
+  let colorsOut: Uint8ClampedArray | null = null;
+
+  if (isColored) {
+    if (synthColorsBuffer.length !== totalCells * 3) {
+      synthColorsBuffer = new Uint8ClampedArray(totalCells * 3);
+    }
+
+    if (paletteMode === 'indexed') {
+      const palId = colorConfig?.activePaletteId || 'gameboy-classic';
+      const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
+      const rgbList = found.colors.map(hexToRgb);
+      const numColors = rgbList.length;
+
+      for (let i = 0; i < totalCells; i++) {
+        const lum = Math.max(0, Math.min(1, synthDitherBuffer[i]));
+        const cIdx = Math.max(0, Math.min(numColors - 1, Math.floor(lum * numColors)));
+        const col = rgbList[cIdx];
+        synthColorsBuffer[i * 3] = col.r;
+        synthColorsBuffer[i * 3 + 1] = col.g;
+        synthColorsBuffer[i * 3 + 2] = col.b;
+      }
+    } else if ((paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone') && colorConfig?.multiTone) {
+      for (let i = 0; i < totalCells; i++) {
+        const lum = Math.max(0, Math.min(1, synthDitherBuffer[i]));
+        const mapped = evaluateMultiTone(lum, colorConfig.multiTone);
+        synthColorsBuffer[i * 3] = mapped.r;
+        synthColorsBuffer[i * 3 + 1] = mapped.g;
+        synthColorsBuffer[i * 3 + 2] = mapped.b;
+      }
+    }
+
+    colorsOut = synthColorsBuffer;
+  }
+
   return {
     text: cachedLines.join('\n'),
+    colors: colorsOut,
     luminance: synthDitherBuffer,
     cols,
     rows,
   };
 }
+
 
 

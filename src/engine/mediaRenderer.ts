@@ -287,7 +287,8 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     srcHeight = mediaElement.height || 100;
   }
 
-  const cellAspect = 0.55;
+  const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
+  const cellAspect = isTextMode ? 0.55 : (context.halftoneConfig?.cellRatio ?? 1.0);
   const virtualCanvasWidth = cols;
   const virtualCanvasHeight = rows / cellAspect;
 
@@ -296,6 +297,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
 
   const srcAspect = srcWidth / Math.max(1, srcHeight);
   const canvasAspect = virtualCanvasWidth / Math.max(1, virtualCanvasHeight);
+
 
   if (mediaConfig.fit === 'contain') {
     if (srcAspect > canvasAspect) {
@@ -434,11 +436,12 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
 
   const contrastFactor = Math.tan(((viewConfig.contrast + 100) * Math.PI) / 400);
   const brightnessOffset = viewConfig.brightness / 100.0;
-  const inBlack = Math.max(0, Math.min(0.95, (viewConfig.levelBlack ?? (toneCfg?.levelsBlack ?? 0)) / 100.0));
-  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (viewConfig.levelWhite ?? (toneCfg?.levelsWhite ?? 100)) / 100.0));
-  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (viewConfig.levelMidtones ?? (toneCfg?.levelsMidtones ?? 50)) / 100.0));
+  const inBlack = Math.max(0, Math.min(0.95, ((toneCfg?.levelsBlack !== undefined) ? toneCfg.levelsBlack : (viewConfig.levelBlack ?? 0)) / 100.0));
+  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, ((toneCfg?.levelsWhite !== undefined) ? toneCfg.levelsWhite : (viewConfig.levelWhite ?? 100)) / 100.0));
+  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, ((toneCfg?.levelsMidtones !== undefined) ? toneCfg.levelsMidtones : (viewConfig.levelMidtones ?? 50)) / 100.0));
   const midNorm = (inMid - inBlack) / (inWhite - inBlack);
   const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+
   const shadowAdj = (viewConfig.shadows || 0) / 100.0;
   const highlightAdj = (viewConfig.highlights || 0) / 100.0;
   const midtoneGamma = Math.pow(2.0, -(viewConfig.midtones || 0) / 50.0);
