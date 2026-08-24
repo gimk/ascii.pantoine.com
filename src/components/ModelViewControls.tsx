@@ -1,4 +1,5 @@
 import React from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { ModelViewConfig, ModelShadingMode } from '../types/ascii';
 import { Play, Pause, Sun, Camera, Eye, RotateCw } from 'lucide-react';
 
@@ -32,11 +33,12 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
   return (
     <div className="tab-content">
       {/* 1. Shading & Render Mode */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>ASCII Shading Mode</span>
-          <Eye size={12} />
-        </div>
+      <CollapsibleSection
+        title="ASCII Shading Mode"
+        icon={<Eye size={12} />}
+        persistKey="ModelViewControls-ascii-shading-mode"
+        badge={shadingModes.find((s) => s.mode === config.shadingMode)?.label}
+      >
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
           {shadingModes.map((item) => (
             <button
@@ -48,15 +50,10 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             </button>
           ))}
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 2. Auto-Rotation & Dynamics */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Rotation & Dynamics</span>
-          <RotateCw size={12} />
-        </div>
-
+      <CollapsibleSection title="Rotation &amp; Dynamics" icon={<RotateCw size={12} />} persistKey="ModelViewControls-rotation-dynamics">
         <div className="control-row">
           <span className="control-label">Auto-Rotation</span>
           <button
@@ -188,15 +185,10 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             RESET ANGLES (0°)
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 3. Lighting & Contrast */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Lighting & Contrast</span>
-          <Sun size={12} />
-        </div>
-
+      <CollapsibleSection title="Lighting &amp; Contrast" icon={<Sun size={12} />} persistKey="ModelViewControls-lighting-contrast">
         {/* Light Azimuth */}
         <div className="control-row">
           <span className="control-label">Light Azimuth (Angle)</span>
@@ -340,15 +332,10 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             </span>
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 4. Camera & Optics */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Camera & Optics</span>
-          <Camera size={12} />
-        </div>
-
+      <CollapsibleSection title="Camera &amp; Optics" icon={<Camera size={12} />} persistKey="ModelViewControls-camera-optics">
         {/* Camera Distance */}
         <div className="control-row">
           <span className="control-label">Camera Distance / Zoom</span>
@@ -398,7 +385,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             {config.isOrthographic ? 'ORTHOGRAPHIC' : 'PERSPECTIVE'}
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 };

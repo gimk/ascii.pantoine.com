@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { ModelConfig, BuiltinModelId } from '../types/ascii';
 import { parseModelFile } from '../engine/modelLoader';
 import {
@@ -35,6 +36,13 @@ interface ModelSettingsControlsProps {
   onLoadRemoteModel: (model: Khronos3DModel) => Promise<void>;
   onStartLoading?: (fileName: string, statusText?: string) => void;
   onEndLoading?: () => void;
+  /**
+   * Which half of the panel to render.
+   *   source - online library, upload and built-in primitives: what the model IS
+   *   adjust - transforms, scale and mesh options: how it is processed
+   * Defaults to both, so existing callers are unaffected.
+   */
+  section?: 'source' | 'adjust' | 'all';
 }
 
 export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
@@ -45,7 +53,10 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
   onLoadRemoteModel,
   onStartLoading,
   onEndLoading,
+  section = 'all',
 }) => {
+  const showSource = section === 'source' || section === 'all';
+  const showAdjust = section === 'adjust' || section === 'all';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
@@ -114,18 +125,16 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
 
   return (
     <div className="tab-content">
+      {showSource && (
+        <>
       {/* 1. Online 3D Library (Khronos & Open CDN - Text Cards) */}
-      <div className="control-section">
-        <div className="section-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Globe size={12} style={{ color: 'var(--accent)' }} />
-            <span>Online 3D Library</span>
+      <CollapsibleSection title="Online 3D Library" icon={<Globe size={12} />} badge={<><div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            
+            
           </div>
           <span style={{ fontSize: '9px', color: 'var(--accent)', fontWeight: 'bold' }}>
             KHRONOS glTF & OPEN CDN
-          </span>
-        </div>
-
+          </span></>} persistKey="ModelSettingsControls-online-3d-library">
         <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
           Explore official Khronos glTF benchmark assets & open 3D models. Click any model to render in ASCII.
         </p>
@@ -287,15 +296,10 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
       {/* 2. Upload Custom 3D Model */}
-      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-        <div className="section-header">
-          <span>Upload Custom 3D File</span>
-          <Upload size={12} />
-        </div>
-
+      <CollapsibleSection title="Upload Custom 3D File" icon={<Upload size={12} />} persistKey="ModelSettingsControls-upload-custom-3d-file">
         <input
           ref={fileInputRef}
           type="file"
@@ -356,14 +360,10 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
             </div>
           )}
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 3. Built-in Shape Primitives */}
-      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-        <div className="section-header">
-          <span>Built-in 3D Primitives</span>
-          <Box size={12} />
-        </div>
+      <CollapsibleSection title="Built-in 3D Primitives" icon={<Box size={12} />} persistKey="ModelSettingsControls-built-in-3d-primitives">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {builtinOptions.map((opt) => (
             <button
@@ -375,15 +375,14 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
             </button>
           ))}
         </div>
-      </div>
+      </CollapsibleSection>
+        </>
+      )}
 
+      {showAdjust && (
+        <>
       {/* 4. Transformations & Scaling */}
-      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-        <div className="section-header">
-          <span>Transformations & Scale</span>
-          <Sliders size={12} />
-        </div>
-
+      <CollapsibleSection title="Transformations &amp; Scale" icon={<Sliders size={12} />} persistKey="ModelSettingsControls-transformations-scale">
         {/* Uniform Scale */}
         <div className="control-row">
           <span className="control-label">Uniform Scale</span>
@@ -581,14 +580,10 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
             RESET TRANSFORMS
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 5. Geometry Processing & Mesh Options */}
-      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-        <div className="section-header">
-          <span>Mesh & Normal Settings</span>
-        </div>
-
+      <CollapsibleSection title="Mesh &amp; Normal Settings" persistKey="ModelSettingsControls-mesh-normal-settings">
         <div className="control-row">
           <span className="control-label">Auto Center Mesh</span>
           <button
@@ -654,7 +649,9 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
             {config.invertNormals ? 'INVERTED' : 'NORMAL'}
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
+        </>
+      )}
     </div>
   );
 };
