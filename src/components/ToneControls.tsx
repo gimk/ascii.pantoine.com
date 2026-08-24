@@ -1,6 +1,6 @@
 import React from 'react';
 import { ToneMappingConfig, DEFAULT_TONE_MAPPING_CONFIG } from '../types/ascii';
-import { Layers, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 
 interface ToneControlsProps {
   config: ToneMappingConfig;
@@ -62,40 +62,7 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
   }, [inBlack, inWhite, gamma, posterizeBits]);
 
   return (
-    <div style={{ marginBottom: '8px' }}>
-      {/* Header with Title & Reset Button */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '8px',
-        }}
-      >
-        <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>
-          TONAL RAMP & QUANTIZATION
-        </span>
-        <button
-          type="button"
-          onClick={handleResetAll}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-dim)',
-            fontSize: '8.5px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '3px',
-            fontFamily: 'var(--font-mono)',
-            padding: '0',
-          }}
-          title="Reset Tone Mapping to linear defaults"
-        >
-          <RotateCcw size={9} /> RESET
-        </button>
-      </div>
-
+    <div>
       {/* 1. Live Visual Tone Ramp Bar */}
       <div style={{ marginBottom: '10px' }}>
         <div
@@ -119,9 +86,7 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
 
       {/* 2. Quantization Steps / Bit-Depth */}
       <div className="control-row" style={{ marginBottom: '8px' }}>
-        <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Layers size={11} /> Steps
-        </span>
+        <span className="control-label">Tonal Steps</span>
         <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {[
             { bits: 0, label: 'RAW' },
@@ -136,18 +101,8 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
               key={item.bits}
               type="button"
               className={`chip-btn ${posterizeBits === item.bits ? 'active' : ''}`}
-              style={{
-                fontSize: '9px',
-                padding: '2px 5px',
-                borderRadius: '2px',
-                background: posterizeBits === item.bits ? 'var(--accent)' : 'var(--bg-control)',
-                color: posterizeBits === item.bits ? '#000' : 'var(--text-muted)',
-                fontWeight: posterizeBits === item.bits ? 700 : 500,
-                border: 'none',
-                cursor: 'pointer',
-              }}
               onClick={() => updateField('posterizeBits', item.bits)}
-              title={item.bits === 0 ? 'Full 8-bit continuous gradient' : `${Math.pow(2, item.bits)} quantized tone steps`}
+              title={item.bits === 0 ? 'Full continuous 8-bit gradient' : `${Math.pow(2, item.bits)} quantized tone steps`}
             >
               {item.label}
             </button>
@@ -156,22 +111,13 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
       </div>
 
       {/* 3. Tonal Presets */}
-      <div style={{ display: 'flex', gap: '3px', marginBottom: '10px', overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '10px', overflowX: 'auto', paddingBottom: '2px' }}>
         {TONAL_PRESETS.map((p) => (
           <button
             key={p.name}
             type="button"
             className="chip-btn"
-            style={{
-              fontSize: '8.5px',
-              padding: '2px 6px',
-              borderRadius: '2px',
-              background: 'var(--bg-control)',
-              color: 'var(--text-muted)',
-              border: '1px solid var(--border-color)',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            style={{ whiteSpace: 'nowrap' }}
             onClick={() =>
               onChangeConfig({
                 ...config,
@@ -187,162 +133,131 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
       </div>
 
       {/* 4. Input Levels Sliders */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '10px' }}>
-        <div className="control-row">
-          <span className="control-label" style={{ fontSize: '9px' }}>Shadow Cut</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
-            <input
-              type="range"
-              min={0}
-              max={60}
-              value={levelsBlack}
-              onChange={(e) => updateField('levelsBlack', parseInt(e.target.value, 10) || 0)}
-              style={{ flex: 1 }}
-            />
-            <span style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)', width: '28px', textAlign: 'right' }}>
-              {levelsBlack}%
-            </span>
-          </div>
+      <div className="control-row">
+        <span className="control-label">Shadow Cut</span>
+        <div className="control-input-wrapper">
+          <input
+            type="range"
+            className="range-slider"
+            min={0}
+            max={60}
+            value={levelsBlack}
+            onChange={(e) => updateField('levelsBlack', parseInt(e.target.value, 10) || 0)}
+          />
+          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+            {levelsBlack}%
+          </span>
         </div>
+      </div>
 
-        <div className="control-row">
-          <span className="control-label" style={{ fontSize: '9px' }}>Midtones Gamma</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
-            <input
-              type="range"
-              min={10}
-              max={90}
-              value={levelsMidtones}
-              onChange={(e) => updateField('levelsMidtones', parseInt(e.target.value, 10) || 50)}
-              style={{ flex: 1 }}
-            />
-            <span style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)', width: '28px', textAlign: 'right' }}>
-              {(levelsMidtones / 50.0).toFixed(2)}x
-            </span>
-          </div>
+      <div className="control-row">
+        <span className="control-label">Midtones Gamma</span>
+        <div className="control-input-wrapper">
+          <input
+            type="range"
+            className="range-slider"
+            min={10}
+            max={90}
+            value={levelsMidtones}
+            onChange={(e) => updateField('levelsMidtones', parseInt(e.target.value, 10) || 50)}
+          />
+          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+            {(levelsMidtones / 50.0).toFixed(2)}x
+          </span>
         </div>
+      </div>
 
-        <div className="control-row">
-          <span className="control-label" style={{ fontSize: '9px' }}>Highlight Cut</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
-            <input
-              type="range"
-              min={40}
-              max={100}
-              value={levelsWhite}
-              onChange={(e) => updateField('levelsWhite', parseInt(e.target.value, 10) || 100)}
-              style={{ flex: 1 }}
-            />
-            <span style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)', width: '28px', textAlign: 'right' }}>
-              {levelsWhite}%
-            </span>
-          </div>
+      <div className="control-row">
+        <span className="control-label">Highlight Cut</span>
+        <div className="control-input-wrapper">
+          <input
+            type="range"
+            className="range-slider"
+            min={40}
+            max={100}
+            value={levelsWhite}
+            onChange={(e) => updateField('levelsWhite', parseInt(e.target.value, 10) || 100)}
+          />
+          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+            {levelsWhite}%
+          </span>
         </div>
       </div>
 
       {/* 5. RGB Channel Mixer */}
-      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-          <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            Channel Mixer (RGB Weights)
-          </span>
-          <button
-            type="button"
-            onClick={() =>
-              onChangeConfig({
-                ...config,
-                channelMixerR: 100,
-                channelMixerG: 100,
-                channelMixerB: 100,
-              })
-            }
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-dim)',
-              fontSize: '8.5px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '2px',
-              fontFamily: 'var(--font-mono)',
-            }}
-            title="Reset RGB mixer to 100%"
-          >
-            <RotateCcw size={8} /> Reset RGB
-          </button>
+      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+        <div style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.05em', fontWeight: 600 }}>
+          Channel Mixer (RGB Weights)
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#ff5555' }}>
-              <span>RED</span>
-              <span>{config.channelMixerR}%</span>
-            </div>
+        <div className="control-row">
+          <span className="control-label" style={{ color: '#ff5555' }}>Red Weight</span>
+          <div className="control-input-wrapper">
             <input
               type="range"
+              className="range-slider"
               min={0}
               max={200}
-              value={config.channelMixerR}
+              value={config.channelMixerR ?? 100}
               onChange={(e) => updateField('channelMixerR', parseInt(e.target.value, 10) || 0)}
-              className="range-input"
-              style={{ width: '100%' }}
             />
+            <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+              {config.channelMixerR ?? 100}%
+            </span>
           </div>
+        </div>
 
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#55ff55' }}>
-              <span>GREEN</span>
-              <span>{config.channelMixerG}%</span>
-            </div>
+        <div className="control-row">
+          <span className="control-label" style={{ color: '#55ff55' }}>Green Weight</span>
+          <div className="control-input-wrapper">
             <input
               type="range"
+              className="range-slider"
               min={0}
               max={200}
-              value={config.channelMixerG}
+              value={config.channelMixerG ?? 100}
               onChange={(e) => updateField('channelMixerG', parseInt(e.target.value, 10) || 0)}
-              className="range-input"
-              style={{ width: '100%' }}
             />
+            <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+              {config.channelMixerG ?? 100}%
+            </span>
           </div>
+        </div>
 
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#55aaff' }}>
-              <span>BLUE</span>
-              <span>{config.channelMixerB}%</span>
-            </div>
+        <div className="control-row">
+          <span className="control-label" style={{ color: '#55aaff' }}>Blue Weight</span>
+          <div className="control-input-wrapper">
             <input
               type="range"
+              className="range-slider"
               min={0}
               max={200}
-              value={config.channelMixerB}
+              value={config.channelMixerB ?? 100}
               onChange={(e) => updateField('channelMixerB', parseInt(e.target.value, 10) || 0)}
-              className="range-input"
-              style={{ width: '100%' }}
             />
+            <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+              {config.channelMixerB ?? 100}%
+            </span>
           </div>
         </div>
       </div>
 
-      {/* 6. Main Reset Button */}
+      {/* 6. Full-Width Bottom Reset Button */}
       <button
         type="button"
         className="btn btn-sm"
         style={{
           width: '100%',
-          marginTop: '10px',
+          marginTop: '12px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '5px',
-          fontSize: '9.5px',
+          gap: '6px',
         }}
         onClick={handleResetAll}
       >
-        <RotateCcw size={10} /> RESET TONE MAPPING
+        <RotateCcw size={11} /> RESET TONE MAPPING
       </button>
     </div>
   );
 };
-
-

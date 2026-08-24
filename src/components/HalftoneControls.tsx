@@ -2,7 +2,6 @@ import React from 'react';
 import { HalftoneConfig, DEFAULT_HALFTONE_CONFIG, RasterOutputMode } from '../types/ascii';
 import { RotateCcw } from 'lucide-react';
 
-
 interface HalftoneControlsProps {
   config: HalftoneConfig;
   onChangeConfig: (newConfig: HalftoneConfig) => void;
@@ -32,44 +31,11 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
   const dotPitch = config.dotPitch ?? 8;
 
   return (
-    <div style={{ marginBottom: '8px' }}>
-      {/* Header with Title & Quick Reset */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '8px',
-        }}
-      >
-        <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>
-          SCREEN GEOMETRY & ANGLES
-        </span>
-        <button
-          type="button"
-          onClick={handleReset}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-dim)',
-            fontSize: '8.5px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '3px',
-            fontFamily: 'var(--font-mono)',
-            padding: '0',
-          }}
-          title="Reset Halftone Geometry to defaults"
-        >
-          <RotateCcw size={9} /> RESET
-        </button>
-      </div>
-
+    <div>
       {/* 1. Dot Shape Selection (for halftone-dot) */}
       {rasterMode === 'halftone-dot' && (
-        <div className="control-row" style={{ marginBottom: '8px' }}>
-          <span className="control-label" style={{ fontSize: '9.5px' }}>Dot Shape</span>
+        <div className="control-row">
+          <span className="control-label">Dot Shape</span>
           <div style={{ display: 'flex', gap: '3px' }}>
             {(['circle', 'square', 'diamond'] as const).map((shape) => (
               <button
@@ -77,7 +43,7 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
                 type="button"
                 className={`segmented-btn ${dotShape === shape ? 'active' : ''}`}
                 onClick={() => updateField('dotShape', shape)}
-                style={{ fontSize: '9px', padding: '2px 7px', textTransform: 'capitalize' }}
+                style={{ textTransform: 'capitalize' }}
               >
                 {shape}
               </button>
@@ -87,19 +53,19 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
       )}
 
       {/* 2. Dot Scale Slider */}
-      <div className="control-row" style={{ marginBottom: '6px' }}>
-        <span className="control-label" style={{ fontSize: '9.5px' }}>Dot Scale</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
+      <div className="control-row">
+        <span className="control-label">Dot Scale</span>
+        <div className="control-input-wrapper">
           <input
             type="range"
+            className="range-slider"
             min="0.2"
             max="2.5"
             step="0.05"
             value={dotScale}
             onChange={(e) => updateField('dotScale', parseFloat(e.target.value))}
-            style={{ flex: 1 }}
           />
-          <span style={{ fontSize: '9.5px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
             {dotScale.toFixed(2)}x
           </span>
         </div>
@@ -107,67 +73,59 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
 
       {/* 3. Screen Angle (for lines & crosshatch) */}
       {(rasterMode === 'halftone-line' || rasterMode === 'halftone-crosshatch') && (
-        <div style={{ marginBottom: '8px' }}>
-          <div className="control-row" style={{ marginBottom: '4px' }}>
-            <span className="control-label" style={{ fontSize: '9.5px' }}>Screen Angle</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
+        <>
+          <div className="control-row">
+            <span className="control-label">Screen Angle</span>
+            <div className="control-input-wrapper">
               <input
                 type="range"
+                className="range-slider"
                 min="0"
                 max="180"
                 step="5"
                 value={lineAngle}
                 onChange={(e) => updateField('lineAngle', parseInt(e.target.value, 10))}
-                style={{ flex: 1 }}
               />
-              <span style={{ fontSize: '9.5px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
                 {lineAngle}°
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '3px', justifyContent: 'flex-end', marginBottom: '8px' }}>
             {[0, 45, 90, 135].map((deg) => (
               <button
                 key={deg}
                 type="button"
                 className={`chip-btn ${lineAngle === deg ? 'active' : ''}`}
-                style={{
-                  fontSize: '8.5px',
-                  padding: '1px 5px',
-                  borderRadius: '2px',
-                  background: lineAngle === deg ? 'var(--accent)' : 'var(--bg-control)',
-                  color: lineAngle === deg ? '#000' : 'var(--text-muted)',
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
                 onClick={() => updateField('lineAngle', deg)}
               >
                 {deg}°
               </button>
             ))}
           </div>
-        </div>
+        </>
       )}
 
       {/* 4. CMYK Screen Plate Angles (for halftone-cmyk) */}
       {rasterMode === 'halftone-cmyk' && (
-        <div style={{ marginBottom: '8px', padding: '6px', background: 'var(--bg-control)', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
-          <span style={{ fontSize: '8.5px', color: 'var(--text-dim)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+        <div style={{ marginBottom: '9px', padding: '8px', background: 'var(--bg-control)', borderRadius: '3px', border: '1px solid var(--border-color)' }}>
+          <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600, letterSpacing: '0.05em' }}>
             CMYK Plate Angles
-          </span>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
             {[
-              { plate: 'c' as const, label: 'C (Cyan)', col: '#00ffff' },
-              { plate: 'm' as const, label: 'M (Magenta)', col: '#ff00ff' },
-              { plate: 'y' as const, label: 'Y (Yellow)', col: '#ffff00' },
-              { plate: 'k' as const, label: 'K (Black)', col: '#aaaaaa' },
+              { plate: 'c' as const, label: 'C', col: '#00ffff' },
+              { plate: 'm' as const, label: 'M', col: '#ff00ff' },
+              { plate: 'y' as const, label: 'Y', col: '#ffff00' },
+              { plate: 'k' as const, label: 'K', col: '#aaaaaa' },
             ].map(({ plate, label, col }) => {
               const curAngle = config.cmykAngles?.[plate] ?? DEFAULT_HALFTONE_CONFIG.cmykAngles[plate];
               return (
                 <div key={plate} style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: '8.5px', color: col, fontWeight: 700 }}>{plate.toUpperCase()}</span>
+                  <div style={{ fontSize: '9.5px', color: col, fontWeight: 700, marginBottom: '2px' }}>{label}</div>
                   <input
                     type="range"
+                    className="range-slider"
                     min="0"
                     max="90"
                     step="5"
@@ -182,7 +140,7 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
                     style={{ width: '100%' }}
                     title={`${label}: ${curAngle}°`}
                   />
-                  <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)' }}>{curAngle}°</span>
+                  <div style={{ fontSize: '8.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{curAngle}°</div>
                 </div>
               );
             })}
@@ -191,8 +149,8 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
       )}
 
       {/* 5. Cell Geometry Aspect Presets */}
-      <div className="control-row" style={{ marginBottom: '6px' }}>
-        <span className="control-label" style={{ fontSize: '9.5px' }}>Cell Ratio</span>
+      <div className="control-row">
+        <span className="control-label">Cell Ratio</span>
         <div style={{ display: 'flex', gap: '3px' }}>
           {[
             { label: '1:1', ratio: 1.0 },
@@ -204,16 +162,6 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
               key={preset.label}
               type="button"
               className={`chip-btn ${Math.abs(cellRatio - preset.ratio) < 0.02 ? 'active' : ''}`}
-              style={{
-                fontSize: '9px',
-                padding: '2px 5px',
-                borderRadius: '2px',
-                background: Math.abs(cellRatio - preset.ratio) < 0.02 ? 'var(--accent)' : 'var(--bg-control)',
-                color: Math.abs(cellRatio - preset.ratio) < 0.02 ? '#000' : 'var(--text-muted)',
-                fontWeight: Math.abs(cellRatio - preset.ratio) < 0.02 ? 700 : 500,
-                border: 'none',
-                cursor: 'pointer',
-              }}
               onClick={() => updateField('cellRatio', preset.ratio)}
             >
               {preset.label}
@@ -223,40 +171,39 @@ export const HalftoneControls: React.FC<HalftoneControlsProps> = ({
       </div>
 
       {/* 6. Dot Pitch Slider */}
-      <div className="control-row" style={{ marginBottom: '8px' }}>
-        <span className="control-label" style={{ fontSize: '9.5px' }}>Dot Pitch</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
+      <div className="control-row">
+        <span className="control-label">Dot Pitch</span>
+        <div className="control-input-wrapper">
           <input
             type="range"
+            className="range-slider"
             min="4"
             max="24"
             step="1"
             value={dotPitch}
             onChange={(e) => updateField('dotPitch', parseInt(e.target.value, 10) || 8)}
-            style={{ flex: 1 }}
           />
-          <span style={{ fontSize: '9.5px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', width: '32px', textAlign: 'right', flexShrink: 0 }}>
             {dotPitch}px
           </span>
         </div>
       </div>
 
-      {/* 7. Bottom Reset Button */}
+      {/* 7. Full-Width Bottom Reset Button */}
       <button
         type="button"
         className="btn btn-sm"
         style={{
           width: '100%',
-          marginTop: '6px',
+          marginTop: '12px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '5px',
-          fontSize: '9.5px',
+          gap: '6px',
         }}
         onClick={handleReset}
       >
-        <RotateCcw size={10} /> RESET HALFTONE GEOMETRY
+        <RotateCcw size={11} /> RESET HALFTONE GEOMETRY
       </button>
     </div>
   );
