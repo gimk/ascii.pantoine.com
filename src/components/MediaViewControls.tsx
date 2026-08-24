@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { MediaViewConfig, BackgroundMode } from '../types/ascii';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
-import { Sliders, Sparkles, RotateCcw } from 'lucide-react';
+import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
+import { Sliders, Sparkles } from 'lucide-react';
 
 interface MediaViewControlsProps {
   config: MediaViewConfig;
   onChangeConfig: (newConfig: MediaViewConfig) => void;
-  onResetDefaults?: () => void;
 }
 
 const NumberInput: React.FC<{
@@ -673,8 +674,40 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   config,
   onChangeConfig,
-  onResetDefaults,
 }) => {
+  /**
+   * Each group resets only its own fields. A single global reset used to sit
+   * at the bottom of the panel, far from either group and ambiguous about
+   * what it would wipe.
+   */
+  const resetEffects = () => {
+    onChangeConfig({
+      ...config,
+      sharpenStrength: DEFAULT_MEDIA_VIEW_CONFIG.sharpenStrength,
+      sharpenRadius: DEFAULT_MEDIA_VIEW_CONFIG.sharpenRadius,
+      noise: DEFAULT_MEDIA_VIEW_CONFIG.noise,
+      blur: DEFAULT_MEDIA_VIEW_CONFIG.blur,
+      brightness: DEFAULT_MEDIA_VIEW_CONFIG.brightness,
+      contrast: DEFAULT_MEDIA_VIEW_CONFIG.contrast,
+    });
+  };
+
+  const resetTonal = () => {
+    onChangeConfig({
+      ...config,
+      curvePoints: DEFAULT_MEDIA_VIEW_CONFIG.curvePoints
+        ? DEFAULT_MEDIA_VIEW_CONFIG.curvePoints.map((pt) => [...pt] as [number, number])
+        : undefined,
+      levelBlack: DEFAULT_MEDIA_VIEW_CONFIG.levelBlack,
+      levelMidtones: DEFAULT_MEDIA_VIEW_CONFIG.levelMidtones,
+      levelWhite: DEFAULT_MEDIA_VIEW_CONFIG.levelWhite,
+      highlights: DEFAULT_MEDIA_VIEW_CONFIG.highlights,
+      midtones: DEFAULT_MEDIA_VIEW_CONFIG.midtones,
+      shadows: DEFAULT_MEDIA_VIEW_CONFIG.shadows,
+      background: DEFAULT_MEDIA_VIEW_CONFIG.background,
+      alphaThreshold: DEFAULT_MEDIA_VIEW_CONFIG.alphaThreshold,
+    });
+  };
   const update = <K extends keyof MediaViewConfig>(key: K, val: MediaViewConfig[K]) => {
     onChangeConfig({
       ...config,
@@ -691,12 +724,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   return (
     <>
       {/* 1. EFFECT CONTROLS */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>EFFECT CONTROLS</span>
-          <Sliders size={12} />
-        </div>
-
+      <CollapsibleSection title="EFFECT CONTROLS" icon={<Sliders size={12} />} persistKey="MediaViewControls-effect-controls">
         {/* Sharpen Strength */}
         <div className="control-row">
           <span className="control-label">Sharpen Strength</span>
@@ -834,15 +862,15 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             />
           </div>
         </div>
-      </div>
+        <div className="collapsible-actions">
+          <button className="btn btn-sm" onClick={resetEffects} title="Reset sharpen, blur, noise, brightness and contrast">
+            RESET EFFECTS
+          </button>
+        </div>
+      </CollapsibleSection>
 
       {/* 3. TONAL CONTROLS */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>TONAL CONTROLS</span>
-          <Sparkles size={12} />
-        </div>
-
+      <CollapsibleSection title="TONAL CONTROLS" icon={<Sparkles size={12} />} persistKey="MediaViewControls-tonal-controls">
         {/* Real-time Interactive Tonal Transfer Curve Graph */}
         <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
 
@@ -967,19 +995,13 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             </div>
           </div>
         )}
-      </div>
+        <div className="collapsible-actions">
+          <button className="btn btn-sm" onClick={resetTonal} title="Reset curve, levels, highlights, midtones, shadows and background">
+            RESET TONAL
+          </button>
+        </div>
+      </CollapsibleSection>
 
-      {/* Reset Defaults */}
-      {onResetDefaults && (
-        <button
-          className="btn btn-sm"
-          style={{ width: '100%', color: 'var(--text-muted)' }}
-          onClick={onResetDefaults}
-        >
-          <RotateCcw size={11} />
-          RESET VIEW & EFFECT DEFAULTS
-        </button>
-      )}
     </>
   );
 };

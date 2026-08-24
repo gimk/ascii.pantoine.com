@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { CHARSETS } from '../engine/renderer';
 import {
   PhosphorTheme,
@@ -212,6 +213,16 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
 
   const isContentColorActive = appMode === 'media' && mediaColorConfig.mode === 'content';
 
+  // Shown in the collapsed headers so a shut group still reports its choice.
+  const activeCharsetName = CHARSETS.find((cs) => cs.chars === currentCharset)?.name || 'Custom';
+  const activeColorName = isContentColorActive
+    ? 'From Content'
+    : gradientConfig
+      ? gradientConfig.name || 'Custom Gradient'
+      : customThemeColor
+        ? 'Custom Colour'
+        : THEMES.find((t) => t.id === currentTheme)?.name || '';
+
   const updateMediaColor = (patch: Partial<MediaColorConfig>) => {
     if (onChangeMediaColorConfig) {
       onChangeMediaColorConfig({
@@ -278,11 +289,12 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
       )}
 
       {/* 1. Theme or Content Color Section */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>{isContentColorActive ? 'Content Color Settings' : 'Phosphor Color Theme'}</span>
-          <Sparkles size={12} style={{ color: 'var(--accent)' }} />
-        </div>
+      <CollapsibleSection
+        title={isContentColorActive ? 'Content Color Settings' : 'Phosphor Color Theme'}
+        icon={<Sparkles size={12} />}
+        persistKey="CharsetThemeBar-color"
+        badge={activeColorName}
+      >
 
         {isContentColorActive ? (
           /* CONTENT COLOR SETTINGS */
@@ -710,13 +722,14 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
         )}
           </>
         )}
-      </div>
+      </CollapsibleSection>
 
       {/* 2. Character Density Ramp */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Character Density Presets</span>
-        </div>
+      <CollapsibleSection
+        title="Character Density Presets"
+        persistKey="CharsetThemeBar-character-density-presets"
+        badge={activeCharsetName}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
           {CHARSETS.map((cs) => {
             const isSelected = currentCharset === cs.chars;
@@ -746,15 +759,10 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
           onChange={(e) => onChangeCharset(e.target.value || ' ')}
           placeholder="e.g.  .:-=+*#%@"
         />
-      </div>
+      </CollapsibleSection>
 
       {/* 3. CRT & Display Effects */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>CRT & Display Effects</span>
-          <Tv size={12} style={{ color: 'var(--accent)' }} />
-        </div>
-
+      <CollapsibleSection title="CRT &amp; Display Effects" icon={<Tv size={12} />} persistKey="CharsetThemeBar-crt-display-effects">
         {/* 1. CRT Scanlines */}
         <div className="control-row">
           <span className="control-label">CRT Scanlines</span>
@@ -806,7 +814,7 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
             {isContentColorActive ? 'DISABLED [OFF]' : crtConfig.phosphorBloom ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 };

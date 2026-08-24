@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { MediaPreset, MediaConfig } from '../types/ascii';
 import { MEDIA_PRESETS } from '../engine/mediaPresets';
 import { BookmarkPlus, Trash2, Image as ImageIcon } from 'lucide-react';
@@ -32,13 +33,11 @@ export const MediaPresetSelector: React.FC<MediaPresetSelectorProps> = ({
   return (
     <div className="tab-content">
       {/* 1. Built-in Media Presets */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Standard 2D Presets</span>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
-            {MEDIA_PRESETS.length} presets
-          </span>
-        </div>
+      <CollapsibleSection
+        title="Standard 2D Presets"
+        persistKey="MediaPresetSelector-standard-2d-presets"
+        badge={MEDIA_PRESETS.find((p) => p.id === activePresetId)?.name || '' + MEDIA_PRESETS.length + ' presets'}
+      >
         {MEDIA_PRESETS.length === 0 ? (
           <div
             style={{
@@ -78,17 +77,12 @@ export const MediaPresetSelector: React.FC<MediaPresetSelectorProps> = ({
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
       {/* 2. User Saved 2D Presets */}
-      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-        <div className="section-header">
-          <span>User Saved 2D Presets</span>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+      <CollapsibleSection title="User Saved 2D Presets" badge={<><span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
             {userPresets.length} saved
-          </span>
-        </div>
-
+          </span></>} persistKey="MediaPresetSelector-user-saved-2d-presets">
         <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
           Custom 2D media filters, transforms, and dithering presets saved in local browser storage.
         </p>
@@ -148,7 +142,7 @@ export const MediaPresetSelector: React.FC<MediaPresetSelectorProps> = ({
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { WaveParams } from '../types/ascii';
 import { DEFAULT_WAVE_PARAMS } from '../engine/math';
 import {
@@ -314,13 +315,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               }}
             >
               {/* Global & Matrix Settings */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>Global Dynamics</span>
-                  <button className="btn btn-sm" onClick={onResetParams} disabled={isFormulaDivergent}>
-                    DEFAULT
-                  </button>
-                </div>
+              <CollapsibleSection title="Global Dynamics" persistKey="SynthControls-global-dynamics">
                 {renderSlider('Time Speed', 'timeSpeed', 0.0, 3.0, 0.05)}
                 {renderSlider('Aspect Compensation', 'aspectRatio', 0.1, 2.0, 0.01)}
                 {renderSlider('Contrast', 'contrast', 0.2, 3.0, 0.1)}
@@ -336,38 +331,31 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                     {params.invert ? 'INVERTED [ON]' : 'NORMAL [OFF]'}
                   </button>
                 </div>
-              </div>
+                <div className="collapsible-actions">
+                  <button className="btn btn-sm" onClick={onResetParams} disabled={isFormulaDivergent}>
+                    RESET DYNAMICS
+                  </button>
+                </div>
+              </CollapsibleSection>
 
               {/* 1. Primary Radial Wave */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>1. Primary Radial Wave</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(dist)</span>
-                </div>
+              <CollapsibleSection title="1. Primary Radial Wave" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(dist)</span></>} persistKey="SynthControls-1-primary-radial-wave">
                 {renderSlider('Amplitude', 'radialAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Frequency', 'radialFreq', 0.01, 0.4, 0.01)}
                 {renderSlider('Wave Speed', 'radialSpeed', -3.0, 3.0, 0.1)}
                 {renderSlider('Center Offset X', 'radialCenterOffsetX', -40, 40, 1, 0)}
                 {renderSlider('Center Offset Y', 'radialCenterOffsetY', -20, 20, 1, 0)}
-              </div>
+              </CollapsibleSection>
 
               {/* 2. Secondary Harmonic Ripple */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>2. Secondary Harmonic Ripple</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Cell Interference</span>
-                </div>
+              <CollapsibleSection title="2. Secondary Harmonic Ripple" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Cell Interference</span></>} persistKey="SynthControls-2-secondary-harmonic-ripple">
                 {renderSlider('Harmonic Amplitude', 'radial2Amp', 0.0, 2.0, 0.05)}
                 {renderSlider('Harmonic Frequency', 'radial2Freq', 0.02, 0.6, 0.01)}
                 {renderSlider('Harmonic Speed', 'radial2Speed', -4.0, 4.0, 0.1)}
-              </div>
+              </CollapsibleSection>
 
               {/* 3. Directional Waves */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>3. Directional Waves (X, Y, Diagonal)</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span>
-                </div>
+              <CollapsibleSection title="3. Directional Waves (X, Y, Diagonal)" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span></>} persistKey="SynthControls-3-directional-waves-x-y-diagonal">
                 {renderSlider('X Amplitude', 'xAmp', 0.0, 1.5, 0.05)}
                 {renderSlider('X Frequency', 'xFreq', 0.01, 0.3, 0.01)}
                 {renderSlider('X Speed', 'xSpeed', -2.0, 2.0, 0.1)}
@@ -379,66 +367,46 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 {renderSlider('Diagonal (X+Y) Amp', 'diagAmp', 0.0, 1.5, 0.05)}
                 {renderSlider('Diagonal Frequency', 'diagFreq', 0.01, 0.3, 0.01)}
                 {renderSlider('Diagonal Speed', 'diagSpeed', -2.0, 2.0, 0.1)}
-              </div>
+              </CollapsibleSection>
 
               {/* 4. Spiral / Vortex */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>4. Angular Spiral Vortex</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(θ * arms)</span>
-                </div>
+              <CollapsibleSection title="4. Angular Spiral Vortex" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(θ * arms)</span></>} persistKey="SynthControls-4-angular-spiral-vortex">
                 {renderSlider('Spiral Amplitude', 'spiralAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Arm Count', 'spiralArms', 1, 12, 1, 0)}
                 {renderSlider('Rotation Speed', 'spiralSpeed', -5.0, 5.0, 0.1)}
                 {renderSlider('Spiral Twist', 'spiralTwist', 0.0, 0.4, 0.01)}
-              </div>
+              </CollapsibleSection>
 
               {/* 5. Depth / Tunnel Warp */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>5. Wormhole Tunnel [1 / dist]</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>3D Perspective</span>
-                </div>
+              <CollapsibleSection title="5. Wormhole Tunnel [1 / dist]" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>3D Perspective</span></>} persistKey="SynthControls-5-wormhole-tunnel-1-dist">
                 {renderSlider('Tunnel Amplitude', 'tunnelAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Warp Power', 'tunnelPower', 5, 80, 1, 0)}
                 {renderSlider('Tunnel Speed', 'tunnelSpeed', -4.0, 4.0, 0.1)}
-              </div>
+              </CollapsibleSection>
 
               {/* 6. Concentric Rings */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>6. Concentric Rings</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Harmonic Bands</span>
-                </div>
+              <CollapsibleSection title="6. Concentric Rings" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Harmonic Bands</span></>} persistKey="SynthControls-6-concentric-rings">
                 {renderSlider('Rings Amplitude', 'ringsAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Base Radius', 'ringsRadius', 5, 80, 1, 0)}
                 {renderSlider('Pulse Speed', 'ringsSpeed', -4.0, 4.0, 0.1)}
                 {renderSlider('Ring Multiplier', 'ringsCount', 1, 6, 1, 0)}
-              </div>
+              </CollapsibleSection>
 
               {/* 7. Dual Interference */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>7. Dual Interference Moiré</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Dual Emitters</span>
-                </div>
+              <CollapsibleSection title="7. Dual Interference Moiré" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Dual Emitters</span></>} persistKey="SynthControls-7-dual-interference-moir">
                 {renderSlider('Interference Amp', 'dualEmitterAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Emitter Spacing', 'dualEmitterSpacing', 5, 60, 1, 0)}
                 {renderSlider('Wave Frequency', 'dualEmitterFreq', 0.02, 0.4, 0.01)}
                 {renderSlider('Wave Speed', 'dualEmitterSpeed', -4.0, 4.0, 0.1)}
-              </div>
+              </CollapsibleSection>
 
               {/* 8. Starfield & Cosmic Sparkle */}
-              <div className="control-section">
-                <div className="section-header">
-                  <span>8. Starfield & Cosmic Sparkle</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Procedural Sky</span>
-                </div>
+              <CollapsibleSection title="8. Starfield &amp; Cosmic Sparkle" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Procedural Sky</span></>} persistKey="SynthControls-8-starfield-cosmic-sparkle">
                 {renderSlider('Star Brightness', 'starfieldIntensity', 0.0, 2.0, 0.05)}
                 {renderSlider('Star Quantity', 'starfieldDensity', 0.1, 5.0, 0.1)}
                 {renderSlider('Sparkle Frequency', 'starfieldSpeed', 0.0, 8.0, 0.1)}
                 {renderSlider('Star Dispersion', 'starfieldScale', 15, 200, 5, 0)}
-              </div>
+              </CollapsibleSection>
             </div>
           </div>
         )}

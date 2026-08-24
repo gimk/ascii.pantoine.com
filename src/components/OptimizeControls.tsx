@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { OptimizeConfig, AppMode, MediaConfig, MediaViewConfig, DitherAlgorithm, ResamplingMode } from '../types/ascii';
 import { Cpu, Zap, BatteryCharging, Gauge, MonitorPlay, Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Settings2, Moon, Sun, Activity } from 'lucide-react';
 
@@ -282,12 +283,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
         <>
           {/* 1. RENDER SETTINGS (Resampling, Dithering Algorithm, Invert, Outline) */}
           {mediaViewConfig && onChangeMediaViewConfig && (
-            <div className="control-section">
-              <div className="section-header">
-                <span>Render Settings</span>
-                <Settings2 size={12} />
-              </div>
-
+            <CollapsibleSection title="Render Settings" icon={<Settings2 size={12} />} persistKey="OptimizeControls-render-settings">
               {/* Resampling Mode Dropdown */}
               <div className="control-row">
                 <span className="control-label">Resampling</span>
@@ -381,18 +377,13 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   </div>
                 </div>
               )}
-            </div>
+            </CollapsibleSection>
           )}
 
           {/* 2. Grid Resolution */}
-          <div className="control-section">
-            <div className="section-header">
-              <span>Grid Resolution</span>
-              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          <CollapsibleSection title="Grid Resolution" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
                 {cols}×{rows} ({totalCells.toLocaleString()} chars)
-              </span>
-            </div>
-
+              </span></>} persistKey="OptimizeControls-grid-resolution">
             {/* Media Source & Ratio Info Card */}
             <div
               style={{
@@ -560,17 +551,13 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 />
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
         </>
       ) : (
         /* SYNTH & MODEL RESOLUTION CONTROLS */
         <>
           {/* 1. Target Performance Profiles */}
-          <div className="control-section">
-            <div className="section-header">
-              <span>Performance Profiles</span>
-              <Cpu size={12} />
-            </div>
+          <CollapsibleSection title="Performance Profiles" icon={<Cpu size={12} />} persistKey="OptimizeControls-performance-profiles">
             <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
               1-click presets optimized for different website contexts and CPU budgets.
             </p>
@@ -620,17 +607,12 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>15 FPS • 50x25 • Min Battery</div>
               </button>
             </div>
-          </div>
+          </CollapsibleSection>
 
           {/* 2. Resolution & Grid Dimensions */}
-          <div className="control-section">
-            <div className="section-header">
-              <span>Grid Resolution</span>
-              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          <CollapsibleSection title="Grid Resolution" badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
                 {cols}x{rows} ({totalCells.toLocaleString()} chars)
-              </span>
-            </div>
-
+              </span></>} persistKey="OptimizeControls-grid-resolution">
             {/* Quick Resolution buttons */}
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px', opacity: autoRes ? 0.45 : 1 }}>
               {[
@@ -753,24 +735,24 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 </button>
               </div>
             )}
-          </div>
+          </CollapsibleSection>
         </>
       )}
 
       {/* 3. Framerate Limiter */}
-      <div
-        className="control-section"
+      <CollapsibleSection
+        title="FPS Limiter"
+        persistKey="OptimizeControls-fps-limiter"
         style={{
           opacity: isStaticImage ? 0.35 : 1,
           pointerEvents: isStaticImage ? 'none' : 'auto',
         }}
-      >
-        <div className="section-header">
-          <span>FPS Limiter</span>
-          <span style={{ fontSize: '9.5px', color: isStaticImage ? 'var(--text-muted)' : 'var(--accent)' }}>
+        badge={
+          <span style={{ color: isStaticImage ? 'var(--text-muted)' : 'var(--accent)' }}>
             {isStaticImage ? 'N/A (STATIC FRAME)' : config.targetFps === 0 ? 'UNCAPPED (VSYNC)' : `${config.targetFps} FPS`}
           </span>
-        </div>
+        }
+      >
 
         {isStaticImage && (
           <div style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px' }}>
@@ -809,22 +791,18 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             </span>
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 4. Smart CPU & Battery Throttling */}
-      <div
-        className="control-section"
+      <CollapsibleSection
+        title="Smart Throttling"
+        persistKey="OptimizeControls-smart-throttling"
         style={{
           opacity: isStaticImage ? 0.35 : 1,
           pointerEvents: isStaticImage ? 'none' : 'auto',
         }}
+        badge={isStaticImage ? 'PAUSED (STATIC)' : undefined}
       >
-        <div className="section-header">
-          <span>Smart Throttling</span>
-          {isStaticImage && (
-            <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>PAUSED (STATIC)</span>
-          )}
-        </div>
 
         <div className="control-row">
           <span className="control-label">
@@ -853,7 +831,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             {config.idleThrottle ? 'ENABLED' : 'DISABLED'}
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 };

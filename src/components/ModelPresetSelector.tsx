@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { ModelPreset, ModelConfig } from '../types/ascii';
 import { MODEL_PRESETS } from '../engine/modelPresets';
 import { BookmarkPlus, Trash2, Box } from 'lucide-react';
@@ -32,13 +33,11 @@ export const ModelPresetSelector: React.FC<ModelPresetSelectorProps> = ({
   return (
     <div className="tab-content">
       {/* 1. Built-in 3D Model Presets */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Standard 3D Presets</span>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
-            {MODEL_PRESETS.length} presets
-          </span>
-        </div>
+      <CollapsibleSection
+        title="Standard 3D Presets"
+        persistKey="ModelPresetSelector-standard-3d-presets"
+        badge={MODEL_PRESETS.find((p) => p.id === activePresetId)?.name || '' + MODEL_PRESETS.length + ' presets'}
+      >
         <div className="presets-grid">
           {MODEL_PRESETS.map((preset) => {
             const isActive = activePresetId === preset.id && activeModelConfig?.sourceType === 'preset';
@@ -57,17 +56,12 @@ export const ModelPresetSelector: React.FC<ModelPresetSelectorProps> = ({
             );
           })}
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* 2. User Saved 3D Presets */}
-      <div className="control-section" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-        <div className="section-header">
-          <span>User Saved 3D Presets</span>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+      <CollapsibleSection title="User Saved 3D Presets" badge={<><span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
             {userPresets.length} saved
-          </span>
-        </div>
-
+          </span></>} persistKey="ModelPresetSelector-user-saved-3d-presets">
         <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
           Custom 3D model setups and transformations saved in local browser storage.
         </p>
@@ -127,7 +121,7 @@ export const ModelPresetSelector: React.FC<ModelPresetSelectorProps> = ({
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
     </div>
   );
 };
