@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import {
   ModelConfig,
-
   ModelViewConfig,
   RasterOutputMode,
   DitherAlgorithm,
@@ -9,12 +8,11 @@ import {
   HalftoneConfig,
   MediaColorConfig,
 } from '../types/ascii';
-import { getBrailleCharFromSubpixels, MONOSPACE_CELL_ASPECT } from './renderer';
-import { applyDitherAlgorithm } from './ditherAlgorithms';
-import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone, quantizeImageToPaletteWithDither } from './palettes';
-
+import { MONOSPACE_CELL_ASPECT } from './renderer';
+import { processRasterFrame, ProcessedRasterResult } from './rasterEngine';
 
 export interface ModelRenderContext {
+
   cols: number;
   rows: number;
   time: number;
@@ -228,11 +226,9 @@ export function applyTrackballRotationWithTime(
 }
 
 // Reusable scratch variables & zero-allocation buffers
-let cachedLines: string[] = [];
-let lineBuffer: string[] = [];
 let pixelBuffer = new Uint8Array(0);
-let luminanceBuffer = new Float32Array(0);
-let modelColorsBuffer = new Uint8ClampedArray(0);
+let modelRgbaBuffer = new Uint8ClampedArray(0);
+
 
 
 // Offscreen Three.js WebGL rendering context singleton
@@ -326,30 +322,42 @@ class HeadlessModelRenderer {
     }
   }
 
-  public render(ctx: ModelRenderContext): string {
+  public renderData(ctx: ModelRenderContext): ProcessedRasterResult {
     const { cols, rows, time, density, geometry, modelConfig, viewConfig } = ctx;
 
     if (cols <= 0 || rows <= 0 || !geometry || !geometry.attributes?.position || geometry.attributes.position.count === 0) {
-      return '';
+      return {
+        text: '',
+        colors: null,
+        luminance: new Float32Array(0),
+        cols: 0,
+        rows: 0,
+        rasterMode: ctx.rasterMode || 'ascii',
+        bgColor: '#0a0a0a',
+        isColored: false,
+      };
     }
     if (!this.renderer || !this.canvas) {
       this.initRenderer();
-      if (!this.renderer || !this.canvas) return '';
+      if (!this.renderer || !this.canvas) {
+        return {
+          text: '',
+          colors: null,
+          luminance: new Float32Array(0),
+          cols: 0,
+          rows: 0,
+          rasterMode: ctx.rasterMode || 'ascii',
+          bgColor: '#0a0a0a',
+          isColored: false,
+        };
+      }
     }
 
     const totalCells = cols * rows;
-
-    // Ensure output line buffers match dimensions
-    if (cachedLines.length !== rows) {
-      cachedLines = new Array(rows);
-    }
-    if (lineBuffer.length !== cols) {
-      lineBuffer = new Array(cols);
-    }
     if (pixelBuffer.length !== totalCells * 4) {
       pixelBuffer = new Uint8Array(totalCells * 4);
-      luminanceBuffer = new Float32Array(totalCells);
     }
+
 
     // Resize WebGL canvas if dimensions changed
     if (this.canvas.width !== cols || this.canvas.height !== rows) {
@@ -502,228 +510,54 @@ class HeadlessModelRenderer {
     const gl = this.renderer.getContext();
     gl.readPixels(0, 0, cols, rows, gl.RGBA, gl.UNSIGNED_BYTE, pixelBuffer);
 
-    // Step 1: Precompute normalized luminance buffer
-    const contrast = viewConfig.contrast;
-    const brightness = viewConfig.brightness;
-    const invert = viewConfig.invert;
+    // Extract WebGL pixels into standard top-to-bottom RGBA buffer
+    if (modelRgbaBuffer.length !== totalCells * 4) {
+      modelRgbaBuffer = new Uint8ClampedArray(totalCells * 4);
+    }
 
     for (let y = 0; y < rows; y++) {
-      // Invert Y coordinate because WebGL is origin bottom-left, terminal is top-left
       const srcY = rows - 1 - y;
       const srcRowOffset = srcY * cols * 4;
-      const destRowOffset = y * cols;
-
+      const destRowOffset = y * cols * 4;
       for (let x = 0; x < cols; x++) {
-        const pxIdx = srcRowOffset + x * 4;
-        const r = pixelBuffer[pxIdx];
-        const g = pixelBuffer[pxIdx + 1];
-        const b = pixelBuffer[pxIdx + 2];
-
-        // Perceived luminance
-        let lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-
-        // Apply contrast & brightness
-        if (lum > 0.01) {
-          lum = (lum - 0.5) * contrast + 0.5 + brightness;
-          lum = Math.max(0, Math.min(1, lum));
-          if (invert) {
-            lum = 1.0 - lum;
-          }
-        } else {
-          lum = invert ? 1.0 : 0.0;
-        }
-
-        luminanceBuffer[destRowOffset + x] = lum;
+        const srcIdx = srcRowOffset + x * 4;
+        const destIdx = destRowOffset + x * 4;
+        modelRgbaBuffer[destIdx] = pixelBuffer[srcIdx];
+        modelRgbaBuffer[destIdx + 1] = pixelBuffer[srcIdx + 1];
+        modelRgbaBuffer[destIdx + 2] = pixelBuffer[srcIdx + 2];
+        modelRgbaBuffer[destIdx + 3] = pixelBuffer[srcIdx + 3];
       }
     }
 
-    // Step 2: Sobel Edge Detection for Outlines (if outline mode or edgeWeight > 0)
-    const isOutlineMode = viewConfig.shadingMode === 'outline';
-    const edgeWeight = isOutlineMode ? 1.5 : (viewConfig.edgeWeight || 0);
-    const edgeThreshold = Math.max(0.05, viewConfig.edgeThreshold || 0.18);
-    const densityLength = density.length;
-
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      const prevRow = y > 0 ? (y - 1) * cols : rowOffset;
-      const nextRow = y < rows - 1 ? (y + 1) * cols : rowOffset;
-
-      for (let x = 0; x < cols; x++) {
-        const prevCol = x > 0 ? x - 1 : x;
-        const nextCol = x < cols - 1 ? x + 1 : x;
-
-        let finalLum = luminanceBuffer[rowOffset + x];
-
-        // Sobel filter pass
-        if (edgeWeight > 0) {
-          const tl = luminanceBuffer[prevRow + prevCol];
-          const tc = luminanceBuffer[prevRow + x];
-          const tr = luminanceBuffer[prevRow + nextCol];
-          const ml = luminanceBuffer[rowOffset + prevCol];
-          const mr = luminanceBuffer[rowOffset + nextCol];
-          const bl = luminanceBuffer[nextRow + prevCol];
-          const bc = luminanceBuffer[nextRow + x];
-          const br = luminanceBuffer[nextRow + nextCol];
-
-          const gx = -tl - 2 * ml - bl + tr + 2 * mr + br;
-          const gy = -tl - 2 * tc - tr + bl + 2 * bc + br;
-          const edgeMag = Math.sqrt(gx * gx + gy * gy);
-
-          if (edgeMag >= edgeThreshold) {
-            if (isOutlineMode) {
-              finalLum = Math.min(1.0, edgeMag * edgeWeight);
-            } else {
-              finalLum = Math.min(1.0, finalLum + edgeMag * edgeWeight);
-            }
-          } else if (isOutlineMode) {
-            finalLum = finalLum * 0.15; // Dim interior in outline mode
-          }
-        }
-
-        luminanceBuffer[rowOffset + x] = finalLum;
+    // Delegate to Unified 2D Raster Processing Engine
+    return processRasterFrame(
+      {
+        width: cols,
+        height: rows,
+        rgba: modelRgbaBuffer,
+      },
+      {
+        cols,
+        rows,
+        density,
+        rasterMode: ctx.rasterMode || viewConfig.rasterMode || 'ascii',
+        ditherAlgorithm: ctx.algorithm || viewConfig.algorithm || 'none',
+        toneConfig: ctx.toneConfig || viewConfig.toneConfig,
+        colorConfig: ctx.colorConfig,
+        halftoneConfig: ctx.halftoneConfig,
+        contrast: viewConfig.contrast,
+        brightness: viewConfig.brightness,
+        invert: viewConfig.invert,
+        edgeDetection: viewConfig.shadingMode === 'outline' || (viewConfig.edgeWeight ?? 0) > 0,
+        edgeThreshold: (viewConfig.edgeThreshold || 0.18) * 100,
+        edgeStrength: viewConfig.shadingMode === 'outline' ? 150 : (viewConfig.edgeWeight || 1) * 100,
       }
-    }
-
-    const algorithm = ctx.algorithm || viewConfig.algorithm || 'none';
-    const toneCfg = ctx.toneConfig || viewConfig.toneConfig;
-
-
-
-    // Step 2.5: Tone Mapping (Levels & Posterization)
-    if (toneCfg) {
-      const inBlack = Math.max(0, Math.min(0.95, (toneCfg.levelsBlack ?? 0) / 100.0));
-      const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (toneCfg.levelsWhite ?? 100) / 100.0));
-      const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (toneCfg.levelsMidtones ?? 50) / 100.0));
-      const midNorm = (inMid - inBlack) / (inWhite - inBlack);
-      const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
-      const posterizeBits = toneCfg.posterizeBits || 0;
-
-      for (let i = 0; i < totalCells; i++) {
-        let val = luminanceBuffer[i];
-        val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
-        if (levelsGamma !== 1.0 && val > 0 && val < 1) val = Math.pow(val, 1 / levelsGamma);
-        if (posterizeBits > 0) {
-          const steps = Math.pow(2, posterizeBits) - 1;
-          val = Math.round(val * steps) / steps;
-        }
-        luminanceBuffer[i] = Math.max(0, Math.min(1, val));
-      }
-    }
-
-    // Step 3: Universal Dithering Suite (if algorithm set)
-    const ditherLevels = (rasterMode === 'pixel') ? 2 : densityLength;
-    if (algorithm !== 'none') {
-      applyDitherAlgorithm(luminanceBuffer, luminanceBuffer, cols, rows, algorithm, ditherLevels, 1.0);
-    }
-
-    if (rasterMode === 'braille') {
-      for (let y = 0; y < rows; y++) {
-        const rowOffset = y * cols;
-        for (let x = 0; x < cols; x++) {
-          const val = Math.max(0, Math.min(1, luminanceBuffer[rowOffset + x]));
-          const d1 = val > 0.10;
-          const d2 = val > 0.25;
-          const d3 = val > 0.38;
-          const d4 = val > 0.50;
-          const d5 = val > 0.63;
-          const d6 = val > 0.75;
-          const d7 = val > 0.88;
-          const d8 = val > 0.95;
-          lineBuffer[x] = getBrailleCharFromSubpixels(d1, d2, d3, d4, d5, d6, d7, d8);
-        }
-        cachedLines[y] = lineBuffer.join('');
-      }
-    } else {
-      for (let y = 0; y < rows; y++) {
-        const rowOffset = y * cols;
-        for (let x = 0; x < cols; x++) {
-          const finalLum = Math.max(0, Math.min(1, luminanceBuffer[rowOffset + x]));
-          let charIndex = Math.floor(finalLum * densityLength);
-          if (charIndex < 0) charIndex = 0;
-          else if (charIndex >= densityLength) charIndex = densityLength - 1;
-
-          lineBuffer[x] = density[charIndex] || ' ';
-        }
-
-        cachedLines[y] = lineBuffer.join('');
-      }
-    }
-
-    return cachedLines.join('\n');
+    );
   }
 
-
-
-  renderData(context: ModelRenderContext): {
-
-    text: string;
-    colors: Uint8ClampedArray | null;
-    luminance: Float32Array;
-    cols: number;
-    rows: number;
-  } {
-    const text = this.render(context);
-    const colorConfig = context.colorConfig;
-    const paletteMode = colorConfig?.paletteMode || (colorConfig?.mode === 'content' ? 'content' : 'phosphor');
-    const isColored = paletteMode === 'content' || paletteMode === 'indexed' || paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone';
-
-    let colorsOut: Uint8ClampedArray | null = null;
-
-    if (isColored) {
-      const totalPixels = context.cols * context.rows;
-      if (modelColorsBuffer.length !== totalPixels * 3) {
-        modelColorsBuffer = new Uint8ClampedArray(totalPixels * 3);
-      }
-
-      // Extract WebGL pixels with Y-flip
-      for (let y = 0; y < context.rows; y++) {
-        const srcY = context.rows - 1 - y;
-        const srcRowOffset = srcY * context.cols * 4;
-        const destRowOffset = y * context.cols * 3;
-        for (let x = 0; x < context.cols; x++) {
-          const pxIdx = srcRowOffset + x * 4;
-          const destIdx = destRowOffset + x * 3;
-          modelColorsBuffer[destIdx] = pixelBuffer[pxIdx];
-          modelColorsBuffer[destIdx + 1] = pixelBuffer[pxIdx + 1];
-          modelColorsBuffer[destIdx + 2] = pixelBuffer[pxIdx + 2];
-        }
-      }
-
-      if (paletteMode === 'indexed') {
-        const palId = colorConfig?.activePaletteId || 'gameboy-classic';
-        const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
-        const quantizer = new PaletteQuantizer(found);
-        quantizeImageToPaletteWithDither(
-          modelColorsBuffer,
-          modelColorsBuffer,
-          context.cols,
-          context.rows,
-          quantizer,
-          context.algorithm || 'none',
-          1.0
-        );
-      } else if ((paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone') && colorConfig?.multiTone) {
-        for (let i = 0; i < totalPixels; i++) {
-          const lum = Math.max(0, Math.min(1, luminanceBuffer[i]));
-          const mapped = evaluateMultiTone(lum, colorConfig.multiTone);
-          modelColorsBuffer[i * 3] = mapped.r;
-          modelColorsBuffer[i * 3 + 1] = mapped.g;
-          modelColorsBuffer[i * 3 + 2] = mapped.b;
-        }
-      }
-
-      colorsOut = modelColorsBuffer;
-    }
-
-    return {
-      text,
-      colors: colorsOut,
-      luminance: luminanceBuffer,
-      cols: context.cols,
-      rows: context.rows,
-    };
+  render(context: ModelRenderContext): string {
+    return this.renderData(context).text;
   }
-
 }
 
 // Global Singleton Instance
@@ -733,13 +567,8 @@ export function renderModelAsciiFrame(ctx: ModelRenderContext): string {
   return globalHeadlessRenderer.render(ctx);
 }
 
-export function renderModelFrameData(ctx: ModelRenderContext): {
-  text: string;
-  colors: Uint8ClampedArray | null;
-  luminance: Float32Array;
-  cols: number;
-  rows: number;
-} {
+export function renderModelFrameData(ctx: ModelRenderContext): ProcessedRasterResult {
   return globalHeadlessRenderer.renderData(ctx);
 }
+
 

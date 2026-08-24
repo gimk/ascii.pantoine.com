@@ -6,12 +6,12 @@ import {
   MediaColorConfig,
 } from '../types/ascii';
 import { evaluateParametricWave } from './math';
-import { applyDitherAlgorithm } from './ditherAlgorithms';
-import { BUILTIN_PALETTES, hexToRgb, evaluateMultiTone } from './palettes';
+import { processRasterFrame, ProcessedRasterResult } from './rasterEngine';
 
 export const MONOSPACE_CELL_WIDTH = 6.015;
 export const MONOSPACE_CELL_HEIGHT = 10.0;
 export const MONOSPACE_CELL_ASPECT = MONOSPACE_CELL_WIDTH / MONOSPACE_CELL_HEIGHT; // ~0.6015
+
 
 
 
@@ -265,17 +265,9 @@ export interface SynthRenderOptions extends RenderContext {
 }
 
 let synthRawLumBuffer = new Float32Array(0);
-let synthDitherBuffer = new Float32Array(0);
-let synthColorsBuffer = new Uint8ClampedArray(0);
 
-export function renderSynthFrameData(ctx: SynthRenderOptions): {
-  text: string;
-  colors: Uint8ClampedArray | null;
-  luminance: Float32Array;
-  cols: number;
-  rows: number;
-} {
 
+export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterResult {
   const {
     cols,
     rows,
@@ -295,31 +287,32 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): {
   const totalCells = cols * rows;
   if (synthRawLumBuffer.length !== totalCells) {
     synthRawLumBuffer = new Float32Array(totalCells);
-    synthDitherBuffer = new Float32Array(totalCells);
   }
 
   if (cols <= 0 || rows <= 0) {
-    return { text: '', colors: null, luminance: synthDitherBuffer, cols: 0, rows: 0 };
+    return {
+      text: '',
+      colors: null,
+      luminance: new Float32Array(0),
+      cols: 0,
+      rows: 0,
+      rasterMode,
+      bgColor: '#0a0a0a',
+      isColored: false,
+    };
   }
-
 
   const cx = cols / 2;
   const cy = rows / 2;
   const isSquareMode = rasterMode !== 'ascii' && rasterMode !== 'braille';
   const aspectRatio = isSquareMode ? 1.0 : (waveParams.aspectRatio || MONOSPACE_CELL_ASPECT);
-
-  const densityLength = density.length;
   const sharedCtx = customContext || {};
-
 
   if (prepareFn) {
     try {
       prepareFn(time, cols, rows, sharedCtx);
     } catch {}
   }
-
-  if (cachedLines.length !== rows) cachedLines = new Array(rows);
-  if (lineBuffer.length !== cols) lineBuffer = new Array(cols);
 
   // Particles pre-rasterization
   const numTrails = trailPoints.length;
@@ -418,135 +411,27 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): {
     }
   }
 
-  // 2. Apply Tone Mapping (Levels & Posterization)
-  const inBlack = Math.max(0, Math.min(0.95, (toneConfig?.levelsBlack ?? 0) / 100.0));
-  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (toneConfig?.levelsWhite ?? 100) / 100.0));
-  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (toneConfig?.levelsMidtones ?? 50) / 100.0));
-  const midNorm = (inMid - inBlack) / (inWhite - inBlack);
-  const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
-  const posterizeBits = toneConfig?.posterizeBits || 0;
-
-  for (let i = 0; i < totalCells; i++) {
-    let val = synthRawLumBuffer[i];
-    val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
-    if (levelsGamma !== 1.0 && val > 0 && val < 1) val = Math.pow(val, 1 / levelsGamma);
-    if (posterizeBits > 0) {
-      const steps = Math.pow(2, posterizeBits) - 1;
-      val = Math.round(val * steps) / steps;
+  // 2. Delegate to Unified 2D Raster Processing Engine
+  return processRasterFrame(
+    {
+      width: cols,
+      height: rows,
+      rgba: new Uint8ClampedArray(0),
+      luminance: synthRawLumBuffer,
+      charOverrides: hasTrails ? trailCharBuffer : undefined,
+    },
+    {
+      cols,
+      rows,
+      density,
+      rasterMode,
+      ditherAlgorithm: algorithm,
+      toneConfig,
+      colorConfig: ctx.colorConfig,
     }
-    synthRawLumBuffer[i] = Math.max(0, Math.min(1, val));
-  }
-
-  // 3. Apply 40+ Dithering Algorithm
-  const ditherLevels = (rasterMode === 'pixel') ? 2 : densityLength;
-  applyDitherAlgorithm(synthRawLumBuffer, synthDitherBuffer, cols, rows, algorithm, ditherLevels, 1.0);
-
-  // 4. Output Modality Glyph Generation
-  if (rasterMode === 'braille') {
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const sampleSub = (subX: number, subY: number): boolean => {
-          const px = x + (subX ? 0.65 : 0.35);
-          const py = y + (subY * 0.25 + 0.125);
-          const dx = (px - cx) * aspectRatio;
-          const dy = py - cy;
-          const dist = Math.hypot(dx, dy);
-          const angle = Math.atan2(dy, dx);
-          let val = 0;
-          if (customRenderFn) {
-            val = customRenderFn(px, py, time, dist, dx, dy, cols, rows, angle, sharedCtx);
-          } else {
-            val = evaluateParametricWave(px, py, time, dist, dx, dy, cols, rows, angle, waveParams);
-          }
-          let norm = (val + 1) * 0.5;
-          if (waveParams.invert) norm = 1 - norm;
-          return norm >= 0.5;
-        };
-
-        const d1 = sampleSub(0, 0);
-        const d2 = sampleSub(0, 1);
-        const d3 = sampleSub(0, 2);
-        const d4 = sampleSub(1, 0);
-        const d5 = sampleSub(1, 1);
-        const d6 = sampleSub(1, 2);
-        const d7 = sampleSub(0, 3);
-        const d8 = sampleSub(1, 3);
-
-        let cellChar = getBrailleCharFromSubpixels(d1, d2, d3, d4, d5, d6, d7, d8);
-        if (hasTrails && trailCharBuffer[rowOffset + x]) {
-          cellChar = trailCharBuffer[rowOffset + x];
-        }
-        lineBuffer[x] = cellChar;
-      }
-      cachedLines[y] = lineBuffer.join('');
-    }
-  } else {
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const cellIdx = rowOffset + x;
-        const finalLum = synthDitherBuffer[cellIdx];
-        let charIndex = Math.floor(finalLum * densityLength);
-        if (charIndex < 0) charIndex = 0;
-        else if (charIndex >= densityLength) charIndex = densityLength - 1;
-
-        let cellChar = density[charIndex] || ' ';
-        if (hasTrails && trailCharBuffer[cellIdx]) {
-          cellChar = trailCharBuffer[cellIdx];
-        }
-        lineBuffer[x] = cellChar;
-      }
-      cachedLines[y] = lineBuffer.join('');
-    }
-  }
-
-  const colorConfig = ctx.colorConfig;
-  const paletteMode = colorConfig?.paletteMode || (colorConfig?.mode === 'content' ? 'content' : 'phosphor');
-  const isColored = paletteMode === 'indexed' || paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone';
-
-  let colorsOut: Uint8ClampedArray | null = null;
-
-  if (isColored) {
-    if (synthColorsBuffer.length !== totalCells * 3) {
-      synthColorsBuffer = new Uint8ClampedArray(totalCells * 3);
-    }
-
-    if (paletteMode === 'indexed') {
-      const palId = colorConfig?.activePaletteId || 'gameboy-classic';
-      const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
-      const rgbList = found.colors.map(hexToRgb);
-      const numColors = rgbList.length;
-
-      for (let i = 0; i < totalCells; i++) {
-        const lum = Math.max(0, Math.min(1, synthDitherBuffer[i]));
-        const cIdx = Math.max(0, Math.min(numColors - 1, Math.floor(lum * numColors)));
-        const col = rgbList[cIdx];
-        synthColorsBuffer[i * 3] = col.r;
-        synthColorsBuffer[i * 3 + 1] = col.g;
-        synthColorsBuffer[i * 3 + 2] = col.b;
-      }
-    } else if ((paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone') && colorConfig?.multiTone) {
-      for (let i = 0; i < totalCells; i++) {
-        const lum = Math.max(0, Math.min(1, synthDitherBuffer[i]));
-        const mapped = evaluateMultiTone(lum, colorConfig.multiTone);
-        synthColorsBuffer[i * 3] = mapped.r;
-        synthColorsBuffer[i * 3 + 1] = mapped.g;
-        synthColorsBuffer[i * 3 + 2] = mapped.b;
-      }
-    }
-
-    colorsOut = synthColorsBuffer;
-  }
-
-  return {
-    text: cachedLines.join('\n'),
-    colors: colorsOut,
-    luminance: synthDitherBuffer,
-    cols,
-    rows,
-  };
+  );
 }
+
 
 
 
