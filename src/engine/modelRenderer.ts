@@ -1,16 +1,29 @@
 import * as THREE from 'three';
-import { ModelConfig, ModelViewConfig } from '../types/ascii';
+import {
+  ModelConfig,
+  ModelViewConfig,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  HalftoneConfig,
+} from '../types/ascii';
 import { applyDitherAlgorithm } from './ditherAlgorithms';
+import { getBrailleCharFromSubpixels } from './renderer';
 
 export interface ModelRenderContext {
   cols: number;
   rows: number;
   time: number;
   density: string;
-  geometry: THREE.BufferGeometry;
+  geometry: THREE.BufferGeometry | null;
   modelConfig: ModelConfig;
   viewConfig: ModelViewConfig;
+  rasterMode?: RasterOutputMode;
+  algorithm?: DitherAlgorithm;
+  toneConfig?: ToneMappingConfig;
+  halftoneConfig?: HalftoneConfig;
 }
+
 
 // Scratch Three.js objects for zero allocations during pointer interaction & trackball calculation
 const _v1 = new THREE.Vector3();
@@ -559,28 +572,74 @@ class HeadlessModelRenderer {
       }
     }
 
-    // Step 3: Universal Dithering Suite (if algorithm set)
-    const algorithm = viewConfig.algorithm || 'none';
-    if (algorithm !== 'none') {
-      applyDitherAlgorithm(luminanceBuffer, luminanceBuffer, cols, rows, algorithm, densityLength, 1.0);
+    const rasterMode = ctx.rasterMode || viewConfig.rasterMode || 'ascii';
+    const algorithm = ctx.algorithm || viewConfig.algorithm || 'none';
+    const toneCfg = ctx.toneConfig || viewConfig.toneConfig;
+
+
+    // Step 2.5: Tone Mapping (Levels & Posterization)
+    if (toneCfg) {
+      const inBlack = Math.max(0, Math.min(0.95, (toneCfg.levelsBlack ?? 0) / 100.0));
+      const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (toneCfg.levelsWhite ?? 100) / 100.0));
+      const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (toneCfg.levelsMidtones ?? 50) / 100.0));
+      const midNorm = (inMid - inBlack) / (inWhite - inBlack);
+      const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+      const posterizeBits = toneCfg.posterizeBits || 0;
+
+      for (let i = 0; i < totalCells; i++) {
+        let val = luminanceBuffer[i];
+        val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
+        if (levelsGamma !== 1.0 && val > 0 && val < 1) val = Math.pow(val, 1 / levelsGamma);
+        if (posterizeBits > 0) {
+          const steps = Math.pow(2, posterizeBits) - 1;
+          val = Math.round(val * steps) / steps;
+        }
+        luminanceBuffer[i] = Math.max(0, Math.min(1, val));
+      }
     }
 
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const finalLum = Math.max(0, Math.min(1, luminanceBuffer[rowOffset + x]));
-        let charIndex = Math.floor(finalLum * densityLength);
-        if (charIndex < 0) charIndex = 0;
-        else if (charIndex >= densityLength) charIndex = densityLength - 1;
+    // Step 3: Universal Dithering Suite (if algorithm set)
+    const ditherLevels = (rasterMode === 'pixel') ? 2 : densityLength;
+    if (algorithm !== 'none') {
+      applyDitherAlgorithm(luminanceBuffer, luminanceBuffer, cols, rows, algorithm, ditherLevels, 1.0);
+    }
 
-        lineBuffer[x] = density[charIndex] || ' ';
+    if (rasterMode === 'braille') {
+      for (let y = 0; y < rows; y++) {
+        const rowOffset = y * cols;
+        for (let x = 0; x < cols; x++) {
+          const val = Math.max(0, Math.min(1, luminanceBuffer[rowOffset + x]));
+          const d1 = val > 0.10;
+          const d2 = val > 0.25;
+          const d3 = val > 0.38;
+          const d4 = val > 0.50;
+          const d5 = val > 0.63;
+          const d6 = val > 0.75;
+          const d7 = val > 0.88;
+          const d8 = val > 0.95;
+          lineBuffer[x] = getBrailleCharFromSubpixels(d1, d2, d3, d4, d5, d6, d7, d8);
+        }
+        cachedLines[y] = lineBuffer.join('');
       }
+    } else {
+      for (let y = 0; y < rows; y++) {
+        const rowOffset = y * cols;
+        for (let x = 0; x < cols; x++) {
+          const finalLum = Math.max(0, Math.min(1, luminanceBuffer[rowOffset + x]));
+          let charIndex = Math.floor(finalLum * densityLength);
+          if (charIndex < 0) charIndex = 0;
+          else if (charIndex >= densityLength) charIndex = densityLength - 1;
 
-      cachedLines[y] = lineBuffer.join('');
+          lineBuffer[x] = density[charIndex] || ' ';
+        }
+
+        cachedLines[y] = lineBuffer.join('');
+      }
     }
 
     return cachedLines.join('\n');
   }
+
 
 
   renderData(context: ModelRenderContext): {

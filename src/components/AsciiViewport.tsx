@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings } from 'lucide-react';
 import {
+  PhosphorTheme,
   CrtConfig,
   PhosphorGradient,
   OptimizeConfig,
@@ -8,6 +9,7 @@ import {
   HalftoneConfig,
   DEFAULT_HALFTONE_CONFIG,
 } from '../types/ascii';
+
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 import { drawHalftoneToCanvas } from '../engine/halftoneRenderer';
@@ -50,7 +52,10 @@ interface AsciiViewportProps {
   optimizeConfig?: OptimizeConfig;
   onChangeOptimizeConfig?: (cfg: OptimizeConfig) => void;
   gradientConfig?: PhosphorGradient | null;
+  theme?: PhosphorTheme;
+  customThemeColor?: string;
   appMode?: 'synth' | 'media' | 'model';
+
   mediaType?: 'image' | 'video';
   isLoading?: boolean;
   loadingFileName?: string;
@@ -88,9 +93,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   optimizeConfig,
   onChangeOptimizeConfig,
   gradientConfig,
+  theme = 'green',
+  customThemeColor = '',
   appMode = 'synth',
   mediaType,
   isLoading = false,
+
   loadingFileName,
   loadingStatusText,
   onOrbitRotate,
@@ -223,6 +231,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
+      const themeHexMap: Record<string, string> = {
+        green: '#00ff66',
+        amber: '#ffb000',
+        cyan: '#00f0ff',
+        monochrome: '#f0f0f0',
+        blood: '#ff3344',
+        paper: '#151515',
+      };
+      const fgHex = customThemeColor || (gradientConfig ? gradientConfig.color1 : (themeHexMap[theme || 'green'] || '#00ff66'));
+
       if (rasterMode !== 'ascii' && luminance) {
         drawHalftoneToCanvas({
           canvas,
@@ -232,7 +250,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           luminance,
           colors,
           bgColor: bgColor || '#0a0a0a',
-          fgColor: '#ffffff',
+          fgColor: fgHex,
           config: halftoneConfig,
           mode: rasterMode,
           cellWidth: charW,
@@ -240,6 +258,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           dpr: currentZoom * dpr,
         });
       } else if (colors && colors.length > 0) {
+
         ctx.save();
         ctx.scale(currentZoom * dpr, currentZoom * dpr);
         ctx.fillStyle = bgColor || '#0a0a0a';

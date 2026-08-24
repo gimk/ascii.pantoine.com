@@ -370,6 +370,10 @@ export const App: React.FC = () => {
   const appModeRef = useRef<AppMode>(appMode);
   appModeRef.current = appMode;
 
+  const renderSettingsRef = useRef<RenderSettings>(currentRenderSettings);
+  renderSettingsRef.current = currentRenderSettings;
+
+
   // Persist render settings per mode in localStorage
   useEffect(() => {
     try {
@@ -387,7 +391,8 @@ export const App: React.FC = () => {
         [mode]: { ...prev[mode], density: val },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setTheme = useCallback((t: PhosphorTheme | ((prev: PhosphorTheme) => PhosphorTheme)) => {
     setRenderSettingsByMode((prev) => {
@@ -398,7 +403,8 @@ export const App: React.FC = () => {
         [mode]: { ...prev[mode], theme: val },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setCustomThemeColor = useCallback((c: string | ((prev: string) => string)) => {
     setRenderSettingsByMode((prev) => {
@@ -409,7 +415,8 @@ export const App: React.FC = () => {
         [mode]: { ...prev[mode], customThemeColor: val },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setGradientConfig = useCallback((g: (PhosphorGradient | null) | ((prev: PhosphorGradient | null) => (PhosphorGradient | null))) => {
     setRenderSettingsByMode((prev) => {
@@ -420,7 +427,8 @@ export const App: React.FC = () => {
         [mode]: { ...prev[mode], gradientConfig: val },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setCrtConfig = useCallback((cfg: CrtConfig | ((prev: CrtConfig) => CrtConfig)) => {
     setRenderSettingsByMode((prev) => {
@@ -457,7 +465,8 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const handleSelectCustomColor = useCallback((c: string) => {
     setRenderSettingsByMode((prev) => {
@@ -471,7 +480,8 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const handleSelectGradient = useCallback((g: PhosphorGradient | null) => {
     setRenderSettingsByMode((prev) => {
@@ -485,7 +495,8 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const handleSelectMediaColorConfig = useCallback((cfg: MediaColorConfig) => {
     setRenderSettingsByMode((prev) => {
@@ -498,7 +509,8 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setRasterMode = useCallback((r: RasterOutputMode) => {
     setRenderSettingsByMode((prev) => {
@@ -511,7 +523,8 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setDitherAlgorithm = useCallback((a: DitherAlgorithm) => {
     setRenderSettingsByMode((prev) => {
@@ -524,7 +537,8 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setToneConfig = useCallback((t: ToneMappingConfig) => {
     setRenderSettingsByMode((prev) => {
@@ -537,7 +551,8 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
 
   const setHalftoneConfig = useCallback((h: HalftoneConfig) => {
     setRenderSettingsByMode((prev) => {
@@ -550,7 +565,9 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    triggerMediaRender();
+  }, [triggerMediaRender]);
+
 
 
   // Particles & Interaction
@@ -1759,6 +1776,7 @@ export const App: React.FC = () => {
     let animFrameId: number;
 
     const isStaticImage = appMode === 'media' && mediaConfig.mediaType === 'image';
+    const curSettings = renderSettingsRef.current;
 
     // If static 2D image mode, render once reactively on state changes without continuous RAF polling
     if (isStaticImage) {
@@ -1768,8 +1786,12 @@ export const App: React.FC = () => {
         mediaElement: mediaElementRef.current,
         mediaConfig,
         viewConfig: mediaViewConfig,
-        density,
+        density: curSettings.density,
         colorConfig: mediaColorConfig,
+        rasterMode: curSettings.rasterMode || 'ascii',
+        algorithm: curSettings.ditherAlgorithm || 'floyd-steinberg',
+        toneConfig: curSettings.toneConfig,
+        halftoneConfig: curSettings.halftoneConfig,
       });
       viewportRef.current?.setFrame(
         result.text,
@@ -1778,8 +1800,8 @@ export const App: React.FC = () => {
         result.colors,
         result.bgColor,
         result.luminance,
-        mediaViewConfig.rasterMode || currentRenderSettings.rasterMode || 'ascii',
-        mediaViewConfig.halftoneConfig || currentRenderSettings.halftoneConfig
+        curSettings.rasterMode || 'ascii',
+        curSettings.halftoneConfig || mediaViewConfig.halftoneConfig
       );
       return;
     }
@@ -1823,7 +1845,6 @@ export const App: React.FC = () => {
         timeRef.current += dt * (waveParams.timeSpeed || 1.0);
 
         // Particle physics update
-
         if (particleConfig.enabled) {
           const pts = trailPointsRef.current;
           const t = timeRef.current;
@@ -1889,28 +1910,28 @@ export const App: React.FC = () => {
       }
       lastTimeRef.current = now;
 
+      const activeSettings = renderSettingsRef.current;
+      const activeRasterMode: RasterOutputMode = activeSettings.rasterMode || 'ascii';
 
       // Render raster / ASCII frame
       let frameText = '';
       let frameColors: Uint8ClampedArray | null = null;
       let frameBgColor: string | undefined = undefined;
       let frameLuminance: Float32Array | null = null;
-      const activeRasterMode: RasterOutputMode =
-        appMode === 'media'
-          ? mediaViewConfig.rasterMode || currentRenderSettings.rasterMode || 'ascii'
-          : appMode === 'model'
-          ? modelViewConfig.rasterMode || currentRenderSettings.rasterMode || 'ascii'
-          : currentRenderSettings.rasterMode || 'ascii';
 
       if (appMode === 'model') {
         const res = renderModelFrameData({
           cols,
           rows,
           time: timeRef.current,
-          density,
+          density: activeSettings.density,
           geometry: currentGeometryRef.current,
           modelConfig,
           viewConfig: modelViewConfig,
+          rasterMode: activeSettings.rasterMode || 'ascii',
+          algorithm: activeSettings.ditherAlgorithm || 'none',
+          toneConfig: activeSettings.toneConfig,
+          halftoneConfig: activeSettings.halftoneConfig,
         });
         frameText = res.text;
         frameColors = res.colors;
@@ -1922,8 +1943,12 @@ export const App: React.FC = () => {
           mediaElement: mediaElementRef.current,
           mediaConfig,
           viewConfig: mediaViewConfig,
-          density,
+          density: activeSettings.density,
           colorConfig: mediaColorConfig,
+          rasterMode: activeSettings.rasterMode || 'ascii',
+          algorithm: activeSettings.ditherAlgorithm || 'floyd-steinberg',
+          toneConfig: activeSettings.toneConfig,
+          halftoneConfig: activeSettings.halftoneConfig,
         });
         frameText = result.text;
         frameColors = result.colors;
@@ -1934,7 +1959,7 @@ export const App: React.FC = () => {
           cols,
           rows,
           time: timeRef.current,
-          density,
+          density: activeSettings.density,
           trailPoints: trailPointsRef.current,
           waveParams,
           customRenderFn: presetType === 'custom' ? compiledFnRef.current : undefined,
@@ -1942,7 +1967,9 @@ export const App: React.FC = () => {
           customContext: customContextRef.current,
           interactiveInfluence: particleConfig.enabled,
           luminanceBoost: particleConfig.luminanceBoost,
-          algorithm: currentRenderSettings.ditherAlgorithm,
+          rasterMode: activeSettings.rasterMode || 'ascii',
+          algorithm: activeSettings.ditherAlgorithm || 'none',
+          toneConfig: activeSettings.toneConfig,
         });
         frameText = res.text;
         frameLuminance = res.luminance;
@@ -1956,7 +1983,7 @@ export const App: React.FC = () => {
         frameBgColor,
         frameLuminance,
         activeRasterMode,
-        currentRenderSettings.halftoneConfig || mediaViewConfig.halftoneConfig
+        activeSettings.halftoneConfig || mediaViewConfig.halftoneConfig
       );
       animFrameId = requestAnimationFrame(loop);
     };
@@ -1979,7 +2006,10 @@ export const App: React.FC = () => {
     presetType,
     particleConfig,
     optimizeConfig,
+    currentRenderSettings,
+    renderSettingsByMode,
   ]);
+
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -2310,8 +2340,11 @@ export const App: React.FC = () => {
           optimizeConfig={optimizeConfig}
           onChangeOptimizeConfig={setOptimizeConfig}
           gradientConfig={gradientConfig}
+          theme={theme}
+          customThemeColor={customThemeColor}
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
+
           isLoading={appMode === 'model' && isModelLoading}
           loadingFileName={modelLoadingFileName}
           loadingStatusText={modelLoadingStatusText}

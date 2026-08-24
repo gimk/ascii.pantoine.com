@@ -4,10 +4,13 @@ import {
   MediaColorConfig,
   DEFAULT_MEDIA_COLOR_CONFIG,
   RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  HalftoneConfig,
 } from '../types/ascii';
 import { applyDitherAlgorithm } from './ditherAlgorithms';
 import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone } from './palettes';
-
+import { getBrailleCharFromSubpixels } from './renderer';
 
 export interface RenderMediaContext {
   cols: number;
@@ -17,7 +20,12 @@ export interface RenderMediaContext {
   viewConfig: MediaViewConfig;
   density: string;
   colorConfig?: MediaColorConfig;
+  rasterMode?: RasterOutputMode;
+  algorithm?: DitherAlgorithm;
+  toneConfig?: ToneMappingConfig;
+  halftoneConfig?: HalftoneConfig;
 }
+
 
 export interface AsciiMediaFrameResult {
   text: string;
@@ -206,7 +214,8 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   const paletteMode = colorConfig.paletteMode || (colorConfig.mode === 'content' ? 'content' : 'phosphor');
   const isColored = paletteMode === 'content' || paletteMode === 'indexed' || paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone';
   const bgColor = resolveMediaBackgroundColor(colorConfig, viewConfig.background);
-  const rasterMode = viewConfig.rasterMode || 'ascii';
+  const rasterMode = context.rasterMode || viewConfig.rasterMode || 'ascii';
+
 
   if (cols <= 0 || rows <= 0) {
     return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols: 0, rows: 0, rasterMode };
@@ -343,11 +352,11 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   const imageData = ctx.getImageData(0, 0, cols, rows);
   const data = imageData.data;
 
-  // Tone mapping channel mixer weights
-  const toneCfg = viewConfig.toneConfig;
+  const toneCfg = context.toneConfig || viewConfig.toneConfig;
   const mixR = (toneCfg?.channelMixerR ?? 100) / 100.0;
   const mixG = (toneCfg?.channelMixerG ?? 100) / 100.0;
   const mixB = (toneCfg?.channelMixerB ?? 100) / 100.0;
+
   const normWeight = 0.2126 * mixR + 0.7152 * mixG + 0.0722 * mixB || 1.0;
 
   const alphaThreshold = viewConfig.alphaThreshold ?? 10;
@@ -459,8 +468,9 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   }
 
   // Universal Dithering Suite (40+ Algorithms)
-  const algorithm = viewConfig.algorithm || 'floyd-steinberg';
-  applyDitherAlgorithm(lumBuffer, ditherBuffer, cols, rows, algorithm, densityLength, 1.0);
+  const algorithm = context.algorithm || viewConfig.algorithm || 'floyd-steinberg';
+  const ditherLevels = (rasterMode === 'pixel') ? 2 : densityLength;
+  applyDitherAlgorithm(lumBuffer, ditherBuffer, cols, rows, algorithm, ditherLevels, 1.0);
 
   // Setup Palette Quantizer if indexed mode
   if (paletteMode === 'indexed') {
@@ -492,11 +502,24 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
         continue;
       }
 
-      // ASCII Glyph mapping
-      let charIndex = Math.floor(val * densityLength);
-      if (charIndex < 0) charIndex = 0;
-      else if (charIndex >= densityLength) charIndex = densityLength - 1;
-      lineBuffer[x] = density[charIndex] || ' ';
+      // Glyph mapping
+      if (rasterMode === 'braille') {
+        const d1 = val > 0.10;
+        const d2 = val > 0.25;
+        const d3 = val > 0.38;
+        const d4 = val > 0.50;
+        const d5 = val > 0.63;
+        const d6 = val > 0.75;
+        const d7 = val > 0.88;
+        const d8 = val > 0.95;
+        lineBuffer[x] = getBrailleCharFromSubpixels(d1, d2, d3, d4, d5, d6, d7, d8);
+      } else {
+        let charIndex = Math.floor(val * densityLength);
+        if (charIndex < 0) charIndex = 0;
+        else if (charIndex >= densityLength) charIndex = densityLength - 1;
+        lineBuffer[x] = density[charIndex] || ' ';
+      }
+
 
       // Color calculations
       if (isColored) {

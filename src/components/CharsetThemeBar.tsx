@@ -18,7 +18,8 @@ import { RasterModeSelector } from './RasterModeSelector';
 import { DitherControls } from './DitherControls';
 import { PaletteControls } from './PaletteControls';
 import { ToneControls } from './ToneControls';
-import { Sparkles, Sliders, Compass, Zap, Type } from 'lucide-react';
+import { Sparkles, Sliders, Compass, Zap, Type, CircleDot } from 'lucide-react';
+
 
 interface CharsetThemeBarProps {
   currentCharset: string;
@@ -167,7 +168,10 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   onChangeNoise,
   toneConfig,
   onChangeToneConfig,
+  halftoneConfig,
+  onChangeHalftoneConfig,
 }) => {
+
   const [themeMode, setThemeMode] = useState<'single' | 'gradient'>(gradientConfig ? 'gradient' : 'single');
 
   // Custom Gradient builder state
@@ -326,8 +330,76 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
         </CollapsibleSection>
       )}
 
-      {/* 5. Character Density Ramp (Visible in ASCII mode) */}
+      {/* 5. Halftone Screen Configuration */}
+      {rasterMode && rasterMode.startsWith('halftone-') && halftoneConfig && onChangeHalftoneConfig && (
+        <CollapsibleSection
+          title="Halftone Screen Geometry"
+          icon={<CircleDot size={12} />}
+          persistKey="CharsetThemeBar-halftone"
+          badge={(halftoneConfig.dotShape || 'circle').toUpperCase()}
+        >
+          {rasterMode === 'halftone-dot' && (
+            <div className="control-row" style={{ marginBottom: '8px' }}>
+              <span className="control-label">Dot Shape</span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {(['circle', 'square', 'diamond'] as const).map((shape) => (
+                  <button
+                    key={shape}
+                    className={`segmented-btn ${halftoneConfig.dotShape === shape || (!halftoneConfig.dotShape && shape === 'circle') ? 'active' : ''}`}
+                    onClick={() => onChangeHalftoneConfig({ ...halftoneConfig, dotShape: shape })}
+                    style={{ fontSize: '9px', padding: '3px 6px', textTransform: 'capitalize' }}
+                  >
+                    {shape}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="control-row">
+            <span className="control-label">Dot Scale</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '130px' }}>
+              <input
+                type="range"
+                min="0.2"
+                max="2.5"
+                step="0.05"
+                value={halftoneConfig.dotScale ?? 1.0}
+                onChange={(e) => onChangeHalftoneConfig({ ...halftoneConfig, dotScale: parseFloat(e.target.value) })}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '10px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                {(halftoneConfig.dotScale ?? 1.0).toFixed(2)}x
+              </span>
+            </div>
+          </div>
+
+          {(rasterMode === 'halftone-line' || rasterMode === 'halftone-crosshatch') && (
+            <div className="control-row">
+              <span className="control-label">Screen Angle</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '130px' }}>
+                <input
+                  type="range"
+                  min="0"
+                  max="180"
+                  step="5"
+                  value={halftoneConfig.lineAngle ?? 45}
+                  onChange={(e) => onChangeHalftoneConfig({ ...halftoneConfig, lineAngle: parseInt(e.target.value, 10) })}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ fontSize: '10px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                  {halftoneConfig.lineAngle ?? 45}°
+                </span>
+              </div>
+            </div>
+          )}
+
+        </CollapsibleSection>
+      )}
+
+      {/* 6. Character Density Ramp (Visible in ASCII mode) */}
       {(!rasterMode || rasterMode === 'ascii') && (
+
         <CollapsibleSection
           title="Character Density Ramp"
           icon={<Type size={12} />}

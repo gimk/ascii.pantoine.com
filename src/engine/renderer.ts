@@ -1,5 +1,12 @@
-import { RenderContext } from '../types/ascii';
+import {
+  RenderContext,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+} from '../types/ascii';
 import { evaluateParametricWave } from './math';
+import { applyDitherAlgorithm } from './ditherAlgorithms';
+
 
 /**
  * Density ramps, ordered dark to light.
@@ -241,40 +248,248 @@ export function renderAsciiFrame(ctx: RenderContext): string {
   return cachedLines.join('\n');
 }
 
-let synthLuminanceBuffer = new Float32Array(0);
+export interface SynthRenderOptions extends RenderContext {
+  rasterMode?: RasterOutputMode;
+  algorithm?: DitherAlgorithm;
+  toneConfig?: ToneMappingConfig;
+}
 
+let synthRawLumBuffer = new Float32Array(0);
+let synthDitherBuffer = new Float32Array(0);
 
-export function renderSynthFrameData(ctx: RenderContext & { algorithm?: string }): {
+export function renderSynthFrameData(ctx: SynthRenderOptions): {
   text: string;
   luminance: Float32Array;
   cols: number;
   rows: number;
 } {
-  const { cols, rows } = ctx;
+  const {
+    cols,
+    rows,
+    time,
+    density,
+    trailPoints,
+    waveParams,
+    customRenderFn,
+    prepareFn,
+    customContext,
+    interactiveInfluence,
+    rasterMode = 'ascii',
+    algorithm = 'none',
+    toneConfig,
+  } = ctx;
+
   const totalCells = cols * rows;
-  if (synthLuminanceBuffer.length !== totalCells) {
-    synthLuminanceBuffer = new Float32Array(totalCells);
+  if (synthRawLumBuffer.length !== totalCells) {
+    synthRawLumBuffer = new Float32Array(totalCells);
+    synthDitherBuffer = new Float32Array(totalCells);
   }
 
-  const text = renderAsciiFrame(ctx);
+  if (cols <= 0 || rows <= 0) {
+    return { text: '', luminance: synthDitherBuffer, cols: 0, rows: 0 };
+  }
 
-  // Fill normalized luminance from rendered frame or direct math
-  const densityLen = ctx.density.length;
-  let idx = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '\n') continue;
-    if (idx < totalCells) {
-      const charPos = ctx.density.indexOf(ch);
-      synthLuminanceBuffer[idx++] = charPos >= 0 ? charPos / Math.max(1, densityLen - 1) : 0;
+  const cx = cols / 2;
+  const cy = rows / 2;
+  const aspectRatio = waveParams.aspectRatio || 0.55;
+  const densityLength = density.length;
+  const sharedCtx = customContext || {};
+
+  if (prepareFn) {
+    try {
+      prepareFn(time, cols, rows, sharedCtx);
+    } catch {}
+  }
+
+  if (cachedLines.length !== rows) cachedLines = new Array(rows);
+  if (lineBuffer.length !== cols) lineBuffer = new Array(cols);
+
+  // Particles pre-rasterization
+  const numTrails = trailPoints.length;
+  const hasTrails = interactiveInfluence && numTrails > 0;
+  if (hasTrails) {
+    if (trailInfluenceBuffer.length !== totalCells) {
+      trailInfluenceBuffer = new Float32Array(totalCells);
+      trailCharAgeBuffer = new Float32Array(totalCells);
+      trailCharBuffer = new Array(totalCells).fill('');
+    } else {
+      trailInfluenceBuffer.fill(0);
+      trailCharAgeBuffer.fill(0);
+      trailCharBuffer.fill('');
+    }
+
+    const boost = ctx.luminanceBoost !== undefined ? ctx.luminanceBoost : 0.5;
+    const rx = Math.ceil(2.5 / Math.max(0.1, aspectRatio));
+    const ry = 3;
+    const radiusSq = 2.5 * 2.5;
+
+    for (let i = 0; i < numTrails; i++) {
+      const pt = trailPoints[i];
+      const px = pt.x;
+      const py = pt.y;
+      const age = pt.age;
+      if (age <= 0) continue;
+
+      const ix = Math.floor(px);
+      const iy = Math.floor(py);
+      if (ix >= 0 && ix < cols && iy >= 0 && iy < rows && age > 0.05) {
+        const cellIdx = iy * cols + ix;
+        if (age > trailCharAgeBuffer[cellIdx]) {
+          trailCharAgeBuffer[cellIdx] = age;
+          trailCharBuffer[cellIdx] = pt.char;
+        }
+      }
+
+      if (boost > 0) {
+        const minX = Math.max(0, Math.floor(px - rx));
+        const maxX = Math.min(cols - 1, Math.ceil(px + rx));
+        const minY = Math.max(0, Math.floor(py - ry));
+        const maxY = Math.min(rows - 1, Math.ceil(py + ry));
+
+        for (let y = minY; y <= maxY; y++) {
+          const ady = Math.abs(y - py);
+          if (ady >= 2.5) continue;
+          const rowOffset = y * cols;
+          for (let x = minX; x <= maxX; x++) {
+            const adx = Math.abs(x - px) * aspectRatio;
+            if (adx >= 2.5) continue;
+            const tdistSq = adx * adx + ady * ady;
+            if (tdistSq < radiusSq) {
+              const inf = (1 - Math.sqrt(tdistSq) / 2.5) * age * boost;
+              trailInfluenceBuffer[rowOffset + x] += inf;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 1. Calculate raw luminance values across the grid
+  for (let y = 0; y < rows; y++) {
+    const dy = y - cy;
+    const rowOffset = y * cols;
+    for (let x = 0; x < cols; x++) {
+      const dx = (x - cx) * aspectRatio;
+      const dist = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx);
+
+      let animValue = 0;
+      if (customRenderFn) {
+        animValue = customRenderFn(x, y, time, dist, dx, dy, cols, rows, angle, sharedCtx);
+      } else {
+        animValue = evaluateParametricWave(
+          x,
+          y,
+          time,
+          dist,
+          dx,
+          dy,
+          cols,
+          rows,
+          angle,
+          waveParams
+        );
+      }
+
+      const cellIdx = rowOffset + x;
+      const trailInfluence = hasTrails ? trailInfluenceBuffer[cellIdx] : 0;
+      let normalized = (animValue + 1) * 0.5 + trailInfluence;
+      if (waveParams.invert) {
+        normalized = 1.0 - normalized;
+      }
+      synthRawLumBuffer[cellIdx] = Math.max(0, Math.min(1, normalized));
+    }
+  }
+
+  // 2. Apply Tone Mapping (Levels & Posterization)
+  const inBlack = Math.max(0, Math.min(0.95, (toneConfig?.levelsBlack ?? 0) / 100.0));
+  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (toneConfig?.levelsWhite ?? 100) / 100.0));
+  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (toneConfig?.levelsMidtones ?? 50) / 100.0));
+  const midNorm = (inMid - inBlack) / (inWhite - inBlack);
+  const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+  const posterizeBits = toneConfig?.posterizeBits || 0;
+
+  for (let i = 0; i < totalCells; i++) {
+    let val = synthRawLumBuffer[i];
+    val = Math.max(0, Math.min(1, (val - inBlack) / (inWhite - inBlack)));
+    if (levelsGamma !== 1.0 && val > 0 && val < 1) val = Math.pow(val, 1 / levelsGamma);
+    if (posterizeBits > 0) {
+      const steps = Math.pow(2, posterizeBits) - 1;
+      val = Math.round(val * steps) / steps;
+    }
+    synthRawLumBuffer[i] = Math.max(0, Math.min(1, val));
+  }
+
+  // 3. Apply 40+ Dithering Algorithm
+  const ditherLevels = (rasterMode === 'pixel') ? 2 : densityLength;
+  applyDitherAlgorithm(synthRawLumBuffer, synthDitherBuffer, cols, rows, algorithm, ditherLevels, 1.0);
+
+  // 4. Output Modality Glyph Generation
+  if (rasterMode === 'braille') {
+    for (let y = 0; y < rows; y++) {
+      const rowOffset = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const sampleSub = (subX: number, subY: number): boolean => {
+          const px = x + (subX ? 0.65 : 0.35);
+          const py = y + (subY * 0.25 + 0.125);
+          const dx = (px - cx) * aspectRatio;
+          const dy = py - cy;
+          const dist = Math.hypot(dx, dy);
+          const angle = Math.atan2(dy, dx);
+          let val = 0;
+          if (customRenderFn) {
+            val = customRenderFn(px, py, time, dist, dx, dy, cols, rows, angle, sharedCtx);
+          } else {
+            val = evaluateParametricWave(px, py, time, dist, dx, dy, cols, rows, angle, waveParams);
+          }
+          let norm = (val + 1) * 0.5;
+          if (waveParams.invert) norm = 1 - norm;
+          return norm >= 0.5;
+        };
+
+        const d1 = sampleSub(0, 0);
+        const d2 = sampleSub(0, 1);
+        const d3 = sampleSub(0, 2);
+        const d4 = sampleSub(1, 0);
+        const d5 = sampleSub(1, 1);
+        const d6 = sampleSub(1, 2);
+        const d7 = sampleSub(0, 3);
+        const d8 = sampleSub(1, 3);
+
+        let cellChar = getBrailleCharFromSubpixels(d1, d2, d3, d4, d5, d6, d7, d8);
+        if (hasTrails && trailCharBuffer[rowOffset + x]) {
+          cellChar = trailCharBuffer[rowOffset + x];
+        }
+        lineBuffer[x] = cellChar;
+      }
+      cachedLines[y] = lineBuffer.join('');
+    }
+  } else {
+    for (let y = 0; y < rows; y++) {
+      const rowOffset = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const cellIdx = rowOffset + x;
+        const finalLum = synthDitherBuffer[cellIdx];
+        let charIndex = Math.floor(finalLum * densityLength);
+        if (charIndex < 0) charIndex = 0;
+        else if (charIndex >= densityLength) charIndex = densityLength - 1;
+
+        let cellChar = density[charIndex] || ' ';
+        if (hasTrails && trailCharBuffer[cellIdx]) {
+          cellChar = trailCharBuffer[cellIdx];
+        }
+        lineBuffer[x] = cellChar;
+      }
+      cachedLines[y] = lineBuffer.join('');
     }
   }
 
   return {
-    text,
-    luminance: synthLuminanceBuffer,
+    text: cachedLines.join('\n'),
+    luminance: synthDitherBuffer,
     cols,
     rows,
   };
 }
+
 
