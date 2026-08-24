@@ -523,8 +523,29 @@ export const App: React.FC = () => {
         },
       };
     });
+    setTimeout(() => {
+      if (renderSettingsRef.current.autoRes && viewportRef.current) {
+        const optimal = viewportRef.current.getOptimalResolution();
+        if (optimal) {
+          setRenderSettingsByMode((prev) => {
+            const mode = appModeRef.current;
+            return {
+              ...prev,
+              [mode]: {
+                ...prev[mode],
+                cols: optimal.cols,
+                rows: optimal.rows,
+              },
+            };
+          });
+        }
+        viewportRef.current.autoFit();
+      }
+    }, 20);
     triggerMediaRender();
   }, [triggerMediaRender]);
+
+
 
   const setDitherAlgorithm = useCallback((a: DitherAlgorithm) => {
     setRenderSettingsByMode((prev) => {

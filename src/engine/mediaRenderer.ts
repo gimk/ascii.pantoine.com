@@ -11,7 +11,8 @@ import {
 import { applyDitherAlgorithm } from './ditherAlgorithms';
 import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone, quantizeImageToPaletteWithDither } from './palettes';
 
-import { getBrailleCharFromSubpixels } from './renderer';
+import { getBrailleCharFromSubpixels, MONOSPACE_CELL_ASPECT } from './renderer';
+
 
 export interface RenderMediaContext {
   cols: number;
@@ -288,8 +289,9 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   }
 
   const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
-  const cellAspect = isTextMode ? 0.55 : (context.halftoneConfig?.cellRatio ?? 1.0);
+  const cellAspect = isTextMode ? MONOSPACE_CELL_ASPECT : (context.halftoneConfig?.cellRatio ?? 1.0);
   const virtualCanvasWidth = cols;
+
   const virtualCanvasHeight = rows / cellAspect;
 
   let drawW = virtualCanvasWidth;

@@ -9,6 +9,11 @@ import { evaluateParametricWave } from './math';
 import { applyDitherAlgorithm } from './ditherAlgorithms';
 import { BUILTIN_PALETTES, hexToRgb, evaluateMultiTone } from './palettes';
 
+export const MONOSPACE_CELL_WIDTH = 6.015;
+export const MONOSPACE_CELL_HEIGHT = 10.0;
+export const MONOSPACE_CELL_ASPECT = MONOSPACE_CELL_WIDTH / MONOSPACE_CELL_HEIGHT; // ~0.6015
+
+
 
 
 /**
@@ -106,7 +111,8 @@ export function renderAsciiFrame(ctx: RenderContext): string {
 
   const cx = cols / 2;
   const cy = rows / 2;
-  const aspectRatio = waveParams.aspectRatio || 0.55;
+  const aspectRatio = waveParams.aspectRatio || MONOSPACE_CELL_ASPECT;
+
   const radiusSq = 2.5 * 2.5;
   const densityLength = density.length;
   const sharedCtx = customContext || {};
@@ -300,7 +306,8 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): {
   const cx = cols / 2;
   const cy = rows / 2;
   const isSquareMode = rasterMode !== 'ascii' && rasterMode !== 'braille';
-  const aspectRatio = isSquareMode ? 1.0 : (waveParams.aspectRatio || 0.55);
+  const aspectRatio = isSquareMode ? 1.0 : (waveParams.aspectRatio || MONOSPACE_CELL_ASPECT);
+
   const densityLength = density.length;
   const sharedCtx = customContext || {};
 

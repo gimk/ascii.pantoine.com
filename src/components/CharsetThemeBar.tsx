@@ -136,7 +136,9 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
           onChangeGradient={onChangeGradient}
           mediaColorConfig={mediaColorConfig}
           onChangeMediaColorConfig={onChangeMediaColorConfig}
+          appMode={appMode}
         />
+
       </CollapsibleSection>
 
 

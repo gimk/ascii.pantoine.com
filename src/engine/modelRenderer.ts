@@ -9,9 +9,10 @@ import {
   HalftoneConfig,
   MediaColorConfig,
 } from '../types/ascii';
+import { getBrailleCharFromSubpixels, MONOSPACE_CELL_ASPECT } from './renderer';
 import { applyDitherAlgorithm } from './ditherAlgorithms';
-import { getBrailleCharFromSubpixels } from './renderer';
 import { BUILTIN_PALETTES, PaletteQuantizer, evaluateMultiTone, quantizeImageToPaletteWithDither } from './palettes';
+
 
 export interface ModelRenderContext {
   cols: number;
@@ -431,8 +432,9 @@ class HeadlessModelRenderer {
     // Aspect ratio compensation for monospace typography vs square halftones
     const rasterMode = ctx.rasterMode || viewConfig.rasterMode || 'ascii';
     const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
-    const aspectCorrection = isTextMode ? 0.55 : (ctx.halftoneConfig?.cellRatio ?? 1.0);
+    const aspectCorrection = isTextMode ? MONOSPACE_CELL_ASPECT : (ctx.halftoneConfig?.cellRatio ?? 1.0);
     const viewAspect = (cols / rows) * aspectCorrection;
+
 
 
     // Setup active Camera

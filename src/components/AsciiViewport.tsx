@@ -13,6 +13,8 @@ import {
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 import { drawHalftoneToCanvas } from '../engine/halftoneRenderer';
+import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
+
 
 export interface AsciiViewportHandle {
   setFrame: (
@@ -136,8 +138,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     if (clientWidth <= 0 || clientHeight <= 0) return null;
 
     const isTextMode = latestRasterModeRef.current === 'ascii' || latestRasterModeRef.current === 'braille';
-    const charWidth = isTextMode ? 6.015 : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
-    const charHeight = isTextMode ? 10.0 : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
+    const charWidth = isTextMode ? MONOSPACE_CELL_WIDTH : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
+    const charHeight = isTextMode ? MONOSPACE_CELL_HEIGHT : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
     const pad = 20;
     const availableWidth = Math.max(80, clientWidth - pad);
     const availableHeight = Math.max(60, clientHeight - pad);
@@ -184,8 +186,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     if (clientWidth <= 0 || clientHeight <= 0) return;
 
     const isTextMode = latestRasterModeRef.current === 'ascii' || latestRasterModeRef.current === 'braille';
-    const charWidth = isTextMode ? 6.015 : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
-    const charHeight = isTextMode ? 10.0 : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
+    const charWidth = isTextMode ? MONOSPACE_CELL_WIDTH : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
+    const charHeight = isTextMode ? MONOSPACE_CELL_HEIGHT : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
     const unscaledWidth = cols * charWidth;
     const unscaledHeight = rows * charHeight;
 
@@ -214,8 +216,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       const canvas = canvasRef.current;
       const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
 
-      const cellW = isTextMode ? 6.015 : (halftoneConfig?.dotPitch || 8.0);
-      const cellH = isTextMode ? 10.0 : (cellW * (halftoneConfig?.cellRatio ?? 1.0));
+      const cellW = isTextMode ? MONOSPACE_CELL_WIDTH : (halftoneConfig?.dotPitch || 8.0);
+      const cellH = isTextMode ? MONOSPACE_CELL_HEIGHT : (cellW * (halftoneConfig?.cellRatio ?? 1.0));
+
       const unscaledW = Math.max(1, Math.round(cols * cellW));
       const unscaledH = Math.max(1, Math.round(rows * cellH));
       const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;

@@ -4,6 +4,7 @@ import {
   PaletteMode,
   ColorPalette,
   MediaColorConfig,
+  AppMode,
 } from '../types/ascii';
 import { BUILTIN_PALETTES } from '../engine/palettes';
 
@@ -16,6 +17,7 @@ interface PaletteControlsProps {
   onChangeGradient?: (grad: PhosphorGradient | null) => void;
   mediaColorConfig?: MediaColorConfig;
   onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
+  appMode?: AppMode;
 }
 
 const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
@@ -47,11 +49,13 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   onChangeGradient,
   mediaColorConfig,
   onChangeMediaColorConfig,
+  appMode = 'synth',
 }) => {
-
-
-  const paletteMode: PaletteMode = mediaColorConfig?.paletteMode || (gradientConfig ? 'gradient' : 'phosphor');
+  const isRgbDisabled = appMode === 'synth';
+  const rawPaletteMode: PaletteMode = mediaColorConfig?.paletteMode || (gradientConfig ? 'gradient' : 'phosphor');
+  const paletteMode: PaletteMode = (rawPaletteMode === 'content' && isRgbDisabled) ? 'phosphor' : rawPaletteMode;
   const activePaletteId = mediaColorConfig?.activePaletteId || 'gameboy-classic';
+
 
   const handleSelectPaletteMode = (mode: PaletteMode) => {
     if (mode === 'gradient') {
@@ -173,22 +177,26 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
 
         <button
           type="button"
-          className={`chip-btn ${paletteMode === 'content' ? 'active' : ''}`}
+          disabled={isRgbDisabled}
+          className={`chip-btn ${paletteMode === 'content' && !isRgbDisabled ? 'active' : ''}`}
           style={{
             fontSize: '9.5px',
             padding: '4px 2px',
             borderRadius: '2px',
-            background: paletteMode === 'content' ? 'var(--accent)' : 'var(--bg-control)',
-            color: paletteMode === 'content' ? '#000' : 'var(--text-muted)',
-            fontWeight: paletteMode === 'content' ? 700 : 500,
+            background: paletteMode === 'content' && !isRgbDisabled ? 'var(--accent)' : 'var(--bg-control)',
+            color: paletteMode === 'content' && !isRgbDisabled ? '#000' : 'var(--text-muted)',
+            fontWeight: paletteMode === 'content' && !isRgbDisabled ? 700 : 500,
             border: 'none',
-            cursor: 'pointer',
+            cursor: isRgbDisabled ? 'not-allowed' : 'pointer',
+            opacity: isRgbDisabled ? 0.35 : 1.0,
           }}
-          onClick={() => handleSelectPaletteMode('content')}
+          onClick={() => !isRgbDisabled && handleSelectPaletteMode('content')}
+          title={isRgbDisabled ? 'RGB Color mode requires Media or 3D Model source' : 'Source RGB true color'}
         >
           RGB COLOR
         </button>
       </div>
+
 
       {/* 1. Phosphor Mode */}
       {paletteMode === 'phosphor' && (
