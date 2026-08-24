@@ -75,16 +75,13 @@ import {
 
 import {
   Sliders,
-  Sparkles,
   Palette,
   Share2,
   Download,
   Layers,
   Undo2,
   Redo2,
-  Cpu,
   Box,
-  Eye,
   Image as ImageIcon,
 } from 'lucide-react';
 
@@ -92,6 +89,40 @@ const LOCAL_STORAGE_PRESETS_KEY = 'ascii_builder_user_presets';
 const LOCAL_STORAGE_MODEL_PRESETS_KEY = 'ascii_builder_user_model_presets';
 const LOCAL_STORAGE_MEDIA_PRESETS_KEY = 'ascii_builder_user_media_presets';
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
+
+/**
+ * The three content sources. Kept as data so the picker, its badge and the
+ * per-source panel switches all read from one place.
+ */
+const SOURCES: {
+  id: AppMode;
+  name: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number }>;
+  title: string;
+}[] = [
+  {
+    id: 'synth',
+    name: 'SYNTH',
+    description: 'Parametric wave field & particles',
+    icon: Sliders,
+    title: 'Parametric Wave & Particle Synthesizer',
+  },
+  {
+    id: 'media',
+    name: 'MEDIA',
+    description: 'Image or video file',
+    icon: ImageIcon,
+    title: '2D Image & Video ASCII Rasterizer',
+  },
+  {
+    id: 'model',
+    name: 'MODEL',
+    description: '3D geometry (beta)',
+    icon: Box,
+    title: '3D Model to 2D ASCII Visualizer (Beta)',
+  },
+];
 
 interface HistorySnapshot {
   waveParams: WaveParams;
@@ -200,7 +231,6 @@ export const App: React.FC = () => {
   }));
 
   const [userModelPresets, setUserModelPresets] = useState<ModelPreset[]>([]);
-  const [modelTab, setModelTab] = useState<'presets' | 'model' | 'view' | 'render' | 'visuals'>('presets');
   const [isModelLoading, setIsModelLoading] = useState<boolean>(false);
   const [modelLoadingFileName, setModelLoadingFileName] = useState<string>('3D Model');
   const [modelLoadingStatusText, setModelLoadingStatusText] = useState<string>('Downloading');
@@ -234,7 +264,6 @@ export const App: React.FC = () => {
   }));
 
   const [userMediaPresets, setUserMediaPresets] = useState<MediaPreset[]>([]);
-  const [mediaTab, setMediaTab] = useState<'presets' | 'file' | 'render' | 'visuals'>('presets');
   const [mediaRenderTrigger, setMediaRenderTrigger] = useState<number>(0);
   const triggerMediaRender = useCallback(() => setMediaRenderTrigger((v) => v + 1), []);
 
@@ -493,7 +522,13 @@ export const App: React.FC = () => {
   const currentFpsRef = useRef<number>(30);
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'presets' | 'synth' | 'particles' | 'render' | 'visuals'>('presets');
+  /**
+   * The sidebar panel, shared across every content source.
+   *
+   * Previously this was three independent variables (one per source), so
+   * switching source silently threw away which panel you were on.
+   */
+  const [panel, setPanel] = useState<'content' | 'controls' | 'render'>('content');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video'>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
@@ -1769,11 +1804,6 @@ export const App: React.FC = () => {
     }
   }, [mediaConfig, mediaViewConfig, activeMediaPreset, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
-  const handleResetMediaDefaults = useCallback(() => {
-    setMediaViewConfig({ ...DEFAULT_MEDIA_VIEW_CONFIG });
-    pushMediaHistorySnapshot(mediaConfig, DEFAULT_MEDIA_VIEW_CONFIG, activeMediaPreset);
-  }, [mediaConfig, activeMediaPreset, pushMediaHistorySnapshot]);
-
   // Initial loader for shared remote media URLs
   useEffect(() => {
     if (appMode === 'media' && mediaConfig.sourceType === 'url') {
@@ -2291,6 +2321,40 @@ export const App: React.FC = () => {
     });
   }, []);
 
+  /**
+   * Switches content source.
+   *
+   * Media carries an extra step: if its grid is still at the synth default it
+   * has never been sized to a real image, so derive a resolution from whatever
+   * is loaded rather than rasterizing at 100 columns.
+   */
+  const handleSelectSource = useCallback(
+    (id: AppMode) => {
+      setAppMode(id);
+
+      if (id === 'media' && mediaElementRef.current) {
+        const el = mediaElementRef.current;
+        let w = 256;
+        let h = 256;
+        if (el instanceof HTMLImageElement) {
+          w = el.naturalWidth || el.width || 256;
+          h = el.naturalHeight || el.height || 256;
+        } else if (el instanceof HTMLVideoElement) {
+          w = el.videoWidth || el.width || 256;
+          h = el.videoHeight || el.height || 256;
+        }
+        if (!renderSettingsByMode.media.cols || renderSettingsByMode.media.cols === 100) {
+          autoSetMediaResolution(w, h);
+        }
+      }
+
+      setTimeout(() => {
+        viewportRef.current?.autoFit();
+      }, 50);
+    },
+    [renderSettingsByMode.media.cols, autoSetMediaResolution]
+  );
+
   const handleAutoResolutionChange = useCallback((c: number, r: number) => {
     setRenderSettingsByMode((prev) => {
       const mode = appModeRef.current;
@@ -2419,111 +2483,71 @@ export const App: React.FC = () => {
         {/* Right Sidebar Control Panel */}
         {viewMode === 'editor' && (
           <div className="sidebar-pane">
-            {/* Primary Mode Switcher (Full Width at Top of Right Panel) */}
-            <div className="sidebar-mode-switcher">
+            {/*
+              Three panels, shared across all three content sources.
+
+              The source (synth / media / model) is no longer a top-level mode
+              with its own tab strip. It is a property of the CONTENT panel,
+              which is what it always was conceptually: Visuals and Render were
+              previously mounted three times over, once per source, precisely
+              because they never depended on the source at all.
+            */}
+            <div className="tab-nav">
               <button
-                className={`sidebar-mode-btn ${appMode === 'synth' ? 'active' : ''}`}
-                onClick={() => {
-                  setAppMode('synth');
-                  setTimeout(() => {
-                    viewportRef.current?.autoFit();
-                  }, 50);
-                }}
-                title="Parametric Wave & Particle Synthesizer"
+                className={`tab-btn ${panel === 'content' ? 'active' : ''}`}
+                onClick={() => setPanel('content')}
+                title="Choose the source and pick a preset or file"
               >
-                <Sliders size={13} style={{ marginRight: '6px' }} />
-                SYNTH
+                <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                CONTENT
               </button>
               <button
-                className={`sidebar-mode-btn ${appMode === 'media' ? 'active' : ''}`}
-                onClick={() => {
-                  setAppMode('media');
-                  if (mediaElementRef.current) {
-                    let w = 256;
-                    let h = 256;
-                    if (mediaElementRef.current instanceof HTMLImageElement) {
-                      w = mediaElementRef.current.naturalWidth || mediaElementRef.current.width || 256;
-                      h = mediaElementRef.current.naturalHeight || mediaElementRef.current.height || 256;
-                    } else if (mediaElementRef.current instanceof HTMLVideoElement) {
-                      w = mediaElementRef.current.videoWidth || mediaElementRef.current.width || 256;
-                      h = mediaElementRef.current.videoHeight || mediaElementRef.current.height || 256;
-                    }
-                    if (!renderSettingsByMode.media.cols || renderSettingsByMode.media.cols === 100) {
-                      autoSetMediaResolution(w, h);
-                    }
-                  }
-                  setTimeout(() => {
-                    viewportRef.current?.autoFit();
-                  }, 50);
-                }}
-                title="2D Image & Video ASCII Rasterizer"
+                className={`tab-btn ${panel === 'controls' ? 'active' : ''}`}
+                onClick={() => setPanel('controls')}
+                title="Adjust the active source"
               >
-                <ImageIcon size={13} style={{ marginRight: '6px' }} />
-                MEDIA
+                <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                CONTROLS
               </button>
               <button
-                className={`sidebar-mode-btn ${appMode === 'model' ? 'active' : ''}`}
-                onClick={() => {
-                  setAppMode('model');
-                  setTimeout(() => {
-                    viewportRef.current?.autoFit();
-                  }, 50);
-                }}
-                title="3D Model to 2D ASCII Visualizer (Beta)"
+                className={`tab-btn ${panel === 'render' ? 'active' : ''}`}
+                onClick={() => setPanel('render')}
+                title="Charset, colour, display effects, resolution and performance"
               >
-                <Box size={13} style={{ marginRight: '6px' }} />
-                MODEL
+                <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
+                RENDER
               </button>
             </div>
 
-            {appMode === 'synth' ? (
-              /* SYNTH MODE TABS */
+            {/* ---------------------------------------------------------- */}
+            {/* CONTENT: what am I looking at                              */}
+            {/* ---------------------------------------------------------- */}
+            {panel === 'content' && (
               <>
-                <div className="tab-nav">
-                  <button
-                    className={`tab-btn ${activeTab === 'presets' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('presets')}
-                    title="Presets Library"
-                  >
-                    <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    PRESETS
-                  </button>
-                  <button
-                    className={`tab-btn ${activeTab === 'synth' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('synth')}
-                    title="Wave Synthesizer & Advanced Formula Code"
-                  >
-                    <Sliders size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    SYNTH
-                  </button>
-                  <button
-                    className={`tab-btn ${activeTab === 'particles' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('particles')}
-                    title="Particle Physics & Mouse Trail"
-                  >
-                    <Sparkles size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    PHYSICS
-                  </button>
-                  <button
-                    className={`tab-btn ${activeTab === 'visuals' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('visuals')}
-                    title="Charsets & Color Themes"
-                  >
-                    <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    THEME
-                  </button>
-                  <button
-                    className={`tab-btn ${activeTab === 'render' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('render')}
-                    title="Render Settings, Framerate Limiter & Resolution"
-                  >
-                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    RENDER
-                  </button>
+                {/*
+                  Square tiles, outside any collapsible group: the source is
+                  the first decision on this panel and should never be hidden
+                  behind a disclosure. Icon over centred label reads as a
+                  choice of thing, not a row of tabs.
+                */}
+                <div className="source-grid">
+                  {SOURCES.map((source) => {
+                    const Icon = source.icon;
+                    return (
+                      <button
+                        key={source.id}
+                        className={`source-tile ${appMode === source.id ? 'active' : ''}`}
+                        onClick={() => handleSelectSource(source.id)}
+                        title={source.title}
+                      >
+                        <Icon size={24} />
+                        <span className="source-tile-name">{source.name}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Active Tab View */}
-                {activeTab === 'presets' && (
+                {appMode === 'synth' && (
                   <PresetSelector
                     activePresetId={activePreset.id}
                     onSelectPreset={handleSelectPreset}
@@ -2535,278 +2559,161 @@ export const App: React.FC = () => {
                   />
                 )}
 
-                {activeTab === 'synth' && (
-                  <SynthControls
-                    params={waveParams}
-                    onChangeParams={handleParamChange}
-                    onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
-                    code={customCode}
-                    prepareCode={customPrepare}
-                    compileError={compileError}
-                    onChangeFormula={handleFormulaCodeChange}
-                    isFormulaDivergent={presetType === 'custom'}
-                    onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
-                  />
+                {appMode === 'media' && (
+                  <>
+                    <MediaPresetSelector
+                      activePresetId={activeMediaPreset.id}
+                      activeMediaConfig={mediaConfig}
+                      onSelectPreset={handleSelectMediaPreset}
+                      onSaveCustomPreset={handleSaveCustomMediaPreset}
+                      userPresets={userMediaPresets}
+                      onDeleteUserPreset={handleDeleteUserMediaPreset}
+                    />
+                    <MediaFileControls
+                      section="source"
+                      config={mediaConfig}
+                      onChangeConfig={handleChangeMediaConfig}
+                      viewConfig={mediaViewConfig}
+                      onChangeViewConfig={handleChangeMediaViewConfig}
+                      mediaElement={mediaElementRef.current}
+                      onFileUpload={handleMediaFileUpload}
+                      onUrlLoad={handleMediaUrlLoad}
+                    />
+                  </>
                 )}
 
-                {activeTab === 'particles' && (
-                  <ParticleControls
-                    config={particleConfig}
-                    onChange={setParticleConfig}
-                    onClearParticles={() => {
-                      trailPointsRef.current = [];
-                    }}
-                  />
-                )}
-
-                {activeTab === 'render' && (
-                  <OptimizeControls
-                    config={optimizeConfig}
-                    onChangeConfig={setOptimizeConfig}
-                    cols={cols}
-                    rows={rows}
-                    onChangeResolution={handleManualResolutionChange}
-                    autoRes={autoRes}
-                    onToggleAutoRes={handleToggleAutoRes}
-                    appMode={appMode}
-                    mediaElement={mediaElementRef.current}
-                    mediaConfig={mediaConfig}
-                  />
-                )}
-
-                {activeTab === 'visuals' && (
-                  <CharsetThemeBar
-                    currentCharset={density}
-                    onChangeCharset={setDensity}
-                    currentTheme={theme}
-                    onChangeTheme={handleSelectTheme}
-                    customThemeColor={customThemeColor}
-                    onChangeCustomColor={handleSelectCustomColor}
-                    gradientConfig={gradientConfig}
-                    onChangeGradient={handleSelectGradient}
-                    crtConfig={crtConfig}
-                    onChangeCrtConfig={setCrtConfig}
-                    appMode={appMode}
-                    mediaColorConfig={mediaColorConfig}
-                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
-                  />
+                {appMode === 'model' && (
+                  <>
+                    <ModelPresetSelector
+                      activePresetId={activeModelPreset.id}
+                      activeModelConfig={modelConfig}
+                      onSelectPreset={handleSelectModelPreset}
+                      onSaveCustomPreset={handleSaveCustomModelPreset}
+                      userPresets={userModelPresets}
+                      onDeleteUserPreset={handleDeleteUserModelPreset}
+                    />
+                    <ModelSettingsControls
+                      section="source"
+                      config={modelConfig}
+                      onChangeConfig={handleChangeModelConfig}
+                      onLoadCustomGeometry={handleLoadCustomGeometry}
+                      onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                      onLoadRemoteModel={handleLoadOnlineModel}
+                      onStartLoading={(fileName, statusText) => {
+                        setIsModelLoading(true);
+                        if (fileName) setModelLoadingFileName(fileName);
+                        if (statusText) setModelLoadingStatusText(statusText);
+                      }}
+                      onEndLoading={() => setIsModelLoading(false)}
+                    />
+                  </>
                 )}
               </>
-            ) : appMode === 'media' ? (
-              /* MEDIA MODE TABS */
-              <>
-                <div className="tab-nav">
-                  <button
-                    className={`tab-btn ${mediaTab === 'presets' ? 'active' : ''}`}
-                    onClick={() => setMediaTab('presets')}
-                    title="2D Media Presets"
-                  >
-                    <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    PRESETS
-                  </button>
-                  <button
-                    className={`tab-btn ${mediaTab === 'file' ? 'active' : ''}`}
-                    onClick={() => setMediaTab('file')}
-                    title="Upload Image/Video, Transforms, Effects & Tonal Controls"
-                  >
-                    <ImageIcon size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    FILE
-                  </button>
-                  <button
-                    className={`tab-btn ${mediaTab === 'visuals' ? 'active' : ''}`}
-                    onClick={() => setMediaTab('visuals')}
-                    title="Charsets & Color Themes"
-                  >
-                    <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    THEME
-                  </button>
-                  <button
-                    className={`tab-btn ${mediaTab === 'render' ? 'active' : ''}`}
-                    onClick={() => setMediaTab('render')}
-                    title="Render Settings, Framerate Limiter & Resolution"
-                  >
-                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    RENDER
-                  </button>
-                </div>
+            )}
 
-                {/* Active 2D Media Tab Views */}
-                {mediaTab === 'presets' && (
-                  <MediaPresetSelector
-                    activePresetId={activeMediaPreset.id}
-                    activeMediaConfig={mediaConfig}
-                    onSelectPreset={handleSelectMediaPreset}
-                    onSaveCustomPreset={handleSaveCustomMediaPreset}
-                    userPresets={userMediaPresets}
-                    onDeleteUserPreset={handleDeleteUserMediaPreset}
-                  />
+            {/* ---------------------------------------------------------- */}
+            {/* CONTROLS: shape the active source                          */}
+            {/* ---------------------------------------------------------- */}
+            {panel === 'controls' && (
+              <>
+                {appMode === 'synth' && (
+                  <>
+                    <SynthControls
+                      params={waveParams}
+                      onChangeParams={handleParamChange}
+                      onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
+                      code={customCode}
+                      prepareCode={customPrepare}
+                      compileError={compileError}
+                      onChangeFormula={handleFormulaCodeChange}
+                      isFormulaDivergent={presetType === 'custom'}
+                      onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
+                    />
+                    <ParticleControls
+                      config={particleConfig}
+                      onChange={setParticleConfig}
+                      onClearParticles={() => {
+                        trailPointsRef.current = [];
+                      }}
+                    />
+                  </>
                 )}
 
-                {mediaTab === 'file' && (
+                {appMode === 'media' && (
                   <MediaFileControls
+                    section="adjust"
                     config={mediaConfig}
                     onChangeConfig={handleChangeMediaConfig}
                     viewConfig={mediaViewConfig}
                     onChangeViewConfig={handleChangeMediaViewConfig}
-                    onResetViewDefaults={handleResetMediaDefaults}
                     mediaElement={mediaElementRef.current}
                     onFileUpload={handleMediaFileUpload}
                     onUrlLoad={handleMediaUrlLoad}
                   />
                 )}
 
-                {mediaTab === 'render' && (
-                  <OptimizeControls
-                    config={optimizeConfig}
-                    onChangeConfig={setOptimizeConfig}
-                    cols={cols}
-                    rows={rows}
-                    onChangeResolution={handleManualResolutionChange}
-                    autoRes={autoRes}
-                    onToggleAutoRes={handleToggleAutoRes}
-                    appMode={appMode}
-                    mediaElement={mediaElementRef.current}
-                    mediaConfig={mediaConfig}
-                    mediaViewConfig={mediaViewConfig}
-                    onChangeMediaViewConfig={handleChangeMediaViewConfig}
-                  />
-                )}
-
-                {mediaTab === 'visuals' && (
-                  <CharsetThemeBar
-                    currentCharset={density}
-                    onChangeCharset={setDensity}
-                    currentTheme={theme}
-                    onChangeTheme={handleSelectTheme}
-                    customThemeColor={customThemeColor}
-                    onChangeCustomColor={handleSelectCustomColor}
-                    gradientConfig={gradientConfig}
-                    onChangeGradient={handleSelectGradient}
-                    crtConfig={crtConfig}
-                    onChangeCrtConfig={setCrtConfig}
-                    appMode={appMode}
-                    mediaColorConfig={mediaColorConfig}
-                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
-                  />
-                )}
-              </>
-            ) : (
-              /* MODEL MODE TABS */
-              <>
-                <div className="tab-nav">
-                  <button
-                    className={`tab-btn ${modelTab === 'presets' ? 'active' : ''}`}
-                    onClick={() => setModelTab('presets')}
-                    title="3D Model Presets"
-                  >
-                    <Layers size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    PRESETS
-                  </button>
-                  <button
-                    className={`tab-btn ${modelTab === 'model' ? 'active' : ''}`}
-                    onClick={() => setModelTab('model')}
-                    title="Upload & 3D Geometry Settings"
-                  >
-                    <Box size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    FILE
-                  </button>
-                  <button
-                    className={`tab-btn ${modelTab === 'view' ? 'active' : ''}`}
-                    onClick={() => setModelTab('view')}
-                    title="ASCII Shading, Rotation & Lighting"
-                  >
-                    <Eye size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    SCENE
-                  </button>
-                  <button
-                    className={`tab-btn ${modelTab === 'visuals' ? 'active' : ''}`}
-                    onClick={() => setModelTab('visuals')}
-                    title="Charsets & Color Themes"
-                  >
-                    <Palette size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    THEME
-                  </button>
-                  <button
-                    className={`tab-btn ${modelTab === 'render' ? 'active' : ''}`}
-                    onClick={() => setModelTab('render')}
-                    title="Render Settings, Framerate Limiter & Resolution"
-                  >
-                    <Cpu size={11} style={{ display: 'inline', marginRight: '4px' }} />
-                    RENDER
-                  </button>
-                </div>
-
-                {/* Active 3D Model Tab Views */}
-                {modelTab === 'presets' && (
-                  <ModelPresetSelector
-                    activePresetId={activeModelPreset.id}
-                    activeModelConfig={modelConfig}
-                    onSelectPreset={handleSelectModelPreset}
-                    onSaveCustomPreset={handleSaveCustomModelPreset}
-                    userPresets={userModelPresets}
-                    onDeleteUserPreset={handleDeleteUserModelPreset}
-                  />
-                )}
-
-                {modelTab === 'model' && (
-                  <ModelSettingsControls
-                    config={modelConfig}
-                    onChangeConfig={handleChangeModelConfig}
-                    onLoadCustomGeometry={handleLoadCustomGeometry}
-                    onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
-                    onLoadRemoteModel={handleLoadOnlineModel}
-                    onStartLoading={(fileName, statusText) => {
-                      setIsModelLoading(true);
-                      if (fileName) setModelLoadingFileName(fileName);
-                      if (statusText) setModelLoadingStatusText(statusText);
-                    }}
-                    onEndLoading={() => setIsModelLoading(false)}
-                  />
-                )}
-
-                {modelTab === 'view' && (
-                  <ModelViewControls
-                    config={modelViewConfig}
-                    onChangeConfig={handleChangeModelViewConfig}
-                    onResetRotation={handleResetModelRotation}
-                  />
-                )}
-
-                {modelTab === 'render' && (
-                  <OptimizeControls
-                    config={optimizeConfig}
-                    onChangeConfig={setOptimizeConfig}
-                    cols={cols}
-                    rows={rows}
-                    onChangeResolution={handleManualResolutionChange}
-                    autoRes={autoRes}
-                    onToggleAutoRes={handleToggleAutoRes}
-                    appMode={appMode}
-                    mediaElement={mediaElementRef.current}
-                    mediaConfig={mediaConfig}
-                  />
-                )}
-
-                {modelTab === 'visuals' && (
-                  <CharsetThemeBar
-                    currentCharset={density}
-                    onChangeCharset={setDensity}
-                    currentTheme={theme}
-                    onChangeTheme={handleSelectTheme}
-                    customThemeColor={customThemeColor}
-                    onChangeCustomColor={handleSelectCustomColor}
-                    gradientConfig={gradientConfig}
-                    onChangeGradient={handleSelectGradient}
-                    crtConfig={crtConfig}
-                    onChangeCrtConfig={setCrtConfig}
-                    appMode={appMode}
-                    mediaColorConfig={mediaColorConfig}
-                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
-                  />
+                {appMode === 'model' && (
+                  <>
+                    <ModelSettingsControls
+                      section="adjust"
+                      config={modelConfig}
+                      onChangeConfig={handleChangeModelConfig}
+                      onLoadCustomGeometry={handleLoadCustomGeometry}
+                      onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                      onLoadRemoteModel={handleLoadOnlineModel}
+                      onStartLoading={(fileName, statusText) => {
+                        setIsModelLoading(true);
+                        if (fileName) setModelLoadingFileName(fileName);
+                        if (statusText) setModelLoadingStatusText(statusText);
+                      }}
+                      onEndLoading={() => setIsModelLoading(false)}
+                    />
+                    <ModelViewControls
+                      config={modelViewConfig}
+                      onChangeConfig={handleChangeModelViewConfig}
+                      onResetRotation={handleResetModelRotation}
+                    />
+                  </>
                 )}
               </>
             )}
 
+            {/* ---------------------------------------------------------- */}
+            {/* RENDER: how it is drawn                                    */}
+            {/* ---------------------------------------------------------- */}
+            {panel === 'render' && (
+              <>
+                <CharsetThemeBar
+                  currentCharset={density}
+                  onChangeCharset={setDensity}
+                  currentTheme={theme}
+                  onChangeTheme={handleSelectTheme}
+                  customThemeColor={customThemeColor}
+                  onChangeCustomColor={handleSelectCustomColor}
+                  gradientConfig={gradientConfig}
+                  onChangeGradient={handleSelectGradient}
+                  crtConfig={crtConfig}
+                  onChangeCrtConfig={setCrtConfig}
+                  appMode={appMode}
+                  mediaColorConfig={mediaColorConfig}
+                  onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                />
+                <OptimizeControls
+                  config={optimizeConfig}
+                  onChangeConfig={setOptimizeConfig}
+                  cols={cols}
+                  rows={rows}
+                  onChangeResolution={handleManualResolutionChange}
+                  autoRes={autoRes}
+                  onToggleAutoRes={handleToggleAutoRes}
+                  appMode={appMode}
+                  mediaElement={mediaElementRef.current}
+                  mediaConfig={mediaConfig}
+                  mediaViewConfig={appMode === 'media' ? mediaViewConfig : undefined}
+                  onChangeMediaViewConfig={appMode === 'media' ? handleChangeMediaViewConfig : undefined}
+                />
+              </>
+            )}
             {/* Sidebar Credits Line */}
             <div className="sidebar-credits">
               <span>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { Preset } from '../types/ascii';
 import { PRESETS } from '../engine/presets';
 import { BookmarkPlus, Trash2, Dices } from 'lucide-react';
@@ -61,13 +62,11 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
       )}
 
       {/* Built-in Presets */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Example wave presets</span>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
-            {PRESETS.length} presets
-          </span>
-        </div>
+      <CollapsibleSection
+        title="Example wave presets"
+        persistKey="PresetSelector-example-wave-presets"
+        badge={PRESETS.find((p) => p.id === activePresetId)?.name || '' + PRESETS.length + ' presets'}
+      >
         <div className="presets-grid">
           {PRESETS.map((preset) => {
             const isActive = activePresetId === preset.id;
@@ -83,17 +82,12 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
             );
           })}
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* User Saved Presets */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>User Presets</span>
-          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+      <CollapsibleSection title="User Presets" badge={<><span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
             {userPresets.length} saved
-          </span>
-        </div>
-
+          </span></>} persistKey="PresetSelector-user-presets">
         <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
           Presets are stored locally in your browser and will be cleared if cookies or website storage are deleted.
         </p>
@@ -160,7 +154,7 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
     </div>
   );
 };

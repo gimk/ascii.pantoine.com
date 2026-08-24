@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { CollapsibleSection } from './CollapsibleSection';
 import { MediaConfig, MediaViewConfig } from '../types/ascii';
 import { MediaViewControls } from './MediaViewControls';
 import {
@@ -27,7 +28,13 @@ interface MediaFileControlsProps {
   mediaElement: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   onFileUpload: (file: File) => void;
   onUrlLoad: (url: string) => void;
-  onResetViewDefaults?: () => void;
+  /**
+   * Which half of the panel to render.
+   *   source - paste/upload/URL and video playback: what the content IS
+   *   adjust - transform, framing, effects and tone: how it is processed
+   * Defaults to both, so existing callers are unaffected.
+   */
+  section?: 'source' | 'adjust' | 'all';
 }
 
 export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
@@ -38,8 +45,10 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
   mediaElement,
   onFileUpload,
   onUrlLoad,
-  onResetViewDefaults,
+  section = 'all',
 }) => {
+  const showSource = section === 'source' || section === 'all';
+  const showAdjust = section === 'adjust' || section === 'all';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -174,6 +183,8 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
 
   return (
     <div className="tab-content">
+      {showSource && (
+        <>
       {/* 0. High-Visibility Clipboard Paste Hero Banner */}
       <div
         className="control-section"
@@ -244,12 +255,7 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
       </div>
 
       {/* 1. File Upload & Source Dropzone */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Or Import From File / URL</span>
-          <Upload size={12} />
-        </div>
-
+      <CollapsibleSection title="Or Import From File / URL" icon={<Upload size={12} />} persistKey="MediaFileControls-or-import-from-file-url">
         <div
           className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
           onDragOver={handleDragOver}
@@ -329,16 +335,11 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
             LOAD
           </button>
         </form>
-      </div>
+      </CollapsibleSection>
 
       {/* 2. Video Playback & Timeline Controls (if video source) */}
       {isVideo && (
-        <div className="control-section">
-          <div className="section-header">
-            <span>Video Playback</span>
-            <Film size={12} />
-          </div>
-
+        <CollapsibleSection title="Video Playback" icon={<Film size={12} />} persistKey="MediaFileControls-video-playback">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <button className="btn btn-primary btn-sm" onClick={toggleVideoPlayback}>
               {isVideoPlaying ? <Pause size={12} /> : <Play size={12} />}
@@ -390,16 +391,15 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
               ))}
             </div>
           </div>
-        </div>
+        </CollapsibleSection>
+      )}
+        </>
       )}
 
+      {showAdjust && (
+        <>
       {/* 3. Transform & Framing Controls */}
-      <div className="control-section">
-        <div className="section-header">
-          <span>Transform & Framing</span>
-          <Maximize2 size={12} />
-        </div>
-
+      <CollapsibleSection title="Transform &amp; Framing" icon={<Maximize2 size={12} />} persistKey="MediaFileControls-transform-framing">
         {/* Fit Mode */}
         <div className="control-row">
           <span className="control-label">Fit Mode</span>
@@ -530,22 +530,21 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
         </div>
 
         {/* Reset Transforms Button */}
-        <button
-          className="btn btn-sm"
-          style={{ width: '100%', marginTop: '8px', color: 'var(--text-muted)' }}
-          onClick={resetTransforms}
-        >
-          RESET TRANSFORMS
-        </button>
-      </div>
+        <div className="collapsible-actions">
+          <button className="btn btn-sm" onClick={resetTransforms}>
+            RESET TRANSFORMS
+          </button>
+        </div>
+      </CollapsibleSection>
 
       {/* 4. EFFECT & TONAL CONTROLS (Tonal curve, Levels, Highlights/Shadows, Background) */}
       {viewConfig && onChangeViewConfig && (
         <MediaViewControls
           config={viewConfig}
           onChangeConfig={onChangeViewConfig}
-          onResetDefaults={onResetViewDefaults}
         />
+      )}
+        </>
       )}
     </div>
   );
