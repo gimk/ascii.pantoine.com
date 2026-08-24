@@ -1,6 +1,6 @@
 import React from 'react';
-import { ToneMappingConfig } from '../types/ascii';
-import { Layers, RefreshCw } from 'lucide-react';
+import { ToneMappingConfig, DEFAULT_TONE_MAPPING_CONFIG } from '../types/ascii';
+import { Layers, RotateCcw } from 'lucide-react';
 
 interface ToneControlsProps {
   config: ToneMappingConfig;
@@ -26,6 +26,10 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
     });
   };
 
+  const handleResetAll = () => {
+    onChangeConfig({ ...DEFAULT_TONE_MAPPING_CONFIG });
+  };
+
   const posterizeBits = config.posterizeBits || 0;
   const levelsBlack = config.levelsBlack ?? 0;
   const levelsWhite = config.levelsWhite ?? 100;
@@ -34,7 +38,6 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
   // Build gradient preview stops based on levels and quantization
   const inBlack = levelsBlack / 100.0;
   const inWhite = Math.max(inBlack + 0.05, levelsWhite / 100.0);
-
   const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, levelsMidtones / 100.0));
   const midNorm = (inMid - inBlack) / (inWhite - inBlack);
   const gamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
@@ -59,7 +62,8 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
   }, [inBlack, inWhite, gamma, posterizeBits]);
 
   return (
-    <div style={{ marginBottom: '14px' }}>
+    <div style={{ marginBottom: '8px' }}>
+      {/* Header with Title & Reset Button */}
       <div
         style={{
           display: 'flex',
@@ -71,16 +75,32 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
         <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>
           TONAL RAMP & QUANTIZATION
         </span>
-        <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>
-          {posterizeBits > 0 ? `${Math.pow(2, posterizeBits)} STEPS (${posterizeBits}-BIT)` : 'CONTINUOUS'}
-        </span>
+        <button
+          type="button"
+          onClick={handleResetAll}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-dim)',
+            fontSize: '8.5px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            fontFamily: 'var(--font-mono)',
+            padding: '0',
+          }}
+          title="Reset Tone Mapping to linear defaults"
+        >
+          <RotateCcw size={9} /> RESET
+        </button>
       </div>
 
       {/* 1. Live Visual Tone Ramp Bar */}
       <div style={{ marginBottom: '10px' }}>
         <div
           style={{
-            height: '18px',
+            height: '16px',
             width: '100%',
             borderRadius: '2px',
             background: `linear-gradient(to right, ${rampStops})`,
@@ -220,7 +240,6 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
         </div>
       </div>
 
-
       {/* 5. RGB Channel Mixer */}
       <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -246,10 +265,11 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '2px',
+              fontFamily: 'var(--font-mono)',
             }}
             title="Reset RGB mixer to 100%"
           >
-            <RefreshCw size={9} /> Reset
+            <RotateCcw size={8} /> Reset RGB
           </button>
         </div>
 
@@ -303,7 +323,26 @@ export const ToneControls: React.FC<ToneControlsProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 6. Main Reset Button */}
+      <button
+        type="button"
+        className="btn btn-sm"
+        style={{
+          width: '100%',
+          marginTop: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '5px',
+          fontSize: '9.5px',
+        }}
+        onClick={handleResetAll}
+      >
+        <RotateCcw size={10} /> RESET TONE MAPPING
+      </button>
     </div>
   );
 };
+
 

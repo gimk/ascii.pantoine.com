@@ -120,8 +120,12 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   }
 
   // 1. Clear background
-  ctx.fillStyle = viewConfig.background === 'white' ? '#ffffff' : '#000000';
-  ctx.fillRect(0, 0, cols, rows);
+  ctx.clearRect(0, 0, cols, rows);
+  if (viewConfig.background === 'white') {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cols, rows);
+  }
+
 
   // 2. Compute media element dimensions
   let srcWidth = 100;

@@ -55,9 +55,17 @@ export function drawHalftoneToCanvas(renderCtx: HalftoneRenderContext): void {
   ctx.save();
   ctx.scale(dpr, dpr);
 
-  // Clear background
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, width, height);
+  // Clear background transparently (matches terminal viewport)
+  ctx.clearRect(0, 0, width, height);
+  if (bgColor && bgColor !== 'transparent' && bgColor !== '#0a0a0a' && bgColor !== '#000000' && bgColor !== '#000') {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, width, height);
+  } else if (mode === 'halftone-cmyk') {
+    // CMYK subtractive printing plates require a white background substrate
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+  }
+
 
   const dotScale = config.dotScale || 1.0;
   const minSize = config.minSize || 0.05;

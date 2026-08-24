@@ -19,7 +19,9 @@ import { RasterModeSelector } from './RasterModeSelector';
 import { DitherControls } from './DitherControls';
 import { PaletteControls } from './PaletteControls';
 import { ToneControls } from './ToneControls';
+import { HalftoneControls } from './HalftoneControls';
 import { Sparkles, Sliders, Zap, Type, CircleDot } from 'lucide-react';
+
 
 interface CharsetThemeBarProps {
   currentCharset: string;
@@ -165,113 +167,14 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
           persistKey="CharsetThemeBar-halftone"
           badge={(halftoneConfig.dotShape || 'circle').toUpperCase()}
         >
-          {rasterMode === 'halftone-dot' && (
-            <div className="control-row" style={{ marginBottom: '8px' }}>
-              <span className="control-label">Dot Shape</span>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {(['circle', 'square', 'diamond'] as const).map((shape) => (
-                  <button
-                    key={shape}
-                    className={`segmented-btn ${halftoneConfig.dotShape === shape || (!halftoneConfig.dotShape && shape === 'circle') ? 'active' : ''}`}
-                    onClick={() => onChangeHalftoneConfig({ ...halftoneConfig, dotShape: shape })}
-                    style={{ fontSize: '9px', padding: '3px 6px', textTransform: 'capitalize' }}
-                  >
-                    {shape}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="control-row">
-            <span className="control-label">Dot Scale</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
-              <input
-                type="range"
-                min="0.2"
-                max="2.5"
-                step="0.05"
-                value={halftoneConfig.dotScale ?? 1.0}
-                onChange={(e) => onChangeHalftoneConfig({ ...halftoneConfig, dotScale: parseFloat(e.target.value) })}
-                style={{ flex: 1 }}
-              />
-              <span style={{ fontSize: '10px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                {(halftoneConfig.dotScale ?? 1.0).toFixed(2)}x
-              </span>
-            </div>
-          </div>
-
-          {(rasterMode === 'halftone-line' || rasterMode === 'halftone-crosshatch') && (
-            <div className="control-row">
-              <span className="control-label">Screen Angle</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="180"
-                  step="5"
-                  value={halftoneConfig.lineAngle ?? 45}
-                  onChange={(e) => onChangeHalftoneConfig({ ...halftoneConfig, lineAngle: parseInt(e.target.value, 10) })}
-                  style={{ flex: 1 }}
-                />
-                <span style={{ fontSize: '10px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                  {halftoneConfig.lineAngle ?? 45}°
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Cell Ratio & Presets */}
-          <div className="control-row" style={{ marginTop: '4px' }}>
-            <span className="control-label">Cell Ratio</span>
-            <div style={{ display: 'flex', gap: '3px' }}>
-              {[
-                { label: '1:1', ratio: 1.0 },
-                { label: '0.6', ratio: 0.6 },
-                { label: '4:3', ratio: 0.75 },
-                { label: '16:9', ratio: 0.5625 },
-              ].map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  className={`chip-btn ${Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? 'active' : ''}`}
-                  style={{
-                    fontSize: '9px',
-                    padding: '2px 5px',
-                    borderRadius: '2px',
-                    background: Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? 'var(--accent)' : 'var(--bg-control)',
-                    color: Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? '#000' : 'var(--text-muted)',
-                    fontWeight: Math.abs((halftoneConfig.cellRatio ?? 1.0) - preset.ratio) < 0.02 ? 700 : 500,
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => onChangeHalftoneConfig({ ...halftoneConfig, cellRatio: preset.ratio })}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="control-row">
-            <span className="control-label">Dot Pitch</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, maxWidth: '120px', minWidth: '80px' }}>
-              <input
-                type="range"
-                min="4"
-                max="24"
-                step="1"
-                value={halftoneConfig.dotPitch ?? 8}
-                onChange={(e) => onChangeHalftoneConfig({ ...halftoneConfig, dotPitch: parseInt(e.target.value, 10) || 8 })}
-                style={{ flex: 1 }}
-              />
-              <span style={{ fontSize: '10px', width: '32px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                {halftoneConfig.dotPitch ?? 8}px
-              </span>
-            </div>
-          </div>
+          <HalftoneControls
+            config={halftoneConfig}
+            onChangeConfig={onChangeHalftoneConfig}
+            rasterMode={rasterMode}
+          />
         </CollapsibleSection>
       )}
+
 
 
 

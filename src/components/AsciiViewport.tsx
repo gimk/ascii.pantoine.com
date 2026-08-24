@@ -268,9 +268,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       } else if (colors && colors.length > 0) {
         ctx.save();
         ctx.scale(currentZoom * dpr, currentZoom * dpr);
-        ctx.fillStyle = bgColor || '#0a0a0a';
-        ctx.fillRect(0, 0, unscaledW, unscaledH);
+        ctx.clearRect(0, 0, unscaledW, unscaledH);
+        if (bgColor && bgColor !== 'transparent' && bgColor !== '#0a0a0a' && bgColor !== '#000000' && bgColor !== '#000') {
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, unscaledW, unscaledH);
+        }
         ctx.font = '10px "JuliaMono", "JetBrains Mono", "Courier New", monospace';
+
+
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
 
