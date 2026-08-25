@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { NumberInput } from './controlPrimitives';
+import { NumberInput, PrecisionSlider } from './controlPrimitives';
 import {
   ImageAdjustConfig,
   DEFAULT_IMAGE_ADJUST_CONFIG,
@@ -727,47 +727,29 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         {/* Sharpen Strength */}
         <div className="control-row">
           <span className="control-label">Sharpen Strength</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={0}
-              max={300}
-              step={5}
-              value={config.sharpenStrength}
-              onChange={(e) => update('sharpenStrength', parseInt(e.target.value, 10))}
-            />
-            <NumberInput
-              value={config.sharpenStrength}
-              min={0}
-              max={300}
-              step={5}
-              onChange={(val) => update('sharpenStrength', val)}
-            />
-          </div>
+          <PrecisionSlider
+            value={config.sharpenStrength}
+            sliderMin={0}
+            sliderMax={300}
+            hardMax={1000}
+            step={5}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.sharpenStrength}
+            onChange={(val) => update('sharpenStrength', val)}
+          />
         </div>
 
         {/* Sharpen Radius */}
         <div className="control-row">
           <span className="control-label">Sharpen Radius</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={1}
-              max={10}
-              step={1}
-              value={config.sharpenRadius}
-              onChange={(e) => update('sharpenRadius', parseInt(e.target.value, 10))}
-            />
-            <NumberInput
-              value={config.sharpenRadius}
-              min={1}
-              max={10}
-              step={1}
-              onChange={(val) => update('sharpenRadius', val)}
-            />
-          </div>
+          <PrecisionSlider
+            value={config.sharpenRadius}
+            sliderMin={0.1}
+            sliderMax={4}
+            hardMax={10}
+            step={0.1}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.sharpenRadius}
+            onChange={(val) => update('sharpenRadius', val)}
+          />
         </div>
 
         {/* TEXTURE & GRAIN */}
@@ -778,47 +760,29 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         {/* Noise */}
         <div className="control-row">
           <span className="control-label">Noise / Grain</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={0}
-              max={100}
-              step={1}
-              value={config.noise}
-              onChange={(e) => update('noise', parseInt(e.target.value, 10))}
-            />
-            <NumberInput
-              value={config.noise}
-              min={0}
-              max={100}
-              step={1}
-              onChange={(val) => update('noise', val)}
-            />
-          </div>
+          <PrecisionSlider
+            value={config.noise}
+            sliderMin={0}
+            sliderMax={100}
+            hardMax={200}
+            step={1}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.noise}
+            onChange={(val) => update('noise', val)}
+          />
         </div>
 
         {/* Denoise */}
         <div className="control-row">
           <span className="control-label">Denoise</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={0}
-              max={100}
-              step={1}
-              value={config.denoise || 0}
-              onChange={(e) => update('denoise', parseInt(e.target.value, 10))}
-            />
-            <NumberInput
-              value={config.denoise || 0}
-              min={0}
-              max={100}
-              step={1}
-              onChange={(val) => update('denoise', val)}
-            />
-          </div>
+          <PrecisionSlider
+            value={config.denoise || 0}
+            sliderMin={0}
+            sliderMax={8}
+            hardMax={100}
+            step={0.1}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.denoise ?? 0}
+            onChange={(val) => update('denoise', val)}
+          />
         </div>
 
         {/* OPTICAL FILTERS */}
@@ -829,24 +793,15 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         {/* Blur */}
         <div className="control-row">
           <span className="control-label">Blur</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={0}
-              max={20}
-              step={1}
-              value={config.blur}
-              onChange={(e) => update('blur', parseInt(e.target.value, 10))}
-            />
-            <NumberInput
-              value={config.blur}
-              min={0}
-              max={20}
-              step={1}
-              onChange={(val) => update('blur', val)}
-            />
-          </div>
+          <PrecisionSlider
+            value={config.blur}
+            sliderMin={0}
+            sliderMax={8}
+            hardMax={40}
+            step={0.1}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.blur}
+            onChange={(val) => update('blur', val)}
+          />
         </div>
 
         {/* EXPOSURE & CONTRAST */}
@@ -857,51 +812,31 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         {/* Brightness */}
         <div className="control-row">
           <span className="control-label">Brightness</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={-100}
-              max={100}
-              step={1}
-              value={config.brightness}
-              onChange={(e) => update('brightness', parseInt(e.target.value, 10))}
-              onDoubleClick={() => update('brightness', 0)}
-              title="Double-click to reset to 0"
-            />
-            <NumberInput
-              value={config.brightness}
-              min={-100}
-              max={100}
-              step={1}
-              onChange={(val) => update('brightness', val)}
-            />
-          </div>
+          <PrecisionSlider
+            value={config.brightness}
+            sliderMin={-25}
+            sliderMax={25}
+            hardMin={-100}
+            hardMax={100}
+            step={0.1}
+            resetTo={0}
+            onChange={(val) => update('brightness', val)}
+          />
         </div>
 
         {/* Contrast */}
         <div className="control-row">
           <span className="control-label">Contrast</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={-100}
-              max={100}
-              step={1}
-              value={config.contrast}
-              onChange={(e) => update('contrast', parseInt(e.target.value, 10))}
-              onDoubleClick={() => update('contrast', 0)}
-              title="Double-click to reset to 0"
-            />
-            <NumberInput
-              value={config.contrast}
-              min={-100}
-              max={100}
-              step={1}
-              onChange={(val) => update('contrast', val)}
-            />
-          </div>
+          <PrecisionSlider
+            value={config.contrast}
+            sliderMin={-25}
+            sliderMax={25}
+            hardMin={-100}
+            hardMax={100}
+            step={0.1}
+            resetTo={0}
+            onChange={(val) => update('contrast', val)}
+          />
         </div>
 
         <div className="collapsible-actions">

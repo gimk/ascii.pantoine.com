@@ -247,6 +247,7 @@ let cachedRows = 0;
 let lumBuffer = new Float32Array(0);
 let blurBuffer = new Float32Array(0);
 let tempBlurBuffer = new Float32Array(0);
+let blendBlurBuffer = new Float32Array(0);
 let edgeBuffer = new Float32Array(0);
 // Luminance as it came off the source, before any filter or grading. Colour
 // modes that sample the source RGB use it to recover how much the pipeline
@@ -307,6 +308,7 @@ function ensureBufferCapacity(totalCells: number, cols: number, rows: number) {
     lumBuffer = new Float32Array(totalCells);
     blurBuffer = new Float32Array(totalCells);
     tempBlurBuffer = new Float32Array(totalCells);
+    blendBlurBuffer = new Float32Array(totalCells);
     edgeBuffer = new Float32Array(totalCells);
     srcLumBuffer = new Float32Array(totalCells);
     paletteWorkBuffer = new Float32Array(totalCells * 3);
@@ -416,17 +418,22 @@ export function createToneCurveLUT(points?: [number, number][]): Float32Array | 
   }
   return lut;
 }
-
 // ---------------------------------------------------------------------------
 // Fast Box Blur (Separable 1D, Alpha/Boundary-Aware)
 // ---------------------------------------------------------------------------
-function applyFastBoxBlur(src: Float32Array, dest: Float32Array, width: number, height: number, radius: number) {
-  if (radius <= 0) {
-    dest.set(src);
-    return;
-  }
 
-  const r = Math.min(Math.max(1, Math.floor(radius)), 10);
+/** Widest box kernel the separable passes will build. */
+const MAX_BLUR_RADIUS = 10;
+
+/** One separable box blur at a whole-cell radius. */
+function applyIntegerBoxBlur(
+  src: Float32Array,
+  dest: Float32Array,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const r = Math.min(Math.max(1, Math.floor(radius)), MAX_BLUR_RADIUS);
 
   // Horizontal pass
   for (let y = 0; y < height; y++) {
@@ -463,6 +470,52 @@ function applyFastBoxBlur(src: Float32Array, dest: Float32Array, width: number, 
       }
       dest[y * width + x] = count > 0 ? sum / count : -1;
     }
+  }
+}
+
+/**
+ * Box blur at a fractional radius.
+ *
+ * A box kernel only exists at whole radii, so anything in between is a linear
+ * crossfade between the two neighbouring kernels -- and below radius 1, between
+ * the source and the narrowest kernel. Without this the smallest non-zero blur
+ * or denoise setting jumped straight to a full one-cell average, which is why
+ * the bottom of those ranges felt like an on/off switch rather than a dial.
+ */
+function applyFastBoxBlur(
+  src: Float32Array,
+  dest: Float32Array,
+  width: number,
+  height: number,
+  radius: number
+) {
+  if (radius <= 0) {
+    dest.set(src);
+    return;
+  }
+
+  const clamped = Math.min(radius, MAX_BLUR_RADIUS);
+  const lower = Math.floor(clamped);
+  const frac = clamped - lower;
+
+  if (frac <= 1e-4) {
+    applyIntegerBoxBlur(src, dest, width, height, lower);
+    return;
+  }
+
+  // Wider kernel into dest, narrower into the blend scratch, then mix in place.
+  applyIntegerBoxBlur(src, dest, width, height, lower + 1);
+  const narrow = lower === 0 ? src : blendBlurBuffer;
+  if (lower > 0) {
+    applyIntegerBoxBlur(src, blendBlurBuffer, width, height, lower);
+  }
+
+  const total = width * height;
+  for (let i = 0; i < total; i++) {
+    const a = narrow[i];
+    const b = dest[i];
+    // -1 marks a cell masked out by alpha; it must not be averaged into.
+    dest[i] = a < 0 || b < 0 ? -1 : a + (b - a) * frac;
   }
 }
 
@@ -541,7 +594,10 @@ export function processRasterFrame(
   // Step 2: Spatial Filters (Blur, Denoise, Sharpen, Sobel Edges)
   // -------------------------------------------------------------------------
   const totalBlur = (options.blur || 0) + (options.denoise || 0);
-  const blurRadius = totalBlur > 0 ? Math.max(1, Math.round(totalBlur / 2)) : 0;
+  // Straight through, unrounded: the kernel now handles fractional radii, and
+  // the old max(1, round(..)) meant the first non-zero notch already applied a
+  // full one-cell average.
+  const blurRadius = totalBlur > 0 ? totalBlur / 2 : 0;
   if (blurRadius > 0) {
     applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, blurRadius);
     for (let i = 0; i < totalCells; i++) {
@@ -550,7 +606,7 @@ export function processRasterFrame(
   }
 
   const sharpenStrength = (options.sharpenStrength || 0) / 100.0;
-  const sharpenRadius = Math.max(1, Math.min(10, options.sharpenRadius || 2));
+  const sharpenRadius = Math.max(0.1, Math.min(MAX_BLUR_RADIUS, options.sharpenRadius || 2));
   if (sharpenStrength > 0) {
     applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, sharpenRadius);
     for (let y = 0; y < rows; y++) {
