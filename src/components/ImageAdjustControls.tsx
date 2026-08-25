@@ -6,7 +6,7 @@ import {
   DEFAULT_IMAGE_ADJUST_CONFIG,
 } from '../types/ascii';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
-import { Sliders, Sparkles, Minus, Plus } from 'lucide-react';
+import { Sliders, Sparkles, Minus, Plus, Palette } from 'lucide-react';
 
 interface ColorPickerInputProps {
   label: string;
@@ -655,7 +655,11 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       ...(showInvert ? { invert: resetDefaults.invert } : {}),
     });
   };
-
+  /*
+   * The two resets follow the two panels. Before the split this was one action
+   * that also cleared the colour mode and the tone stops -- harmless while they
+   * shared a panel, a cross-panel surprise now that they do not.
+   */
   const resetTonal = () => {
     onChangeConfig({
       ...config,
@@ -664,8 +668,14 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       midtones: resetDefaults.midtones,
       shadows: resetDefaults.shadows,
       alphaThreshold: resetDefaults.alphaThreshold,
-      tonalMapping: resetDefaults.tonalMapping,
       colorLevels: resetDefaults.colorLevels ?? 0,
+    });
+  };
+
+  const resetColors = () => {
+    onChangeConfig({
+      ...config,
+      tonalMapping: resetDefaults.tonalMapping,
       highlightColor: resetDefaults.highlightColor,
       midtoneColor: resetDefaults.midtoneColor,
       shadowColor: resetDefaults.shadowColor,
@@ -826,19 +836,27 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         </div>
       </CollapsibleSection>
 
-      {/* TONAL CONTROLS */}
+      {/*
+        COLORS — which colours come out.
+        Split from the tonal panel because these are two different decisions on
+        opposite sides of the pipeline: the engine shapes tone (levels, gamma,
+        curve) and only then assigns colour. The old single panel interleaved
+        them and led with colour, which is the step that happens last. Keeping
+        the mode selector and the stops it reveals adjacent also makes their
+        dependency legible -- the stops only exist for duotone and tritone.
+      */}
       <CollapsibleSection
-        title="TONAL CONTROLS"
-        icon={<Sparkles size={12} />}
-        persistKey={`${persistKeyPrefix}-tonal-controls`}
+        title="COLORS"
+        icon={<Palette size={12} />}
+        persistKey={`${persistKeyPrefix}-colors`}
         defaultOpen={true}
       >
-        {/* Color Palettes & Themes (host-provided) */}
+        {/* Color mode, palette and tint (host-provided) */}
         {paletteSlot}
 
         {/* Colour stops for duotone / tritone ramps */}
         {config.tonalMapping !== '1color' && (
-          <div style={{ marginBottom: '10px' }}>
+          <div style={{ marginTop: '4px' }}>
             <div className="tonal-subheading">
               <span>Multi-Tone Stops</span>
             </div>
@@ -862,6 +880,29 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
           </div>
         )}
 
+        <div className="collapsible-actions">
+          <button
+            className="btn btn-sm"
+            onClick={resetColors}
+            title="Reset color mode and the duotone / tritone stops"
+          >
+            RESET COLORS
+          </button>
+        </div>
+      </CollapsibleSection>
+
+      {/*
+        TONAL CONTROLS — how tone is distributed before colours are assigned.
+        Quantize depth lives here rather than in COLORS: it is named colorLevels
+        and its auto value comes from the palette size, but it reduces the tone
+        ramp, and it is the control that makes the dither algorithm matter.
+      */}
+      <CollapsibleSection
+        title="TONAL CONTROLS"
+        icon={<Sparkles size={12} />}
+        persistKey={`${persistKeyPrefix}-tonal-controls`}
+        defaultOpen={true}
+      >
         {/* Quantize depth with High-Accuracy Control */}
         <div className="tonal-subheading">
           <span>Quantization &amp; Dither Depth</span>
@@ -984,7 +1025,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         )}
 
         <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={resetTonal} title="Reset curve, highlights, midtones, and shadows">
+          <button className="btn btn-sm" onClick={resetTonal} title="Reset curve, quantize depth, highlights, midtones and shadows">
             RESET TONAL
           </button>
         </div>

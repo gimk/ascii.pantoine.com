@@ -136,9 +136,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         paletteSlot={
           onChangeTheme ? (
             <div>
-              <div className="tonal-subheading">
-                <span>Color &amp; Tonal Palette</span>
-              </div>
+              {/* No subheading: the COLORS panel title already says this. */}
               <PaletteControls
                 currentTheme={currentTheme || 'green'}
                 onChangeTheme={onChangeTheme}
