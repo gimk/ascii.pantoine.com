@@ -30,6 +30,7 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
   { id: 'bayer-16x16', name: 'Bayer 16×16 (Ultra)', family: 'ordered', description: '256-level ultra-smooth continuous matrix' },
   { id: 'cluster-4x4', name: 'Clustered Dot 4×4', family: 'ordered', description: 'Halftone dot cluster ordered matrix' },
   { id: 'cluster-8x8', name: 'Clustered Dot 8×8', family: 'ordered', description: 'Smooth circular halftone dot cluster' },
+  { id: 'halftone-dot', name: 'Halftone Dot Screen', family: 'ordered', description: 'Newsprint-style clustered dot halftone screen' },
   { id: 'diagonal-4x4', name: 'Diagonal Lines 4×4', family: 'ordered', description: '45° etched diagonal line screen' },
   { id: 'diagonal-8x8', name: 'Diagonal Lines 8×8', family: 'ordered', description: 'Fine 45° engraving line dither' },
   { id: 'horizontal-lines', name: 'Horizontal Lines', family: 'ordered', description: 'Linear horizontal raster matrix' },
@@ -61,6 +62,45 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
   { id: 'glitch-displacement', name: 'Glitch Pixel Tear', family: 'modulation', description: 'Horizontal raster displacement jitter' },
   { id: 'threshold-mod', name: 'Dynamic Threshold Mod', family: 'modulation', description: 'Non-linear luminance-dependent thresholding' },
 ];
+
+export const DITHER_FAMILY_LABELS: Record<DitherFamily, string> = {
+  'error-diffusion': 'Error Diffusion',
+  ordered: 'Ordered & Clustered',
+  'blue-noise': 'Blue Noise & Stochastic',
+  algorithmic: 'Algorithmic & Space-Filling',
+  modulation: 'Modulation & Generative',
+};
+
+export interface DitherAlgorithmGroup {
+  family: DitherFamily;
+  label: string;
+  algorithms: DitherAlgorithmMeta[];
+}
+
+/**
+ * Groups the algorithm registry by family, preserving registry order both for
+ * the families themselves and for the algorithms inside each family.
+ */
+export function getDitherAlgorithmGroups(): DitherAlgorithmGroup[] {
+  const groups: DitherAlgorithmGroup[] = [];
+  const byFamily = new Map<DitherFamily, DitherAlgorithmGroup>();
+
+  for (const algorithm of DITHER_ALGORITHMS) {
+    let group = byFamily.get(algorithm.family);
+    if (!group) {
+      group = {
+        family: algorithm.family,
+        label: DITHER_FAMILY_LABELS[algorithm.family],
+        algorithms: [],
+      };
+      byFamily.set(algorithm.family, group);
+      groups.push(group);
+    }
+    group.algorithms.push(algorithm);
+  }
+
+  return groups;
+}
 
 // --- Ordered Matrices ---
 export const BAYER_2X2 = [

@@ -20,8 +20,10 @@ import {
   RenderSettings,
   MediaColorConfig,
   DEFAULT_MEDIA_COLOR_CONFIG,
+  LEGACY_TONAL_PRESET_PALETTES,
   DEFAULT_TONE_MAPPING_CONFIG,
-  DEFAULT_HALFTONE_CONFIG,
+  DEFAULT_IMAGE_ADJUST_CONFIG,
+  ImageAdjustConfig,
   RasterOutputMode,
 } from './types/ascii';
 import {
@@ -62,10 +64,12 @@ import { PresetSelector } from './components/PresetSelector';
 import { ParticleControls } from './components/ParticleControls';
 import { OptimizeControls } from './components/OptimizeControls';
 import { CharsetThemeBar } from './components/CharsetThemeBar';
+import { PaletteControls } from './components/PaletteControls';
 import { ModelSettingsControls } from './components/ModelSettingsControls';
 import { ModelViewControls } from './components/ModelViewControls';
 import { MediaFileControls } from './components/MediaFileControls';
 import { MediaViewControls } from './components/MediaViewControls';
+import { ImageAdjustControls } from './components/ImageAdjustControls';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { generateRandomAnimation } from './engine/randomizer';
@@ -240,10 +244,15 @@ export const App: React.FC = () => {
     ...(sharedState?.mediaConfig || {}),
   }));
 
-  const [mediaViewConfig, setMediaViewConfig] = useState<MediaViewConfig>(() => ({
-    ...DEFAULT_MEDIA_VIEW_CONFIG,
-    ...(sharedState?.mediaViewConfig || {}),
-  }));
+  const [mediaViewConfig, setMediaViewConfig] = useState<MediaViewConfig>(() => {
+    const merged = { ...DEFAULT_MEDIA_VIEW_CONFIG, ...(sharedState?.mediaViewConfig || {}) };
+    // A shared link made before the tonal presets became palettes can still
+    // carry 'gameboy' / 'cyberpunk' / 'amber'.
+    if (LEGACY_TONAL_PRESET_PALETTES[merged.tonalMapping as string]) {
+      merged.tonalMapping = '1color';
+    }
+    return merged;
+  });
 
   const [mediaRenderTrigger, setMediaRenderTrigger] = useState<number>(0);
   const triggerMediaRender = useCallback(() => setMediaRenderTrigger((v) => v + 1), []);
@@ -261,6 +270,29 @@ export const App: React.FC = () => {
       }
     } catch {}
 
+    // Synth mode exposes no dither control, so a persisted 'floyd-steinberg' can
+    // only be the old default. Error diffusion is temporally unstable on an
+    // animated field and made the output flicker, so drop it.
+    if (savedSettings.synth?.ditherAlgorithm === 'floyd-steinberg') {
+      savedSettings.synth.ditherAlgorithm = 'none';
+    }
+
+    // The 'gameboy' / 'cyberpunk' / 'amber' tonal presets are built-in palettes
+    // now. Move a persisted preset onto its palette so the look survives.
+    for (const modeKey of ['synth', 'media', 'model'] as const) {
+      const saved = savedSettings[modeKey];
+      const legacy = saved?.adjustConfig?.tonalMapping as string | undefined;
+      const paletteId = legacy ? LEGACY_TONAL_PRESET_PALETTES[legacy] : undefined;
+      if (!saved || !paletteId) continue;
+      saved.adjustConfig = { ...saved.adjustConfig!, tonalMapping: '1color' };
+      saved.mediaColorConfig = {
+        ...(saved.mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG),
+        paletteMode: 'indexed',
+        mode: 'fixed',
+        activePaletteId: paletteId,
+      };
+    }
+
     const isSynthShared = sharedState?.appMode === 'synth' || !sharedState?.appMode;
     const isMediaShared = sharedState?.appMode === 'media';
     const isModelShared = sharedState?.appMode === 'model';
@@ -271,9 +303,9 @@ export const App: React.FC = () => {
       autoRes: (isSynthShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.synth?.autoRes !== undefined ? savedSettings.synth.autoRes : true),
       density: (isSynthShared && sharedState?.density) || savedSettings.synth?.density || CHARSETS[0].chars,
       rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'ascii',
-      ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'floyd-steinberg',
+      ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
       toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
-      halftoneConfig: (isSynthShared && sharedState?.halftoneConfig) || savedSettings.synth?.halftoneConfig || DEFAULT_HALFTONE_CONFIG,
+      adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'green',
       customThemeColor: (isSynthShared && sharedState?.customThemeColor) || savedSettings.synth?.customThemeColor || '',
       gradientConfig: (isSynthShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.synth?.gradientConfig ?? null),
@@ -298,7 +330,7 @@ export const App: React.FC = () => {
       rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'ascii',
       ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
       toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
-      halftoneConfig: (isMediaShared && sharedState?.halftoneConfig) || savedSettings.media?.halftoneConfig || DEFAULT_HALFTONE_CONFIG,
+      adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'green',
       customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
       gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
@@ -324,7 +356,7 @@ export const App: React.FC = () => {
       rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'ascii',
       ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
       toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
-      halftoneConfig: (isModelShared && sharedState?.halftoneConfig) || savedSettings.model?.halftoneConfig || DEFAULT_HALFTONE_CONFIG,
+      adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'green',
       customThemeColor: (isModelShared && sharedState?.customThemeColor) || savedSettings.model?.customThemeColor || '',
       gradientConfig: (isModelShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.model?.gradientConfig ?? null),
@@ -1431,6 +1463,13 @@ export const App: React.FC = () => {
     }, 400);
   }, [mediaViewConfig, pushMediaHistorySnapshot]);
 
+  const handleChangeAdjustConfig = useCallback((next: ImageAdjustConfig) => {
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      [appMode]: { ...prev[appMode], adjustConfig: next },
+    }));
+  }, [appMode]);
+
   const handleChangeMediaViewConfig = useCallback((newViewConfig: MediaViewConfig) => {
     if (newViewConfig.rasterMode !== mediaViewConfig.rasterMode) {
       const el = mediaElementRef.current;
@@ -1733,7 +1772,6 @@ export const App: React.FC = () => {
         rasterMode: mediaViewConfig.rasterMode || curSettings.rasterMode || 'ascii',
         algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
         toneConfig: curSettings.toneConfig,
-        halftoneConfig: curSettings.halftoneConfig,
       });
       viewportRef.current?.setFrame(
         result.text,
@@ -1870,7 +1908,7 @@ export const App: React.FC = () => {
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
           toneConfig: activeSettings.toneConfig,
-          halftoneConfig: activeSettings.halftoneConfig,
+          adjustConfig: activeSettings.adjustConfig,
         });
         frameText = res.text;
         frameColors = res.colors;
@@ -1886,7 +1924,6 @@ export const App: React.FC = () => {
           rasterMode: mediaViewConfig.rasterMode || activeSettings.rasterMode || 'ascii',
           algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
           toneConfig: activeSettings.toneConfig,
-          halftoneConfig: activeSettings.halftoneConfig,
         });
         frameText = result.text;
         frameColors = result.colors;
@@ -1906,8 +1943,9 @@ export const App: React.FC = () => {
           luminanceBoost: particleConfig.luminanceBoost,
           colorConfig: mediaColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
-          algorithm: activeSettings.ditherAlgorithm || 'floyd-steinberg',
+          algorithm: activeSettings.ditherAlgorithm || 'none',
           toneConfig: activeSettings.toneConfig,
+          adjustConfig: activeSettings.adjustConfig,
         });
         frameText = res.text;
         frameColors = res.colors;
@@ -1944,8 +1982,10 @@ export const App: React.FC = () => {
     presetType,
     particleConfig,
     optimizeConfig,
+    // The RAF loop reads renderSettingsRef, but the static-image branch renders
+    // once and must re-run when settings change. Only the active mode's slice
+    // matters, so renderSettingsByMode itself is not a dependency.
     currentRenderSettings,
-    renderSettingsByMode,
   ]);
 
 
@@ -2432,16 +2472,42 @@ export const App: React.FC = () => {
                   />
                 )}
 
+                {/* Media renders these inside MediaViewControls, where they sit
+                    alongside the palette and levels blocks. */}
+                {appMode !== 'media' && (
+                  <div className="tab-content">
+                    <ImageAdjustControls
+                      config={currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG}
+                      onChangeConfig={handleChangeAdjustConfig}
+                      persistKeyPrefix={`${appMode}-image-adjust`}
+                      paletteSlot={
+                        <div style={{ marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                          <PaletteControls
+                            currentTheme={theme}
+                            onChangeTheme={handleSelectTheme}
+                            customThemeColor={customThemeColor}
+                            onChangeCustomColor={handleSelectCustomColor}
+                            mediaColorConfig={mediaColorConfig}
+                            onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                            appMode={appMode}
+                            tonalMapping={(currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG).tonalMapping}
+                            onChangeTonalMapping={(t) =>
+                              handleChangeAdjustConfig({
+                                ...(currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG),
+                                tonalMapping: t,
+                              })
+                            }
+                          />
+                        </div>
+                      }
+                    />
+                  </div>
+                )}
+
                 <CharsetThemeBar
                   currentCharset={density}
                   onChangeCharset={setDensity}
-                  currentTheme={theme}
-                  onChangeTheme={handleSelectTheme}
-                  customThemeColor={customThemeColor}
-                  onChangeCustomColor={handleSelectCustomColor}
                   appMode={appMode}
-                  mediaColorConfig={mediaColorConfig}
-                  onChangeMediaColorConfig={handleSelectMediaColorConfig}
                   isPixelMode={appMode === 'media' && mediaViewConfig.rasterMode === 'pixel'}
                 />
 
@@ -2512,6 +2578,10 @@ export const App: React.FC = () => {
         mediaViewConfig={mediaViewConfig}
         mediaColorConfig={mediaColorConfig}
         mediaElement={mediaElementRef.current}
+        rasterMode={appMode === 'media' ? (mediaViewConfig.rasterMode || currentRenderSettings.rasterMode) : currentRenderSettings.rasterMode}
+        ditherAlgorithm={appMode === 'media' ? (mediaViewConfig.algorithm || currentRenderSettings.ditherAlgorithm) : currentRenderSettings.ditherAlgorithm}
+        toneConfig={currentRenderSettings.toneConfig}
+        adjustConfig={currentRenderSettings.adjustConfig}
       />
 
       {/* Share Modal */}

@@ -171,9 +171,7 @@ export type MediaFitMode = 'contain' | 'cover' | 'stretch' | 'original';
 // --- v1.6 Raster Modalities & Advanced Engine Types ---
 export type RasterOutputMode =
   | 'ascii'
-  | 'graphic'
-  | 'pixel'
-  | 'halftone-dot';
+  | 'pixel';
 
 export type DitherFamily = 'error-diffusion' | 'ordered' | 'blue-noise' | 'algorithmic' | 'modulation';
 
@@ -254,28 +252,6 @@ export interface MultiToneConfig {
   highlight2?: string;
   contrast?: number;
 }
-
-export interface HalftoneConfig {
-  dotScale: number; // 0.2 to 2.5, default 1.0
-  lineAngle: number; // 0 to 180 degrees
-  dotShape: 'circle' | 'square' | 'diamond';
-  minSize: number; // 0 to 1
-  maxSize: number; // 0 to 1
-  cmykAngles: { c: number; m: number; y: number; k: number };
-  cellRatio?: number; // 1.0 = square (1:1), 0.6 = monospace, etc.
-  dotPitch?: number; // pixel size per cell (e.g. 4 to 20, default 8)
-}
-
-export const DEFAULT_HALFTONE_CONFIG: HalftoneConfig = {
-  dotScale: 1.0,
-  lineAngle: 45,
-  dotShape: 'circle',
-  minSize: 0.05,
-  maxSize: 1.0,
-  cmykAngles: { c: 15, m: 75, y: 0, k: 45 },
-  cellRatio: 1.0,
-  dotPitch: 8,
-};
 
 export interface ToneMappingConfig {
   mappingMode?: '1-color' | '2-color' | '3-color' | 'multi-tone';
@@ -362,22 +338,35 @@ export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
   activePaletteId: 'gameboy-classic',
 };
 
-export type TonalMappingType = '1color' | '2color' | '3color' | 'gameboy' | 'cyberpunk' | 'amber';
+/**
+ * How graded luminance becomes colour. This is one half of the single colour
+ * selector: the other half is MediaColorConfig.paletteMode, which takes over
+ * for 'indexed' and 'content'. The UI presents both as one list.
+ *
+ * The old hardcoded 'gameboy' / 'cyberpunk' / 'amber' presets are gone; they
+ * were three-stop ramps duplicating built-in palettes and are migrated to
+ * them on load.
+ */
+export type TonalMappingType = '1color' | '2color' | '3color';
 
-export interface MediaViewConfig {
-  // 1. Render / Sampling Settings
-  resampling: ResamplingMode;
-  algorithm: DitherAlgorithm;
-  rasterMode?: RasterOutputMode;
-  dpi?: number; // 10 to 300, default 72
-  halftoneConfig?: HalftoneConfig;
-  toneConfig?: ToneMappingConfig;
+/** Legacy tonal presets -> the built-in palette that reproduces them. */
+export const LEGACY_TONAL_PRESET_PALETTES: Record<string, string> = {
+  gameboy: 'gameboy-classic',
+  cyberpunk: 'cyberpunk-neon',
+  amber: 'crt-amber',
+};
+
+/**
+ * Tone, filter and colour-grading controls consumed by the unified raster
+ * engine. Shared by every app mode (synth, media, model) so a frame is graded
+ * the same way whatever produced it.
+ */
+export interface ImageAdjustConfig {
+  // Filters
   invert: boolean;
   edgeDetection: boolean;
   edgeThreshold: number; // 0 to 100
   edgeStrength: number; // 0 to 200
-
-  // 2. Effect Controls
   sharpenStrength: number; // 0 to 300
   sharpenRadius: number; // 1 to 10
   noise: number; // 0 to 100
@@ -386,20 +375,58 @@ export interface MediaViewConfig {
   brightness: number; // -100 to 100
   contrast: number; // -100 to 100
 
-  // 3. Tonal Controls
+  // Tonal grading
   tonalMapping?: TonalMappingType;
   highlightColor?: string; // e.g. '#FFFFFF'
   midtoneColor?: string; // e.g. '#3B82F6'
   shadowColor?: string; // e.g. '#000000'
   curvePoints?: Array<[number, number]>; // editable [x, y] control points in [0..1]
-  levelBlack?: number; // 0 to 100, default 0
-  levelMidtones?: number; // 0 to 100, default 50 (middle)
-  levelWhite?: number; // 0 to 100, default 100
   highlights: number; // -100 to 100, default 0 (middle)
   midtones: number; // -100 to 100, default 0 (middle)
   shadows: number; // -100 to 100, default 0 (middle)
-  background: BackgroundMode;
   alphaThreshold: number; // 0 to 255
+
+  /**
+   * Quantization depth fed to the dither pass. 0 = auto, which means the
+   * charset length in ASCII modes, the palette size when one is active, and
+   * full 8-bit for continuous pixel output. Dithering only has a visible
+   * effect when the depth is genuinely reduced, so this is the control that
+   * makes the algorithm choice matter.
+   */
+  colorLevels?: number; // 0 (auto) or 2..256
+}
+
+export const DEFAULT_IMAGE_ADJUST_CONFIG: ImageAdjustConfig = {
+  invert: false,
+  edgeDetection: false,
+  edgeThreshold: 18,
+  edgeStrength: 100,
+  sharpenStrength: 0,
+  sharpenRadius: 2,
+  noise: 0,
+  denoise: 0,
+  blur: 0,
+  brightness: 0,
+  contrast: 0,
+  tonalMapping: '1color',
+  highlights: 0,
+  midtones: 0,
+  shadows: 0,
+  alphaThreshold: 10,
+  colorLevels: 0,
+};
+
+export interface MediaViewConfig extends ImageAdjustConfig {
+  // Render / sampling settings specific to 2D media sources
+  resampling: ResamplingMode;
+  algorithm: DitherAlgorithm;
+  rasterMode?: RasterOutputMode;
+  dpi?: number; // 10 to 300, default 72
+  toneConfig?: ToneMappingConfig;
+  levelBlack?: number; // 0 to 100, default 0
+  levelMidtones?: number; // 0 to 100, default 50 (middle)
+  levelWhite?: number; // 0 to 100, default 100
+  background: BackgroundMode;
   colorConfig?: MediaColorConfig;
 }
 
@@ -474,7 +501,6 @@ export interface ModelViewConfig {
   aspectRatio?: number; // Monospace cell aspect ratio compensation, default 0.50
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
-  halftoneConfig?: HalftoneConfig;
   toneConfig?: ToneMappingConfig;
 }
 
@@ -512,7 +538,7 @@ export interface RenderSettings {
   mediaColorConfig?: MediaColorConfig;
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
-  halftoneConfig?: HalftoneConfig;
   toneConfig?: ToneMappingConfig;
+  adjustConfig?: ImageAdjustConfig;
 }
 

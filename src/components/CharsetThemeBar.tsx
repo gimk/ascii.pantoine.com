@@ -1,80 +1,26 @@
 import React from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { CHARSETS } from '../engine/renderer';
-import {
-  PhosphorTheme,
-  MediaColorConfig,
-  AppMode,
-  DEFAULT_MEDIA_COLOR_CONFIG,
-} from '../types/ascii';
-import { PaletteControls } from './PaletteControls';
-import { Sparkles, Type } from 'lucide-react';
+import { AppMode } from '../types/ascii';
+import { Type } from 'lucide-react';
 
 interface CharsetThemeBarProps {
   currentCharset: string;
   onChangeCharset: (chars: string) => void;
-  currentTheme: PhosphorTheme;
-  onChangeTheme: (theme: PhosphorTheme) => void;
-  customThemeColor?: string;
-  onChangeCustomColor?: (color: string) => void;
   appMode?: AppMode;
-  mediaColorConfig?: MediaColorConfig;
-  onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
   isPixelMode?: boolean;
 }
-
-const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
-  { id: 'green', name: 'Matrix Green', color: '#00ff66' },
-  { id: 'amber', name: 'Amber CRT', color: '#ffb000' },
-  { id: 'cyan', name: 'Cyber Cyan', color: '#00f0ff' },
-  { id: 'monochrome', name: 'Mono White', color: '#f0f0f0' },
-  { id: 'blood', name: 'Crimson Red', color: '#ff3344' },
-  { id: 'paper', name: 'Paper Print', color: '#151515' },
-];
 
 export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
   currentCharset,
   onChangeCharset,
-  currentTheme,
-  onChangeTheme,
-  customThemeColor = '',
-  onChangeCustomColor,
-  appMode = 'synth',
-  mediaColorConfig = DEFAULT_MEDIA_COLOR_CONFIG,
-  onChangeMediaColorConfig,
   isPixelMode = false,
 }) => {
-  const isContentColorActive = appMode === 'media' && mediaColorConfig.mode === 'content';
   const activeCharsetName = isPixelMode ? 'N/A (Pixel Mode)' : (CHARSETS.find((cs) => cs.chars === currentCharset)?.name || 'Custom');
-  const activeColorName = isContentColorActive
-    ? 'From Content'
-    : customThemeColor
-      ? 'Custom Colour'
-      : THEMES.find((t) => t.id === currentTheme)?.name || '';
 
   return (
     <div className="tab-content">
-      {/* 1. Tonal Controls Section (rendered inside TONAL CONTROLS for media mode) */}
-      {appMode !== 'media' && (
-        <CollapsibleSection
-          title="Tonal Controls"
-          icon={<Sparkles size={12} />}
-          persistKey="CharsetThemeBar-color"
-          badge={activeColorName}
-          defaultOpen={true}
-        >
-          <PaletteControls
-            currentTheme={currentTheme}
-            onChangeTheme={onChangeTheme}
-            customThemeColor={customThemeColor}
-            onChangeCustomColor={onChangeCustomColor}
-            mediaColorConfig={mediaColorConfig}
-            onChangeMediaColorConfig={onChangeMediaColorConfig}
-            appMode={appMode}
-          />
-        </CollapsibleSection>
-      )}
-
+      {/* Palette / theme controls now live in TONAL CONTROLS for every mode. */}
       {/* 2. Character Density Ramp */}
       <CollapsibleSection
         title="Character Density Ramp"

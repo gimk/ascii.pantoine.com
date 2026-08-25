@@ -5,10 +5,10 @@ import {
   RasterOutputMode,
   DitherAlgorithm,
   ToneMappingConfig,
-  HalftoneConfig,
+  ImageAdjustConfig,
   MediaColorConfig,
 } from '../types/ascii';
-import { processRasterFrame, ProcessedRasterResult } from './rasterEngine';
+import { processRasterFrame, toPipelineAdjustments, ProcessedRasterResult } from './rasterEngine';
 
 export interface ModelRenderContext {
 
@@ -23,7 +23,7 @@ export interface ModelRenderContext {
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   toneConfig?: ToneMappingConfig;
-  halftoneConfig?: HalftoneConfig;
+  adjustConfig?: ImageAdjustConfig;
 }
 
 
@@ -527,6 +527,16 @@ class HeadlessModelRenderer {
     }
 
     // Delegate to Unified 2D Raster Processing Engine
+    const isOutline = viewConfig.shadingMode === 'outline';
+    const shadingEdges =
+      isOutline || (viewConfig.edgeWeight ?? 0) > 0
+        ? {
+            edgeDetection: true,
+            edgeThreshold: (viewConfig.edgeThreshold || 0.18) * 100,
+            edgeStrength: isOutline ? 150 : (viewConfig.edgeWeight || 1) * 100,
+          }
+        : null;
+
     return processRasterFrame(
       {
         width: cols,
@@ -541,28 +551,21 @@ class HeadlessModelRenderer {
         ditherAlgorithm: ctx.algorithm || viewConfig.algorithm || 'none',
         toneConfig: ctx.toneConfig || viewConfig.toneConfig,
         colorConfig: ctx.colorConfig,
-        halftoneConfig: ctx.halftoneConfig,
         contrast: viewConfig.contrast,
         brightness: viewConfig.brightness,
         invert: viewConfig.invert,
-        edgeDetection: viewConfig.shadingMode === 'outline' || (viewConfig.edgeWeight ?? 0) > 0,
-        edgeThreshold: (viewConfig.edgeThreshold || 0.18) * 100,
-        edgeStrength: viewConfig.shadingMode === 'outline' ? 150 : (viewConfig.edgeWeight || 1) * 100,
+        ...toPipelineAdjustments(ctx.adjustConfig),
+        // Outline shading and edge weight are model-specific and win over the
+        // shared edge adjustment when either is active.
+        ...(shadingEdges || {}),
       }
     );
   }
 
-  render(context: ModelRenderContext): string {
-    return this.renderData(context).text;
-  }
 }
 
 // Global Singleton Instance
 const globalHeadlessRenderer = new HeadlessModelRenderer();
-
-export function renderModelAsciiFrame(ctx: ModelRenderContext): string {
-  return globalHeadlessRenderer.render(ctx);
-}
 
 export function renderModelFrameData(ctx: ModelRenderContext): ProcessedRasterResult {
   return globalHeadlessRenderer.renderData(ctx);

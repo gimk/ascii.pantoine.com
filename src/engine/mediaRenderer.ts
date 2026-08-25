@@ -6,10 +6,9 @@ import {
   RasterOutputMode,
   DitherAlgorithm,
   ToneMappingConfig,
-  HalftoneConfig,
 } from '../types/ascii';
 import { MONOSPACE_CELL_ASPECT } from './renderer';
-import { processRasterFrame, createToneCurveLUT, evaluateMonotoneCubicSpline } from './rasterEngine';
+import { processRasterFrame, toPipelineAdjustments, createToneCurveLUT, evaluateMonotoneCubicSpline } from './rasterEngine';
 
 export { createToneCurveLUT, evaluateMonotoneCubicSpline };
 
@@ -25,7 +24,6 @@ export interface RenderMediaContext {
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   toneConfig?: ToneMappingConfig;
-  halftoneConfig?: HalftoneConfig;
 }
 
 
@@ -81,10 +79,11 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     viewConfig,
     density,
     colorConfig = DEFAULT_MEDIA_COLOR_CONFIG,
-    rasterMode = 'ascii',
-    algorithm = 'floyd-steinberg',
+    // Fall back to the view config so callers that only pass a viewConfig
+    // (exporters) render exactly what the viewport renders.
+    rasterMode = viewConfig.rasterMode ?? 'ascii',
+    algorithm = viewConfig.algorithm ?? 'floyd-steinberg',
     toneConfig,
-    halftoneConfig,
   } = context;
 
   const bgColor = resolveMediaBackgroundColor(colorConfig, viewConfig.background);
@@ -142,7 +141,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   }
 
   const isTextMode = rasterMode === 'ascii';
-  const cellAspect = isTextMode ? MONOSPACE_CELL_ASPECT : (halftoneConfig?.cellRatio ?? 1.0);
+  const cellAspect = isTextMode ? MONOSPACE_CELL_ASPECT : 1.0;
   const virtualCanvasWidth = cols;
   const virtualCanvasHeight = rows / cellAspect;
 
@@ -223,32 +222,8 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       ditherAlgorithm: algorithm,
       toneConfig: toneConfig || viewConfig.toneConfig,
       colorConfig,
-      halftoneConfig,
-      contrast: viewConfig.contrast,
-      brightness: viewConfig.brightness,
-      invert: viewConfig.invert,
-      blur: viewConfig.blur,
-      denoise: viewConfig.denoise,
-      sharpenStrength: viewConfig.sharpenStrength,
-      sharpenRadius: viewConfig.sharpenRadius,
-      edgeDetection: viewConfig.edgeDetection,
-      edgeThreshold: viewConfig.edgeThreshold,
-      edgeStrength: viewConfig.edgeStrength,
-      curvePoints: viewConfig.curvePoints,
-      shadows: viewConfig.shadows,
-      highlights: viewConfig.highlights,
-      midtones: viewConfig.midtones,
-      alphaThreshold: viewConfig.alphaThreshold,
-      noise: viewConfig.noise,
-      saturation: colorConfig.saturation,
-      tonalMapping: viewConfig.tonalMapping,
-      highlightColor: viewConfig.highlightColor,
-      midtoneColor: viewConfig.midtoneColor,
-      shadowColor: viewConfig.shadowColor,
+      // viewConfig IS the media ImageAdjustConfig — it is where the media UI writes.
+      ...toPipelineAdjustments(viewConfig),
     }
   );
-}
-
-export function renderAsciiMediaFrame(context: RenderMediaContext): string {
-  return renderAsciiMediaFrameData(context).text;
 }

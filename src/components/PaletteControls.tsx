@@ -2,9 +2,9 @@ import React from 'react';
 import {
   PhosphorTheme,
   PaletteMode,
-  ColorPalette,
   MediaColorConfig,
   AppMode,
+  TonalMappingType,
 } from '../types/ascii';
 import { BUILTIN_PALETTES } from '../engine/palettes';
 
@@ -16,6 +16,9 @@ interface PaletteControlsProps {
   mediaColorConfig?: MediaColorConfig;
   onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
   appMode?: AppMode;
+  /** Tonal half of the unified colour selector; lives in the adjust config. */
+  tonalMapping?: TonalMappingType;
+  onChangeTonalMapping?: (t: TonalMappingType) => void;
 }
 
 const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
@@ -27,6 +30,30 @@ const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
   { id: 'paper', name: 'Paper Print', color: '#151515' },
 ];
 
+const CATEGORY_LABELS: Record<string, string> = {
+  retro: 'Hardware Palettes',
+  print: 'Print & Riso Palettes',
+  design: 'Design Palettes',
+  custom: 'Custom Palettes',
+};
+
+const FALLBACK_COLOR_CONFIG: MediaColorConfig = {
+  mode: 'fixed',
+  sampling: 'center',
+  bgPreset: 'dark',
+  customBg: '#0a0a0a',
+  saturation: 200,
+};
+
+/**
+ * The single colour-output selector.
+ *
+ * Colour used to be chosen twice: a phosphor / indexed / content tab strip
+ * here, and a separate "Tonal Mapping" dropdown in the tonal controls. They
+ * were mutually exclusive in the engine but not in the UI, so picking a
+ * palette silently disabled the tonal mapping and vice versa. Both are one
+ * list now — an indexed palette is just an n-colour mapping with fixed stops.
+ */
 export const PaletteControls: React.FC<PaletteControlsProps> = ({
   currentTheme,
   onChangeTheme,
@@ -35,83 +62,79 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   mediaColorConfig,
   onChangeMediaColorConfig,
   appMode = 'synth',
+  tonalMapping = '1color',
+  onChangeTonalMapping,
 }) => {
   const isRgbDisabled = appMode === 'synth';
   const rawPaletteMode: PaletteMode = mediaColorConfig?.paletteMode || 'phosphor';
-  const paletteMode: PaletteMode = (rawPaletteMode === 'content' && isRgbDisabled) ? 'phosphor' : rawPaletteMode;
+  const paletteMode: PaletteMode = rawPaletteMode === 'content' && isRgbDisabled ? 'phosphor' : rawPaletteMode;
   const activePaletteId = mediaColorConfig?.activePaletteId || 'gameboy-classic';
+  const activePalette = BUILTIN_PALETTES.find((p) => p.id === activePaletteId);
 
-  const handleSelectPaletteMode = (mode: PaletteMode) => {
-    if (mode === 'indexed' || mode === 'content') {
-      if (onChangeTheme) onChangeTheme('monochrome');
-      if (onChangeCustomColor) onChangeCustomColor('');
+  // One value covering both backing fields.
+  const choice =
+    paletteMode === 'content'
+      ? 'content'
+      : paletteMode === 'indexed'
+        ? 'palette:' + activePaletteId
+        : tonalMapping;
+
+  const groupedPalettes = BUILTIN_PALETTES.reduce<Record<string, typeof BUILTIN_PALETTES>>((acc, pal) => {
+    (acc[pal.category] ||= []).push(pal);
+    return acc;
+  }, {});
+
+  const handleChoice = (next: string) => {
+    const base = mediaColorConfig || FALLBACK_COLOR_CONFIG;
+
+    if (next.startsWith('palette:') || next === 'content') {
+      // Indexed and content drive colour entirely; a phosphor tint on top would
+      // only re-colour the result, so clear it.
+      onChangeTheme?.('monochrome');
+      onChangeCustomColor?.('');
+      onChangeTonalMapping?.('1color');
+      onChangeMediaColorConfig?.(
+        next === 'content'
+          ? { ...base, paletteMode: 'content', mode: 'content' }
+          : { ...base, paletteMode: 'indexed', mode: 'fixed', activePaletteId: next.slice(8) }
+      );
+      return;
     }
 
-    if (onChangeMediaColorConfig) {
-      onChangeMediaColorConfig({
-        ...(mediaColorConfig || {
-          mode: 'fixed',
-          sampling: 'center',
-          bgPreset: 'dark',
-          customBg: '#0a0a0a',
-          saturation: 200,
-        }),
-        paletteMode: mode,
-        mode: mode === 'content' ? 'content' : 'fixed',
-      });
-    }
-  };
-
-  const handleSelectRetroPalette = (pal: ColorPalette) => {
-    if (onChangeTheme) onChangeTheme('monochrome');
-    if (onChangeCustomColor) onChangeCustomColor('');
-    if (onChangeMediaColorConfig) {
-      onChangeMediaColorConfig({
-        ...(mediaColorConfig || {
-          mode: 'fixed',
-          sampling: 'center',
-          bgPreset: 'dark',
-          customBg: '#0a0a0a',
-          saturation: 200,
-        }),
-        paletteMode: 'indexed',
-        activePaletteId: pal.id,
-      });
-    }
+    onChangeTonalMapping?.(next as TonalMappingType);
+    onChangeMediaColorConfig?.({ ...base, paletteMode: 'phosphor', mode: 'fixed' });
   };
 
   return (
     <div style={{ marginBottom: '14px' }}>
-      {/* Mode Switcher Tabs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginBottom: '10px' }}>
-        <button
-          type="button"
-          className={`chip-btn ${paletteMode === 'phosphor' ? 'active' : ''}`}
-          onClick={() => handleSelectPaletteMode('phosphor')}
-          style={{ fontSize: '9px', padding: '4px 2px' }}
+      <div className="control-row">
+        <span className="control-label">Color Mode</span>
+        <select
+          className="number-input"
+          style={{ width: '150px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
+          value={choice}
+          onChange={(e) => handleChoice(e.target.value)}
         >
-          SINGLE COLOR
-        </button>
-
-        <button
-          type="button"
-          className={`chip-btn ${paletteMode === 'indexed' ? 'active' : ''}`}
-          onClick={() => handleSelectPaletteMode('indexed')}
-          style={{ fontSize: '9px', padding: '4px 2px' }}
-        >
-          INDEXED
-        </button>
-
-        <button
-          type="button"
-          disabled={isRgbDisabled}
-          className={`chip-btn ${paletteMode === 'content' && !isRgbDisabled ? 'active' : ''}`}
-          onClick={() => !isRgbDisabled && handleSelectPaletteMode('content')}
-          style={{ fontSize: '9px', padding: '4px 2px' }}
-          title={isRgbDisabled ? 'Content Color mode requires Media or 3D Model source' : 'Source content true color'}
-        >
-          CONTENT COLOR
-        </button>
+          <optgroup label="Tonal Mapping">
+            <option value="1color">1 Color (Mono Tint)</option>
+            <option value="2color">2 Colors (Duotone)</option>
+            <option value="3color">3 Colors (Tritone)</option>
+          </optgroup>
+          {!isRgbDisabled && (
+            <optgroup label="Source">
+              <option value="content">Content Color (True RGB)</option>
+            </optgroup>
+          )}
+          {Object.entries(groupedPalettes).map(([cat, pals]) => (
+            <optgroup key={cat} label={CATEGORY_LABELS[cat] || cat}>
+              {pals.map((pal) => (
+                <option key={pal.id} value={'palette:' + pal.id}>
+                  {pal.name} ({pal.colors.length})
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
       </div>
 
       {/* 1. Single Color Mode (Phosphor Themes + Custom Color) */}
@@ -201,49 +224,27 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
         </div>
       )}
 
-      {/* 2. Indexed Retro Hardware Palettes */}
-      {paletteMode === 'indexed' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflowY: 'auto', paddingRight: '2px' }}>
-          {BUILTIN_PALETTES.map((pal) => {
-            const isSelected = activePaletteId === pal.id;
-            return (
-              <button
-                key={pal.id}
-                type="button"
-                className={`palette-row-btn ${isSelected ? 'active' : ''}`}
-                onClick={() => handleSelectRetroPalette(pal)}
-              >
-                <div>
-                  <div style={{ fontSize: '10px', fontWeight: isSelected ? 700 : 600, color: isSelected ? 'var(--accent)' : 'var(--text-primary)' }}>
-                    {pal.name}
-                  </div>
-                  <div style={{ fontSize: '8.5px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
-                    {pal.category} • {pal.colors.length} COLORS
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '2px' }}>
-                  {pal.colors.slice(0, 8).map((c, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        width: '8px',
-                        height: '14px',
-                        borderRadius: '1px',
-                        background: c,
-                        border: '1px solid rgba(0,0,0,0.3)',
-                      }}
-                    />
-                  ))}
-                  {pal.colors.length > 8 && (
-                    <span style={{ fontSize: '8px', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: '2px' }}>
-                      +{pal.colors.length - 8}
-                    </span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
+      {/* 2. Indexed palette preview — the palette itself is picked in the list above. */}
+      {paletteMode === 'indexed' && activePalette && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+          <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
+            {activePalette.colors.map((c, i) => (
+              <div
+                key={i}
+                title={c}
+                style={{
+                  width: '14px',
+                  height: '16px',
+                  borderRadius: '1px',
+                  background: c,
+                  border: '1px solid rgba(0,0,0,0.35)',
+                }}
+              />
+            ))}
+          </div>
+          <span style={{ fontSize: '8.5px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+            {activePalette.category} • {activePalette.colors.length} colors
+          </span>
         </div>
       )}
 
@@ -259,13 +260,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
               value={mediaColorConfig?.saturation ?? 200}
               onChange={(e) =>
                 onChangeMediaColorConfig({
-                  ...(mediaColorConfig || {
-                    mode: 'content',
-                    sampling: 'center',
-                    bgPreset: 'dark',
-                    customBg: '#0a0a0a',
-                    saturation: 200,
-                  }),
+                  ...(mediaColorConfig || FALLBACK_COLOR_CONFIG),
                   saturation: parseInt(e.target.value, 10) || 200,
                 })
               }
@@ -279,13 +274,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
               value={mediaColorConfig?.saturation ?? 200}
               onChange={(e) =>
                 onChangeMediaColorConfig({
-                  ...(mediaColorConfig || {
-                    mode: 'content',
-                    sampling: 'center',
-                    bgPreset: 'dark',
-                    customBg: '#0a0a0a',
-                    saturation: 200,
-                  }),
+                  ...(mediaColorConfig || FALLBACK_COLOR_CONFIG),
                   saturation: Math.max(0, Math.min(400, parseInt(e.target.value, 10) || 200)),
                 })
               }
@@ -296,4 +285,3 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
     </div>
   );
 };
-

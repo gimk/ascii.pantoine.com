@@ -1,4 +1,4 @@
-import { MediaPreset, MediaConfig, MediaViewConfig } from '../types/ascii';
+import { MediaConfig, MediaViewConfig } from '../types/ascii';
 
 export const DEFAULT_MEDIA_CONFIG: MediaConfig = {
   sourceType: 'file',
@@ -55,16 +55,3 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   background: 'black',
   alphaThreshold: 10,
 };
-
-export const DEFAULT_MEDIA_PRESET: MediaPreset = {
-  id: 'custom-media',
-  name: 'Custom Media',
-  description: 'Import 2D images or videos via clipboard paste (Cmd+V), file drop, or URL',
-  mediaConfig: { ...DEFAULT_MEDIA_CONFIG },
-  viewConfig: { ...DEFAULT_MEDIA_VIEW_CONFIG },
-  theme: 'green',
-};
-
-// Built-in presets cleared per user request
-export const MEDIA_PRESETS: MediaPreset[] = [];
-

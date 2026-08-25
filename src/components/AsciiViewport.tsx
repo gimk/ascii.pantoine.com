@@ -102,7 +102,10 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const preRef = useRef<HTMLPreElement>(null);
   const bloomPreRef = useRef<HTMLPreElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  
+  // 1:1 scratch buffer for pixel mode; blitted to the visible canvas so cells
+  // land on exact device pixels instead of fractional fillRect edges.
+  const pixelBufferCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
   
@@ -224,6 +227,75 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+
+      /*
+       * Pixel mode: rasterize one cell per pixel into a cols x rows ImageData,
+       * then blit that upscaled with smoothing off. Painting scaled fillRects
+       * instead would antialias every cell edge whenever zoom * dpr is not an
+       * integer (imageSmoothingEnabled does not apply to fillRect), and the
+       * regular dither grid resampled that way produces moire.
+       */
+      if (isPixelMode) {
+        // Snap the backing store to a whole number of device pixels per cell so
+        // every pixel comes out the same size instead of alternating 2px/3px.
+        const cellScale = Math.max(1, Math.round(currentZoom * dpr));
+        const snappedW = cols * cellScale;
+        const snappedH = rows * cellScale;
+        if (canvas.width !== snappedW || canvas.height !== snappedH) {
+          canvas.width = snappedW;
+          canvas.height = snappedH;
+        }
+
+        let buf = pixelBufferCanvasRef.current;
+        if (!buf) {
+          buf = document.createElement('canvas');
+          pixelBufferCanvasRef.current = buf;
+        }
+        if (buf.width !== cols || buf.height !== rows) {
+          buf.width = cols;
+          buf.height = rows;
+        }
+        const bctx = buf.getContext('2d');
+        if (!bctx) return;
+
+        const img = bctx.createImageData(cols, rows);
+        const data = img.data;
+        let px = 0;
+        let py = 0;
+        for (let i = 0; i < frameText.length; i++) {
+          const ch = frameText[i];
+          if (ch === '\n') {
+            py++;
+            px = 0;
+            continue;
+          }
+          if (px < cols && py < rows) {
+            const cell = py * cols + px;
+            const o = cell * 4;
+            // A space marks an alpha-cutout cell; leave it fully transparent.
+            if (ch !== ' ') {
+              const c = cell * 3;
+              data[o] = colors[c];
+              data[o + 1] = colors[c + 1];
+              data[o + 2] = colors[c + 2];
+              data[o + 3] = 255;
+            }
+            px++;
+          }
+        }
+        bctx.putImageData(img, 0, 0);
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (bgColor && bgColor !== 'transparent') {
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        ctx.drawImage(buf, 0, 0, cols, rows, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+        return;
+      }
 
       ctx.save();
       ctx.imageSmoothingEnabled = !isPixelMode;

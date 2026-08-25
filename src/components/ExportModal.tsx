@@ -43,6 +43,10 @@ import {
   MediaConfig,
   MediaViewConfig,
   MediaColorConfig,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  ImageAdjustConfig,
 } from '../types/ascii';
 
 interface ExportModalProps {
@@ -73,6 +77,10 @@ interface ExportModalProps {
   mediaViewConfig?: MediaViewConfig;
   mediaColorConfig?: MediaColorConfig;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
+  rasterMode?: RasterOutputMode;
+  ditherAlgorithm?: DitherAlgorithm;
+  toneConfig?: ToneMappingConfig;
+  adjustConfig?: ImageAdjustConfig;
 }
 
 export type ExportTab =
@@ -122,6 +130,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   mediaConfig,
   mediaViewConfig,
   mediaColorConfig,
+  rasterMode,
+  ditherAlgorithm,
+  toneConfig,
+  adjustConfig,
   mediaElement,
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
@@ -206,6 +218,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         mediaViewConfig,
         mediaColorConfig,
         mediaElement,
+        rasterMode,
+        ditherAlgorithm,
+        toneConfig,
+        adjustConfig,
       });
 
       if (imageUrl) URL.revokeObjectURL(imageUrl);
@@ -401,6 +417,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           mediaViewConfig,
           mediaColorConfig,
           mediaElement,
+          rasterMode,
+          ditherAlgorithm,
+          toneConfig,
+          adjustConfig,
         },
         (progress, frame, total) => {
           setRecordProgressGif(progress);
@@ -453,6 +473,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           mediaViewConfig,
           mediaColorConfig,
           mediaElement,
+          rasterMode,
+          ditherAlgorithm,
+          toneConfig,
+          adjustConfig,
         },
         (progress, frame, total) => {
           setRecordProgressVideo(progress);

@@ -1,0 +1,491 @@
+# Render Pipeline
+
+How a frame gets from a source — a maths function, an uploaded image, a 3D mesh — to
+pixels on screen or bytes in a file.
+
+The governing idea: **there is exactly one image-processing pipeline**
+(`processRasterFrame` in [`src/engine/rasterEngine.ts`](src/engine/rasterEngine.ts)).
+Every mode and every export path funnels through it. Modes differ only in how they
+produce the raw frame that goes in, and in how the result is painted afterwards.
+
+```
+                 ┌───────────────────┐
+  synth ────────►│                   │
+  media ────────►│  processRasterFrame├──► ProcessedRasterResult ──┬──► viewport
+  model ────────►│   6 stages        │                            ├──► image export
+                 └───────────────────┘                            ├──► GIF export
+                          ▲                                       └──► video export
+                    all state arrives as
+                    UnifiedPipelineOptions
+```
+
+---
+
+## 1. Sources
+
+### 1.1 Synth — `renderSynthFrameData` ([`renderer.ts`](src/engine/renderer.ts))
+
+No input file. Luminance is evaluated analytically per cell.
+
+1. Optional `prepareFn(time, cols, rows, sharedCtx)` runs once per frame for custom
+   presets that need shared setup.
+2. Particles/trails are rasterized first into two scratch buffers:
+   - `trailInfluenceBuffer` — additive luminance, radial falloff within 2.5 cells
+   - `trailCharBuffer` — a literal glyph per cell, the youngest trail point wins
+3. For each cell, either `customRenderFn(...)` (user JS) or
+   `evaluateParametricWave(...)` ([`math.ts`](src/engine/math.ts), 8 layered wave
+   generators) returns a value in `[-1, 1]`.
+4. Normalized: `(v + 1) * 0.5 + trailInfluence`, optional invert, clamped to `[0, 1]`.
+
+18 built-in charsets are defined in the same file, each ordered dark to light. Every
+glyph must share ASCII's advance width in the terminal font stack or the grid shears;
+Block Elements, Geometric Shapes and 6-dot Braille are safe, CJK and emoji are not.
+
+**Aspect handling.** Cell geometry is baked into the field here, not later:
+`aspectRatio = 1.0` in pixel mode, `MONOSPACE_CELL_ASPECT ≈ 0.6015` in ASCII mode,
+applied to `dx` before distance/angle are computed. A circle stays a circle in both.
+
+**Hands to the engine:** `luminance` (pre-filled `Float32Array`), an empty `rgba`,
+and `charOverrides` when trails are active. Because `luminance` is supplied, the
+engine skips its own luminance extraction — **synth has no RGBA data at all**, so any
+colour has to come from a palette or tonal mapping, never from the source. This is
+why Content Color is disabled in synth mode.
+
+### 1.2 Media — `renderAsciiMediaFrameData` ([`mediaRenderer.ts`](src/engine/mediaRenderer.ts))
+
+**Input files:** anything the browser can decode into an `<img>` or `<video>` — PNG,
+JPG, WebP, GIF, MP4, WebM. Also accepts an `HTMLCanvasElement`. Drag-drop, paste,
+file picker, or remote URL.
+
+1. A module-level offscreen canvas is resized to exactly `cols × rows` — **the
+   downsample to grid resolution happens in the browser's image scaler, not in our
+   code**. `willReadFrequently: true` is set.
+2. Background cleared (transparent, or white if `viewConfig.background === 'white'`).
+3. Fit maths: `contain` / `cover` / `original` / stretch, against a *virtual* canvas
+   of `cols × (rows / cellAspect)`. Then scale, offset, rotation, flips.
+4. `imageSmoothingEnabled` follows `viewConfig.resampling`
+   (`nearest` → off; `preserve-details` → `high`; otherwise `medium`).
+5. `ctx.scale(1, cellAspect)` squashes vertically so a monospace cell reads square.
+   `cellAspect` is `1.0` in pixel mode, `MONOSPACE_CELL_ASPECT` in ASCII mode.
+6. `getImageData(0, 0, cols, rows)` → RGBA.
+
+**Hands to the engine:** `rgba` only. No `luminance`, so the engine computes it.
+
+**Single source of truth:** media's adjustments live in `mediaViewConfig`, which
+*is* an `ImageAdjustConfig` (`MediaViewConfig extends ImageAdjustConfig`). The
+renderer forwards `...toPipelineAdjustments(viewConfig)`. `RenderMediaContext`
+deliberately has no `adjustConfig` field — an earlier version had both, and the
+empty one silently shadowed the real one, killing every effect and tonal control in
+media mode. Keeping only one field makes that unrepresentable.
+
+### 1.3 Model — `renderModelFrameData` ([`modelRenderer.ts`](src/engine/modelRenderer.ts))
+
+**Input files:** `.obj`, `.stl`, `.ply`, `.gltf`, `.glb` via
+[`modelLoader.ts`](src/engine/modelLoader.ts), plus built-in Khronos sample models.
+
+A singleton `HeadlessModelRenderer` owns an offscreen `THREE.WebGLRenderer` sized to
+`cols × rows`.
+
+1. Geometry is centred and normalized; a trackball rotation quaternion plus optional
+   wobble is applied.
+2. Material selected by `viewConfig.shadingMode`:
+
+   | mode | material | what the RGBA means |
+   |---|---|---|
+   | `shaded` / `outline` | `MeshPhongMaterial` | lit surface |
+   | `wireframe` | basic, `wireframe: true` | edges only |
+   | `depth` | `MeshDepthMaterial` | distance from camera |
+   | `normals` | `MeshNormalMaterial` | surface normal as RGB — genuinely chromatic |
+   | `points` | `THREE.Points` | vertex cloud |
+
+3. `renderer.render(...)`, then `gl.readPixels(...)` into a scratch buffer.
+4. **Vertical flip.** WebGL reads bottom-up; the loop copies row `rows-1-y` → `y`.
+   Skipping this is the classic upside-down-model bug.
+
+**Hands to the engine:** `rgba`.
+
+**Precedence.** The model renderer sets `contrast` / `brightness` / `invert` from
+`viewConfig` *before* spreading `...toPipelineAdjustments(ctx.adjustConfig)`, so the
+shared adjust config wins. Then `...shadingEdges` is spread last and wins over
+everything, because outline shading and edge weight are structural to the shading
+mode, not a post-effect.
+
+---
+
+## 2. The unified pipeline
+
+`processRasterFrame(rawFrame, options) → ProcessedRasterResult`
+
+### Buffers
+
+All module-level and reallocated only when `cols × rows` changes — a steady-state
+frame allocates nothing.
+
+| buffer | size | holds |
+|---|---|---|
+| `lumBuffer` | `N` | working luminance, mutated in place by every step |
+| `srcLumBuffer` | `N` | snapshot of luminance *before* any filter (see §2.4) |
+| `blurBuffer`, `tempBlurBuffer` | `N` | separable box-blur scratch |
+| `edgeBuffer` | `N` | Sobel magnitudes |
+| `colorsBuffer` | `N × 3` | output RGB |
+| `paletteWorkBuffer` | `N × 3` | palette-space error diffusion accumulator |
+| `paletteIndexBuffer` | `N` | chosen palette index per cell |
+| `cachedLines`, `lineBuffer` | `rows`, `cols` | string assembly |
+
+**The `-1` sentinel.** Throughout the pipeline, `lumBuffer[i] < 0` means *this cell is
+transparent*. Every loop must skip those cells rather than treat them as black. Valid
+opaque values are `[0, 1]`.
+
+### Step 1 — Channel mixing and luminance extraction
+
+If the source supplied `luminance` (synth), it is copied verbatim and steps 1's RGBA
+maths is skipped entirely.
+
+Otherwise, per cell:
+- `alpha <= alphaThreshold` (default 10) → `lumBuffer[i] = -1`, done.
+- Otherwise Rec. 709 weights, scaled by the tone config's channel mixer and
+  renormalized so a neutral mixer is a no-op:
+  ```
+  lum = (0.2126·r·mixR + 0.7152·g·mixG + 0.0722·b·mixB) / (255 · normWeight)
+  ```
+
+**`srcLumBuffer.set(lumBuffer)` happens here.** This snapshot is the pipeline's only
+record of what the source looked like, and §2.4 depends on it.
+
+> **State:** `lumBuffer` = raw scene luminance in `[0,1]`, or `-1`.
+
+### Step 2 — Spatial filters
+
+Order is fixed: **blur/denoise → sharpen → edges**.
+
+- **Blur + denoise** are summed into one radius (`radius = round(total / 2)`, capped
+  at 10) and run through a separable box blur. The blur is alpha-aware: it averages
+  only over cells with `val >= 0`, so a silhouette does not bleed into transparency.
+- **Sharpen** is unsharp masking against a second box blur:
+  `orig + strength · edgeFade · (orig - blurred)`. Two guards matter:
+  - cells on the outermost perimeter, or adjacent to a transparent cell, are skipped
+    entirely — sharpening across a silhouette produces a bright halo
+  - `edgeFade = min(1, minEdgeDistance / radius)` tapers the effect near borders to
+    stop ringing
+- **Sobel edges** compute a 3×3 gradient magnitude, subtract the threshold, scale by
+  strength, and **add** into `lumBuffer` (edges brighten, they don't replace).
+
+> **State:** `lumBuffer` = filtered luminance.
+
+### Step 3 — Tone
+
+One pass, per cell, in this exact order:
+
+1. **Tone curve** — monotone cubic spline through `curvePoints`, baked to a 256-entry
+   LUT once per frame
+2. **Levels** — black/white clip plus a gamma derived from the midtone position
+3. **Contrast / brightness** — `(v - 0.5)·tan((c+100)·π/400) + 0.5 + b`
+4. **Shadows / highlights** — split at 0.5, each half pushed independently
+5. **Midtones** — `pow(v, 2^(-m/50))`
+6. **Noise** — uniform, amplitude `noise/200`
+7. **Posterize** — `2^bits - 1` steps, when `posterizeBits` is set
+8. **Invert**
+
+> **State:** `lumBuffer` = fully graded luminance. This is the last step that sees
+> continuous tone in the general case.
+
+### Step 3.5 — Quantization depth and dithering
+
+**Depth resolution.** `ditherLevels` is how many tones the dither is allowed to
+resolve. The output's natural depth is the *default*, never a ceiling:
+
+```
+auto = ASCII output          → density.length      (one level per glyph)
+       indexed palette       → palette.colors.length
+       2color / 3color       → 2 / 3
+       otherwise (pixel)     → 256                 (continuous)
+
+ditherLevels = max(2, explicit colorLevels || auto)
+```
+
+`colorLevels` is user-facing as **Quantize Levels** (`0` = auto). Setting it below the
+natural depth is a real look — four glyphs out of a ten-character ramp, four colours
+out of a sixteen-colour palette. Above it, it saturates harmlessly.
+
+**Who does the quantizing.** Palettes are handled specially:
+
+```
+paletteOwnsQuantization =
+      pixel mode
+  &&  an indexed palette is active
+  &&  no explicit colorLevels
+  &&  the algorithm's family is 'error-diffusion'
+```
+
+When true, **this step does nothing** — the tone stays at full precision and the
+palette quantizes it in step 4. Rationale in §2.4.
+
+When false, `applyDitherAlgorithm` runs one of 44 algorithms
+([`ditherAlgorithms.ts`](src/engine/ditherAlgorithms.ts), families: error-diffusion,
+ordered, blue-noise, algorithmic, modulation). With `none` plus an explicit level
+count, a plain posterize runs instead — "none" means no *error distribution*, not
+"ignore the requested depth".
+
+**Clamp and sentinel restore.** Error diffusion pays accumulated error back onto
+cells and can overshoot outside `[0, 1]`. An undershoot below zero would collide with
+the transparency sentinel and punch holes through opaque pixels. So immediately after
+dithering:
+
+```
+lumBuffer[i] = srcLumBuffer[i] < 0 ? -1 : clamp(lumBuffer[i], 0, 1)
+```
+
+`srcLumBuffer` is the only authority on what was actually cut out.
+
+> **State:** `lumBuffer` = quantized to `ditherLevels`, or still continuous if the
+> palette owns quantization. Sentinel intact.
+
+### Step 4 — Colour
+
+Exactly one branch runs, chosen by `paletteMode` (from `MediaColorConfig`) and
+`tonalMapping` (from `ImageAdjustConfig`). The UI presents these as **one**
+dropdown — see §4.
+
+#### The grade ratio
+
+Colour modes that sample source RGB need the grading applied to them, or every
+filter, curve, level and dither would be invisible in those modes (they only ever
+moved `lumBuffer`, which those modes never read). So:
+
+```js
+gradeRatio(i) = lumBuffer[i] / srcLumBuffer[i]
+```
+
+Sampled RGB is multiplied by this, which preserves hue while applying the full tonal
+pipeline. Near-black source cells fall back to an additive lift to avoid dividing by
+zero.
+
+#### `content` — true source colour
+
+Source RGB × grade ratio, then saturation applied around the Rec. 601 grey point,
+then rounded and clamped once at the end.
+
+#### `indexed` — a built-in palette
+
+First, is the *palette* capable of representing hue?
+
+```js
+paletteIsMonochrome(q)   // chroma-weighted circular mean resultant length of hue
+                         // 1.0 = one hue; threshold 0.93
+```
+
+Measuring spread in the Lab a/b plane directly does **not** work — it confuses chroma
+variation with hue variation and labels Game Boy's dark-green-to-yellow-green ramp as
+chromatic. Under the circular metric every single-hue ramp scores ≥ 0.95 and the
+nearest genuine two-hue palette scores 0.86.
+
+A single-hue palette is forced down the tone path regardless of the source, because
+scoring a colour photo on how near its hue is to the one available hue is noise.
+
+Then, is the *source* chromatic? Sampled ~40 pixels, mean `max(|r-g|, |g-b|, |r-b|)`
+> 10.
+
+| palette | source | path |
+|---|---|---|
+| multi-hue | chromatic | RGB error diffusion against the palette (CIELAB ΔE match) |
+| multi-hue | achromatic | tone error diffusion against the palette's own luminances |
+| single-hue | either | tone error diffusion |
+
+**Why palette-space diffusion.** A palette's tones are not evenly spaced. Game Boy
+Classic sits at `0.153 / 0.304 / 0.566 / 0.621`. Quantizing tone to four *even* steps
+and then indexing the ramp gives the top two colours a third of the range each when
+they are 0.055 apart — the shadows stretch, the highlights collapse, and the whole
+image renders dark. Diffusing against the palette's real positions fixes the tonal
+reach and lets a four-colour ramp reproduce a smooth gradient.
+
+Both variants are serpentine Floyd–Steinberg (`7/16, 3/16, 5/16, 1/16`, mirrored on
+right-to-left rows), and both **clamp the accumulator, not just the lookup**. A
+palette that does not span colour space — Game Boy is four greens — can never absorb
+red and blue error, so it compounds until every pixel pins to one extreme and the
+image collapses to a single colour.
+
+With `dither = none`, the same code runs with error propagation switched off: nearest
+palette entry, no carry.
+
+#### `2color` / `3color` — user duotone/tritone
+
+Hard thresholds at 0.5, or 0.33/0.66, into the highlight/midtone/shadow colours.
+Transparent cells take the shadow colour rather than the sentinel, since these ramps
+are opaque by definition.
+
+#### phosphor / `1color`
+
+No branch runs. `colorsOut` stays `null` and colour is applied downstream by CSS
+(`--accent`, gradients) on the `<pre>` element.
+
+> **State:** `colorsBuffer` filled, or `colorsOut === null` for the mono path.
+
+### Step 5 — Glyphs
+
+If pixel mode reached here with no colour buffer, luminance is expanded to grey RGB
+so the viewport always has something to paint.
+
+Per cell:
+- `lumBuffer[i] < 0` → `' '`
+- **pixel mode** → always `'█'`. Tone lives in the colour buffer, not the glyph.
+  Thresholding here would drop dark cells and leave holes in the shadows.
+- **ASCII mode** → `density[floor(val · density.length)]`, clamped
+- `charOverrides[i]` (synth trails) wins over both
+
+**Invariant:** in pixel mode a space means *transparent* and nothing else. The
+viewport relies on this.
+
+### Result
+
+```ts
+{ text, colors, luminance, cols, rows, rasterMode, bgColor, isColored }
+```
+
+`luminance` is the live `lumBuffer` — not a copy. Consumers must read it before the
+next frame overwrites it.
+
+---
+
+## 3. Output
+
+### 3.1 Viewport ([`AsciiViewport.tsx`](src/components/AsciiViewport.tsx))
+
+Two mutually exclusive paths, chosen by `isColoredView` (`result.isColored`):
+
+**Mono → DOM.** `text` is written to a `<pre>`, CSS-scaled by zoom. Colour comes from
+CSS custom properties, which is what makes phosphor tints, gradients, glow, bloom,
+scanlines and vignette possible. An optional second `<pre>` sits underneath as a
+blurred bloom layer.
+
+**Coloured → canvas.** `drawCanvas` has two branches:
+
+*ASCII:* backing store `unscaledW × zoom × dpr`, `ctx.scale(zoom·dpr)`, then
+`fillText` per cell at `MONOSPACE_CELL_WIDTH × MONOSPACE_CELL_HEIGHT`
+(`6.015 × 10.0`). Spaces are skipped.
+
+*Pixel:* rasterizes into a `cols × rows` `ImageData` on an offscreen buffer canvas,
+then blits it up with `imageSmoothingEnabled = false`. The visible canvas is snapped
+to `cols × round(zoom · dpr)` so every cell is a whole number of device pixels.
+
+Both details are load-bearing:
+- `imageSmoothingEnabled` only affects `drawImage`, **not** `fillRect`. Painting
+  scaled `fillRect`s antialiases every cell edge whenever `zoom · dpr` is fractional.
+- Without integer snapping, nearest-neighbour still alternates 2px/3px cells, which
+  is its own shimmer.
+
+Together these were the cause of the moiré on flat backgrounds.
+
+### 3.2 Still image ([`imageExporter.ts`](src/engine/imageExporter.ts))
+
+Formats: `png`, `jpg`, `svg`.
+
+Re-renders the frame at export resolution through the *same* mode renderer, so
+`rasterMode`, `ditherAlgorithm`, `toneConfig` and `adjustConfig` must all be
+forwarded — an export path that skips one silently produces a different image than
+the viewport.
+
+- **SVG** — ASCII emits `<text>` runs; pixel emits one `<rect>` per cell via
+  `exportPixelRasterToSvg`.
+- **PNG/JPG** — ASCII draws text to a canvas; pixel goes through
+  `drawPixelRasterToCanvas`. JPG forces an opaque background.
+
+`pixelRasterRenderer.ts` skips a cell only on `lum < 0`. A brightness threshold there
+would punch holes through the shadows, the same class of bug as step 5.
+
+### 3.3 Animation ([`gif.ts`](src/engine/gif.ts), [`video.ts`](src/engine/video.ts))
+
+Loop over frames, dispatch to the mode renderer, funnel each result through a common
+`ExportFrameResult = Pick<ProcessedRasterResult, 'text'|'colors'|'bgColor'|'isColored'>`,
+draw, encode. Same forwarding requirement as stills.
+
+---
+
+## 4. State
+
+### Per-mode isolation
+
+`renderSettingsByMode: Record<AppMode, RenderSettings>` — synth, media and model each
+keep their own copy of essentially everything: resolution, charset, raster mode,
+dither algorithm, tone config, `adjustConfig`, phosphor theme, custom tint, gradient,
+CRT config and `mediaColorConfig` (palette mode, active palette, saturation).
+Persisted to `localStorage` under one key. Switching modes swaps the whole set, so a
+palette chosen in media does not follow you into synth.
+
+`mediaViewConfig` sits outside that record as its own `useState`. It is media's
+store in practice, since nothing else reads it, but it is not keyed by mode and it is
+**not** persisted to `localStorage` — it only survives via shared links.
+
+Media is also the exception to the `adjustConfig` rule: its grading lives in
+`mediaViewConfig`, not in `RenderSettings.adjustConfig`. See §1.2.
+
+### The single colour selector
+
+Colour output is backed by two fields in two different stores:
+
+| field | store | covers |
+|---|---|---|
+| `MediaColorConfig.paletteMode` | `renderSettingsByMode[mode]` | `phosphor` / `indexed` / `content` |
+| `ImageAdjustConfig.tonalMapping` | `adjustConfig`, or `mediaViewConfig` in media | `1color` / `2color` / `3color` |
+
+The engine treats them as one if/else chain, so they were always mutually exclusive —
+but the UI used to expose them as two independent controls, which meant picking a
+palette silently disabled tonal mapping and vice versa.
+[`PaletteControls`](src/components/PaletteControls.tsx) now renders **one** dropdown
+that derives its value from both and writes both:
+
+```
+'content'          → paletteMode='content', mode='content', tonalMapping='1color'
+'palette:<id>'     → paletteMode='indexed', activePaletteId=<id>, tonalMapping='1color'
+'1|2|3color'       → paletteMode='phosphor', tonalMapping=<value>
+```
+
+Selecting a palette or content also clears the phosphor tint, which would otherwise
+re-colour a result that already carries its own colour.
+
+The old hardcoded `gameboy` / `cyberpunk` / `amber` tonal presets were three-stop
+ramps duplicating built-in palettes. They are gone; `LEGACY_TONAL_PRESET_PALETTES`
+migrates persisted settings and shared links onto the equivalent palette.
+
+---
+
+## 5. Invariants
+
+Things that will silently break rendering if violated.
+
+1. **`lumBuffer[i] < 0` means transparent, everywhere.** Any loop that treats it as a
+   number instead of a sentinel produces holes or black speckle. Dithering must clamp
+   opaque cells back into `[0,1]` afterwards.
+2. **In pixel mode a space means transparent and nothing else.** The viewport's
+   `ch !== ' '` guard depends on it.
+3. **`srcLumBuffer` is the only pre-filter record.** The grade ratio and the sentinel
+   restore both read it. It must be snapshotted before step 2 and never written
+   afterwards.
+4. **Export paths must forward all four render settings.** Missing one produces an
+   export that differs from what the user sees.
+5. **`ProcessedRasterResult.luminance` is live, not a copy.**
+6. **Quantization depth must track real output depth.** Dithering at 256 levels is
+   invisible by construction; dithering a photo at charset depth turns flat areas
+   into texture.
+7. **Cell aspect is applied at the source, not at paint time** — `1.0` for pixel,
+   `0.6015` for ASCII.
+8. **Media grading has exactly one home** (`mediaViewConfig`). A second `adjustConfig`
+   field on the media context will shadow it with neutral defaults.
+
+---
+
+## 6. Known gaps
+
+- Only the **error-diffusion** family gets palette-space quantization. Ordered,
+  blue-noise, algorithmic and modulation masks still quantize in tone space and then
+  index the ramp, so they retain the uneven-spacing artefact described in §2.4. The
+  correct treatment for ordered masks is a threshold perturbation before palette
+  matching, which needs the mask value exposed from `applyDitherAlgorithm`.
+- `2color` / `3color` ignore Quantize Levels in effect — the hard threshold pins the
+  output to 2 or 3 colours regardless. The setting still shifts the dither pattern,
+  so it is not inert, just weak.
+- `three` is imported eagerly (~566 kB, ~142 kB gzipped) for all users including
+  those who never open model mode.
+- `App.tsx` is ~2500 lines and owns all orchestration.
+- Halftone geometry (dot/diamond/square screens, CMYK separation, SVG dot output) was
+  removed with the dead output modes. Recoverable from git history:
+  `git show <sha>:src/engine/halftoneRenderer.ts`.

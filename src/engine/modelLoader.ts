@@ -10,26 +10,6 @@ import { BuiltinModelId } from '../types/ascii';
 
 const geometryCache = new Map<string, THREE.BufferGeometry>();
 
-/**
- * Fetches an OBJ file from public path and parses it into normalized BufferGeometry
- */
-export async function fetchPresetObjGeometry(path: string): Promise<THREE.BufferGeometry> {
-  const cached = geometryCache.get(path);
-  if (cached) return cached.clone();
-
-  const response = await fetch(path);
-  if (!response.ok) {
-    throw new Error(`Failed to load preset 3D model: ${path} (status: ${response.status})`);
-  }
-  const text = await response.text();
-  const loader = new OBJLoader();
-  const obj = loader.parse(text);
-  const geo = extractGeometryFromObject(obj);
-  normalizeGeometryBounds(geo);
-  geometryCache.set(path, geo);
-  return geo.clone();
-}
-
 export function getBuiltinGeometry(_id?: BuiltinModelId): THREE.BufferGeometry {
   const geo = new THREE.TorusKnotGeometry(0.85, 0.28, 128, 24, 2, 3);
   normalizeGeometryBounds(geo);

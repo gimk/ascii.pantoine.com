@@ -11,14 +11,14 @@ import {
   DitherAlgorithm,
   ToneMappingConfig,
   MediaColorConfig,
-  HalftoneConfig,
   TonalMappingType,
+  ImageAdjustConfig,
 } from '../types/ascii';
 import {
   BUILTIN_PALETTES,
   PaletteQuantizer,
 } from './palettes';
-import { applyDitherAlgorithm } from './ditherAlgorithms';
+import { applyDitherAlgorithm, DITHER_ALGORITHMS } from './ditherAlgorithms';
 
 export interface RawFrameBuffer {
   width: number;
@@ -37,7 +37,6 @@ export interface UnifiedPipelineOptions {
   density: string;
   toneConfig?: ToneMappingConfig;
   colorConfig?: MediaColorConfig;
-  halftoneConfig?: HalftoneConfig;
   noise?: number;
   denoise?: number;
   contrast?: number;
@@ -54,11 +53,178 @@ export interface UnifiedPipelineOptions {
   highlights?: number;
   midtones?: number;
   alphaThreshold?: number;
-  saturation?: number;
   tonalMapping?: TonalMappingType;
   highlightColor?: string;
   midtoneColor?: string;
   shadowColor?: string;
+  colorLevels?: number;
+}
+
+/**
+ * Serpentine Floyd-Steinberg over an arbitrary set of quantization targets.
+ *
+ * Unlike the tone-space dither this snaps to wherever the palette's colours
+ * actually sit, so the error carried into neighbouring cells is the real
+ * difference between what was asked for and what the palette could give. That
+ * is what lets a four-colour ramp reproduce a smooth gradient, and what stops
+ * two near-identical palette entries from each claiming an equal slice of the
+ * tonal range.
+ */
+function diffusePaletteTone(
+  lum: Float32Array,
+  cols: number,
+  rows: number,
+  paletteLum: number[],
+  work: Float32Array,
+  outIndex: Int32Array,
+  diffuse: boolean
+): void {
+  const n = cols * rows;
+  for (let i = 0; i < n; i++) work[i] = lum[i];
+
+  for (let y = 0; y < rows; y++) {
+    const leftToRight = (y & 1) === 0;
+    const rowOff = y * cols;
+    for (let k = 0; k < cols; k++) {
+      const x = leftToRight ? k : cols - 1 - k;
+      const i = rowOff + x;
+      if (lum[i] < 0) {
+        outIndex[i] = -1;
+        continue;
+      }
+      const want = work[i];
+      let best = 0;
+      let bestDist = Infinity;
+      for (let c = 0; c < paletteLum.length; c++) {
+        const d = Math.abs(paletteLum[c] - want);
+        if (d < bestDist) {
+          bestDist = d;
+          best = c;
+        }
+      }
+      outIndex[i] = best;
+      if (!diffuse) continue;
+      const err = want - paletteLum[best];
+      const fwd = leftToRight ? 1 : -1;
+      const spread = (dx: number, dy: number, w: number) => {
+        const nx = x + dx * fwd;
+        const ny = y + dy;
+        if (nx < 0 || nx >= cols || ny >= rows) return;
+        const ni = ny * cols + nx;
+        if (lum[ni] < 0) return;
+        work[ni] = Math.max(0, Math.min(1, work[ni] + err * w));
+      };
+      spread(1, 0, 7 / 16);
+      spread(-1, 1, 3 / 16);
+      spread(0, 1, 5 / 16);
+      spread(1, 1, 1 / 16);
+    }
+  }
+}
+
+/**
+ * Same serpentine diffusion, carried in RGB against the palette's own colours.
+ * Used for chromatic sources, where nearest-colour matching alone posterizes a
+ * photo into whichever handful of entries its hues happen to land nearest.
+ */
+function diffusePaletteRgb(
+  rgb: Float32Array,
+  lum: Float32Array,
+  cols: number,
+  rows: number,
+  quantizer: PaletteQuantizer,
+  out: Uint8ClampedArray,
+  diffuse: boolean
+): void {
+  for (let y = 0; y < rows; y++) {
+    const leftToRight = (y & 1) === 0;
+    const rowOff = y * cols;
+    for (let k = 0; k < cols; k++) {
+      const x = leftToRight ? k : cols - 1 - k;
+      const i = rowOff + x;
+      if (lum[i] < 0) {
+        out[i * 3] = 0;
+        out[i * 3 + 1] = 0;
+        out[i * 3 + 2] = 0;
+        continue;
+      }
+      const o = i * 3;
+      const wr = rgb[o];
+      const wg = rgb[o + 1];
+      const wb = rgb[o + 2];
+      const near = quantizer.findClosestRgb(
+        Math.max(0, Math.min(255, wr)),
+        Math.max(0, Math.min(255, wg)),
+        Math.max(0, Math.min(255, wb))
+      );
+      out[o] = near.r;
+      out[o + 1] = near.g;
+      out[o + 2] = near.b;
+
+      if (!diffuse) continue;
+      const er = wr - near.r;
+      const eg = wg - near.g;
+      const eb = wb - near.b;
+      const fwd = leftToRight ? 1 : -1;
+      const spread = (dx: number, dy: number, w: number) => {
+        const nx = x + dx * fwd;
+        const ny = y + dy;
+        if (nx < 0 || nx >= cols || ny >= rows) return;
+        const ni = ny * cols + nx;
+        if (lum[ni] < 0) return;
+        /*
+         * Clamp the accumulator, not just the lookup. A palette that does not
+         * span the colour space — Game Boy is four greens — can never absorb
+         * the red and blue error, so it compounds cell after cell until every
+         * pixel is pinned to one extreme and the image collapses to a single
+         * colour. Bounding the carried value costs a little accuracy on
+         * saturated sources and keeps the diffusion stable on all of them.
+         */
+        const no = ni * 3;
+        rgb[no] = Math.max(0, Math.min(255, rgb[no] + er * w));
+        rgb[no + 1] = Math.max(0, Math.min(255, rgb[no + 1] + eg * w));
+        rgb[no + 2] = Math.max(0, Math.min(255, rgb[no + 2] + eb * w));
+      };
+      spread(1, 0, 7 / 16);
+      spread(-1, 1, 3 / 16);
+      spread(0, 1, 5 / 16);
+      spread(1, 1, 1 / 16);
+    }
+  }
+}
+
+/**
+ * Flattens an ImageAdjustConfig into the pipeline option fields the engine
+ * reads. Every renderer routes its adjustments through here so synth, media
+ * and model frames are graded identically.
+ */
+export function toPipelineAdjustments(
+  adjust?: ImageAdjustConfig
+): Partial<UnifiedPipelineOptions> {
+  if (!adjust) return {};
+  return {
+    invert: adjust.invert,
+    contrast: adjust.contrast,
+    brightness: adjust.brightness,
+    blur: adjust.blur,
+    denoise: adjust.denoise,
+    noise: adjust.noise,
+    sharpenStrength: adjust.sharpenStrength,
+    sharpenRadius: adjust.sharpenRadius,
+    edgeDetection: adjust.edgeDetection,
+    edgeThreshold: adjust.edgeThreshold,
+    edgeStrength: adjust.edgeStrength,
+    curvePoints: adjust.curvePoints,
+    shadows: adjust.shadows,
+    highlights: adjust.highlights,
+    midtones: adjust.midtones,
+    alphaThreshold: adjust.alphaThreshold,
+    tonalMapping: adjust.tonalMapping,
+    highlightColor: adjust.highlightColor,
+    midtoneColor: adjust.midtoneColor,
+    shadowColor: adjust.shadowColor,
+    colorLevels: adjust.colorLevels,
+  };
 }
 
 export interface ProcessedRasterResult {
@@ -82,6 +248,14 @@ let lumBuffer = new Float32Array(0);
 let blurBuffer = new Float32Array(0);
 let tempBlurBuffer = new Float32Array(0);
 let edgeBuffer = new Float32Array(0);
+// Luminance as it came off the source, before any filter or grading. Colour
+// modes that sample the source RGB use it to recover how much the pipeline
+// darkened or lifted each cell.
+let srcLumBuffer = new Float32Array(0);
+// Working buffer for palette-space error diffusion; holds 1 tone or 3 RGB
+// channels per cell depending on which branch is running.
+let paletteWorkBuffer = new Float32Array(0);
+let paletteIndexBuffer = new Int32Array(0);
 let colorsBuffer = new Uint8ClampedArray(0);
 let cachedLines: string[] = [];
 let lineBuffer: string[] = [];
@@ -89,6 +263,44 @@ let lineBuffer: string[] = [];
 // Palette quantizer cache
 let cachedPaletteId = '';
 let activeQuantizer: PaletteQuantizer | null = null;
+let cachedPaletteLum: number[] = [];
+let cachedPaletteLumId = '';
+let cachedPaletteIsMonochrome = false;
+
+/**
+ * Whether a palette carries a hue range, or is one hue at several lightnesses
+ * (Game Boy's greens, CRT amber, Nord's blues, bronze).
+ *
+ * A single-hue palette cannot represent hue at all, so matching a colour
+ * source against it in full colour space scores every pixel on how near its
+ * hue is to the one hue available — which is noise, not information. Such a
+ * palette has to be driven as a tone ramp whatever the source looks like.
+ *
+ * Measured as the chroma-weighted circular mean resultant length of the hue
+ * angles: 1.0 is a single hue, 0 is hues cancelling out around the wheel.
+ * Neutral entries are skipped because their hue angle is meaningless. An
+ * earlier version measured spread in the a/b plane directly, which confuses
+ * chroma variation with hue variation and mislabelled Game Boy's dark-green to
+ * yellow-green ramp as chromatic. Real palettes separate cleanly under this
+ * metric: every single-hue ramp scores above 0.95, and the nearest two-hue
+ * palette (Riso pink + cornflower) scores 0.86.
+ */
+function paletteIsMonochrome(quantizer: PaletteQuantizer): boolean {
+  let sumX = 0;
+  let sumY = 0;
+  let sumChroma = 0;
+  for (const lab of quantizer.labColors) {
+    const chroma = Math.hypot(lab.a, lab.b);
+    if (chroma < 6) continue;
+    const hue = Math.atan2(lab.b, lab.a);
+    sumX += Math.cos(hue) * chroma;
+    sumY += Math.sin(hue) * chroma;
+    sumChroma += chroma;
+  }
+  // An all-neutral palette is a pure grey ramp.
+  if (sumChroma === 0) return true;
+  return Math.hypot(sumX, sumY) / sumChroma >= 0.93;
+}
 
 function ensureBufferCapacity(totalCells: number, cols: number, rows: number) {
   if (lumBuffer.length !== totalCells) {
@@ -96,6 +308,9 @@ function ensureBufferCapacity(totalCells: number, cols: number, rows: number) {
     blurBuffer = new Float32Array(totalCells);
     tempBlurBuffer = new Float32Array(totalCells);
     edgeBuffer = new Float32Array(totalCells);
+    srcLumBuffer = new Float32Array(totalCells);
+    paletteWorkBuffer = new Float32Array(totalCells * 3);
+    paletteIndexBuffer = new Int32Array(totalCells);
     colorsBuffer = new Uint8ClampedArray(totalCells * 3);
   }
   if (cachedCols !== cols || cachedRows !== rows) {
@@ -320,6 +535,8 @@ export function processRasterFrame(
     lumBuffer[i] = Math.max(0, Math.min(1, lum));
   }
 
+  srcLumBuffer.set(lumBuffer);
+
   // -------------------------------------------------------------------------
   // Step 2: Spatial Filters (Blur, Denoise, Sharpen, Sobel Edges)
   // -------------------------------------------------------------------------
@@ -479,31 +696,141 @@ export function processRasterFrame(
   // Step 3.5: Dithering & Error Diffusion Execution
   // -------------------------------------------------------------------------
   const densityLength = density.length;
-  const ditherAlgo = options.ditherAlgorithm || 'floyd-steinberg';
-  if (ditherAlgo && ditherAlgo !== 'none') {
-    applyDitherAlgorithm(lumBuffer, lumBuffer, cols, rows, ditherAlgo, densityLength);
+
+  const paletteMode = colorCfg?.paletteMode || (colorCfg?.mode === 'content' ? 'content' : 'phosphor');
+  const activePalette =
+    paletteMode === 'indexed'
+      ? BUILTIN_PALETTES.find((p) => p.id === (colorCfg?.activePaletteId || 'gameboy-classic'))
+      : undefined;
+
+  /*
+   * Quantization depth, i.e. how many tones the dither pass is allowed to
+   * resolve. Dithering is only visible when the depth is actually reduced, so
+   * this must track the real output depth rather than any one proxy for it:
+   *
+   *   - ASCII modes: one level per glyph, so the charset length.
+   *   - Indexed palette: the palette's colour count.
+   *   - Duotone / tritone: two or three stops.
+   *   - Anything else in pixel mode: continuous, so full 8-bit.
+   *
+   * colorLevels overrides that. The output depth is only ever the DEFAULT,
+   * never a constraint: asking for four tones out of a sixteen-colour palette,
+   * or four glyphs out of a ten-character ramp, is a real and reachable look.
+   * Anything above the natural depth simply saturates.
+   */
+  const tonal = options.tonalMapping || '1color';
+  const isPixelOut = (options.rasterMode || 'ascii') === 'pixel';
+
+  let autoLevels: number;
+  if (!isPixelOut) {
+    autoLevels = densityLength;
+  } else if (activePalette) {
+    autoLevels = activePalette.colors.length;
+  } else if (tonal === '2color') {
+    autoLevels = 2;
+  } else if (tonal === '3color') {
+    autoLevels = 3;
+  } else {
+    autoLevels = 256;
   }
+
+  const explicitLevels =
+    options.colorLevels && options.colorLevels >= 2
+      ? Math.min(256, Math.round(options.colorLevels))
+      : 0;
+  const ditherLevels = Math.max(2, explicitLevels || autoLevels);
+
+  const ditherAlgo = options.ditherAlgorithm || 'floyd-steinberg';
+
+  /*
+   * A palette's tones are not evenly spaced. Game Boy Classic sits at 0.15 /
+   * 0.30 / 0.57 / 0.62, so quantizing the tone to four even steps and then
+   * indexing the ramp stretches the shadows and collapses the highlights —
+   * the top two colours are 0.06 apart but get a third of the range each.
+   *
+   * When the palette is doing the quantizing we therefore leave the tone at
+   * full precision here and diffuse the error against the palette's own
+   * colours in step 4 instead. Only the error-diffusion family can carry error
+   * that way; ordered and stochastic masks still quantize in tone space, and
+   * an explicit colorLevels means the user asked for even steps on purpose.
+   */
+  const ditherFamily = DITHER_ALGORITHMS.find((a) => a.id === ditherAlgo)?.family;
+  const paletteOwnsQuantization =
+    isPixelOut && !!activePalette && !explicitLevels && ditherFamily === 'error-diffusion';
+
+  if (!paletteOwnsQuantization && ditherAlgo && ditherAlgo !== 'none') {
+    applyDitherAlgorithm(lumBuffer, lumBuffer, cols, rows, ditherAlgo, ditherLevels);
+  } else if (explicitLevels && !paletteOwnsQuantization) {
+    // 'None' means no error distribution, not 'ignore the requested depth' —
+    // posterize so the levels control still reads as a depth reduction and the
+    // algorithm dropdown reads as how that reduction is distributed.
+    const step = 1 / (ditherLevels - 1);
+    for (let i = 0; i < totalCells; i++) {
+      const v = lumBuffer[i];
+      if (v < 0) continue;
+      lumBuffer[i] = Math.min(1, Math.max(0, Math.round(v / step) * step));
+    }
+  }
+
+  /*
+   * Error diffusion can undershoot past 0 or overshoot past 1 on the cells it
+   * pays the error back on. Negative luminance is the transparency sentinel
+   * downstream, so an undershoot would punch a hole through an opaque cell —
+   * a handful of stray transparent pixels scattered through any dithered
+   * image. Clamp opaque cells back into range and restore the sentinel from
+   * the pre-filter snapshot, which is the only authority on what was cut out.
+   */
+  for (let i = 0; i < totalCells; i++) {
+    if (srcLumBuffer[i] < 0) {
+      lumBuffer[i] = -1;
+    } else {
+      const v = lumBuffer[i];
+      if (v < 0) lumBuffer[i] = 0;
+      else if (v > 1) lumBuffer[i] = 1;
+    }
+  }
+
+  /*
+   * Ratio between the graded luminance and the source luminance for one cell.
+   *
+   * The colour modes that sample source RGB — 'content', and the chromatic
+   * branch of 'indexed' — used to read straight from the untouched pixel data,
+   * so every filter, the tone curve, levels, brightness/contrast and the
+   * dither pass were all invisible there: they only ever moved lumBuffer.
+   * Scaling the sampled RGB by this ratio puts those cells back under the same
+   * grading as every other mode while keeping their hue.
+   */
+  const gradeRatio = (i: number): number => {
+    const graded = lumBuffer[i];
+    if (graded < 0) return 1;
+    const src = srcLumBuffer[i];
+    if (src <= 0.004) return graded <= 0.004 ? 1 : 1 + graded * 4;
+    return graded / src;
+  };
 
   // -------------------------------------------------------------------------
   // Step 4: Color Extraction & Retro Palette Quantization
   // -------------------------------------------------------------------------
-  const paletteMode = colorCfg?.paletteMode || (colorCfg?.mode === 'content' ? 'content' : 'phosphor');
   let colorsOut: Uint8ClampedArray | null = null;
 
   if (paletteMode === 'content') {
     const sat = (colorCfg?.saturation ?? 200) / 100.0;
     for (let i = 0; i < totalCells; i++) {
       const p = i * 4;
-      let r = data[p];
-      let g = data[p + 1];
-      let b = data[p + 2];
+      const k = gradeRatio(i);
+      let r = data[p] * k;
+      let g = data[p + 1] * k;
+      let b = data[p + 2] * k;
 
       if (sat !== 1.0) {
         const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-        r = Math.max(0, Math.min(255, Math.round(gray + (r - gray) * sat)));
-        g = Math.max(0, Math.min(255, Math.round(gray + (g - gray) * sat)));
-        b = Math.max(0, Math.min(255, Math.round(gray + (b - gray) * sat)));
+        r = gray + (r - gray) * sat;
+        g = gray + (g - gray) * sat;
+        b = gray + (b - gray) * sat;
       }
+      r = Math.max(0, Math.min(255, Math.round(r)));
+      g = Math.max(0, Math.min(255, Math.round(g)));
+      b = Math.max(0, Math.min(255, Math.round(b)));
 
       colorsBuffer[i * 3] = r;
       colorsBuffer[i * 3 + 1] = g;
@@ -516,6 +843,7 @@ export function processRasterFrame(
       const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
       activeQuantizer = new PaletteQuantizer(found);
       cachedPaletteId = palId;
+      cachedPaletteIsMonochrome = paletteIsMonochrome(activeQuantizer);
     }
 
     const sortedColors = activeQuantizer.sortedRgbColors;
@@ -541,7 +869,49 @@ export function processRasterFrame(
       }
     }
 
-    if (isChromatic) {
+    // A single-hue palette has no colour to match against; tone is all it can
+    // carry, so send colour sources down the ramp too.
+    if (cachedPaletteIsMonochrome) {
+      isChromatic = false;
+    }
+
+    if (isChromatic && paletteOwnsQuantization) {
+      // Chromatic source, palette-space diffusion: carry the colour error so a
+      // photo spreads across the whole palette instead of collapsing onto the
+      // few entries its hues sit nearest.
+      for (let i = 0; i < totalCells; i++) {
+        const p4 = i * 4;
+        const k = gradeRatio(i);
+        paletteWorkBuffer[i * 3] = data[p4] * k;
+        paletteWorkBuffer[i * 3 + 1] = data[p4 + 1] * k;
+        paletteWorkBuffer[i * 3 + 2] = data[p4 + 2] * k;
+      }
+      diffusePaletteRgb(paletteWorkBuffer, lumBuffer, cols, rows, activeQuantizer, colorsBuffer, ditherAlgo !== 'none');
+    } else if (!isChromatic && paletteOwnsQuantization) {
+      // Achromatic source: diffuse against where the palette's tones actually
+      // sit rather than against evenly spaced steps.
+      if (cachedPaletteLumId !== palId) {
+        cachedPaletteLum = sortedColors.map((c) => (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255);
+        cachedPaletteLumId = palId;
+      }
+      diffusePaletteTone(
+        lumBuffer, cols, rows, cachedPaletteLum, paletteWorkBuffer, paletteIndexBuffer,
+        ditherAlgo !== 'none'
+      );
+      for (let i = 0; i < totalCells; i++) {
+        const idx = paletteIndexBuffer[i];
+        if (idx < 0) {
+          colorsBuffer[i * 3] = 0;
+          colorsBuffer[i * 3 + 1] = 0;
+          colorsBuffer[i * 3 + 2] = 0;
+          continue;
+        }
+        const col = sortedColors[idx];
+        colorsBuffer[i * 3] = col.r;
+        colorsBuffer[i * 3 + 1] = col.g;
+        colorsBuffer[i * 3 + 2] = col.b;
+      }
+    } else if (isChromatic) {
       // Chromatic media / normals: Quantize using 3D CIELAB distance matching
       for (let i = 0; i < totalCells; i++) {
         if (lumBuffer[i] < 0) {
@@ -551,7 +921,12 @@ export function processRasterFrame(
           continue;
         }
         const p = i * 4;
-        const nearest = activeQuantizer.findClosestRgb(data[p], data[p + 1], data[p + 2]);
+        const k = gradeRatio(i);
+        const nearest = activeQuantizer.findClosestRgb(
+          Math.max(0, Math.min(255, data[p] * k)),
+          Math.max(0, Math.min(255, data[p + 1] * k)),
+          Math.max(0, Math.min(255, data[p + 2] * k))
+        );
         colorsBuffer[i * 3] = nearest.r;
         colorsBuffer[i * 3 + 1] = nearest.g;
         colorsBuffer[i * 3 + 2] = nearest.b;
@@ -576,25 +951,13 @@ export function processRasterFrame(
     }
     colorsOut = colorsBuffer;
   } else if (options.tonalMapping && options.tonalMapping !== '1color') {
-    // Multi-Tone Color Mapping (2-color duotone, 3-color tritone, GameBoy, Cyberpunk, CRT Amber)
+    // Multi-tone mapping. The fixed hardware looks that used to live here
+    // (GameBoy, Cyberpunk, Amber) are built-in palettes now, so this branch is
+    // only the user-defined duotone and tritone ramps.
     const tMode = options.tonalMapping;
-    let high = parseHexRgb(options.highlightColor || '#FFFFFF', { r: 255, g: 255, b: 255 });
-    let mid = parseHexRgb(options.midtoneColor || '#3B82F6', { r: 59, g: 130, b: 246 });
-    let low = parseHexRgb(options.shadowColor || '#000000', { r: 0, g: 0, b: 0 });
-
-    if (tMode === 'gameboy') {
-      high = { r: 155, g: 188, b: 15 };
-      mid = { r: 139, g: 172, b: 15 };
-      low = { r: 15, g: 56, b: 15 };
-    } else if (tMode === 'cyberpunk') {
-      high = { r: 0, g: 255, b: 255 };
-      mid = { r: 255, g: 0, b: 127 };
-      low = { r: 26, g: 0, b: 51 };
-    } else if (tMode === 'amber') {
-      high = { r: 255, g: 176, b: 0 };
-      mid = { r: 128, g: 88, b: 0 };
-      low = { r: 16, g: 10, b: 0 };
-    }
+    const high = parseHexRgb(options.highlightColor || '#FFFFFF', { r: 255, g: 255, b: 255 });
+    const mid = parseHexRgb(options.midtoneColor || '#3B82F6', { r: 59, g: 130, b: 246 });
+    const low = parseHexRgb(options.shadowColor || '#000000', { r: 0, g: 0, b: 0 });
 
     if (tMode === '2color') {
       for (let i = 0; i < totalCells; i++) {
@@ -668,7 +1031,13 @@ export function processRasterFrame(
 
       let cellChar = ' ';
       if (isPixelMode) {
-        cellChar = val > 0.5 ? '█' : ' ';
+        /*
+         * Every opaque cell is painted; its tone lives in the colour buffer,
+         * not the glyph. Thresholding here would drop dark pixels entirely and
+         * leave holes where the shadows should be (a space means "transparent"
+         * to the viewport, and val < 0 above is the only transparent case).
+         */
+        cellChar = '█';
       } else {
         let charIndex = Math.floor(val * densityLength);
         if (charIndex < 0) charIndex = 0;

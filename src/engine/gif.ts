@@ -12,10 +12,15 @@ import {
   MediaConfig,
   MediaViewConfig,
   MediaColorConfig,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  ImageAdjustConfig,
 } from '../types/ascii';
-import { renderAsciiFrame } from './renderer';
-import { renderModelAsciiFrame } from './modelRenderer';
-import { renderAsciiMediaFrameData, AsciiMediaFrameResult } from './mediaRenderer';
+import { renderSynthFrameData, MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from './renderer';
+import { ProcessedRasterResult } from './rasterEngine';
+import { renderModelFrameData } from './modelRenderer';
+import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectGifComment } from './mediaMetadata';
 
@@ -43,7 +48,15 @@ export interface GifExportOptions {
   mediaViewConfig?: MediaViewConfig;
   mediaColorConfig?: MediaColorConfig;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
+  // Live render settings, so exports match what the viewport shows
+  rasterMode?: RasterOutputMode;
+  ditherAlgorithm?: DitherAlgorithm;
+  toneConfig?: ToneMappingConfig;
+  adjustConfig?: ImageAdjustConfig;
 }
+
+/** Minimal shape every render mode returns, used to paint export frames. */
+type ExportFrameResult = Pick<ProcessedRasterResult, 'text' | 'colors' | 'bgColor' | 'isColored'>;
 
 const THEME_COLORS: Record<PhosphorTheme, { bg: string; text: string }> = {
   green: { bg: '#040905', text: '#00ff66' },
@@ -122,8 +135,8 @@ export async function exportAnimatedGif(
   const delayMs = Math.round(1000 / fps);
 
   // Character cell dimensions on canvas
-  const charWidth = 6.015 * scale;
-  const charHeight = 10.0 * scale;
+  const charWidth = MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -171,11 +184,10 @@ export async function exportAnimatedGif(
   for (let i = 0; i < totalFrames; i++) {
     const t = i * (1 / fps) * timeSpeed;
 
-    let frameText = '';
-    let mediaFrameResult: AsciiMediaFrameResult | null = null;
+    let frameResult: ExportFrameResult | null = null;
 
     if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
-      frameText = renderModelAsciiFrame({
+      frameResult = renderModelFrameData({
         cols,
         rows,
         time: t,
@@ -183,9 +195,14 @@ export async function exportAnimatedGif(
         geometry: opts.geometry,
         modelConfig: opts.modelConfig,
         viewConfig: opts.modelViewConfig,
+        colorConfig: opts.mediaColorConfig,
+        rasterMode: opts.rasterMode,
+        algorithm: opts.ditherAlgorithm,
+        toneConfig: opts.toneConfig,
+        adjustConfig: opts.adjustConfig,
       });
     } else if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
-      mediaFrameResult = renderAsciiMediaFrameData({
+      frameResult = renderAsciiMediaFrameData({
         cols,
         rows,
         mediaElement: opts.mediaElement,
@@ -193,10 +210,12 @@ export async function exportAnimatedGif(
         viewConfig: opts.mediaViewConfig,
         density,
         colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
+        rasterMode: opts.rasterMode,
+        algorithm: opts.ditherAlgorithm,
+        toneConfig: opts.toneConfig,
       });
-      frameText = mediaFrameResult.text;
     } else {
-      frameText = renderAsciiFrame({
+      frameResult = renderSynthFrameData({
         cols,
         rows,
         time: t,
@@ -207,12 +226,17 @@ export async function exportAnimatedGif(
         prepareFn,
         customContext,
         interactiveInfluence: false,
+        colorConfig: opts.mediaColorConfig,
+        rasterMode: opts.rasterMode,
+        algorithm: opts.ditherAlgorithm,
+        toneConfig: opts.toneConfig,
+        adjustConfig: opts.adjustConfig,
       });
     }
 
-    const lines = frameText.split('\n');
-    const isColored = Boolean(mediaFrameResult?.isColored && mediaFrameResult?.colors);
-    const effectiveBg = isColored && mediaFrameResult ? mediaFrameResult.bgColor : bg;
+    const lines = (frameResult?.text || '').split('\n');
+    const isColored = Boolean(frameResult?.isColored && frameResult?.colors);
+    const effectiveBg = isColored && frameResult ? frameResult.bgColor : bg;
 
     // 1. Draw Canvas Background
     ctx.fillStyle = effectiveBg;
@@ -265,8 +289,8 @@ export async function exportAnimatedGif(
     }
 
     // Main sharp text render
-    if (isColored && mediaFrameResult?.colors) {
-      const colors = mediaFrameResult.colors;
+    if (isColored && frameResult?.colors) {
+      const colors = frameResult.colors;
       for (let row = 0; row < rows; row++) {
         const line = lines[row] || '';
         for (let col = 0; col < cols && col < line.length; col++) {

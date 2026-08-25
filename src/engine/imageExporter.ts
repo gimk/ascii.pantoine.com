@@ -12,14 +12,16 @@ import {
   MediaViewConfig,
   MediaColorConfig,
   RasterOutputMode,
-  DEFAULT_HALFTONE_CONFIG,
+  DitherAlgorithm,
+  ToneMappingConfig,
+  ImageAdjustConfig,
 } from '../types/ascii';
-import { renderSynthFrameData } from './renderer';
+import { renderSynthFrameData, MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from './renderer';
 import { renderModelFrameData } from './modelRenderer';
 import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectPngMetadata, injectJpegComment } from './mediaMetadata';
-import { drawHalftoneToCanvas, exportHalftoneToSvg } from './halftoneRenderer';
+import { drawPixelRasterToCanvas, exportPixelRasterToSvg } from './pixelRasterRenderer';
 
 
 export interface ImageExportOptions {
@@ -53,6 +55,9 @@ export interface ImageExportOptions {
   // Feature Modes
   appMode?: AppMode;
   rasterMode?: RasterOutputMode;
+  ditherAlgorithm?: DitherAlgorithm;
+  toneConfig?: ToneMappingConfig;
+  adjustConfig?: ImageAdjustConfig;
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
   geometry?: THREE.BufferGeometry;
@@ -162,6 +167,9 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       viewConfig: opts.mediaViewConfig,
       density,
       colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
+      rasterMode,
+      algorithm: opts.ditherAlgorithm,
+      toneConfig: opts.toneConfig,
     });
     frameText = res.text;
     frameLuminance = res.luminance;
@@ -176,6 +184,11 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       geometry: opts.geometry,
       modelConfig: opts.modelConfig,
       viewConfig: opts.modelViewConfig,
+      colorConfig: opts.mediaColorConfig,
+      rasterMode,
+      algorithm: opts.ditherAlgorithm,
+      toneConfig: opts.toneConfig,
+      adjustConfig: opts.adjustConfig,
     });
     frameText = res.text;
     frameLuminance = res.luminance;
@@ -208,19 +221,25 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       prepareFn,
       customContext,
       interactiveInfluence: false,
+      colorConfig: opts.mediaColorConfig,
+      rasterMode,
+      algorithm: opts.ditherAlgorithm,
+      toneConfig: opts.toneConfig,
+      adjustConfig: opts.adjustConfig,
     });
     frameText = res.text;
     frameLuminance = res.luminance;
+    frameColors = res.colors;
+    if (res.isColored) effectiveBg = res.bgColor;
   }
 
   // If Vector SVG export is requested
   if (format === 'svg') {
-    const halftoneCfg = opts.mediaViewConfig?.halftoneConfig || DEFAULT_HALFTONE_CONFIG;
     let svgContent = '';
 
     if (rasterMode === 'ascii') {
-      const charWidth = 6.015 * scale;
-      const charHeight = 10.0 * scale;
+      const charWidth = MONOSPACE_CELL_WIDTH * scale;
+      const charHeight = MONOSPACE_CELL_HEIGHT * scale;
       const width = cols * charWidth;
       const height = rows * charHeight;
       const lines = frameText.split('\n');
@@ -242,17 +261,15 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       textNodes.push(`</svg>`);
       svgContent = textNodes.join('\n');
     } else {
-      svgContent = exportHalftoneToSvg({
+      svgContent = exportPixelRasterToSvg({
         cols,
         rows,
         luminance: frameLuminance || new Float32Array(cols * rows).fill(0.5),
         colors: frameColors,
         bgColor: effectiveBg,
         fgColor: text,
-        config: halftoneCfg,
-        mode: rasterMode,
-        width: cols * 6.015 * scale,
-        height: rows * 10.0 * scale,
+        width: cols * MONOSPACE_CELL_WIDTH * scale,
+        height: rows * MONOSPACE_CELL_HEIGHT * scale,
       });
     }
 
@@ -261,16 +278,16 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     return {
       blob,
       url,
-      width: Math.round(cols * 6.015 * scale),
-      height: Math.round(rows * 10.0 * scale),
+      width: Math.round(cols * MONOSPACE_CELL_WIDTH * scale),
+      height: Math.round(rows * MONOSPACE_CELL_HEIGHT * scale),
       mimeType: 'image/svg+xml',
       extension: '.svg',
     };
   }
 
   // Character cell dimensions on canvas
-  const charWidth = 6.015 * scale;
-  const charHeight = 10.0 * scale;
+  const charWidth = MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -293,11 +310,9 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     textFillStyle = grad;
   }
 
-  // Check if Halftone or Pixel Dither Mode
-  if (rasterMode !== 'ascii' && frameLuminance) {
-    const halftoneCfg = opts.mediaViewConfig?.halftoneConfig || DEFAULT_HALFTONE_CONFIG;
-    drawHalftoneToCanvas({
-      canvas,
+  // Pixel raster mode paints filled cells instead of glyphs
+  if (rasterMode === 'pixel' && frameLuminance) {
+    drawPixelRasterToCanvas({
       ctx,
       cols,
       rows,
@@ -305,10 +320,8 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       colors: frameColors,
       bgColor: transparentBg ? 'transparent' : effectiveBg,
       fgColor: text,
-      config: halftoneCfg,
-      mode: rasterMode,
-      cellWidth: 6.015 * scale,
-      cellHeight: 10.0 * scale,
+      cellWidth: MONOSPACE_CELL_WIDTH * scale,
+      cellHeight: MONOSPACE_CELL_HEIGHT * scale,
       dpr: 1,
     });
   } else {

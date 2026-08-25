@@ -14,7 +14,7 @@ import {
   RasterOutputMode,
   DitherAlgorithm,
   ToneMappingConfig,
-  HalftoneConfig,
+  ImageAdjustConfig,
 } from '../types/ascii';
 
 export interface FullAnimationState {
@@ -28,7 +28,7 @@ export interface FullAnimationState {
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
   toneConfig?: ToneMappingConfig;
-  halftoneConfig?: HalftoneConfig;
+  adjustConfig?: ImageAdjustConfig;
   theme: PhosphorTheme;
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
