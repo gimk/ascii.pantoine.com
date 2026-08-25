@@ -84,6 +84,25 @@ interface ExportModalProps {
  */
 export type ExportTab = 'image' | 'separation' | 'gif' | 'video';
 
+/**
+ * Shortens a filename for display while keeping the extension.
+ *
+ * The name is whatever the user typed, so the download button's width was
+ * effectively unbounded and a long one pushed it past the modal edge. Trimmed
+ * from the middle rather than the end because the extension is the part that
+ * says what you are about to get -- "my-really-long...-plates.zip" is useful,
+ * "my-really-long-expo..." is not.
+ */
+const truncateFileName = (fileName: string, max = 28): string => {
+  if (fileName.length <= max) return fileName;
+  const dot = fileName.lastIndexOf('.');
+  // No extension, or one long enough to be something else entirely.
+  if (dot <= 0 || fileName.length - dot > 12) return `${fileName.slice(0, max - 1)}…`;
+  const ext = fileName.slice(dot);
+  const head = Math.max(4, max - ext.length - 1);
+  return `${fileName.slice(0, head)}…${ext}`;
+};
+
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
@@ -630,30 +649,30 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             className={`export-subtab-btn ${activeTab === 'image' ? 'active' : ''}`}
             onClick={() => setActiveTab('image')}
           >
-            <Camera size={11} />
-            Still Image (.png / .jpg)
+            <Camera size={14} />
+            Still Image
           </button>
           <button
             className={`export-subtab-btn ${activeTab === 'separation' ? 'active' : ''}`}
             onClick={() => setActiveTab('separation')}
             title="One file per colour, for editing each ink separately"
           >
-            <Layers size={11} />
-            Colour Plates (.svg / .png)
+            <Layers size={14} />
+            Colour Plates
           </button>
           <button
             className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
             onClick={() => setActiveTab('gif')}
           >
-            <Film size={11} />
-            GIF Animation (.gif)
+            <Film size={14} />
+            GIF Animation
           </button>
           <button
             className={`export-subtab-btn ${activeTab === 'video' ? 'active' : ''}`}
             onClick={() => setActiveTab('video')}
           >
-            <Video size={11} />
-            Video Clip (.mp4 / .webm)
+            <Video size={14} />
+            Video Clip
           </button>
         </div>
 
@@ -747,14 +766,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       <button
                         className={`btn ${!imageTransparentBg ? 'btn-primary' : ''}`}
                         onClick={() => setImageTransparentBg(false)}
+                        title="Paint the background behind the raster"
                       >
-                        Theme CRT
+                        FILL
                       </button>
                       <button
                         className={`btn ${imageTransparentBg ? 'btn-primary' : ''}`}
                         onClick={() => setImageTransparentBg(true)}
+                        title="Leave the background empty"
                       >
-                        Transparent
+                        TRANSPARENT
                       </button>
                     </div>
                   </div>
@@ -1045,6 +1066,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
+                          // Five fields per row; on a phone they need somewhere to go.
+                          flexWrap: 'wrap',
                           fontSize: '10px',
                           fontFamily: 'var(--font-mono)',
                           color: 'var(--text-muted)',
@@ -1302,12 +1325,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 {imageCopied ? 'IMAGE COPIED' : 'COPY IMAGE'}
               </button>
               <button
-                className="btn btn-primary"
+                className="btn btn-primary btn-download-file"
                 onClick={handleDownload}
+                title={`Download ${effectiveFileName}`}
                 disabled={!imageBlob || isCapturingImage}
               >
                 <Download size={12} />
-                DOWNLOAD {effectiveFileName}
+                DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
               </button>
             </>
           ) : activeTab === 'separation' ? (
@@ -1322,7 +1346,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 {sepResult ? 'REGENERATE' : 'GENERATE'}
               </button>
               <button
-                className="btn btn-primary"
+                className="btn btn-primary btn-download-file"
                 onClick={handleDownload}
                 disabled={!sepResult?.blob || isSeparating}
                 title={
@@ -1330,11 +1354,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     ? 'This render has nothing to separate'
                     : !sepResult
                     ? 'Generate the plates first'
-                    : undefined
+                    : `Download ${effectiveFileName}`
                 }
               >
                 <Download size={12} />
-                DOWNLOAD {effectiveFileName}
+                DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
               </button>
             </>
           ) : activeTab === 'gif' ? (
@@ -1360,11 +1384,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </button>
               ) : (
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-download-file"
                   onClick={handleDownload}
+                  title={`Download ${effectiveFileName}`}
                 >
                   <Download size={12} />
-                  DOWNLOAD {effectiveFileName}
+                  DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
                 </button>
               )}
             </>
@@ -1391,11 +1416,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </button>
               ) : (
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-download-file"
                   onClick={handleDownload}
+                  title={`Download ${effectiveFileName}`}
                 >
                   <Download size={12} />
-                  DOWNLOAD {effectiveFileName}
+                  DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
                 </button>
               )}
             </>
