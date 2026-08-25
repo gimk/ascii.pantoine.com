@@ -25,6 +25,7 @@ import {
   DEFAULT_IMAGE_ADJUST_CONFIG,
   ImageAdjustConfig,
   RasterOutputMode,
+  UiThemeSettings,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -97,6 +98,7 @@ import {
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
+const LOCAL_STORAGE_UI_THEME_KEY = 'ascii_studio_ui_theme_settings';
 
 /**
  * The three content sources. Kept as data so the picker, its badge and the
@@ -438,6 +440,33 @@ export const App: React.FC = () => {
   const renderSettingsRef = useRef<RenderSettings>(currentRenderSettings);
   renderSettingsRef.current = currentRenderSettings;
 
+
+  // Standalone interface theme settings (managed in Viewfinder Settings Modal)
+  const [uiThemeSettings, setUiThemeSettings] = useState<UiThemeSettings>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_UI_THEME_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          uiTheme: parsed.uiTheme || 'green',
+          customUiColor: parsed.customUiColor || '',
+          syncUiWithAscii: parsed.syncUiWithAscii !== undefined ? parsed.syncUiWithAscii : true,
+        };
+      }
+    } catch {}
+    return {
+      uiTheme: 'green',
+      customUiColor: '',
+      syncUiWithAscii: true,
+    };
+  });
+
+  // Persist interface theme settings in localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_UI_THEME_KEY, JSON.stringify(uiThemeSettings));
+    } catch {}
+  }, [uiThemeSettings]);
 
   // Persist render settings per mode in localStorage
   useEffect(() => {
@@ -968,107 +997,49 @@ export const App: React.FC = () => {
     }
   }, [appMode, recompileCustomCode, restoreModelSnapshot, restoreMediaSnapshot, updateHistoryButtons]);
 
+  // Effective UI theme and sync calculations
+  const currentRasterMode: RasterOutputMode =
+    (appMode === 'media'
+      ? mediaViewConfig.rasterMode || currentRenderSettings.rasterMode
+      : currentRenderSettings.rasterMode) || 'ascii';
+
+  const currentTonalMapping =
+    (appMode === 'media' ? mediaViewConfig.tonalMapping : currentRenderSettings.adjustConfig?.tonalMapping) || '1color';
+  const currentPaletteMode =
+    (appMode === 'media' ? mediaColorConfig?.paletteMode : currentRenderSettings.mediaColorConfig?.paletteMode) || 'phosphor';
+
+  const isSingleColorAscii =
+    currentRasterMode === 'ascii' &&
+    currentTonalMapping === '1color' &&
+    currentPaletteMode === 'phosphor';
+
+  const isSyncActive = uiThemeSettings.syncUiWithAscii && isSingleColorAscii;
+
+  const effectiveUiTheme: PhosphorTheme = isSyncActive ? theme : uiThemeSettings.uiTheme;
+  const effectiveCustomUiColor: string = isSyncActive ? (customThemeColor || '') : uiThemeSettings.customUiColor;
+  const effectiveGradientConfig = isSyncActive ? gradientConfig : null;
+
   // Update theme class and custom color CSS variables on body
   useEffect(() => {
-    const isContentColor = appMode === 'media' && mediaColorConfig?.mode === 'content';
+    const allVars = [
+      '--bg-primary',
+      '--bg-panel',
+      '--bg-control',
+      '--bg-control-hover',
+      '--border-color',
+      '--border-active',
+      '--text-primary',
+      '--text-muted',
+      '--text-dim',
+      '--accent',
+      '--accent-glow',
+      '--text-gradient',
+      '--grad-color-1',
+      '--grad-color-2',
+    ];
 
-    if (isContentColor) {
-      document.body.style.removeProperty('--text-gradient');
-      document.body.style.removeProperty('--grad-color-1');
-      document.body.style.removeProperty('--grad-color-2');
-
-      const allVars = [
-        '--bg-primary',
-        '--bg-panel',
-        '--bg-control',
-        '--bg-control-hover',
-        '--border-color',
-        '--border-active',
-        '--text-primary',
-        '--text-muted',
-        '--text-dim',
-        '--accent',
-        '--accent-glow',
-      ];
-
-      if (mediaColorConfig.bgPreset === 'white') {
-        document.body.className = 'theme-paper';
-        allVars.forEach((v) => document.body.style.removeProperty(v));
-      } else if (mediaColorConfig.bgPreset === 'dark') {
-        // Pure Neutral Monochrome White-on-Black UI for Content Color Dark mode (no green tint)
-        document.body.className = 'theme-custom';
-        document.body.style.setProperty('--bg-primary', '#0a0a0a');
-        document.body.style.setProperty('--bg-panel', '#141414');
-        document.body.style.setProperty('--bg-control', '#1c1c1c');
-        document.body.style.setProperty('--bg-control-hover', '#262626');
-        document.body.style.setProperty('--border-color', '#2a2a2a');
-        document.body.style.setProperty('--border-active', '#e6e6e6');
-        document.body.style.setProperty('--text-primary', '#f0f0f0');
-        document.body.style.setProperty('--text-muted', '#8e8e8e');
-        document.body.style.setProperty('--text-dim', '#585858');
-        document.body.style.setProperty('--accent', '#ffffff');
-        document.body.style.setProperty('--accent-glow', 'rgba(255, 255, 255, 0.08)');
-      } else {
-        // Custom background color mode
-        let cleaned = (mediaColorConfig.customBg || '#0a0a0a').replace('#', '').trim();
-        if (cleaned.length === 3) {
-          cleaned = cleaned.split('').map((c) => c + c).join('');
-        }
-        const num = parseInt(cleaned, 16);
-        const [r, g, b] = (Number.isNaN(num) || cleaned.length !== 6)
-          ? [10, 10, 10]
-          : [(num >> 16) & 255, (num >> 8) & 255, num & 255];
-
-        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-        const isLightMode = luminance > 128;
-
-        document.body.className = isLightMode ? 'theme-custom theme-paper' : 'theme-custom';
-
-        if (isLightMode) {
-          // Custom Light Mode: Custom BG, dark text and controls
-          const bgPrimary = `rgb(${r}, ${g}, ${b})`;
-          const bgPanel = `rgb(${Math.max(0, Math.round(r * 0.93 - 4))}, ${Math.max(0, Math.round(g * 0.93 - 4))}, ${Math.max(0, Math.round(b * 0.93 - 4))})`;
-          const bgControl = `rgb(${Math.max(0, Math.round(r * 0.86 - 8))}, ${Math.max(0, Math.round(g * 0.86 - 8))}, ${Math.max(0, Math.round(b * 0.86 - 8))})`;
-          const bgControlHover = `rgb(${Math.max(0, Math.round(r * 0.78 - 12))}, ${Math.max(0, Math.round(g * 0.78 - 12))}, ${Math.max(0, Math.round(g * 0.78 - 12))})`;
-          const borderColor = `rgb(${Math.max(0, Math.round(r * 0.68 - 16))}, ${Math.max(0, Math.round(g * 0.68 - 16))}, ${Math.max(0, Math.round(g * 0.68 - 16))})`;
-
-          document.body.style.setProperty('--bg-primary', bgPrimary);
-          document.body.style.setProperty('--bg-panel', bgPanel);
-          document.body.style.setProperty('--bg-control', bgControl);
-          document.body.style.setProperty('--bg-control-hover', bgControlHover);
-          document.body.style.setProperty('--border-color', borderColor);
-          document.body.style.setProperty('--border-active', '#151515');
-          document.body.style.setProperty('--text-primary', '#151515');
-          document.body.style.setProperty('--text-muted', '#444238');
-          document.body.style.setProperty('--text-dim', '#787364');
-          document.body.style.setProperty('--accent', '#151515');
-          document.body.style.setProperty('--accent-glow', 'rgba(0, 0, 0, 0.05)');
-        } else {
-          // Custom Dark Mode: Custom BG, neutral white-on-dark text and controls
-          const bgPrimary = `rgb(${r}, ${g}, ${b})`;
-          const bgPanel = `rgb(${Math.min(255, Math.round(r * 1.25 + 6))}, ${Math.min(255, Math.round(g * 1.25 + 6))}, ${Math.min(255, Math.round(b * 1.25 + 6))})`;
-          const bgControl = `rgb(${Math.min(255, Math.round(r * 1.5 + 14))}, ${Math.min(255, Math.round(g * 1.5 + 14))}, ${Math.min(255, Math.round(b * 1.5 + 14))})`;
-          const bgControlHover = `rgb(${Math.min(255, Math.round(r * 1.75 + 24))}, ${Math.min(255, Math.round(g * 1.75 + 24))}, ${Math.min(255, Math.round(b * 1.75 + 24))})`;
-          const borderColor = `rgb(${Math.min(255, Math.round(r * 2.0 + 38))}, ${Math.min(255, Math.round(g * 2.0 + 38))}, ${Math.min(255, Math.round(b * 2.0 + 38))})`;
-
-          document.body.style.setProperty('--bg-primary', bgPrimary);
-          document.body.style.setProperty('--bg-panel', bgPanel);
-          document.body.style.setProperty('--bg-control', bgControl);
-          document.body.style.setProperty('--bg-control-hover', bgControlHover);
-          document.body.style.setProperty('--border-color', borderColor);
-          document.body.style.setProperty('--border-active', '#e6e6e6');
-          document.body.style.setProperty('--text-primary', '#f0f0f0');
-          document.body.style.setProperty('--text-muted', '#8e8e8e');
-          document.body.style.setProperty('--text-dim', '#585858');
-          document.body.style.setProperty('--accent', '#ffffff');
-          document.body.style.setProperty('--accent-glow', 'rgba(255, 255, 255, 0.08)');
-        }
-      }
-      return;
-    }
-
-    if (gradientConfig) {
-      let cleaned = gradientConfig.color1.replace('#', '').trim();
+    if (effectiveGradientConfig) {
+      let cleaned = effectiveGradientConfig.color1.replace('#', '').trim();
       if (cleaned.length === 3) {
         cleaned = cleaned.split('').map((c) => c + c).join('');
       }
@@ -1097,11 +1068,11 @@ export const App: React.FC = () => {
         document.body.style.setProperty('--bg-control', bgControl);
         document.body.style.setProperty('--bg-control-hover', bgControlHover);
         document.body.style.setProperty('--border-color', borderColor);
-        document.body.style.setProperty('--border-active', gradientConfig.color1);
-        document.body.style.setProperty('--text-primary', gradientConfig.color1);
+        document.body.style.setProperty('--border-active', effectiveGradientConfig.color1);
+        document.body.style.setProperty('--text-primary', effectiveGradientConfig.color1);
         document.body.style.setProperty('--text-muted', textMuted);
         document.body.style.setProperty('--text-dim', textDim);
-        document.body.style.setProperty('--accent', gradientConfig.color1);
+        document.body.style.setProperty('--accent', effectiveGradientConfig.color1);
         document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.11)`);
       } else {
         // Light / White mode: background is a very light tint of color1
@@ -1118,22 +1089,26 @@ export const App: React.FC = () => {
         document.body.style.setProperty('--bg-control', bgControl);
         document.body.style.setProperty('--bg-control-hover', bgControlHover);
         document.body.style.setProperty('--border-color', borderColor);
-        document.body.style.setProperty('--border-active', gradientConfig.color1);
-        document.body.style.setProperty('--text-primary', gradientConfig.color1);
+        document.body.style.setProperty('--border-active', effectiveGradientConfig.color1);
+        document.body.style.setProperty('--text-primary', effectiveGradientConfig.color1);
         document.body.style.setProperty('--text-muted', textMuted);
         document.body.style.setProperty('--text-dim', textDim);
-        document.body.style.setProperty('--accent', gradientConfig.color1);
+        document.body.style.setProperty('--accent', effectiveGradientConfig.color1);
         document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.05)`);
       }
 
-      document.body.style.setProperty('--text-gradient', `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`);
-      document.body.style.setProperty('--grad-color-1', gradientConfig.color1);
-      document.body.style.setProperty('--grad-color-2', gradientConfig.color2);
-    } else if (customThemeColor) {
-      document.body.style.removeProperty('--text-gradient');
-      document.body.style.removeProperty('--grad-color-1');
-      document.body.style.removeProperty('--grad-color-2');
-      let cleaned = customThemeColor.replace('#', '').trim();
+      document.body.style.setProperty('--text-gradient', `linear-gradient(${effectiveGradientConfig.angle}deg, ${effectiveGradientConfig.color1}, ${effectiveGradientConfig.color2})`);
+      document.body.style.setProperty('--grad-color-1', effectiveGradientConfig.color1);
+      document.body.style.setProperty('--grad-color-2', effectiveGradientConfig.color2);
+      return;
+    }
+
+    document.body.style.removeProperty('--text-gradient');
+    document.body.style.removeProperty('--grad-color-1');
+    document.body.style.removeProperty('--grad-color-2');
+
+    if (effectiveCustomUiColor) {
+      let cleaned = effectiveCustomUiColor.replace('#', '').trim();
       if (cleaned.length === 3) {
         cleaned = cleaned.split('').map((c) => c + c).join('');
       }
@@ -1191,26 +1166,10 @@ export const App: React.FC = () => {
         document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.05)`);
       }
     } else {
-      document.body.className = `theme-${theme}`;
-      const vars = [
-        '--bg-primary',
-        '--bg-panel',
-        '--bg-control',
-        '--bg-control-hover',
-        '--border-color',
-        '--border-active',
-        '--text-primary',
-        '--text-muted',
-        '--text-dim',
-        '--accent',
-        '--accent-glow',
-        '--text-gradient',
-        '--grad-color-1',
-        '--grad-color-2',
-      ];
-      vars.forEach((v) => document.body.style.removeProperty(v));
+      document.body.className = `theme-${effectiveUiTheme}`;
+      allVars.forEach((v) => document.body.style.removeProperty(v));
     }
-  }, [appMode, theme, customThemeColor, gradientConfig, mediaColorConfig]);
+  }, [effectiveUiTheme, effectiveCustomUiColor, effectiveGradientConfig]);
 
   // If shared state had custom code on load, compile it immediately
   useEffect(() => {
@@ -1529,11 +1488,6 @@ export const App: React.FC = () => {
       pushMediaHistorySnapshot(mediaConfig, newViewConfig);
     }, 400);
   }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution]);
-
-  const currentRasterMode: RasterOutputMode =
-    (appMode === 'media'
-      ? mediaViewConfig.rasterMode || currentRenderSettings.rasterMode
-      : currentRenderSettings.rasterMode) || 'ascii';
 
   const handleSelectRasterMode = useCallback(
     (newMode: RasterOutputMode) => {
@@ -2405,6 +2359,9 @@ export const App: React.FC = () => {
           gradientConfig={gradientConfig}
           theme={theme}
           customThemeColor={customThemeColor}
+          uiThemeSettings={uiThemeSettings}
+          onChangeUiThemeSettings={setUiThemeSettings}
+          isSyncEligible={isSingleColorAscii}
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
 

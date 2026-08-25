@@ -145,10 +145,11 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   } = opts;
 
   const rasterMode: RasterOutputMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
-  const showScanlines = opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true);
-  const showCrtGlow = opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
-  const showVignette = opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false);
-  const showPhosphorBloom = opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
+  const isPixel = rasterMode === 'pixel';
+  const showScanlines = !isPixel && (opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true));
+  const showCrtGlow = !isPixel && (opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false));
+  const showVignette = !isPixel && (opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false));
+  const showPhosphorBloom = !isPixel && (opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false));
 
   const { bg, text } = getThemeColors(theme, customThemeColor, gradientConfig);
 
@@ -237,17 +238,20 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   if (format === 'svg') {
     let svgContent = '';
 
-    if (rasterMode === 'ascii') {
-      const charWidth = MONOSPACE_CELL_WIDTH * scale;
-      const charHeight = MONOSPACE_CELL_HEIGHT * scale;
-      const width = cols * charWidth;
-      const height = rows * charHeight;
+    const charWidth = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
+    const charHeight = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
+    const width = Math.round(cols * charWidth);
+    const height = Math.round(rows * charHeight);
+
+    if (!isPixel) {
       const lines = frameText.split('\n');
 
       const textNodes: string[] = [];
       textNodes.push(`<?xml version="1.0" encoding="UTF-8"?>`);
       textNodes.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`);
-      textNodes.push(`  <rect width="100%" height="100%" fill="${effectiveBg}"/>`);
+      if (!transparentBg) {
+        textNodes.push(`  <rect width="100%" height="100%" fill="${effectiveBg}"/>`);
+      }
       textNodes.push(`  <g font-family="monospace" font-size="${10 * scale}px" fill="${text}" xml:space="preserve">`);
 
       for (let r = 0; r < lines.length && r < rows; r++) {
@@ -266,10 +270,10 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
         rows,
         luminance: frameLuminance || new Float32Array(cols * rows).fill(0.5),
         colors: frameColors,
-        bgColor: effectiveBg,
+        bgColor: transparentBg ? 'transparent' : effectiveBg,
         fgColor: text,
-        width: cols * MONOSPACE_CELL_WIDTH * scale,
-        height: rows * MONOSPACE_CELL_HEIGHT * scale,
+        width,
+        height,
       });
     }
 
@@ -278,16 +282,16 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     return {
       blob,
       url,
-      width: Math.round(cols * MONOSPACE_CELL_WIDTH * scale),
-      height: Math.round(rows * MONOSPACE_CELL_HEIGHT * scale),
+      width,
+      height,
       mimeType: 'image/svg+xml',
       extension: '.svg',
     };
   }
 
-  // Character cell dimensions on canvas
-  const charWidth = MONOSPACE_CELL_WIDTH * scale;
-  const charHeight = MONOSPACE_CELL_HEIGHT * scale;
+  // Character cell dimensions on canvas (1:1 square for pixel mode, 0.6015 monospace aspect for ASCII)
+  const charWidth = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -311,7 +315,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   }
 
   // Pixel raster mode paints filled cells instead of glyphs
-  if (rasterMode === 'pixel' && frameLuminance) {
+  if (isPixel && frameLuminance) {
     drawPixelRasterToCanvas({
       ctx,
       cols,
@@ -320,8 +324,8 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       colors: frameColors,
       bgColor: transparentBg ? 'transparent' : effectiveBg,
       fgColor: text,
-      cellWidth: MONOSPACE_CELL_WIDTH * scale,
-      cellHeight: MONOSPACE_CELL_HEIGHT * scale,
+      cellWidth: charWidth,
+      cellHeight: charHeight,
       dpr: 1,
     });
   } else {

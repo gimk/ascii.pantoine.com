@@ -101,7 +101,9 @@ export function exportPixelRasterToSvg(opts: PixelRasterSvgOptions): string {
   const elements: string[] = [];
   elements.push(`<?xml version="1.0" encoding="UTF-8"?>`);
   elements.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width.toFixed(2)} ${height.toFixed(2)}" width="${width}" height="${height}">`);
-  elements.push(`  <rect width="100%" height="100%" fill="${bgColor}"/>`);
+  if (bgColor && bgColor !== 'transparent' && bgColor !== 'none') {
+    elements.push(`  <rect width="100%" height="100%" fill="${bgColor}"/>`);
+  }
 
   for (let y = 0; y < rows; y++) {
     const rowOff = y * cols;

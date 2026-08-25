@@ -11,6 +11,10 @@ import {
   MediaConfig,
   MediaViewConfig,
   MediaColorConfig,
+  RasterOutputMode,
+  DitherAlgorithm,
+  ImageAdjustConfig,
+  ToneMappingConfig,
 } from '../types/ascii';
 
 export interface ExportConfig {
@@ -35,6 +39,10 @@ export interface ExportConfig {
   mediaConfig?: MediaConfig;
   mediaViewConfig?: MediaViewConfig;
   mediaColorConfig?: MediaColorConfig;
+  rasterMode?: RasterOutputMode;
+  ditherAlgorithm?: DitherAlgorithm;
+  adjustConfig?: ImageAdjustConfig;
+  toneConfig?: ToneMappingConfig;
 }
 
 /**
@@ -136,10 +144,15 @@ export function generateModeJsonPreset(props: {
   modelViewConfig?: ModelViewConfig;
   mediaConfig?: MediaConfig;
   mediaViewConfig?: MediaViewConfig;
+  mediaColorConfig?: MediaColorConfig;
+  rasterMode?: RasterOutputMode;
+  ditherAlgorithm?: DitherAlgorithm;
+  adjustConfig?: ImageAdjustConfig;
+  toneConfig?: ToneMappingConfig;
 }): string {
   const base = {
     generator: 'ASCII Studio (https://ascii.pantoine.com)',
-    version: '1.5.0',
+    version: '1.6.0',
     mode: props.appMode || 'synth',
     name: props.name,
     density: props.density,
@@ -147,6 +160,8 @@ export function generateModeJsonPreset(props: {
       cols: props.cols,
       rows: props.rows,
     },
+    rasterMode: props.rasterMode || 'ascii',
+    ditherAlgorithm: props.ditherAlgorithm,
     theme: props.theme || 'green',
     customThemeColor: props.customThemeColor,
     gradientConfig: props.gradientConfig,
@@ -159,6 +174,9 @@ export function generateModeJsonPreset(props: {
         ...base,
         modelConfig: props.modelConfig,
         modelViewConfig: props.modelViewConfig,
+        adjustConfig: props.adjustConfig,
+        mediaColorConfig: props.mediaColorConfig,
+        toneConfig: props.toneConfig,
       },
       null,
       2
@@ -171,6 +189,7 @@ export function generateModeJsonPreset(props: {
         ...base,
         mediaConfig: props.mediaConfig,
         mediaViewConfig: props.mediaViewConfig,
+        mediaColorConfig: props.mediaColorConfig,
       },
       null,
       2
@@ -187,6 +206,9 @@ export function generateModeJsonPreset(props: {
       customPrepare: props.customPrepare,
       particleConfig: props.particleConfig,
       optimizeConfig: props.optimizeConfig,
+      adjustConfig: props.adjustConfig,
+      mediaColorConfig: props.mediaColorConfig,
+      toneConfig: props.toneConfig,
     },
     null,
     2

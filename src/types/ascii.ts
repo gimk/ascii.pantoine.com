@@ -127,6 +127,12 @@ export type PhosphorTheme =
   | 'paper'
   | 'blood';
 
+export interface UiThemeSettings {
+  uiTheme: PhosphorTheme;
+  customUiColor: string;
+  syncUiWithAscii: boolean;
+}
+
 export interface CharsetOption {
   id: string;
   name: string;

@@ -384,19 +384,33 @@ Re-renders the frame at export resolution through the *same* mode renderer, so
 forwarded — an export path that skips one silently produces a different image than
 the viewport.
 
-- **SVG** — ASCII emits `<text>` runs; pixel emits one `<rect>` per cell via
+- **Cell Aspect & Dimensions**:
+  - *ASCII mode*: Character cells are calculated using monospace aspect
+    (`MONOSPACE_CELL_WIDTH * scale = 6.015 * scale`, `MONOSPACE_CELL_HEIGHT * scale = 10.0 * scale`),
+    giving a $0.6015:1$ cell aspect ratio that un-squashes font glyphs.
+  - *Pixel mode*: Character cells are calculated as **$1:1$ square cells**
+    (`cellWidth = cellHeight = Math.max(1, Math.round(scale))`).
+    $1\times$ scale maps to $1\text{px/cell}$ ($cols \times rows$ native match with the viewfinder).
+    Canvas size is `cols * cellWidth` by `rows * cellHeight`, ensuring pixel art is undistorted.
+- **CRT Effects in Pixel Mode**: CRT effects (scanlines, CRT glow, vignette, phosphor bloom) are
+  strictly bypassed/disabled in Pixel mode across all export engines (PNG, JPG, SVG, GIF, MP4/WebM),
+  ensuring raw dithered pixels remain crisp and unblurred.
+- **SVG** — ASCII emits `<text>` runs; pixel emits square `<rect>` cells via
   `exportPixelRasterToSvg`.
 - **PNG/JPG** — ASCII draws text to a canvas; pixel goes through
-  `drawPixelRasterToCanvas`. JPG forces an opaque background.
+  `drawPixelRasterToCanvas` with square cell dimensions. JPG forces an opaque background.
 
 `pixelRasterRenderer.ts` skips a cell only on `lum < 0`. A brightness threshold there
 would punch holes through the shadows, the same class of bug as step 5.
 
 ### 3.3 Animation ([`gif.ts`](src/engine/gif.ts), [`video.ts`](src/engine/video.ts))
 
-Loop over frames, dispatch to the mode renderer, funnel each result through a common
-`ExportFrameResult = Pick<ProcessedRasterResult, 'text'|'colors'|'bgColor'|'isColored'>`,
-draw, encode. Same forwarding requirement as stills.
+Loop over frames, dispatch to the mode renderer, funnel each result through
+`ExportFrameResult = Pick<ProcessedRasterResult, 'text' | 'colors' | 'luminance' | 'bgColor' | 'isColored'>`.
+- *ASCII mode*: Canvas paints background, optional phosphor glow, and sharp monospace text lines.
+- *Pixel mode*: Canvas paints directly through `drawPixelRasterToCanvas` with $1:1$ square cell bounds
+  ($1\times = 1\text{px/cell}$) and no CRT filters, avoiding monospace font spacing anomalies and preserving sharp dithered pixel output.
+Same forwarding requirement as stills (`rasterMode`, `ditherAlgorithm`, `toneConfig`, `adjustConfig`).
 
 ---
 

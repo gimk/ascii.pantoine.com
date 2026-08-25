@@ -21,6 +21,7 @@ import { ProcessedRasterResult } from './rasterEngine';
 import { renderModelFrameData } from './modelRenderer';
 import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
+import { drawPixelRasterToCanvas } from './pixelRasterRenderer';
 
 export interface VideoExportOptions {
   name: string;
@@ -61,7 +62,9 @@ export interface VideoExportResult {
 }
 
 /** Minimal shape every render mode returns, used to paint export frames. */
-type ExportFrameResult = Pick<ProcessedRasterResult, 'text' | 'colors' | 'bgColor' | 'isColored'>;
+type ExportFrameResult = Pick<ProcessedRasterResult, 'text' | 'colors' | 'bgColor' | 'isColored'> & {
+  luminance?: Float32Array | null;
+};
 
 const THEME_COLORS: Record<PhosphorTheme, { bg: string; text: string }> = {
   green: { bg: '#040905', text: '#00ff66' },
@@ -158,10 +161,12 @@ export async function exportVideoAnimation(
     preferredFormat = 'auto',
   } = opts;
 
-  const showScanlines = crtConfig ? crtConfig.scanlines : true;
-  const showCrtGlow = crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
-  const showVignette = crtConfig ? crtConfig.vignette : false;
-  const showPhosphorBloom = crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
+  const rasterMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
+  const isPixel = rasterMode === 'pixel';
+  const showScanlines = !isPixel && (crtConfig ? crtConfig.scanlines : true);
+  const showCrtGlow = !isPixel && (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
+  const showVignette = !isPixel && (crtConfig ? crtConfig.vignette : false);
+  const showPhosphorBloom = !isPixel && (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
 
   if (typeof document !== 'undefined' && document.fonts) {
     try {
@@ -172,9 +177,9 @@ export async function exportVideoAnimation(
   const totalFrames = Math.max(2, Math.round(duration * fps));
   const frameIntervalMs = 1000 / fps;
 
-  // Character cell dimensions on canvas
-  const charWidth = MONOSPACE_CELL_WIDTH * scale;
-  const charHeight = MONOSPACE_CELL_HEIGHT * scale;
+  // Character cell dimensions on canvas (1:1 square for pixel mode, 0.6015 monospace aspect for ASCII)
+  const charWidth = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -267,7 +272,7 @@ export async function exportVideoAnimation(
         modelConfig: opts.modelConfig,
         viewConfig: opts.modelViewConfig,
         colorConfig: opts.mediaColorConfig,
-        rasterMode: opts.rasterMode,
+        rasterMode,
         algorithm: opts.ditherAlgorithm,
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
@@ -281,7 +286,7 @@ export async function exportVideoAnimation(
         viewConfig: opts.mediaViewConfig,
         density,
         colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
-        rasterMode: opts.rasterMode,
+        rasterMode,
         algorithm: opts.ditherAlgorithm,
         toneConfig: opts.toneConfig,
       });
@@ -298,7 +303,7 @@ export async function exportVideoAnimation(
         customContext,
         interactiveInfluence: false,
         colorConfig: opts.mediaColorConfig,
-        rasterMode: opts.rasterMode,
+        rasterMode,
         algorithm: opts.ditherAlgorithm,
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
@@ -309,81 +314,96 @@ export async function exportVideoAnimation(
     const isColored = Boolean(frameResult?.isColored && frameResult?.colors);
     const effectiveBg = isColored && frameResult ? frameResult.bgColor : bg;
 
-    // 1. Clear & Background
-    ctx.fillStyle = effectiveBg;
-    ctx.fillRect(0, 0, width, height);
-
-    // Optional CRT Centered Ambient Background Glow
-    if (showCrtGlow && !isColored) {
-      const ambientGlow = ctx.createRadialGradient(
-        width / 2, height / 2, 0,
-        width / 2, height / 2, Math.max(width, height) * 0.7
-      );
-      const baseGlowHex = gradientConfig ? gradientConfig.color1 : (customThemeColor || text);
-      let glowColor = baseGlowHex;
-      if (baseGlowHex.startsWith('#')) {
-        const hex = baseGlowHex.slice(1);
-        const fullHex = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
-        if (fullHex.length === 6) {
-          const r = parseInt(fullHex.slice(0, 2), 16);
-          const g = parseInt(fullHex.slice(2, 4), 16);
-          const b = parseInt(fullHex.slice(4, 6), 16);
-          glowColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
-        }
-      }
-      ambientGlow.addColorStop(0, glowColor);
-      ambientGlow.addColorStop(1, 'transparent');
-      ctx.fillStyle = ambientGlow;
-      ctx.fillRect(0, 0, width, height);
-    }
-
-    // 2. Draw ASCII Text Lines (with Phosphor Bloom if enabled)
-    ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', monospace`;
-    ctx.textBaseline = 'top';
-    ctx.textAlign = 'left';
-
-    if (!isColored && showPhosphorBloom && gradientConfig) {
-      // Direct directional gradient bloom matching character gradient
-      ctx.save();
-      ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
-      ctx.fillStyle = textFillStyle;
-      for (let row = 0; row < lines.length && row < rows; row++) {
-        const line = lines[row];
-        if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
-      }
-      ctx.restore();
-    } else if (!isColored && showPhosphorBloom) {
-      ctx.shadowColor = text;
-      ctx.shadowBlur = Math.round(4 * scale);
+    if (isPixel && frameResult?.luminance) {
+      drawPixelRasterToCanvas({
+        ctx,
+        cols,
+        rows,
+        luminance: frameResult.luminance,
+        colors: frameResult.colors,
+        bgColor: effectiveBg,
+        fgColor: text,
+        cellWidth: charWidth,
+        cellHeight: charHeight,
+        dpr: 1,
+      });
     } else {
-      ctx.shadowBlur = 0;
-    }
+      // 1. Clear & Background
+      ctx.fillStyle = effectiveBg;
+      ctx.fillRect(0, 0, width, height);
 
-    // Main sharp text render
-    if (isColored && frameResult?.colors) {
-      const colors = frameResult.colors;
-      for (let row = 0; row < rows; row++) {
-        const line = lines[row] || '';
-        for (let col = 0; col < cols && col < line.length; col++) {
-          const ch = line[col];
-          if (ch && ch !== ' ') {
-            const cIdx = (row * cols + col) * 3;
-            ctx.fillStyle = `rgb(${colors[cIdx]}, ${colors[cIdx + 1]}, ${colors[cIdx + 2]})`;
-            ctx.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+      // Optional CRT Centered Ambient Background Glow
+      if (showCrtGlow && !isColored) {
+        const ambientGlow = ctx.createRadialGradient(
+          width / 2, height / 2, 0,
+          width / 2, height / 2, Math.max(width, height) * 0.7
+        );
+        const baseGlowHex = gradientConfig ? gradientConfig.color1 : (customThemeColor || text);
+        let glowColor = baseGlowHex;
+        if (baseGlowHex.startsWith('#')) {
+          const hex = baseGlowHex.slice(1);
+          const fullHex = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+          if (fullHex.length === 6) {
+            const r = parseInt(fullHex.slice(0, 2), 16);
+            const g = parseInt(fullHex.slice(2, 4), 16);
+            const b = parseInt(fullHex.slice(4, 6), 16);
+            glowColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
+          }
+        }
+        ambientGlow.addColorStop(0, glowColor);
+        ambientGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = ambientGlow;
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      // 2. Draw ASCII Text Lines (with Phosphor Bloom if enabled)
+      ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', monospace`;
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+
+      if (!isColored && showPhosphorBloom && gradientConfig) {
+        // Direct directional gradient bloom matching character gradient
+        ctx.save();
+        ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
+        ctx.fillStyle = textFillStyle;
+        for (let row = 0; row < lines.length && row < rows; row++) {
+          const line = lines[row];
+          if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
+        }
+        ctx.restore();
+      } else if (!isColored && showPhosphorBloom) {
+        ctx.shadowColor = text;
+        ctx.shadowBlur = Math.round(4 * scale);
+      } else {
+        ctx.shadowBlur = 0;
+      }
+
+      // Main sharp text render
+      if (isColored && frameResult?.colors) {
+        const colors = frameResult.colors;
+        for (let row = 0; row < rows; row++) {
+          const line = lines[row] || '';
+          for (let col = 0; col < cols && col < line.length; col++) {
+            const ch = line[col];
+            if (ch && ch !== ' ') {
+              const cIdx = (row * cols + col) * 3;
+              ctx.fillStyle = `rgb(${colors[cIdx]}, ${colors[cIdx + 1]}, ${colors[cIdx + 2]})`;
+              ctx.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+            }
+          }
+        }
+      } else {
+        ctx.fillStyle = textFillStyle;
+        for (let row = 0; row < lines.length && row < rows; row++) {
+          const line = lines[row];
+          if (line) {
+            ctx.fillText(line, 0, Math.round(row * charHeight));
           }
         }
       }
-    } else {
-      ctx.fillStyle = textFillStyle;
-      for (let row = 0; row < lines.length && row < rows; row++) {
-        const line = lines[row];
-        if (line) {
-          ctx.fillText(line, 0, Math.round(row * charHeight));
-        }
-      }
-    }
 
-    ctx.shadowBlur = 0;
+      ctx.shadowBlur = 0;
+    }
 
     // 3. Optional CRT scanlines
     if (showScanlines) {

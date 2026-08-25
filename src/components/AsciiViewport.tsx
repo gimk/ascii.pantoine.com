@@ -6,11 +6,32 @@ import {
   CrtConfig,
   OptimizeConfig,
   RasterOutputMode,
+  UiThemeSettings,
 } from '../types/ascii';
 
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
+
+const THEME_HEX: Record<PhosphorTheme, string> = {
+  green: '#00ff66',
+  amber: '#ffb000',
+  cyan: '#00f0ff',
+  monochrome: '#f0f0f0',
+  blood: '#ff3344',
+  paper: '#151515',
+  matrix: '#00ff66',
+};
+
+const hexToRgb = (hex: string): [number, number, number] => {
+  let cleaned = hex.replace('#', '').trim();
+  if (cleaned.length === 3) {
+    cleaned = cleaned.split('').map((c) => c + c).join('');
+  }
+  const num = parseInt(cleaned, 16);
+  if (Number.isNaN(num) || cleaned.length !== 6) return [0, 255, 102];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+};
 
 /** Manual zoom range for the viewfinder steppers. */
 const ZOOM_MIN = 0.1;
@@ -56,6 +77,9 @@ interface AsciiViewportProps {
   gradientConfig?: PhosphorGradient | null;
   theme?: PhosphorTheme;
   customThemeColor?: string;
+  uiThemeSettings?: UiThemeSettings;
+  onChangeUiThemeSettings?: (cfg: UiThemeSettings) => void;
+  isSyncEligible?: boolean;
   appMode?: 'synth' | 'media' | 'model';
 
   mediaType?: 'image' | 'video';
@@ -95,6 +119,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   optimizeConfig,
   onChangeOptimizeConfig,
   gradientConfig,
+  theme,
+  customThemeColor,
+  uiThemeSettings,
+  onChangeUiThemeSettings,
+  isSyncEligible = true,
   appMode = 'synth',
   mediaType,
   isLoading = false,
@@ -648,6 +677,10 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const showVignette = crtConfig ? crtConfig.vignette : false;
   const showPhosphorBloom = crtConfig && !isColoredView ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
 
+  const asciiColor = customThemeColor || (theme ? THEME_HEX[theme] : '#00ff66') || '#00ff66';
+  const [ar, ag, ab] = hexToRgb(asciiColor);
+  const asciiGlow = `rgba(${ar}, ${ag}, ${ab}, 0.11)`;
+
   return (
     <div className="viewport-pane">
       {/* Visual Canvas Container */}
@@ -659,6 +692,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onWheel={handleWheel}
+        style={{
+          ...(showCrtGlow ? {
+            background: `radial-gradient(circle at center, ${asciiGlow} 0%, transparent 70%)`,
+          } : {}),
+        }}
       >
         {showScanlines && <div className="scanline-overlay" />}
         {showVignette && <div className="crt-vignette-overlay" />}
@@ -687,6 +725,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             style={{
               transform: `scale(${zoom})`,
               fontSize: '10px',
+              color: gradientConfig ? 'transparent' : asciiColor,
+              textShadow: gradientConfig ? undefined : `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}`,
               ...(gradientConfig ? ({
                 '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
               } as React.CSSProperties) : {}),
@@ -702,6 +742,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             display: isColoredView ? 'none' : 'block',
             transform: `scale(${zoom})`,
             fontSize: '10px',
+            color: gradientConfig ? 'transparent' : asciiColor,
+            textShadow: showPhosphorBloom && !gradientConfig ? `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}` : 'none',
             ...(gradientConfig ? ({
               '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
             } as React.CSSProperties) : {}),
@@ -868,6 +910,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           onChangeCrtConfig={onChangeCrtConfig}
           optimizeConfig={optimizeConfig}
           onChangeOptimizeConfig={onChangeOptimizeConfig}
+          uiThemeSettings={uiThemeSettings}
+          onChangeUiThemeSettings={onChangeUiThemeSettings}
+          isSyncEligible={isSyncEligible}
           isStaticImage={isTimelineDisabled}
           isContentColorActive={isColoredView}
         />

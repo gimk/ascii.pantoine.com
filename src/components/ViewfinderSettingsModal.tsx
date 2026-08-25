@@ -1,6 +1,21 @@
 import React, { useEffect } from 'react';
-import { X, Tv, Cpu, Sliders } from 'lucide-react';
-import { CrtConfig, OptimizeConfig } from '../types/ascii';
+import { X, Tv, Cpu, Sliders, Palette } from 'lucide-react';
+import { CrtConfig, OptimizeConfig, PhosphorTheme, UiThemeSettings } from '../types/ascii';
+
+const UI_THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
+  { id: 'green', name: 'Matrix Green', color: '#00ff66' },
+  { id: 'amber', name: 'Amber CRT', color: '#ffb000' },
+  { id: 'cyan', name: 'Cyber Cyan', color: '#00f0ff' },
+  { id: 'monochrome', name: 'Mono White', color: '#f0f0f0' },
+  { id: 'blood', name: 'Crimson Red', color: '#ff3344' },
+  { id: 'paper', name: 'Paper Print', color: '#151515' },
+];
+
+const DEFAULT_UI_THEME_SETTINGS: UiThemeSettings = {
+  uiTheme: 'green',
+  customUiColor: '',
+  syncUiWithAscii: true,
+};
 
 interface ViewfinderSettingsModalProps {
   isOpen: boolean;
@@ -9,6 +24,9 @@ interface ViewfinderSettingsModalProps {
   onChangeCrtConfig: (cfg: CrtConfig) => void;
   optimizeConfig: OptimizeConfig;
   onChangeOptimizeConfig: (cfg: OptimizeConfig) => void;
+  uiThemeSettings?: UiThemeSettings;
+  onChangeUiThemeSettings?: (cfg: UiThemeSettings) => void;
+  isSyncEligible?: boolean;
   isStaticImage?: boolean;
   isContentColorActive?: boolean;
 }
@@ -20,6 +38,9 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
   onChangeCrtConfig,
   optimizeConfig,
   onChangeOptimizeConfig,
+  uiThemeSettings = DEFAULT_UI_THEME_SETTINGS,
+  onChangeUiThemeSettings,
+  isSyncEligible = true,
   isStaticImage = false,
   isContentColorActive = false,
 }) => {
@@ -74,7 +95,167 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
 
         {/* Modal Body */}
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Section 1: CRT & Display Effects */}
+          {/* Section 1: Interface Theme & Accent */}
+          <div className="control-section">
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '10px',
+                fontSize: '11px',
+                fontWeight: 700,
+                color: 'var(--accent)',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <Palette size={13} />
+              <span>Interface Theme &amp; Accent</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* 1. Sync with ASCII Color */}
+              <div className="control-row">
+                <span className="control-label" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span>Sync with ASCII Color</span>
+                  <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>
+                    {isSyncEligible
+                      ? (uiThemeSettings.syncUiWithAscii ? 'Active: UI accent mirrors 1-color ASCII tint' : 'Disabled: Using standalone UI color')
+                      : 'Standby: Only active in 1-color ASCII mode'}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${uiThemeSettings.syncUiWithAscii ? 'btn-primary' : ''}`}
+                  onClick={() =>
+                    onChangeUiThemeSettings?.({
+                      ...uiThemeSettings,
+                      syncUiWithAscii: !uiThemeSettings.syncUiWithAscii,
+                    })
+                  }
+                >
+                  {uiThemeSettings.syncUiWithAscii ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+                </button>
+              </div>
+
+              {/* 2. Theme Presets */}
+              <div style={{ marginTop: '2px' }}>
+                <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  {uiThemeSettings.syncUiWithAscii && isSyncEligible
+                    ? 'BASE UI THEME (CURRENTLY SYNCED WITH ASCII):'
+                    : 'INTERFACE THEME PRESET:'}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', marginBottom: '8px' }}>
+                  {UI_THEMES.map((th) => {
+                    const isSelected = uiThemeSettings.uiTheme === th.id && !uiThemeSettings.customUiColor;
+                    return (
+                      <button
+                        key={th.id}
+                        type="button"
+                        className={`theme-btn ${isSelected ? 'active' : ''}`}
+                        onClick={() => {
+                          onChangeUiThemeSettings?.({
+                            ...uiThemeSettings,
+                            uiTheme: th.id,
+                            customUiColor: '',
+                          });
+                        }}
+                        title={th.name}
+                      >
+                        <div
+                          style={{
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: th.color,
+                            boxShadow: isSelected ? `0 0 6px ${th.color}` : 'none',
+                          }}
+                        />
+                        <span>{th.id.slice(0, 4).toUpperCase()}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Custom UI Accent Color */}
+              <div className="control-row">
+                <span className="control-label">Custom UI Accent</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div
+                    style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '2px',
+                      border: '1px solid var(--border-color)',
+                      background:
+                        uiThemeSettings.customUiColor ||
+                        UI_THEMES.find((t) => t.id === uiThemeSettings.uiTheme)?.color ||
+                        '#00ff66',
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <input
+                      type="color"
+                      value={
+                        uiThemeSettings.customUiColor ||
+                        UI_THEMES.find((t) => t.id === uiThemeSettings.uiTheme)?.color ||
+                        '#00ff66'
+                      }
+                      onChange={(e) => {
+                        onChangeUiThemeSettings?.({
+                          ...uiThemeSettings,
+                          customUiColor: e.target.value,
+                        });
+                      }}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        opacity: 0,
+                        cursor: 'pointer',
+                      }}
+                      title="Pick custom interface accent color"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    className="text-input"
+                    value={uiThemeSettings.customUiColor}
+                    placeholder="#00ff66"
+                    onChange={(e) => {
+                      onChangeUiThemeSettings?.({
+                        ...uiThemeSettings,
+                        customUiColor: e.target.value,
+                      });
+                    }}
+                    style={{ width: '80px', fontSize: '10px' }}
+                  />
+                  {uiThemeSettings.customUiColor && (
+                    <button
+                      type="button"
+                      className="chip-btn"
+                      onClick={() =>
+                        onChangeUiThemeSettings?.({
+                          ...uiThemeSettings,
+                          customUiColor: '',
+                        })
+                      }
+                      style={{ fontSize: '8.5px', padding: '2px 5px' }}
+                    >
+                      CLEAR
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: CRT & Display Effects */}
           <div className="control-section">
             <div
               style={{
@@ -156,7 +337,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
             </div>
           </div>
 
-          {/* Section 2: Performance & FPS Throttling */}
+          {/* Section 3: Performance & FPS Throttling */}
           <div className="control-section">
             <div
               style={{

@@ -29,6 +29,7 @@ import {
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
 import { exportAsciiImage } from '../engine/imageExporter';
+import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
 import * as THREE from 'three';
 import {
   WaveParams,
@@ -185,18 +186,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   }, [name, isOpen]);
 
   const handleCaptureImage = useCallback(async () => {
-    setIsCapturingImage(true);
+    const effectiveRasterMode: RasterOutputMode =
+      rasterMode || (appMode === 'media' ? mediaViewConfig?.rasterMode : undefined) || 'ascii';
+    const isPixel = effectiveRasterMode === 'pixel';
+
     try {
       const res = await exportAsciiImage({
         name,
         format: imageFormat,
         quality: imageQuality,
         scale: imageScale,
-        transparentBg: imageFormat === 'png' ? imageTransparentBg : false,
-        includeScanlines: imageIncludeCrt ? (crtConfig?.scanlines ?? true) : false,
-        includeCrtGlow: imageIncludeCrt ? (crtConfig?.crtGlow ?? (crtConfig?.glow ?? false)) : false,
-        includeVignette: imageIncludeCrt ? (crtConfig?.vignette ?? false) : false,
-        includePhosphorBloom: imageIncludeCrt ? (crtConfig?.phosphorBloom ?? (crtConfig?.glow ?? false)) : false,
+        transparentBg: (imageFormat === 'png' || imageFormat === 'svg') ? imageTransparentBg : false,
+        includeScanlines: !isPixel && imageIncludeCrt ? (crtConfig?.scanlines ?? true) : false,
+        includeCrtGlow: !isPixel && imageIncludeCrt ? (crtConfig?.crtGlow ?? (crtConfig?.glow ?? false)) : false,
+        includeVignette: !isPixel && imageIncludeCrt ? (crtConfig?.vignette ?? false) : false,
+        includePhosphorBloom: !isPixel && imageIncludeCrt ? (crtConfig?.phosphorBloom ?? (crtConfig?.glow ?? false)) : false,
         time: currentTime,
         currentAsciiFrame,
         type,
@@ -261,6 +265,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     mediaViewConfig,
     mediaColorConfig,
     mediaElement,
+    rasterMode,
+    ditherAlgorithm,
+    toneConfig,
+    adjustConfig,
     imageUrl,
   ]);
 
@@ -317,6 +325,25 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
+  const effectiveRasterMode: RasterOutputMode =
+    rasterMode || (appMode === 'media' ? mediaViewConfig?.rasterMode : undefined) || 'ascii';
+  const isPixel = effectiveRasterMode === 'pixel';
+
+  const stillCellW = isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_WIDTH * imageScale;
+  const stillCellH = isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_HEIGHT * imageScale;
+  const stillExportW = Math.round(cols * stillCellW);
+  const stillExportH = Math.round(rows * stillCellH);
+
+  const gifCellW = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_WIDTH * gifScale;
+  const gifCellH = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_HEIGHT * gifScale;
+  const gifExportW = Math.round(cols * gifCellW);
+  const gifExportH = Math.round(rows * gifCellH);
+
+  const videoCellW = isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_WIDTH * videoScale;
+  const videoCellH = isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_HEIGHT * videoScale;
+  const videoExportW = Math.round(cols * videoCellW);
+  const videoExportH = Math.round(rows * videoCellH);
+
   const exportCfg = {
     name,
     type,
@@ -339,6 +366,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     mediaConfig,
     mediaViewConfig,
     mediaColorConfig,
+    rasterMode: effectiveRasterMode,
+    ditherAlgorithm,
+    adjustConfig,
+    toneConfig,
   };
 
   const getExtension = (): string => {
@@ -562,6 +593,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             modelViewConfig,
             mediaConfig,
             mediaViewConfig,
+            mediaColorConfig,
+            rasterMode: effectiveRasterMode,
+            ditherAlgorithm,
+            adjustConfig,
+            toneConfig,
           }),
           mimeType: 'application/json',
         };
@@ -908,7 +944,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
                 {/* Resolution Scale */}
                 <div className="gif-config-item">
-                  <span className="gif-config-label">Resolution Scale</span>
+                  <span className="gif-config-label">Resolution Scale ({stillExportW}×{stillExportH}px)</span>
                   <div className="gif-btn-group">
                     {[
                       { val: 1.0, label: '1x' },
@@ -928,8 +964,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Background (PNG) or Quality (JPG) */}
-                {imageFormat === 'png' ? (
+                {/* Background (PNG & SVG) or Quality (JPG) */}
+                {imageFormat === 'png' || imageFormat === 'svg' ? (
                   <div className="gif-config-item">
                     <span className="gif-config-label">Background</span>
                     <div className="gif-btn-group">
@@ -947,7 +983,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : imageFormat === 'jpg' ? (
                   <div className="gif-config-item">
                     <span className="gif-config-label">JPG Quality ({Math.round(imageQuality * 100)}%)</span>
                     <div className="gif-btn-group">
@@ -962,20 +998,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       ))}
                     </div>
                   </div>
-                )}
+                ) : null}
 
-                {/* CRT Effects */}
-                <div className="gif-config-item">
-                  <span className="gif-config-label">CRT Effects</span>
-                  <div className="gif-btn-group">
-                    <button
-                      className={`btn ${imageIncludeCrt ? 'btn-primary' : ''}`}
-                      onClick={() => setImageIncludeCrt(!imageIncludeCrt)}
-                    >
-                      {imageIncludeCrt ? 'Glow & Scanlines [ON]' : 'Clean Text [OFF]'}
-                    </button>
+                {/* CRT Effects (ASCII mode only) */}
+                {!isPixel && (
+                  <div className="gif-config-item">
+                    <span className="gif-config-label">CRT Effects</span>
+                    <div className="gif-btn-group">
+                      <button
+                        className={`btn ${imageIncludeCrt ? 'btn-primary' : ''}`}
+                        onClick={() => setImageIncludeCrt(!imageIncludeCrt)}
+                      >
+                        {imageIncludeCrt ? 'Glow & Scanlines [ON]' : 'Clean Text [OFF]'}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Loading indicator */}
@@ -1042,7 +1080,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
 
                 <div className="gif-config-item">
-                  <span className="gif-config-label">Resolution Scale</span>
+                  <span className="gif-config-label">Resolution Scale ({gifExportW}×{gifExportH}px)</span>
                   <div className="gif-btn-group">
                     {[
                       { val: 1.0, label: '1.0x (Standard)' },
@@ -1129,7 +1167,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
 
                 <div className="gif-config-item">
-                  <span className="gif-config-label">Resolution Quality</span>
+                  <span className="gif-config-label">Resolution Quality ({videoExportW}×{videoExportH}px)</span>
                   <div className="gif-btn-group">
                     {[
                       { val: 1.0, label: '1.0x (SD)' },
