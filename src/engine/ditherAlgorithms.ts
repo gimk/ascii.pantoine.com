@@ -1,67 +1,96 @@
 import { DitherAlgorithm, DitherFamily } from '../types/ascii';
 
+export type DitherPatternType =
+  | 'diffusion'
+  | 'bayer'
+  | 'halftone'
+  | 'stochastic'
+  | 'fractal'
+  | 'wave'
+  | 'glitch'
+  | 'circuit'
+  | 'lines';
+
 export interface DitherAlgorithmMeta {
   id: DitherAlgorithm;
   name: string;
   family: DitherFamily;
   description: string;
+  badge?: string;
+  tags?: string[];
+  patternType?: DitherPatternType;
+  highlight?: boolean;
 }
 
 export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
-  // --- Error Diffusion (12) ---
-  { id: 'none', name: 'Threshold (None)', family: 'error-diffusion', description: 'Direct quantization without error diffusion' },
-  { id: 'floyd-steinberg', name: 'Floyd-Steinberg', family: 'error-diffusion', description: 'Classic 4-neighbor balanced error diffusion (1976)' },
-  { id: 'false-floyd-steinberg', name: 'False Floyd-Steinberg', family: 'error-diffusion', description: 'Compact 2-neighbor rapid diffusion with crisp lines' },
-  { id: 'atkinson', name: 'Atkinson (MacPaint)', family: 'error-diffusion', description: 'Bill Atkinson 1984 8-neighbor diffusion, preserves clean highlights' },
-  { id: 'sierra-3', name: 'Sierra 3-Line', family: 'error-diffusion', description: 'Frankie Sierra 3-row diffusion with smooth gradients' },
-  { id: 'sierra-2', name: 'Two-Row Sierra', family: 'error-diffusion', description: 'Fast 2-row Sierra diffusion with balanced distribution' },
-  { id: 'sierra-lite', name: 'Sierra Lite (2-4A)', family: 'error-diffusion', description: 'Lightweight 3-neighbor Sierra variant' },
-  { id: 'stucki', name: 'Stucki Matrix', family: 'error-diffusion', description: 'Peter Stucki 1981 sharp, high-contrast 12-neighbor matrix' },
-  { id: 'jjn', name: 'Jarvis-Judice-Ninke', family: 'error-diffusion', description: '12-neighbor wide diffusion for soft photographic gradations' },
-  { id: 'burkes', name: 'Burkes', family: 'error-diffusion', description: 'Daniel Burkes 7-neighbor clean horizontal diffusion' },
-  { id: 'fan', name: 'Fan Dither (9-Neighbor)', family: 'error-diffusion', description: 'Zhigang Fan adaptive error diffusion' },
-  { id: 'shiau-fan', name: 'Shiau-Fan', family: 'error-diffusion', description: 'Modified edge-preserving error diffusion' },
-  { id: 'ostromoukhov', name: 'Ostromoukhov', family: 'error-diffusion', description: 'Variable-coefficient diffusion preventing worm artifacts' },
+  // --- Error Diffusion (13) ---
+  { id: 'none', name: 'Threshold (None)', family: 'error-diffusion', description: 'Direct quantization without error diffusion', badge: 'Hard 1-Bit', tags: ['Quantize', 'Crisp'], patternType: 'diffusion' },
+  { id: 'floyd-steinberg', name: 'Floyd-Steinberg', family: 'error-diffusion', description: 'Classic 4-neighbor balanced error diffusion (1976)', badge: 'Classic 1976', tags: ['Balanced', 'Smooth', 'Standard'], patternType: 'diffusion', highlight: true },
+  { id: 'false-floyd-steinberg', name: 'False Floyd-Steinberg', family: 'error-diffusion', description: 'Compact 2-neighbor rapid diffusion with crisp lines', badge: 'Fast 2-Tap', tags: ['Fast', 'Crisp'], patternType: 'diffusion' },
+  { id: 'atkinson', name: 'Atkinson (MacPaint)', family: 'error-diffusion', description: 'Bill Atkinson 1984 8-neighbor diffusion, preserves clean highlights', badge: 'Mac 1984', tags: ['Macintosh', 'High-Contrast', 'Clean'], patternType: 'diffusion', highlight: true },
+  { id: 'sierra-3', name: 'Sierra 3-Line', family: 'error-diffusion', description: 'Frankie Sierra 3-row diffusion with smooth gradients', badge: 'Sierra 3-Row', tags: ['Photo', 'Soft', 'Gradient'], patternType: 'diffusion' },
+  { id: 'sierra-2', name: 'Two-Row Sierra', family: 'error-diffusion', description: 'Fast 2-row Sierra diffusion with balanced distribution', badge: 'Sierra 2-Row', tags: ['Fast', 'Balanced'], patternType: 'diffusion' },
+  { id: 'sierra-lite', name: 'Sierra Lite (2-4A)', family: 'error-diffusion', description: 'Lightweight 3-neighbor Sierra variant', badge: 'Sierra Lite', tags: ['Light', 'Fast'], patternType: 'diffusion' },
+  { id: 'stucki', name: 'Stucki Matrix', family: 'error-diffusion', description: 'Peter Stucki 1981 sharp, high-contrast 12-neighbor matrix', badge: 'Sharp 1981', tags: ['High-Contrast', 'Crisp', 'Print'], patternType: 'diffusion', highlight: true },
+  { id: 'jjn', name: 'Jarvis-Judice-Ninke', family: 'error-diffusion', description: '12-neighbor wide diffusion for soft photographic gradations', badge: 'JJN Photo', tags: ['Photographic', 'Ultra-Soft', 'Wide'], patternType: 'diffusion', highlight: true },
+  { id: 'burkes', name: 'Burkes', family: 'error-diffusion', description: 'Daniel Burkes 7-neighbor clean horizontal diffusion', badge: 'Burkes 1988', tags: ['Horizontal', 'Clean'], patternType: 'diffusion' },
+  { id: 'fan', name: 'Fan Dither (9-Neighbor)', family: 'error-diffusion', description: 'Zhigang Fan adaptive error diffusion', badge: 'Adaptive 9-Tap', tags: ['Adaptive', 'Smooth'], patternType: 'diffusion' },
+  { id: 'shiau-fan', name: 'Shiau-Fan', family: 'error-diffusion', description: 'Modified edge-preserving error diffusion', badge: 'Edge Aware', tags: ['Edge-Preserving', 'Photo'], patternType: 'diffusion' },
+  { id: 'ostromoukhov', name: 'Ostromoukhov', family: 'error-diffusion', description: 'Variable-coefficient diffusion preventing worm artifacts', badge: 'Anti-Worm', tags: ['Variable', 'No-Artifacts', 'Modern'], patternType: 'diffusion', highlight: true },
 
-  // --- Ordered & Clustered Matrices (12) ---
-  { id: 'bayer-2x2', name: 'Bayer 2×2 (Coarse)', family: 'ordered', description: '4-level coarse ordered dithering matrix' },
-  { id: 'bayer-4x4', name: 'Bayer 4×4 (Classic)', family: 'ordered', description: '16-level classic ordered matrix' },
-  { id: 'bayer-8x8', name: 'Bayer 8×8 (Smooth)', family: 'ordered', description: '64-level high-fidelity ordered matrix' },
-  { id: 'bayer-16x16', name: 'Bayer 16×16 (Ultra)', family: 'ordered', description: '256-level ultra-smooth continuous matrix' },
-  { id: 'cluster-4x4', name: 'Clustered Dot 4×4', family: 'ordered', description: 'Halftone dot cluster ordered matrix' },
-  { id: 'cluster-8x8', name: 'Clustered Dot 8×8', family: 'ordered', description: 'Smooth circular halftone dot cluster' },
-  { id: 'halftone-dot', name: 'Halftone Dot Screen', family: 'ordered', description: 'Newsprint-style clustered dot halftone screen' },
-  { id: 'diagonal-4x4', name: 'Diagonal Lines 4×4', family: 'ordered', description: '45° etched diagonal line screen' },
-  { id: 'diagonal-8x8', name: 'Diagonal Lines 8×8', family: 'ordered', description: 'Fine 45° engraving line dither' },
-  { id: 'horizontal-lines', name: 'Horizontal Lines', family: 'ordered', description: 'Linear horizontal raster matrix' },
-  { id: 'vertical-lines', name: 'Vertical Lines', family: 'ordered', description: 'Linear vertical stripe matrix' },
-  { id: 'crosshatch-8x8', name: 'Crosshatch 8×8', family: 'ordered', description: 'Intersecting mesh cross-screen matrix' },
-  { id: 'spiral-dot', name: 'Spiral Dot Matrix', family: 'ordered', description: 'Concentric circular ordered dither' },
+  // --- Ordered & Clustered Matrices (13) ---
+  { id: 'bayer-2x2', name: 'Bayer 2×2 (Coarse)', family: 'ordered', description: '4-level coarse ordered dithering matrix', badge: 'Coarse 2×2', tags: ['Retro', 'Low-Res'], patternType: 'bayer' },
+  { id: 'bayer-4x4', name: 'Bayer 4×4 (Classic)', family: 'ordered', description: '16-level classic ordered matrix', badge: 'GameBoy 4×4', tags: ['Classic', '16-Level', 'Retro'], patternType: 'bayer', highlight: true },
+  { id: 'bayer-8x8', name: 'Bayer 8×8 (Smooth)', family: 'ordered', description: '64-level high-fidelity ordered matrix', badge: 'Smooth 8×8', tags: ['64-Level', 'Smooth', 'Matrix'], patternType: 'bayer', highlight: true },
+  { id: 'bayer-16x16', name: 'Bayer 16×16 (Ultra)', family: 'ordered', description: '256-level ultra-smooth continuous matrix', badge: 'Ultra 16×16', tags: ['256-Level', 'Continuous'], patternType: 'bayer' },
+  { id: 'cluster-4x4', name: 'Clustered Dot 4×4', family: 'ordered', description: 'Halftone dot cluster ordered matrix', badge: 'Cluster 4×4', tags: ['Halftone', 'Dot'], patternType: 'halftone' },
+  { id: 'cluster-8x8', name: 'Clustered Dot 8×8', family: 'ordered', description: 'Smooth circular halftone dot cluster', badge: 'Cluster 8×8', tags: ['Halftone', 'Circular'], patternType: 'halftone' },
+  { id: 'halftone-dot', name: 'Halftone Dot Screen', family: 'ordered', description: 'Newsprint-style clustered dot halftone screen', badge: 'Newsprint', tags: ['Halftone', 'Print', 'Comic'], patternType: 'halftone', highlight: true },
+  { id: 'diagonal-4x4', name: 'Diagonal Lines 4×4', family: 'ordered', description: '45° etched diagonal line screen', badge: 'Diagonal 45°', tags: ['Etched', 'Line Art'], patternType: 'lines', highlight: true },
+  { id: 'diagonal-8x8', name: 'Diagonal Lines 8×8', family: 'ordered', description: 'Fine 45° engraving line dither', badge: 'Fine Engrave', tags: ['Engraving', 'Fine Lines'], patternType: 'lines' },
+  { id: 'horizontal-lines', name: 'Horizontal Lines', family: 'ordered', description: 'Linear horizontal raster matrix', badge: 'Scanlines H', tags: ['CRT', 'Raster Lines'], patternType: 'lines' },
+  { id: 'vertical-lines', name: 'Vertical Lines', family: 'ordered', description: 'Linear vertical stripe matrix', badge: 'Stripes V', tags: ['Pinstripe', 'Lines'], patternType: 'lines' },
+  { id: 'crosshatch-8x8', name: 'Crosshatch 8×8', family: 'ordered', description: 'Intersecting mesh cross-screen matrix', badge: 'Crosshatch', tags: ['Engraving', 'Mesh', 'Ink'], patternType: 'lines', highlight: true },
+  { id: 'spiral-dot', name: 'Spiral Dot Matrix', family: 'ordered', description: 'Concentric circular ordered dither', badge: 'Spiral Dot', tags: ['Concentric', 'Organic'], patternType: 'halftone' },
 
   // --- Blue Noise & Stochastic (5) ---
-  { id: 'blue-noise', name: 'Blue Noise (High-Freq)', family: 'blue-noise', description: 'Pre-computed high-frequency blue noise, organic stipple' },
-  { id: 'void-cluster', name: 'Void-and-Cluster', family: 'blue-noise', description: 'Ulichney void-and-cluster blue noise distribution' },
-  { id: 'white-noise', name: 'White Noise (Random)', family: 'blue-noise', description: 'Uniform stochastic random noise grain' },
-  { id: 'gaussian-noise', name: 'Gaussian Film Grain', family: 'blue-noise', description: 'Normal-distribution photographic film grain' },
-  { id: 'interleaved-gradient', name: 'Interleaved Gradient Noise', family: 'blue-noise', description: 'Low-discrepancy temporal gradient noise' },
+  { id: 'blue-noise', name: 'Blue Noise (High-Freq)', family: 'blue-noise', description: 'Pre-computed high-frequency blue noise, organic stipple', badge: 'Organic Stipple', tags: ['High-Frequency', 'Organic', 'Stipple'], patternType: 'stochastic', highlight: true },
+  { id: 'void-cluster', name: 'Void-and-Cluster', family: 'blue-noise', description: 'Ulichney void-and-cluster blue noise distribution', badge: 'Void-Cluster', tags: ['Smooth', 'Dispersed', 'Optimal'], patternType: 'stochastic', highlight: true },
+  { id: 'white-noise', name: 'White Noise (Random)', family: 'blue-noise', description: 'Uniform stochastic random noise grain', badge: 'Random Noise', tags: ['Grain', 'Uniform', 'Raw'], patternType: 'stochastic' },
+  { id: 'gaussian-noise', name: 'Gaussian Film Grain', family: 'blue-noise', description: 'Normal-distribution photographic film grain', badge: '35mm Film', tags: ['Photographic', 'Analog', 'Film Grain'], patternType: 'stochastic', highlight: true },
+  { id: 'interleaved-gradient', name: 'Interleaved Gradient Noise', family: 'blue-noise', description: 'Low-discrepancy temporal gradient noise', badge: 'IGN Shader', tags: ['Low-Discrepancy', 'Temporal'], patternType: 'stochastic' },
 
   // --- Algorithmic & Space-Filling (4) ---
-  { id: 'dot-diffusion', name: 'Knuth Dot Diffusion', family: 'algorithmic', description: 'Donald Knuth space-filling tile diffusion' },
-  { id: 'hilbert', name: 'Hilbert Fractal Curve', family: 'algorithmic', description: '1D error diffusion along 2D Hilbert space-filling curve' },
-  { id: 'peano', name: 'Peano Curve', family: 'algorithmic', description: 'Continuous space-filling fractal curve scan' },
-  { id: 'r-sequence', name: 'R-Sequence Quasi-Random', family: 'algorithmic', description: 'Low-discrepancy 2D metallic ratio quasi-random sequence' },
+  { id: 'dot-diffusion', name: 'Knuth Dot Diffusion', family: 'algorithmic', description: 'Donald Knuth space-filling tile diffusion', badge: 'Knuth 1987', tags: ['Space-Filling', 'Tiling', 'Math'], patternType: 'fractal', highlight: true },
+  { id: 'hilbert', name: 'Hilbert Fractal Curve', family: 'algorithmic', description: '1D error diffusion along 2D Hilbert space-filling curve', badge: 'Hilbert Curve', tags: ['Fractal', 'Space-Filling', 'Math'], patternType: 'fractal', highlight: true },
+  { id: 'peano', name: 'Peano Curve', family: 'algorithmic', description: 'Continuous space-filling fractal curve scan', badge: 'Peano Fractal', tags: ['Fractal', 'Continuous', 'Geometric'], patternType: 'fractal', highlight: true },
+  { id: 'r-sequence', name: 'R-Sequence Quasi-Random', family: 'algorithmic', description: 'Low-discrepancy 2D metallic ratio quasi-random sequence', badge: 'Metallic Ratio', tags: ['Quasi-Random', 'Metallic', 'Math'], patternType: 'fractal', highlight: true },
 
   // --- Modulation & Generative (9) ---
-  { id: 'fm-modulation', name: 'Frequency Modulation (FM)', family: 'modulation', description: 'Carrier wave frequency modulation synthesizing topographic contours' },
-  { id: 'phase-modulation', name: 'Phase Modulation (PM)', family: 'modulation', description: 'Multi-frequency phase distortion and contour interference' },
-  { id: 'bytewave', name: 'ByteWave Bitwise', family: 'modulation', description: 'Low-level arithmetic bitwise boolean raster dither' },
-  { id: 'concentric-rings', name: 'Concentric Rings', family: 'modulation', description: 'Harmonic radial wave ripples and interference rings' },
-  { id: 'cellular-circuit', name: 'Cellular Circuit', family: 'modulation', description: 'Discrete cell trace network dither' },
-  { id: 'scanline-shift', name: 'Scanline Phase Shift', family: 'modulation', description: 'Alternating interlaced line phase dither' },
-  { id: 'sine-drift', name: 'Analog Sine Drift', family: 'modulation', description: 'CRT analog sinusoidal drift modulation' },
-  { id: 'glitch-displacement', name: 'Glitch Pixel Tear', family: 'modulation', description: 'Horizontal raster displacement jitter' },
-  { id: 'threshold-mod', name: 'Dynamic Threshold Mod', family: 'modulation', description: 'Non-linear luminance-dependent thresholding' },
+  { id: 'fm-modulation', name: 'Frequency Modulation (FM)', family: 'modulation', description: 'Carrier wave frequency modulation synthesizing topographic contours', badge: 'FM Carrier', tags: ['Topographic', 'Wave', 'Synth'], patternType: 'wave', highlight: true },
+  { id: 'phase-modulation', name: 'Phase Modulation (PM)', family: 'modulation', description: 'Multi-frequency phase distortion and contour interference', badge: 'PM Distortion', tags: ['Phase', 'Interference', 'Harmonic'], patternType: 'wave' },
+  { id: 'bytewave', name: 'ByteWave Bitwise', family: 'modulation', description: 'Low-level arithmetic bitwise boolean raster dither', badge: 'Bitwise Demo', tags: ['Low-Level', 'Boolean', 'Cyber'], patternType: 'glitch', highlight: true },
+  { id: 'concentric-rings', name: 'Concentric Rings', family: 'modulation', description: 'Harmonic radial wave ripples and interference rings', badge: 'Radial Ripple', tags: ['Radar', 'Concentric', 'Wave'], patternType: 'wave', highlight: true },
+  { id: 'cellular-circuit', name: 'Cellular Circuit', family: 'modulation', description: 'Discrete cell trace network dither', badge: 'PCB Circuit', tags: ['Cellular', 'Tech', 'Network'], patternType: 'circuit', highlight: true },
+  { id: 'scanline-shift', name: 'Scanline Phase Shift', family: 'modulation', description: 'Alternating interlaced line phase dither', badge: 'Interlace CRT', tags: ['Scanline', 'CRT', 'Analog'], patternType: 'lines' },
+  { id: 'sine-drift', name: 'Analog Sine Drift', family: 'modulation', description: 'CRT analog sinusoidal drift modulation', badge: 'Analog Sine', tags: ['CRT Drift', 'Wavy', 'Warp'], patternType: 'wave' },
+  { id: 'glitch-displacement', name: 'Glitch Pixel Tear', family: 'modulation', description: 'Horizontal raster displacement jitter', badge: 'Cyberpunk Tear', tags: ['Glitch', 'Tear', 'Jitter'], patternType: 'glitch', highlight: true },
+  { id: 'threshold-mod', name: 'Dynamic Threshold Mod', family: 'modulation', description: 'Non-linear luminance-dependent thresholding', badge: 'Dynamic Mod', tags: ['Non-Linear', 'Contrast'], patternType: 'wave' },
 ];
+
+export function getRandomAlgorithm(family?: DitherFamily | 'all', currentId?: DitherAlgorithm): DitherAlgorithmMeta {
+  const pool = !family || family === 'all'
+    ? DITHER_ALGORITHMS
+    : DITHER_ALGORITHMS.filter((a) => a.family === family);
+  
+  if (pool.length === 0) return DITHER_ALGORITHMS[0];
+  if (pool.length === 1) return pool[0];
+
+  const candidatePool = currentId ? pool.filter((a) => a.id !== currentId) : pool;
+  const list = candidatePool.length > 0 ? candidatePool : pool;
+  const randomIndex = Math.floor(Math.random() * list.length);
+  return list[randomIndex];
+}
 
 export const DITHER_FAMILY_LABELS: Record<DitherFamily, string> = {
   'error-diffusion': 'Error Diffusion',

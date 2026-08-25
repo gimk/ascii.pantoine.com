@@ -1607,6 +1607,65 @@ html, body, #root {
   box-shadow: 0 0 6px var(--accent-glow);
 }
 
+/* Dither Algorithm Explorer Styles */
+.dither-family-bar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.dither-family-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.dither-family-tab {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 5px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.dither-family-tab:hover {
+  border-color: var(--border-active);
+  color: var(--text-primary);
+  background: var(--bg-control-hover);
+}
+
+.dither-family-tab.active {
+  background: rgba(255, 170, 0, 0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.dither-algo-chip {
+  transition: all 0.15s ease;
+}
+
+.dither-algo-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+.dither-matrix-card:hover {
+  border-color: var(--accent) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.slider-nudge-btn.active {
+  background: rgba(255, 170, 0, 0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .slider-nudge-btn {
   width: 20px;
   height: 20px;
