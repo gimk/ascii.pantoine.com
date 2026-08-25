@@ -436,8 +436,11 @@ class HeadlessModelRenderer {
     this.dirLight.intensity = viewConfig.lightIntensity * 1.5;
     this.ambLight.intensity = viewConfig.ambientLight * 1.2;
 
-    // Aspect ratio compensation for monospace typography vs square raster
-    const aspectCorrection = viewConfig.aspectRatio ?? 0.50;
+    // Aspect ratio compensation for monospace typography vs square raster.
+    // Pixel mode paints 1:1 cells, so the camera must not pre-squash the scene
+    // for character cell width or the mesh comes out stretched horizontally.
+    const isSquareRaster = (ctx.rasterMode || viewConfig.rasterMode || 'ascii') !== 'ascii';
+    const aspectCorrection = isSquareRaster ? 1.0 : (viewConfig.aspectRatio ?? 0.50);
     const viewAspect = (cols / rows) * aspectCorrection;
 
 

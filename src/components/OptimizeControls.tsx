@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { AppMode, MediaConfig } from '../types/ascii';
 import { Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Grid } from 'lucide-react';
+import { MONOSPACE_CELL_ASPECT } from '../engine/renderer';
 
 interface OptimizeControlsProps {
   cols: number;
@@ -14,6 +15,8 @@ interface OptimizeControlsProps {
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   mediaConfig?: MediaConfig;
   isPixelMode?: boolean;
+  /** Width/height of the viewfinder area; synth and model lock their grid to this. */
+  viewfinderAspect?: number;
   dpi?: number;
   onChangeDpi?: (newDpi: number) => void;
 }
@@ -99,6 +102,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   mediaElement,
   mediaConfig,
   isPixelMode = false,
+  viewfinderAspect = 16 / 9,
   dpi = 72,
   onChangeDpi,
 }) => {
@@ -106,6 +110,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   const [draftCols, setDraftCols] = useState<number>(cols);
   const [draftRows, setDraftRows] = useState<number>(rows);
   const [lockAspectRatio, setLockAspectRatio] = useState<boolean>(true);
+  const [lockViewfinderRatio, setLockViewfinderRatio] = useState<boolean>(true);
 
   useEffect(() => {
     setDraftCols(cols);
@@ -193,24 +198,78 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     }
   };
 
+  /*
+   * Live-apply ceiling for synth/model. A character grid past 240x120 is
+   * already unreadable, but a square pixel grid is a raster and needs the
+   * headroom, so pixel mode gets the same 640-wide budget media uses.
+   */
+  const liveColsCeiling = isPixelMode ? 640 : 240;
+  const liveRowsCeiling = isPixelMode ? 480 : 120;
+
+  /*
+   * Synth and model have no source image to lock against, so the reference is
+   * the viewfinder itself: with the lock on, one slider drives the other so the
+   * grid keeps filling the viewport instead of growing into a letterbox.
+   * A grid displays at (cols / rows) * cellAspect, so matching the viewfinder
+   * means rows = cols * cellAspect / viewfinderAspect.
+   */
+  const safeViewAspect = Math.max(0.05, viewfinderAspect);
+  // Use the real cell aspect the viewport draws with, not the 0.55 the media
+  // path approximates with — the lock is judged against the viewfinder itself,
+  // so a few percent off reads as a visible letterbox.
+  const viewCellAspect = isPixelMode ? 1.0 : MONOSPACE_CELL_ASPECT;
+  const rowsForCols = (c: number) => Math.max(5, Math.round((c * viewCellAspect) / safeViewAspect));
+  const colsForRows = (r: number) => Math.max(10, Math.round((r * safeViewAspect) / viewCellAspect));
+
   const handleSynthColsChange = (newCols: number) => {
     setDraftCols(newCols);
-    if (newCols <= 240 && draftRows <= 120) {
-      onChangeResolution(newCols, draftRows);
+    const nextRows = lockViewfinderRatio ? rowsForCols(newCols) : draftRows;
+    if (lockViewfinderRatio) setDraftRows(nextRows);
+    if (newCols <= liveColsCeiling && nextRows <= liveRowsCeiling) {
+      onChangeResolution(newCols, nextRows);
     }
   };
 
   const handleSynthRowsChange = (newRows: number) => {
     setDraftRows(newRows);
-    if (draftCols <= 240 && newRows <= 120) {
-      onChangeResolution(draftCols, newRows);
+    const nextCols = lockViewfinderRatio ? colsForRows(newRows) : draftCols;
+    if (lockViewfinderRatio) setDraftCols(nextCols);
+    if (nextCols <= liveColsCeiling && newRows <= liveRowsCeiling) {
+      onChangeResolution(nextCols, newRows);
     }
+  };
+
+  const handleMatchViewfinder = () => {
+    const nextRows = rowsForCols(draftCols);
+    setDraftRows(nextRows);
+    onChangeResolution(draftCols, nextRows);
   };
 
   const isPendingHighRes =
     appMode !== 'media' &&
-    (draftCols > 240 || draftRows > 120) &&
+    (draftCols > liveColsCeiling || draftRows > liveRowsCeiling) &&
     (draftCols !== cols || draftRows !== rows);
+
+  /*
+   * Character cells are ~0.55 as wide as they are tall, so the text presets are
+   * 2:1 grids that read as square. Pixel mode paints 1:1 cells, where a 2:1
+   * grid really is a 2:1 letterbox, so it needs its own square-ish ladder.
+   */
+  const synthResolutionPresets = isPixelMode
+    ? [
+        { label: '64x64', c: 64, r: 64 },
+        { label: '128x128', c: 128, r: 128 },
+        { label: '160x120', c: 160, r: 120 },
+        { label: '256x256', c: 256, r: 256 },
+        { label: '320x240', c: 320, r: 240 },
+      ]
+    : [
+        { label: '50x25', c: 50, r: 25 },
+        { label: '70x35', c: 70, r: 35 },
+        { label: '100x50', c: 100, r: 50 },
+        { label: '120x60', c: 120, r: 60 },
+        { label: '150x75', c: 150, r: 75 },
+      ];
 
   const handleApplyPendingResolution = () => {
     onChangeResolution(draftCols, draftRows);
@@ -515,23 +574,17 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
         <>
           {/* Resolution & Grid Dimensions */}
           <CollapsibleSection
-            title="Grid Resolution"
+            title={isPixelMode ? 'Pixel Resolution' : 'Grid Resolution'}
             icon={<Grid size={12} />}
-            badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
-                {cols}x{rows} ({totalCells.toLocaleString()} chars)
+            badge={<><span style={{ fontSize: '9.5px', color: isPixelMode ? 'var(--accent)' : 'var(--text-muted)' }}>
+                {cols}x{rows} ({totalCells.toLocaleString()} {isPixelMode ? 'px' : 'chars'})
               </span></>}
             persistKey="OptimizeControls-grid-resolution"
             defaultOpen={false}
           >
             {/* Quick Resolution buttons */}
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px', opacity: autoRes ? 0.45 : 1 }}>
-              {[
-                { label: '50x25', c: 50, r: 25 },
-                { label: '70x35', c: 70, r: 35 },
-                { label: '100x50', c: 100, r: 50 },
-                { label: '120x60', c: 120, r: 60 },
-                { label: '150x75', c: 150, r: 75 },
-              ].map((preset) => (
+              {synthResolutionPresets.map((preset) => (
                 <button
                   key={preset.label}
                   disabled={autoRes}
@@ -567,6 +620,42 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </button>
             )}
 
+            {/* Viewfinder Ratio Lock — inert while auto res drives the grid */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', opacity: autoRes ? 0.45 : 1 }}>
+              <button
+                className={`btn btn-sm ${!autoRes && lockViewfinderRatio ? 'btn-primary' : ''}`}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: autoRes ? 'not-allowed' : 'pointer',
+                }}
+                disabled={autoRes}
+                onClick={() => setLockViewfinderRatio(!lockViewfinderRatio)}
+                title={
+                  autoRes
+                    ? 'Ratio lock is unavailable while Auto Resolution is driving the grid.'
+                    : "When locked, moving either slider adjusts the other so the grid keeps the viewfinder's aspect ratio"
+                }
+              >
+                {lockViewfinderRatio ? <Lock size={11} /> : <Unlock size={11} />}
+                RATIO LOCK {lockViewfinderRatio ? '[ON]' : '[OFF]'}
+              </button>
+
+              <button
+                className="btn btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: autoRes ? 'not-allowed' : 'pointer' }}
+                disabled={autoRes}
+                onClick={handleMatchViewfinder}
+                title="Snap rows to match the viewfinder aspect ratio at the current column count"
+              >
+                <Scale size={11} />
+                MATCH RATIO
+              </button>
+            </div>
+
             <div className="control-row" style={{ opacity: autoRes ? 0.45 : 1 }}>
               <span className="control-label">Columns (Width)</span>
               <div className="control-input-wrapper">
@@ -574,7 +663,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   type="range"
                   className="range-slider"
                   min={30}
-                  max={Math.max(180, draftCols)}
+                  max={Math.max(isPixelMode ? 512 : 180, draftCols)}
                   step={2}
                   value={draftCols}
                   disabled={autoRes}
@@ -598,7 +687,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   type="range"
                   className="range-slider"
                   min={15}
-                  max={Math.max(90, draftRows)}
+                  max={Math.max(isPixelMode ? 384 : 90, draftRows)}
                   step={1}
                   value={draftRows}
                   disabled={autoRes}
@@ -634,7 +723,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   <span>High Resolution Warning</span>
                 </div>
                 <p style={{ fontSize: '9.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                  {draftCols}x{draftRows} ({(draftCols * draftRows).toLocaleString()} characters) exceeds standard 240x120. Rendering high cell counts may reduce framerate on lower-powered devices.
+                  {draftCols}x{draftRows} ({(draftCols * draftRows).toLocaleString()} {isPixelMode ? 'pixels' : 'characters'}) exceeds standard {liveColsCeiling}x{liveRowsCeiling}. Rendering high cell counts may reduce framerate on lower-powered devices.
                 </p>
                 <button
                   className="btn btn-primary btn-sm"

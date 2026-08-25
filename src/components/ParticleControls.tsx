@@ -196,7 +196,9 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
           </button>
           <button
             className="btn btn-sm"
-            onClick={() => onChange(DEFAULT_PARTICLE_CONFIG)}
+            // Physics only: the defaults are off, but resetting tuning from
+            // inside the open panel should not also flip the system off.
+            onClick={() => onChange({ ...DEFAULT_PARTICLE_CONFIG, enabled: config.enabled })}
             title="Reset Particle Settings"
           >
             RESET PHYSICS

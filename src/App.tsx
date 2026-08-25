@@ -564,6 +564,9 @@ export const App: React.FC = () => {
 
 
 
+  /** Live viewfinder aspect, reported by the viewport, for ratio-locking the grid. */
+  const [viewfinderAspect, setViewfinderAspect] = useState<number>(16 / 9);
+
   // Particles & Interaction
   const [particleConfig, setParticleConfig] = useState<ParticleConfig>(
     sharedState?.particleConfig || DEFAULT_PARTICLE_CONFIG
@@ -1561,6 +1564,22 @@ export const App: React.FC = () => {
     [appMode, mediaViewConfig.rasterMode, autoSetMediaResolution]
   );
 
+  /*
+   * The density ramp sits directly above RENDER SETTINGS in every mode, which
+   * is two different places in the tree: media carries its own RENDER SETTINGS
+   * inside MediaViewControls, while synth and model share the block below.
+   * Pixel mode paints solid cells and never consults the charset, so the
+   * section is omitted outright rather than shown disabled.
+   */
+  const densityRampSection =
+    currentRasterMode === 'pixel' ? null : (
+      <CharsetThemeBar
+        currentCharset={density}
+        onChangeCharset={setDensity}
+        appMode={appMode}
+      />
+    );
+
   const handleMediaFileUpload = useCallback((file: File) => {
     const isVid = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.webm') || file.name.endsWith('.mov');
     const objectUrl = URL.createObjectURL(file);
@@ -2378,6 +2397,7 @@ export const App: React.FC = () => {
           autoRes={autoRes}
           onToggleAutoRes={handleToggleAutoRes}
           onAutoResolutionChange={handleAutoResolutionChange}
+          onViewfinderAspectChange={setViewfinderAspect}
           crtConfig={crtConfig}
           onChangeCrtConfig={setCrtConfig}
           optimizeConfig={optimizeConfig}
@@ -2563,11 +2583,13 @@ export const App: React.FC = () => {
                   mediaElement={mediaElementRef.current}
                   mediaConfig={mediaConfig}
                   isPixelMode={currentRasterMode === 'pixel'}
+                  viewfinderAspect={viewfinderAspect}
                   dpi={mediaViewConfig.dpi ?? 72}
                   onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
                 />
 
                 {/* 3. Mode-specific controls */}
+                {appMode === 'media' && densityRampSection}
                 {appMode === 'media' && (
                   <MediaViewControls
                     config={mediaViewConfig}
@@ -2591,6 +2613,7 @@ export const App: React.FC = () => {
                 )}
 
                 {/* Synth / Model render and tonal controls */}
+                {appMode !== 'media' && densityRampSection}
                 {appMode !== 'media' && (
                   <div className="tab-content">
                     <CollapsibleSection
@@ -2645,13 +2668,6 @@ export const App: React.FC = () => {
                   </div>
                 )}
 
-                {/* 4. Character Set Bar (in ASCII Mode) */}
-                <CharsetThemeBar
-                  currentCharset={density}
-                  onChangeCharset={setDensity}
-                  appMode={appMode}
-                  isPixelMode={currentRasterMode === 'pixel'}
-                />
               </>
             )}
             {/* Sidebar Credits Line */}

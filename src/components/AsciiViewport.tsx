@@ -12,6 +12,10 @@ import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
 
+/** Manual zoom range for the viewfinder steppers. */
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 12.0;
+
 
 export interface AsciiViewportHandle {
   setFrame: (
@@ -43,6 +47,8 @@ interface AsciiViewportProps {
   autoRes?: boolean;
   onToggleAutoRes?: () => void;
   onAutoResolutionChange?: (cols: number, rows: number) => void;
+  /** Live width/height of the viewfinder area, for ratio-locking the grid to it. */
+  onViewfinderAspectChange?: (aspect: number) => void;
   crtConfig?: CrtConfig;
   onChangeCrtConfig?: (cfg: CrtConfig) => void;
   optimizeConfig?: OptimizeConfig;
@@ -83,6 +89,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   autoRes = false,
   onToggleAutoRes,
   onAutoResolutionChange,
+  onViewfinderAspectChange,
   crtConfig,
   onChangeCrtConfig,
   optimizeConfig,
@@ -119,6 +126,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const [zoom, setZoom] = useState<number>(1.0);
+  const [activeRasterMode, setActiveRasterMode] = useState<RasterOutputMode>('ascii');
+  const activeRasterModeRef = useRef<RasterOutputMode>('ascii');
   const zoomRef = useRef<number>(1.0);
   zoomRef.current = zoom;
   const [copied, setCopied] = useState<boolean>(false);
@@ -127,6 +136,36 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     if (!containerRef.current) return null;
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return null;
+
+    /*
+     * Pixel mode is a raster, not a text grid: the search below is tuned for
+     * character cells (2-7.5k cells, 180 col ceiling) and leaves a 1:1 grid
+     * occupying a fraction of the viewfinder. Instead pick the smallest whole
+     * number of screen pixels per cell that keeps the grid inside the cell
+     * budget, then fill the viewport at that scale. Whole-number scaling is
+     * what drawCanvas snaps to anyway, so the result blits without resampling.
+     */
+    if (activeRasterMode === 'pixel') {
+      const pad = 20;
+      const availableWidth = Math.max(80, clientWidth - pad);
+      const availableHeight = Math.max(60, clientHeight - pad);
+
+      // Ceiling on live cells. Synth and model re-dither every frame, so this
+      // trades raster detail against holding framerate on a full-screen grid.
+      const MAX_PIXEL_CELLS = 40000;
+      const scale = Math.max(
+        2,
+        Math.min(
+          16,
+          Math.ceil(Math.sqrt((availableWidth * availableHeight) / MAX_PIXEL_CELLS))
+        )
+      );
+
+      return {
+        cols: Math.max(32, Math.floor(availableWidth / scale)),
+        rows: Math.max(24, Math.floor(availableHeight / scale)),
+      };
+    }
 
     const charWidth = MONOSPACE_CELL_WIDTH;
     const charHeight = MONOSPACE_CELL_HEIGHT;
@@ -168,6 +207,43 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     }
 
     return { cols: bestCols, rows: bestRows };
+  }, [activeRasterMode]);
+
+  /*
+   * Zoom bounds for the manual steppers. autoFit already fits up to 5x, so the
+   * old 3x button ceiling could not even step back to a scale the Fit button
+   * had just set. Pixel mode in particular wants deep zoom: at 1 device pixel
+   * per cell a 256-wide dither is thumbnail-sized until well past 300%.
+   * The step scales with the current zoom so crossing the range stays a few
+   * clicks instead of eighty.
+   */
+  /*
+   * Two different notions of a zoom step, because the two output modes scale
+   * differently:
+   *
+   *  - ASCII scales through a CSS transform, so any fractional zoom is exact.
+   *    Steps are a true 1% (25% with shift held for crossing the range).
+   *  - Pixel mode snaps its backing store to whole device pixels per cell (see
+   *    drawCanvas), so a fractional zoom means resampling cols*9 into a
+   *    cols*8.5 box and losing the hard cell edges the mode exists for. Its
+   *    steps are therefore whole cell scales, adjusted for devicePixelRatio so
+   *    one click is one more screen pixel per cell.
+   */
+  const stepZoom = useCallback((z: number, dir: 1 | -1, coarse = false) => {
+    const isPixel = latestRasterModeRef.current === 'pixel';
+
+    if (isPixel) {
+      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      const cellsPerClick = coarse ? 4 : 1;
+      // Land on a whole multiple of the step so a mid-range starting zoom
+      // (from a fit, say) snaps onto the ladder instead of carrying an offset.
+      const currentRung = Math.round((z * dpr) / cellsPerClick);
+      const next = ((currentRung + dir) * cellsPerClick) / dpr;
+      return Math.max(1 / dpr, Math.min(ZOOM_MAX, Number(next.toFixed(2))));
+    }
+
+    const next = z + dir * (coarse ? 0.25 : 0.01);
+    return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number(next.toFixed(2))));
   }, []);
 
   const autoFit = useCallback(() => {
@@ -187,7 +263,17 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
     const scaleX = availableWidth / unscaledWidth;
     const scaleY = availableHeight / unscaledHeight;
-    const fitScale = Math.max(0.2, Math.min(5.0, Math.min(scaleX, scaleY)));
+    /*
+     * Fit to the same ceiling the manual steppers use; the old hard 5.0 could
+     * not fill the viewfinder with a 1:1 grid, which needs one screen pixel
+     * per cell and so routinely wants a scale in the high single digits.
+     * Pixel mode floors to a whole number because drawCanvas rounds the cell
+     * scale anyway — fitting to 7.4 would just render at 7 and sit off-centre.
+     */
+    const rawFit = Math.min(scaleX, scaleY);
+    const fitScale = isPixel
+      ? Math.max(1, Math.min(ZOOM_MAX, Math.floor(rawFit)))
+      : Math.max(0.2, Math.min(ZOOM_MAX, rawFit));
     setZoom(Number(fitScale.toFixed(2)));
   }, [cols, rows]);
 
@@ -238,7 +324,18 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       if (isPixelMode) {
         // Snap the backing store to a whole number of device pixels per cell so
         // every pixel comes out the same size instead of alternating 2px/3px.
-        const cellScale = Math.max(1, Math.round(currentZoom * dpr));
+        // Cap the scale so a large grid at deep zoom cannot ask for a canvas
+        // past the browser's per-dimension limit, which yields a blank canvas
+        // rather than an error.
+        const MAX_BACKING_DIM = 16384;
+        const scaleCeiling = Math.max(
+          1,
+          Math.floor(MAX_BACKING_DIM / Math.max(cols, rows, 1))
+        );
+        const cellScale = Math.min(
+          scaleCeiling,
+          Math.max(1, Math.round(currentZoom * dpr))
+        );
         const snappedW = cols * cellScale;
         const snappedH = rows * cellScale;
         if (canvas.width !== snappedW || canvas.height !== snappedH) {
@@ -369,6 +466,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       latestBgColorRef.current = bgColor;
       if (rasterMode) {
         latestRasterModeRef.current = rasterMode;
+        // Mirror into state so auto-resolution and auto-fit, which size the
+        // grid very differently for 1:1 cells, recompute on a mode switch.
+        // setFrame runs every animation frame, so only commit on a change.
+        if (rasterMode !== activeRasterModeRef.current) {
+          activeRasterModeRef.current = rasterMode;
+          setActiveRasterMode(rasterMode);
+        }
       }
 
       const isCanvasMode = Boolean((colors && colors.length > 0) || rasterMode === 'pixel');
@@ -414,6 +518,35 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     }, 50);
     return () => clearTimeout(timer);
   }, [viewMode, autoFit]);
+
+  /*
+   * Report the viewfinder's aspect to the sidebar so the resolution controls
+   * can ratio-lock the grid against it. Runs regardless of autoRes, since the
+   * lock is exactly what you reach for when autoRes is off.
+   */
+  useEffect(() => {
+    if (!containerRef.current || !onViewfinderAspectChange) return;
+    const el = containerRef.current;
+    let resizeTimer: any;
+
+    const report = () => {
+      const { clientWidth, clientHeight } = el;
+      if (clientWidth <= 0 || clientHeight <= 0) return;
+      onViewfinderAspectChange(clientWidth / clientHeight);
+    };
+
+    report();
+
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(report, 120);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimer);
+    };
+  }, [onViewfinderAspectChange]);
 
   useEffect(() => {
     if (!autoRes || !containerRef.current || !onAutoResolutionChange) return;
@@ -535,6 +668,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           className="ascii-canvas"
           style={{
             display: isColoredView ? 'block' : 'none',
+            /*
+             * The pixel backing store snaps to whole cells, so it rarely maps
+             * 1:1 onto the CSS box. Keep that residual resample nearest-
+             * neighbour so cell edges stay hard instead of being smoothed.
+             * Coloured ASCII draws glyphs and wants the default smoothing.
+             */
+            imageRendering: activeRasterMode === 'pixel' ? 'pixelated' : 'auto',
           }}
         />
 
@@ -662,8 +802,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           <div className="btn-group">
             <button
               className="btn btn-sm"
-              onClick={() => setZoom((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))))}
-              title="Zoom Out"
+              onClick={(e) => setZoom((z) => stepZoom(z, -1, e.shiftKey))}
+              title="Zoom Out (hold Shift for a coarse step)"
             >
               <ZoomOut size={12} />
             </button>
@@ -676,8 +816,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             </button>
             <button
               className="btn btn-sm"
-              onClick={() => setZoom((z) => Math.min(3.0, Number((z + 0.1).toFixed(2))))}
-              title="Zoom In"
+              onClick={(e) => setZoom((z) => stepZoom(z, 1, e.shiftKey))}
+              title="Zoom In (hold Shift for a coarse step)"
             >
               <ZoomIn size={12} />
             </button>

@@ -3,7 +3,8 @@ import { TrailPoint, ParticleConfig } from '../types/ascii';
 export const DEFAULT_TRAIL_CHARS = '@#%*+=-:. ';
 
 export const DEFAULT_PARTICLE_CONFIG: ParticleConfig = {
-  enabled: true,
+  // Off by default: the trail simulation is an opt-in overlay on the field.
+  enabled: false,
   lifespan: 1.8, // 1.8 seconds lifetime
   decayRate: 0.015,
   trailChars: '@#%*+=-:. ',
