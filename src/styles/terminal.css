@@ -2907,3 +2907,75 @@ select:disabled {
   letter-spacing: 0.1em;
   color: var(--text-muted);
 }
+
+/* ---------------------------------------------------------------------------
+   Colour separation tab
+   ---------------------------------------------------------------------------
+   The generate action and the output summary live outside .gif-config-grid.
+   Inside it they trailed the format-specific cells, so switching format moved
+   the primary button — the one control the user is actually aiming at.
+   -------------------------------------------------------------------------- */
+
+.sep-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  /* Stacks under the summary on a phone rather than squeezing the button. */
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.sep-action-summary {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  /* Takes the slack so the button keeps its size at every width. */
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sep-action-btn {
+  flex: 0 0 auto;
+  min-width: 168px;
+  justify-content: center;
+}
+
+/* Note text in the shared format-options slot. */
+.sep-slot-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--accent);
+}
+
+/*
+ * The PNG slot has no controls. Muted rather than accent-coloured, so an empty
+ * slot does not read as a warning, and padded to roughly a button row's height
+ * so the grid row does not visibly shrink when PNG is picked.
+ */
+.sep-slot-note--filler {
+  color: var(--text-dim);
+  padding-top: 2px;
+}
+
+.sep-plate-card {
+  /* .gif-preview-card centres its children for image previews; a list wants
+     the full width and a left edge. */
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.sep-plate-card-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+}

@@ -908,25 +908,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Quality (JPG only) */}
-                {sepFormat === 'jpg' && (
-                  <div className="gif-config-item">
-                    <span className="gif-config-label">JPG Quality ({Math.round(sepQuality * 100)}%)</span>
-                    <div className="gif-btn-group">
-                      {[0.8, 0.9, 0.95, 1.0].map((q) => (
-                        <button
-                          key={q}
-                          disabled={isSeparating}
-                          className={`btn ${sepQuality === q ? 'btn-primary' : ''}`}
-                          onClick={() => setSepQuality(q)}
-                        >
-                          {Math.round(q * 100)}%
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Plate style */}
                 <div className="gif-config-item">
                   <span className="gif-config-label">Plate Style</span>
@@ -948,55 +929,91 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       Ink Plate (Black on White)
                     </button>
                   </div>
-                  {sepFormat === 'jpg' && (
-                    <span style={{ fontSize: '9.5px', color: 'var(--accent)', marginTop: '4px', display: 'block' }}>
-                      JPG has no transparency, so plates are forced to ink. Use PNG or SVG to stack them.
-                    </span>
+                </div>
+
+                {/*
+                  Format-specific options share a single slot, always rendered.
+                  Letting them mount and unmount changed the grid's item count
+                  between formats, so every control below shuffled to a new cell
+                  whenever the format changed.
+                */}
+                <div className="gif-config-item">
+                  {sepFormat === 'svg' ? (
+                    <>
+                      <span className="gif-config-label">SVG Layout</span>
+                      <div className="gif-btn-group">
+                        <button
+                          disabled={isSeparating}
+                          className={`btn ${sepLayeredSvg ? 'btn-primary' : ''}`}
+                          onClick={() => setSepLayeredSvg(true)}
+                          title="One SVG with a named layer per ink — what Illustrator and Figma read on import"
+                        >
+                          One File, Layered
+                        </button>
+                        <button
+                          disabled={isSeparating}
+                          className={`btn ${!sepLayeredSvg ? 'btn-primary' : ''}`}
+                          onClick={() => setSepLayeredSvg(false)}
+                          title="A separate SVG file per ink, in a ZIP"
+                        >
+                          One File Per Ink
+                        </button>
+                      </div>
+                    </>
+                  ) : sepFormat === 'jpg' ? (
+                    <>
+                      <span className="gif-config-label">JPG Quality ({Math.round(sepQuality * 100)}%)</span>
+                      <div className="gif-btn-group">
+                        {[0.8, 0.9, 0.95, 1.0].map((q) => (
+                          <button
+                            key={q}
+                            disabled={isSeparating}
+                            className={`btn ${sepQuality === q ? 'btn-primary' : ''}`}
+                            onClick={() => setSepQuality(q)}
+                          >
+                            {Math.round(q * 100)}%
+                          </button>
+                        ))}
+                      </div>
+                      <span className="sep-slot-note">
+                        JPG has no transparency, so plates are forced to ink. Use PNG or SVG to stack them.
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="gif-config-label">PNG Options</span>
+                      <span className="sep-slot-note sep-slot-note--filler">
+                        Nothing to set. PNG keeps its alpha channel, so colour plates stack back into
+                        the original image.
+                      </span>
+                    </>
                   )}
                 </div>
+              </div>
 
-                {/* Layered SVG */}
-                {sepFormat === 'svg' && (
-                  <div className="gif-config-item">
-                    <span className="gif-config-label">SVG Layout</span>
-                    <div className="gif-btn-group">
-                      <button
-                        disabled={isSeparating}
-                        className={`btn ${sepLayeredSvg ? 'btn-primary' : ''}`}
-                        onClick={() => setSepLayeredSvg(true)}
-                        title="One SVG with a named layer per ink — what Illustrator and Figma read on import"
-                      >
-                        One File, Layered
-                      </button>
-                      <button
-                        disabled={isSeparating}
-                        className={`btn ${!sepLayeredSvg ? 'btn-primary' : ''}`}
-                        onClick={() => setSepLayeredSvg(false)}
-                        title="A separate SVG file per ink, in a ZIP"
-                      >
-                        One File Per Ink
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Output summary */}
-                <div className="gif-config-item">
-                  <span className="gif-config-label">
-                    Output ({sepExportW}×{sepExportH}px per plate)
-                  </span>
-                  <div className="gif-btn-group">
-                    <button
-                      disabled={isSeparating}
-                      className="btn btn-primary"
-                      onClick={handleGenerateSeparation}
-                      style={{ minWidth: '150px', justifyContent: 'center' }}
-                    >
-                      {isSeparating ? <Loader2 size={11} className="dice-spin" /> : <Layers size={11} />}
-                      {isSeparating ? 'SEPARATING…' : sepResult ? 'REGENERATE PLATES' : 'GENERATE PLATES'}
-                    </button>
-                  </div>
+              {/*
+                The generate action sits outside the grid. As a grid cell it was
+                the item that moved most, because it trailed every conditional
+                one — and it is the control the user is reaching for.
+              */}
+              <div className="sep-action-row">
+                <div className="sep-action-summary">
+                  {sepResult && !sepResult.analysis.refusal
+                    ? `${sepResult.analysis.plates.length} plates · ${sepExportW}×${sepExportH}px each · ${
+                        sepFormat === 'svg' && sepLayeredSvg ? 'layered SVG' : 'ZIP archive'
+                      }`
+                    : `${sepExportW}×${sepExportH}px per plate · ${
+                        sepFormat === 'svg' && sepLayeredSvg ? 'layered SVG' : 'ZIP archive'
+                      }`}
                 </div>
+                <button
+                  disabled={isSeparating}
+                  className="btn btn-primary sep-action-btn"
+                  onClick={handleGenerateSeparation}
+                >
+                  {isSeparating ? <Loader2 size={11} className="dice-spin" /> : <Layers size={11} />}
+                  {isSeparating ? 'SEPARATING…' : sepResult ? 'REGENERATE PLATES' : 'GENERATE PLATES'}
+                </button>
               </div>
 
               {sepError && (
@@ -1043,19 +1060,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
               {/* Plate list */}
               {sepResult && !sepResult.analysis.refusal && (
-                <div className="gif-preview-card" style={{ textAlign: 'left' }}>
-                  <div
-                    style={{
-                      fontSize: '10.5px',
-                      fontWeight: 700,
-                      color: 'var(--accent)',
-                      marginBottom: '8px',
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    {sepResult.analysis.plates.length} PLATES •{' '}
-                    {sepResult.blob ? (sepResult.blob.size / 1024).toFixed(1) : 0} KB •{' '}
-                    {sepFormat === 'svg' && sepLayeredSvg ? 'LAYERED SVG' : 'ZIP ARCHIVE'}
+                <div className="gif-preview-card sep-plate-card">
+                  <div className="sep-plate-card-title">
+                    PLATE BREAKDOWN • {sepResult.blob ? (sepResult.blob.size / 1024).toFixed(1) : 0} KB
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
