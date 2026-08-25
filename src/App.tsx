@@ -2545,18 +2545,7 @@ export const App: React.FC = () => {
             </>
           )}
 
-          <button
-            className="btn btn-sm btn-header-export"
-            onClick={() => {
-              setExportInitialTab('image');
-              setIsExportOpen(true);
-            }}
-            title="Download or Export Media & Code"
-          >
-            <Download size={13} className="header-btn-icon" />
-            <span className="btn-label">EXPORT</span>
-          </button>
-
+          {/* SHARE then EXPORT: the export is the primary action, so it sits last. */}
           <button
             className="btn btn-sm btn-header-share"
             onClick={() => {
@@ -2574,6 +2563,18 @@ export const App: React.FC = () => {
           >
             <Share2 size={13} className="header-btn-icon" />
             <span className="btn-label">SHARE</span>
+          </button>
+
+          <button
+            className="btn btn-sm btn-header-export"
+            onClick={() => {
+              setExportInitialTab('image');
+              setIsExportOpen(true);
+            }}
+            title="Download the render as an image, colour plates, GIF or video"
+          >
+            <Download size={13} className="header-btn-icon" />
+            <span className="btn-label">EXPORT</span>
           </button>
 
           <button

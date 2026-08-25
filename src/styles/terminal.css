@@ -2285,9 +2285,15 @@ select:disabled {
   color: var(--accent);
 }
 
-/* Header Action Buttons (EXPORT & SHARE) - High Visibility */
-.btn-header-export,
-.btn-header-share {
+/*
+ * Header actions.
+ *
+ * EXPORT is the loud one: getting the picture out is what the studio is for.
+ * SHARE sits quietly beside it -- still there, no longer competing. Two
+ * identically shouting buttons next to each other meant neither read as the
+ * primary action.
+ */
+.btn-header-export {
   border: 1.5px solid var(--accent) !important;
   color: var(--accent) !important;
   background-color: rgba(255, 255, 255, 0.05) !important;
@@ -2296,22 +2302,43 @@ select:disabled {
   box-shadow: 0 0 8px var(--accent-glow) !important;
 }
 
-.btn-header-export .header-btn-icon,
-.btn-header-share .header-btn-icon {
+.btn-header-export .header-btn-icon {
   color: var(--accent) !important;
   stroke: var(--accent) !important;
 }
 
-.btn-header-export:hover,
+.btn-header-share {
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  background-color: transparent;
+  font-weight: 600;
+}
+
+.btn-header-share .header-btn-icon {
+  color: var(--text-muted);
+  stroke: var(--text-muted);
+}
+
+/* Full accent on hover, so the quieter styling never reads as disabled. */
 .btn-header-share:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.btn-header-share:hover .header-btn-icon {
+  color: var(--accent);
+  stroke: var(--accent);
+}
+
+.btn-header-export:hover {
   background-color: var(--accent) !important;
   color: var(--bg-primary) !important;
   border-color: var(--accent) !important;
   box-shadow: 0 0 16px var(--accent) !important;
 }
 
-.btn-header-export:hover .header-btn-icon,
-.btn-header-share:hover .header-btn-icon {
+.btn-header-export:hover .header-btn-icon {
   color: var(--bg-primary) !important;
   stroke: var(--bg-primary) !important;
 }
