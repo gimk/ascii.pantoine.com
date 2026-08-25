@@ -141,7 +141,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     srcHeight = mediaElement.height || 100;
   }
 
-  const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
+  const isTextMode = rasterMode === 'ascii';
   const cellAspect = isTextMode ? MONOSPACE_CELL_ASPECT : (halftoneConfig?.cellRatio ?? 1.0);
   const virtualCanvasWidth = cols;
   const virtualCanvasHeight = rows / cellAspect;

@@ -171,12 +171,9 @@ export type MediaFitMode = 'contain' | 'cover' | 'stretch' | 'original';
 // --- v1.6 Raster Modalities & Advanced Engine Types ---
 export type RasterOutputMode =
   | 'ascii'
-  | 'braille'
-  | 'halftone-dot'
-  | 'halftone-line'
-  | 'halftone-crosshatch'
-  | 'halftone-cmyk'
-  | 'pixel';
+  | 'graphic'
+  | 'pixel'
+  | 'halftone-dot';
 
 export type DitherFamily = 'error-diffusion' | 'ordered' | 'blue-noise' | 'algorithmic' | 'modulation';
 
@@ -219,11 +216,16 @@ export type DitherAlgorithm =
   | 'hilbert'
   | 'peano'
   | 'r-sequence'
-  // Modulation & Glitch (4)
+  // Modulation & Generative (9)
   | 'scanline-shift'
   | 'sine-drift'
   | 'glitch-displacement'
-  | 'threshold-mod';
+  | 'threshold-mod'
+  | 'fm-modulation'
+  | 'phase-modulation'
+  | 'bytewave'
+  | 'concentric-rings'
+  | 'cellular-circuit';
 
 export type PaletteCategory = 'retro' | 'print' | 'design' | 'custom';
 
@@ -274,8 +276,14 @@ export const DEFAULT_HALFTONE_CONFIG: HalftoneConfig = {
   dotPitch: 8,
 };
 
-
 export interface ToneMappingConfig {
+  mappingMode?: '1-color' | '2-color' | '3-color' | 'multi-tone';
+  numTones?: number; // 1 to 16+
+  toneStops?: string[]; // Array of hex colors for the N stops (from shadow to highlight)
+  highlightColor?: string; // For 1-color mode (e.g. '#9bb0ff')
+  shadowColor?: string; // For 2-color / 3-color mode
+  midtoneColor?: string; // For 3-color mode
+  bgColor?: string; // 'black' | 'dark' | 'white' | 'transparent' | hex
   levelsBlack: number; // 0..100
   levelsMidtones: number; // 0..100 (50 default)
   levelsWhite: number; // 0..100
@@ -288,6 +296,13 @@ export interface ToneMappingConfig {
 }
 
 export const DEFAULT_TONE_MAPPING_CONFIG: ToneMappingConfig = {
+  mappingMode: '1-color',
+  numTones: 1,
+  toneStops: ['#9bb0ff'],
+  highlightColor: '#9bb0ff',
+  shadowColor: '#1a1a2e',
+  midtoneColor: '#4e54c8',
+  bgColor: '#000000',
   levelsBlack: 0,
   levelsMidtones: 50,
   levelsWhite: 100,
@@ -447,6 +462,7 @@ export interface ModelViewConfig {
   cameraDistance: number;
   fov: number;
   isOrthographic: boolean;
+  aspectRatio?: number; // Monospace cell aspect ratio compensation, default 0.50
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   halftoneConfig?: HalftoneConfig;

@@ -13,15 +13,10 @@ import {
   MediaColorConfig,
   HalftoneConfig,
 } from '../types/ascii';
-import { applyDitherAlgorithm } from './ditherAlgorithms';
 import {
   BUILTIN_PALETTES,
   PaletteQuantizer,
-  evaluateMultiTone,
-  quantizeImageToPaletteWithDither,
-  hexToRgb,
 } from './palettes';
-import { getBrailleCharFromSubpixels } from './renderer';
 
 export interface RawFrameBuffer {
   width: number;
@@ -77,7 +72,6 @@ let cachedCols = 0;
 let cachedRows = 0;
 
 let lumBuffer = new Float32Array(0);
-let ditherBuffer = new Float32Array(0);
 let blurBuffer = new Float32Array(0);
 let tempBlurBuffer = new Float32Array(0);
 let edgeBuffer = new Float32Array(0);
@@ -92,7 +86,6 @@ let activeQuantizer: PaletteQuantizer | null = null;
 function ensureBufferCapacity(totalCells: number, cols: number, rows: number) {
   if (lumBuffer.length !== totalCells) {
     lumBuffer = new Float32Array(totalCells);
-    ditherBuffer = new Float32Array(totalCells);
     blurBuffer = new Float32Array(totalCells);
     tempBlurBuffer = new Float32Array(totalCells);
     edgeBuffer = new Float32Array(totalCells);
@@ -182,7 +175,7 @@ export function createToneCurveLUT(points?: [number, number][]): Float32Array | 
 }
 
 // ---------------------------------------------------------------------------
-// Fast Box Blur (Separable 1D)
+// Fast Box Blur (Separable 1D, Alpha/Boundary-Aware)
 // ---------------------------------------------------------------------------
 function applyFastBoxBlur(src: Float32Array, dest: Float32Array, width: number, height: number, radius: number) {
   if (radius <= 0) {
@@ -191,42 +184,41 @@ function applyFastBoxBlur(src: Float32Array, dest: Float32Array, width: number, 
   }
 
   const r = Math.min(Math.max(1, Math.floor(radius)), 10);
-  const winSize = 2 * r + 1;
 
   // Horizontal pass
   for (let y = 0; y < height; y++) {
     const rowOffset = y * width;
-    let sum = 0;
-
-    for (let i = -r; i <= r; i++) {
-      const px = Math.min(width - 1, Math.max(0, i));
-      sum += src[rowOffset + px];
-    }
-    tempBlurBuffer[rowOffset] = sum / winSize;
-
-    for (let x = 1; x < width; x++) {
-      const removeX = Math.max(0, x - r - 1);
-      const addX = Math.min(width - 1, x + r);
-      sum += src[rowOffset + addX] - src[rowOffset + removeX];
-      tempBlurBuffer[rowOffset + x] = sum / winSize;
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let count = 0;
+      const minX = Math.max(0, x - r);
+      const maxX = Math.min(width - 1, x + r);
+      for (let k = minX; k <= maxX; k++) {
+        const val = src[rowOffset + k];
+        if (val >= 0) {
+          sum += val;
+          count++;
+        }
+      }
+      tempBlurBuffer[rowOffset + x] = count > 0 ? sum / count : -1;
     }
   }
 
   // Vertical pass
   for (let x = 0; x < width; x++) {
-    let sum = 0;
-
-    for (let i = -r; i <= r; i++) {
-      const py = Math.min(height - 1, Math.max(0, i));
-      sum += tempBlurBuffer[py * width + x];
-    }
-    dest[x] = sum / winSize;
-
-    for (let y = 1; y < height; y++) {
-      const removeY = Math.max(0, y - r - 1);
-      const addY = Math.min(height - 1, y + r);
-      sum += tempBlurBuffer[addY * width + x] - tempBlurBuffer[removeY * width + x];
-      dest[y * width + x] = sum / winSize;
+    for (let y = 0; y < height; y++) {
+      let sum = 0;
+      let count = 0;
+      const minY = Math.max(0, y - r);
+      const maxY = Math.min(height - 1, y + r);
+      for (let k = minY; k <= maxY; k++) {
+        const val = tempBlurBuffer[k * width + x];
+        if (val >= 0) {
+          sum += val;
+          count++;
+        }
+      }
+      dest[y * width + x] = count > 0 ? sum / count : -1;
     }
   }
 }
@@ -256,13 +248,11 @@ export function processRasterFrame(
 
   ensureBufferCapacity(totalCells, cols, rows);
 
-  const rasterMode = options.rasterMode || 'ascii';
-  const algorithm = options.ditherAlgorithm || 'none';
   const toneCfg = options.toneConfig;
   const colorCfg = options.colorConfig;
 
   // Resolve background color
-  let bgColor = rawFrame.bgColor || '#0a0a0a';
+  let bgColor = toneCfg?.bgColor || rawFrame.bgColor || '#0a0a0a';
   if (colorCfg?.mode === 'content') {
     if (colorCfg.bgPreset === 'white') bgColor = '#ffffff';
     else if (colorCfg.bgPreset === 'dark') bgColor = '#0a0a0a';
@@ -309,7 +299,7 @@ export function processRasterFrame(
   if (blurRadius > 0) {
     applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, blurRadius);
     for (let i = 0; i < totalCells; i++) {
-      if (lumBuffer[i] >= 0) lumBuffer[i] = blurBuffer[i];
+      if (lumBuffer[i] >= 0 && blurBuffer[i] >= 0) lumBuffer[i] = blurBuffer[i];
     }
   }
 
@@ -317,11 +307,36 @@ export function processRasterFrame(
   const sharpenRadius = Math.max(1, Math.min(10, options.sharpenRadius || 2));
   if (sharpenStrength > 0) {
     applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, sharpenRadius);
-    for (let i = 0; i < totalCells; i++) {
-      if (lumBuffer[i] >= 0) {
+    for (let y = 0; y < rows; y++) {
+      const rowOffset = y * cols;
+      const edgeY = Math.min(y, rows - 1 - y);
+
+      for (let x = 0; x < cols; x++) {
+        const i = rowOffset + x;
         const orig = lumBuffer[i];
+        if (orig < 0) continue;
+
         const blurred = blurBuffer[i];
-        const unsharp = orig + sharpenStrength * (orig - blurred);
+        if (blurred < 0) continue;
+
+        const edgeX = Math.min(x, cols - 1 - x);
+        const minEdge = Math.min(edgeX, edgeY);
+
+        // Check for boundary next to transparent alpha background
+        let isAlphaBoundary = false;
+        if (x > 0 && lumBuffer[i - 1] < 0) isAlphaBoundary = true;
+        else if (x < cols - 1 && lumBuffer[i + 1] < 0) isAlphaBoundary = true;
+        else if (y > 0 && lumBuffer[i - cols] < 0) isAlphaBoundary = true;
+        else if (y < rows - 1 && lumBuffer[i + cols] < 0) isAlphaBoundary = true;
+
+        if (isAlphaBoundary || minEdge === 0) {
+          // Do not sharpen outermost perimeter or transparent silhouette edges
+          continue;
+        }
+
+        // Taper sharpening delta near edges to prevent boundary ringing
+        const edgeFade = Math.min(1.0, minEdge / sharpenRadius);
+        const unsharp = orig + sharpenStrength * edgeFade * (orig - blurred);
         lumBuffer[i] = Math.max(0, Math.min(1, unsharp));
       }
     }
@@ -432,166 +447,136 @@ export function processRasterFrame(
   }
 
   // -------------------------------------------------------------------------
-  // Step 4: Universal 40+ Dithering Algorithm Execution
-  // -------------------------------------------------------------------------
-  const ditherLevels = posterizeBits > 0 ? Math.pow(2, posterizeBits) : 256;
-  applyDitherAlgorithm(lumBuffer, ditherBuffer, cols, rows, algorithm, ditherLevels, 1.0);
-
-  // -------------------------------------------------------------------------
-  // Step 5: Color Extraction & 3D Palette Quantization
+  // Step 4: Color Extraction & Retro Palette Quantization
   // -------------------------------------------------------------------------
   const paletteMode = colorCfg?.paletteMode || (colorCfg?.mode === 'content' ? 'content' : 'phosphor');
-  const isColored = paletteMode === 'content' || paletteMode === 'indexed' || paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone';
-
   let colorsOut: Uint8ClampedArray | null = null;
 
-  if (isColored) {
-    if (paletteMode === 'content') {
-      const sat = (colorCfg?.saturation ?? 200) / 100.0;
-      for (let i = 0; i < totalCells; i++) {
-        const p = i * 4;
-        let r = data[p];
-        let g = data[p + 1];
-        let b = data[p + 2];
+  if (paletteMode === 'content') {
+    const sat = (colorCfg?.saturation ?? 200) / 100.0;
+    for (let i = 0; i < totalCells; i++) {
+      const p = i * 4;
+      let r = data[p];
+      let g = data[p + 1];
+      let b = data[p + 2];
 
-        if (sat !== 1.0) {
-          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-          r = Math.max(0, Math.min(255, Math.round(gray + (r - gray) * sat)));
-          g = Math.max(0, Math.min(255, Math.round(gray + (g - gray) * sat)));
-          b = Math.max(0, Math.min(255, Math.round(gray + (b - gray) * sat)));
-        }
-
-        colorsBuffer[i * 3] = r;
-        colorsBuffer[i * 3 + 1] = g;
-        colorsBuffer[i * 3 + 2] = b;
-      }
-      colorsOut = colorsBuffer;
-    } else if (paletteMode === 'indexed') {
-      const palId = colorCfg?.activePaletteId || 'gameboy-classic';
-      if (!activeQuantizer || cachedPaletteId !== palId) {
-        const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
-        activeQuantizer = new PaletteQuantizer(found);
-        cachedPaletteId = palId;
+      if (sat !== 1.0) {
+        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+        r = Math.max(0, Math.min(255, Math.round(gray + (r - gray) * sat)));
+        g = Math.max(0, Math.min(255, Math.round(gray + (g - gray) * sat)));
+        b = Math.max(0, Math.min(255, Math.round(gray + (b - gray) * sat)));
       }
 
-      // If we have raw RGBA, use true 3D color error diffusion
-      if (data.length === totalCells * 4 && !hasRawLum) {
-        for (let i = 0; i < totalCells; i++) {
-          colorsBuffer[i * 3] = data[i * 4];
-          colorsBuffer[i * 3 + 1] = data[i * 4 + 1];
-          colorsBuffer[i * 3 + 2] = data[i * 4 + 2];
-        }
-        quantizeImageToPaletteWithDither(
-          colorsBuffer,
-          colorsBuffer,
-          cols,
-          rows,
-          activeQuantizer,
-          algorithm,
-          1.0
-        );
-      } else {
-        // Map dithered luminance across palette swatches
-        const rgbList = activeQuantizer.palette.colors.map(hexToRgb);
-        const numColors = rgbList.length;
-        for (let i = 0; i < totalCells; i++) {
-          const val = Math.max(0, Math.min(1, ditherBuffer[i]));
-          const cIdx = Math.max(0, Math.min(numColors - 1, Math.floor(val * numColors)));
-          const col = rgbList[cIdx];
-          colorsBuffer[i * 3] = col.r;
-          colorsBuffer[i * 3 + 1] = col.g;
-          colorsBuffer[i * 3 + 2] = col.b;
-        }
-      }
-      colorsOut = colorsBuffer;
-    } else if ((paletteMode === 'duotone' || paletteMode === 'tritone' || paletteMode === 'quadtone') && colorCfg?.multiTone) {
-      for (let i = 0; i < totalCells; i++) {
-        const val = Math.max(0, Math.min(1, ditherBuffer[i]));
-        const mapped = evaluateMultiTone(val, colorCfg.multiTone);
-        colorsBuffer[i * 3] = mapped.r;
-        colorsBuffer[i * 3 + 1] = mapped.g;
-        colorsBuffer[i * 3 + 2] = mapped.b;
-      }
-      colorsOut = colorsBuffer;
+      colorsBuffer[i * 3] = r;
+      colorsBuffer[i * 3 + 1] = g;
+      colorsBuffer[i * 3 + 2] = b;
     }
+    colorsOut = colorsBuffer;
+  } else if (paletteMode === 'indexed') {
+    const palId = colorCfg?.activePaletteId || 'gameboy-classic';
+    if (!activeQuantizer || cachedPaletteId !== palId) {
+      const found = BUILTIN_PALETTES.find((p) => p.id === palId) || BUILTIN_PALETTES[0];
+      activeQuantizer = new PaletteQuantizer(found);
+      cachedPaletteId = palId;
+    }
+
+    const sortedColors = activeQuantizer.sortedRgbColors;
+    const numColors = sortedColors.length;
+
+    // Detect whether source has true chromatic variation (color photos, normal vectors)
+    // vs luminance-driven / grayscale sources (3D shaded models, synth fields, monochrome media)
+    let isChromatic = false;
+    if (data.length === totalCells * 4 && !hasRawLum) {
+      let sampleCount = 0;
+      let chromaSum = 0;
+      const step = Math.max(4, Math.floor(totalCells / 40) * 4);
+      for (let p = 0; p < data.length; p += step) {
+        const r = data[p];
+        const g = data[p + 1];
+        const b = data[p + 2];
+        const diff = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+        chromaSum += diff;
+        sampleCount++;
+      }
+      if (sampleCount > 0 && chromaSum / sampleCount > 10) {
+        isChromatic = true;
+      }
+    }
+
+    if (isChromatic) {
+      // Chromatic media / normals: Quantize using 3D CIELAB distance matching
+      for (let i = 0; i < totalCells; i++) {
+        if (lumBuffer[i] < 0) {
+          colorsBuffer[i * 3] = 0;
+          colorsBuffer[i * 3 + 1] = 0;
+          colorsBuffer[i * 3 + 2] = 0;
+          continue;
+        }
+        const p = i * 4;
+        const nearest = activeQuantizer.findClosestRgb(data[p], data[p + 1], data[p + 2]);
+        colorsBuffer[i * 3] = nearest.r;
+        colorsBuffer[i * 3 + 1] = nearest.g;
+        colorsBuffer[i * 3 + 2] = nearest.b;
+      }
+    } else {
+      // 3D Models (shaded/depth/wireframe), Synth, Grayscale: Map continuous luminance along sorted tone ramp
+      for (let i = 0; i < totalCells; i++) {
+        const lum = lumBuffer[i];
+        if (lum < 0) {
+          colorsBuffer[i * 3] = 0;
+          colorsBuffer[i * 3 + 1] = 0;
+          colorsBuffer[i * 3 + 2] = 0;
+          continue;
+        }
+        const val = Math.max(0, Math.min(1, lum));
+        const cIdx = Math.min(numColors - 1, Math.floor(val * numColors));
+        const col = sortedColors[cIdx];
+        colorsBuffer[i * 3] = col.r;
+        colorsBuffer[i * 3 + 1] = col.g;
+        colorsBuffer[i * 3 + 2] = col.b;
+      }
+    }
+    colorsOut = colorsBuffer;
   }
 
   // -------------------------------------------------------------------------
-  // Step 6: Output Modality Routing
+  // Step 5: Character Density Ramp Mapping
   // -------------------------------------------------------------------------
   const densityLength = density.length;
   const overrides = rawFrame.charOverrides;
 
-  if (rasterMode === 'braille') {
-    // 8-Dot Braille Matrix packing
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const cellIdx = rowOffset + x;
-        const val = ditherBuffer[cellIdx];
+  for (let y = 0; y < rows; y++) {
+    const rowOffset = y * cols;
+    for (let x = 0; x < cols; x++) {
+      const cellIdx = rowOffset + x;
+      const val = lumBuffer[cellIdx];
 
-        if (val < 0) {
-          lineBuffer[x] = ' ';
-          continue;
-        }
-
-        // Subpixel thresholding
-        const d1 = val > 0.12;
-        const d2 = val > 0.25;
-        const d3 = val > 0.37;
-        const d4 = val > 0.50;
-        const d5 = val > 0.62;
-        const d6 = val > 0.75;
-        const d7 = val > 0.87;
-        const d8 = val > 0.95;
-
-        let cellChar = getBrailleCharFromSubpixels(d1, d2, d3, d4, d5, d6, d7, d8);
-
-        if (overrides && overrides[cellIdx]) {
-          cellChar = overrides[cellIdx]!;
-        }
-        lineBuffer[x] = cellChar;
+      if (val < 0) {
+        lineBuffer[x] = ' ';
+        continue;
       }
-      cachedLines[y] = lineBuffer.join('');
-    }
-  } else if (rasterMode === 'ascii') {
-    // Standard Monospace ASCII Character Density Mapping
-    for (let y = 0; y < rows; y++) {
-      const rowOffset = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const cellIdx = rowOffset + x;
-        const val = ditherBuffer[cellIdx];
 
-        if (val < 0) {
-          lineBuffer[x] = ' ';
-          continue;
-        }
+      let charIndex = Math.floor(val * densityLength);
+      if (charIndex < 0) charIndex = 0;
+      else if (charIndex >= densityLength) charIndex = densityLength - 1;
 
-        let charIndex = Math.floor(val * densityLength);
-        if (charIndex < 0) charIndex = 0;
-        else if (charIndex >= densityLength) charIndex = densityLength - 1;
-
-        let cellChar = density[charIndex] || ' ';
-        if (overrides && overrides[cellIdx]) {
-          cellChar = overrides[cellIdx]!;
-        }
-        lineBuffer[x] = cellChar;
+      let cellChar = density[charIndex] || ' ';
+      if (overrides && overrides[cellIdx]) {
+        cellChar = overrides[cellIdx]!;
       }
-      cachedLines[y] = lineBuffer.join('');
+      lineBuffer[x] = cellChar;
     }
-  } else {
-    // Graphic Halftone & Pixel modes
-    cachedLines.fill('');
+    cachedLines[y] = lineBuffer.join('');
   }
 
   return {
     text: cachedLines.join('\n'),
     colors: colorsOut,
-    luminance: ditherBuffer,
+    luminance: lumBuffer,
     cols,
     rows,
-    rasterMode,
+    rasterMode: 'ascii',
     bgColor,
-    isColored,
+    isColored: Boolean(colorsOut && colorsOut.length > 0),
   };
 }

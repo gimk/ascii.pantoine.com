@@ -64,7 +64,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
                   value={config.flowStrength}
                   onChange={(e) => update('flowStrength', parseFloat(e.target.value))}
                 />
-                <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                <span className="numeral-badge">
                   {config.flowStrength.toFixed(1)}x
                 </span>
               </div>
@@ -82,7 +82,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
                   value={config.swirlStrength}
                   onChange={(e) => update('swirlStrength', parseFloat(e.target.value))}
                 />
-                <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                <span className="numeral-badge">
                   {config.swirlStrength.toFixed(1)}x
                 </span>
               </div>
@@ -100,7 +100,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
                   value={config.drag}
                   onChange={(e) => update('drag', parseFloat(e.target.value))}
                 />
-                <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                <span className="numeral-badge">
                   {(config.drag * 100).toFixed(0)}%
                 </span>
               </div>
@@ -126,7 +126,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
                   value={config.lifespan}
                   onChange={(e) => update('lifespan', parseFloat(e.target.value))}
                 />
-                <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                <span className="numeral-badge">
                   {config.lifespan.toFixed(1)}s
                 </span>
               </div>
@@ -144,7 +144,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
                   value={config.luminanceBoost}
                   onChange={(e) => update('luminanceBoost', parseFloat(e.target.value))}
                 />
-                <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                <span className="numeral-badge">
                   {(config.luminanceBoost * 100).toFixed(0)}%
                 </span>
               </div>
@@ -164,7 +164,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
                   value={config.burstCount}
                   onChange={(e) => update('burstCount', parseInt(e.target.value))}
                 />
-                <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                <span className="numeral-badge">
                   {config.burstCount}
                 </span>
               </div>
@@ -182,7 +182,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
                   value={config.burstSpeed}
                   onChange={(e) => update('burstSpeed', parseFloat(e.target.value))}
                 />
-                <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                <span className="numeral-badge">
                   {config.burstSpeed.toFixed(1)}x
                 </span>
               </div>

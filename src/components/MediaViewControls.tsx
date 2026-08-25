@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { MediaViewConfig, BackgroundMode } from '../types/ascii';
+import { MediaViewConfig, BackgroundMode, PhosphorTheme, MediaColorConfig, AppMode } from '../types/ascii';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
 import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
+import { PaletteControls } from './PaletteControls';
 import { Sliders, Sparkles } from 'lucide-react';
 
 interface MediaViewControlsProps {
   config: MediaViewConfig;
   onChangeConfig: (newConfig: MediaViewConfig) => void;
+  currentTheme?: PhosphorTheme;
+  onChangeTheme?: (theme: PhosphorTheme) => void;
+  customThemeColor?: string;
+  onChangeCustomColor?: (color: string) => void;
+  mediaColorConfig?: MediaColorConfig;
+  onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
+  appMode?: AppMode;
 }
 
 const NumberInput: React.FC<{
@@ -674,6 +682,13 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   config,
   onChangeConfig,
+  currentTheme,
+  onChangeTheme,
+  customThemeColor = '',
+  onChangeCustomColor,
+  mediaColorConfig,
+  onChangeMediaColorConfig,
+  appMode = 'media',
 }) => {
   /**
    * Each group resets only its own fields. A single global reset used to sit
@@ -722,9 +737,14 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   ];
 
   return (
-    <>
+    <div className="tab-content">
       {/* 1. EFFECT CONTROLS */}
-      <CollapsibleSection title="EFFECT CONTROLS" icon={<Sliders size={12} />} persistKey="MediaViewControls-effect-controls">
+      <CollapsibleSection
+        title="EFFECT CONTROLS"
+        icon={<Sliders size={12} />}
+        persistKey="MediaViewControls-effect-controls"
+        defaultOpen={true}
+      >
         {/* Sharpen Strength */}
         <div className="control-row">
           <span className="control-label">Sharpen Strength</span>
@@ -869,8 +889,28 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         </div>
       </CollapsibleSection>
 
-      {/* 3. TONAL CONTROLS */}
-      <CollapsibleSection title="TONAL CONTROLS" icon={<Sparkles size={12} />} persistKey="MediaViewControls-tonal-controls">
+      {/* 2. TONAL CONTROLS */}
+      <CollapsibleSection
+        title="TONAL CONTROLS"
+        icon={<Sparkles size={12} />}
+        persistKey="MediaViewControls-tonal-controls"
+        defaultOpen={false}
+      >
+        {/* Color Palettes & Themes */}
+        {onChangeTheme && (
+          <div style={{ marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+            <PaletteControls
+              currentTheme={currentTheme || 'green'}
+              onChangeTheme={onChangeTheme}
+              customThemeColor={customThemeColor}
+              onChangeCustomColor={onChangeCustomColor}
+              mediaColorConfig={mediaColorConfig}
+              onChangeMediaColorConfig={onChangeMediaColorConfig}
+              appMode={appMode}
+            />
+          </div>
+        )}
+
         {/* Real-time Interactive Tonal Transfer Curve Graph */}
         <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
 
@@ -989,7 +1029,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
                 value={config.alphaThreshold}
                 onChange={(e) => update('alphaThreshold', parseInt(e.target.value))}
               />
-              <span style={{ fontSize: '10px', minWidth: '28px', textAlign: 'right' }}>
+              <span className="numeral-badge">
                 {config.alphaThreshold}
               </span>
             </div>
@@ -1001,7 +1041,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           </button>
         </div>
       </CollapsibleSection>
-
-    </>
+    </div>
   );
 };

@@ -43,6 +43,7 @@ export const DEFAULT_MODEL_VIEW_CONFIG: ModelViewConfig = {
   cameraDistance: 3.2,
   fov: 45,
   isOrthographic: false,
+  aspectRatio: 0.50,
 };
 
 export const MODEL_PRESETS: ModelPreset[] = [

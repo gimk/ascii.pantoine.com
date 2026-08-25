@@ -842,12 +842,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </span>
             <input
               type="text"
-              className="number-input"
+              className="text-input"
               style={{
                 flex: 1,
-                textAlign: 'left',
-                padding: '4px 8px',
-                fontFamily: 'var(--font-mono)',
                 fontSize: '11px',
                 color: 'var(--accent)',
               }}

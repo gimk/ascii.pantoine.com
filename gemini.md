@@ -129,11 +129,16 @@ Calculates a normalized scalar intensity field $I(x, y, t) \in [0, 1]$ over an a
 - Uses `compileCustomCode` to safely construct executable functions with runtime error trapping.
 - Bi-directional sync parses mathematical constants from user code back into parametric sliders via AST / regex mapping.
 
-### 3.7. Sidebar Architecture (`CONTENT` / `CONTROLS` / `RENDER`)
-The control panel is organized into three distinct, collapsible sections via `CollapsibleSection.tsx`:
-1. **CONTENT**: Mode picker (`Synth` / `Media` / `3D Model`), preset selectors, file/model load controls, and live formula sandbox editor.
-2. **CONTROLS**: Mode-specific knobs — Wave sliders, particle physics, 2D media filters/dithering/curves, or 3D shading/lighting/camera settings.
-3. **RENDER**: Mode-isolated render configuration — Phosphor themes, dual-color gradients, density charsets, grid resolution/presets, CRT display FX (scanlines, bloom, glow, vignette), and FPS performance throttling.
+### 3.7. Sidebar Architecture (`CONTENT` / `RENDER`)
+The control panel is organized into two distinct, purposeful tabs via `CollapsibleSection.tsx`:
+1. **CONTENT**: Defines the subject, source data, and spatial/geometric setup:
+   - *Synth*: Mode picker, wave presets, 8-channel parametric sliders, custom formula sandbox, and particle physics.
+   - *Media*: Mode picker, clipboard/file/URL loaders, video playback, and transform/framing (fit, zoom, offset, rotation, flip).
+   - *Model*: Mode picker, Khronos online 3D library, 3D file/URL import, scale/offset transforms, and mesh/normal properties.
+2. **RENDER**: Defines the visual shading, image filtering, palette, and ASCII rasterization pipeline:
+   - *Media Filters*: Unsharp masking, blur, noise, edge outline boost, and tone curves/levels.
+   - *Model Shading*: Shading modes (shaded, outlines, wireframe, depth, normals, points), auto-rotation & dynamics, lighting & specular, and camera & optics.
+   - *Universal Styling*: Color palettes & themes (Single color CRT, indexed hardware palettes, RGB content color), character density ramp, grid resolution, and CRT display FX.
 
 ### 3.8. State Serialization & Sharing (`src/engine/share.ts`)
 - Entire animation state (active mode, formulas, wave parameters, media/model configs, theme, particles, grid settings, and CRT FX) is compressed to a UTF-8 safe Base64 URL parameter.

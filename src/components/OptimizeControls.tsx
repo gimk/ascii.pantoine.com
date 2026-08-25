@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { AppMode, MediaConfig, MediaViewConfig, DitherAlgorithm, ResamplingMode } from '../types/ascii';
-import { Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Settings2, Moon, Sun, Activity, Grid } from 'lucide-react';
+import { AppMode, MediaConfig } from '../types/ascii';
+import { Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Grid } from 'lucide-react';
 
 interface OptimizeControlsProps {
   cols: number;
@@ -13,8 +13,6 @@ interface OptimizeControlsProps {
   appMode?: AppMode;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   mediaConfig?: MediaConfig;
-  mediaViewConfig?: MediaViewConfig;
-  onChangeMediaViewConfig?: (cfg: MediaViewConfig) => void;
 }
 
 const NumberInput: React.FC<{
@@ -37,9 +35,10 @@ const NumberInput: React.FC<{
     if (disabled) return;
     const raw = e.target.value;
     setText(raw);
+    if (raw === '-' || raw === '') return;
     const parsed = parseInt(raw, 10);
-    if (!isNaN(parsed) && parsed >= min) {
-      onChange(parsed);
+    if (!isNaN(parsed)) {
+      onChange(Math.max(min, parsed));
     }
   };
 
@@ -67,7 +66,7 @@ const NumberInput: React.FC<{
       type="number"
       className="number-input"
       style={{
-        width: '56px',
+        width: '54px',
         padding: '2px 4px',
         fontSize: '11px',
         textAlign: 'right',
@@ -96,30 +95,11 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   appMode = 'synth',
   mediaElement,
   mediaConfig,
-  mediaViewConfig,
-  onChangeMediaViewConfig,
 }) => {
   const totalCells = cols * rows;
   const [draftCols, setDraftCols] = useState<number>(cols);
   const [draftRows, setDraftRows] = useState<number>(rows);
   const [lockAspectRatio, setLockAspectRatio] = useState<boolean>(true);
-
-  const algorithms: { id: DitherAlgorithm; label: string }[] = [
-    { id: 'floyd-steinberg', label: 'Floyd Steinberg' },
-    { id: 'atkinson', label: 'Atkinson (Mac 1-Bit)' },
-    { id: 'bayer-4x4', label: 'Bayer 4x4 (Matrix)' },
-    { id: 'bayer-8x8', label: 'Bayer 8x8 (Smooth)' },
-    { id: 'sierra-3', label: 'Sierra-3' },
-    { id: 'white-noise', label: 'White Noise' },
-    { id: 'none', label: 'None (Direct Quantize)' },
-  ];
-
-
-  const resamplingModes: { id: ResamplingMode; label: string }[] = [
-    { id: 'preserve-details', label: 'Preserve Details (High)' },
-    { id: 'bilinear', label: 'Bilinear (Smooth)' },
-    { id: 'nearest', label: 'Nearest (Pixelated)' },
-  ];
 
   useEffect(() => {
     setDraftCols(cols);
@@ -235,109 +215,16 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
       {appMode === 'media' ? (
         /* MEDIA SPECIFIC RESOLUTION & RENDER CONTROLS */
         <>
-          {/* 1. RENDER SETTINGS (Resampling, Dithering Algorithm, Invert, Outline) */}
-          {mediaViewConfig && onChangeMediaViewConfig && (
-            <CollapsibleSection title="Render Settings" icon={<Settings2 size={12} />} persistKey="OptimizeControls-render-settings">
-              {/* Resampling Mode Dropdown */}
-              <div className="control-row">
-                <span className="control-label">Resampling</span>
-                <select
-                  className="number-input"
-                  style={{ width: '150px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
-                  value={mediaViewConfig.resampling}
-                  onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, resampling: e.target.value as ResamplingMode })}
-                >
-                  {resamplingModes.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Dithering Algorithm Dropdown */}
-              <div className="control-row">
-                <span className="control-label">Algorithm</span>
-                <select
-                  className="number-input"
-                  style={{ width: '150px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
-                  value={mediaViewConfig.algorithm}
-                  onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, algorithm: e.target.value as DitherAlgorithm })}
-                >
-                  {algorithms.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Quick Toggles: Invert & Edge Detection */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '8px' }}>
-                <button
-                  className={`btn btn-sm ${mediaViewConfig.invert ? 'btn-primary' : ''}`}
-                  onClick={() => onChangeMediaViewConfig({ ...mediaViewConfig, invert: !mediaViewConfig.invert })}
-                >
-                  {mediaViewConfig.invert ? <Sun size={11} /> : <Moon size={11} />}
-                  INVERT {mediaViewConfig.invert ? '[ON]' : '[OFF]'}
-                </button>
-
-                <button
-                  className={`btn btn-sm ${mediaViewConfig.edgeDetection ? 'btn-primary' : ''}`}
-                  onClick={() => onChangeMediaViewConfig({ ...mediaViewConfig, edgeDetection: !mediaViewConfig.edgeDetection })}
-                >
-                  <Activity size={11} />
-                  OUTLINE {mediaViewConfig.edgeDetection ? '[ON]' : '[OFF]'}
-                </button>
-              </div>
-
-              {/* Edge Detection Threshold & Strength (if active) */}
-              {mediaViewConfig.edgeDetection && (
-                <div style={{ marginTop: '8px', padding: '8px', background: 'var(--bg-control)', borderRadius: '3px' }}>
-                  <div className="control-row" style={{ marginBottom: '6px' }}>
-                    <span className="control-label" style={{ fontSize: '10.5px' }}>Edge Threshold</span>
-                    <div className="control-input-wrapper">
-                      <input
-                        type="range"
-                        className="range-slider"
-                        min={5}
-                        max={90}
-                        step={1}
-                        value={mediaViewConfig.edgeThreshold}
-                        onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, edgeThreshold: parseInt(e.target.value) })}
-                      />
-                      <span style={{ fontSize: '10px', minWidth: '28px', textAlign: 'right' }}>
-                        {mediaViewConfig.edgeThreshold}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="control-row">
-                    <span className="control-label" style={{ fontSize: '10.5px' }}>Edge Strength</span>
-                    <div className="control-input-wrapper">
-                      <input
-                        type="range"
-                        className="range-slider"
-                        min={10}
-                        max={200}
-                        step={5}
-                        value={mediaViewConfig.edgeStrength}
-                        onChange={(e) => onChangeMediaViewConfig({ ...mediaViewConfig, edgeStrength: parseInt(e.target.value) })}
-                      />
-                      <span style={{ fontSize: '10px', minWidth: '28px', textAlign: 'right' }}>
-                        {mediaViewConfig.edgeStrength}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CollapsibleSection>
-          )}
-
-          {/* 2. Grid Resolution */}
-          <CollapsibleSection title="Grid Resolution" icon={<Grid size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          {/* 1. Grid Resolution */}
+          <CollapsibleSection
+            title="Grid Resolution"
+            icon={<Grid size={12} />}
+            badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
                 {cols}×{rows} ({totalCells.toLocaleString()} chars)
-              </span></>} persistKey="OptimizeControls-grid-resolution">
+              </span></>}
+            persistKey="OptimizeControls-grid-resolution"
+            defaultOpen={false}
+          >
             {/* Media Source & Ratio Info Card */}
             <div
               style={{
@@ -511,9 +398,15 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
         /* SYNTH & MODEL RESOLUTION CONTROLS */
         <>
           {/* Resolution & Grid Dimensions */}
-          <CollapsibleSection title="Grid Resolution" icon={<Grid size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          <CollapsibleSection
+            title="Grid Resolution"
+            icon={<Grid size={12} />}
+            badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
                 {cols}x{rows} ({totalCells.toLocaleString()} chars)
-              </span></>} persistKey="OptimizeControls-grid-resolution">
+              </span></>}
+            persistKey="OptimizeControls-grid-resolution"
+            defaultOpen={false}
+          >
             {/* Quick Resolution buttons */}
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px', opacity: autoRes ? 0.45 : 1 }}>
               {[

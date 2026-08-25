@@ -32,16 +32,10 @@ interface ModelSettingsControlsProps {
     fileType: 'obj' | 'stl' | 'gltf' | 'glb' | 'ply',
     stats: { vertices: number; faces: number }
   ) => void;
-  onSelectBuiltinGeometry: (id: BuiltinModelId) => void;
+  onSelectBuiltinGeometry?: (id: BuiltinModelId) => void;
   onLoadRemoteModel: (model: Khronos3DModel) => Promise<void>;
   onStartLoading?: (fileName: string, statusText?: string) => void;
   onEndLoading?: () => void;
-  /**
-   * Which half of the panel to render.
-   *   source - online library, upload and default torus knot: what the model IS
-   *   adjust - transforms, scale and mesh options: how it is processed
-   * Defaults to both, so existing callers are unaffected.
-   */
   section?: 'source' | 'adjust' | 'all';
 }
 
@@ -49,14 +43,11 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
   config,
   onChangeConfig,
   onLoadCustomGeometry,
-  onSelectBuiltinGeometry,
+  onSelectBuiltinGeometry: _onSelectBuiltinGeometry,
   onLoadRemoteModel,
   onStartLoading,
   onEndLoading,
-  section = 'all',
 }) => {
-  const showSource = section === 'source' || section === 'all';
-  const showAdjust = section === 'adjust' || section === 'all';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
@@ -64,10 +55,6 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<KhronosCategory>('All');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const isTorusKnot =
-    config.sourceType === 'preset' &&
-    (!config.modelId || config.modelId === 'torus-knot');
 
   const displayedOnlineModels = useMemo(() => {
     return searchKhronosModels(searchQuery, selectedCategory);
@@ -123,40 +110,14 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
 
   return (
     <div className="tab-content">
-      {showSource && (
-        <>
-          {/* 0. Default Torus Knot Hero Action Button */}
-          <div style={{ marginBottom: '14px' }}>
-            <button
-              type="button"
-              className={`btn btn-randomize ${isTorusKnot ? 'active' : ''}`}
-              style={{
-                width: '100%',
-                padding: '11px 14px',
-                fontSize: '11.5px',
-                fontWeight: 800,
-                letterSpacing: '0.07em',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                borderRadius: '4px',
-              }}
-              onClick={() => onSelectBuiltinGeometry('torus-knot')}
-              title="Load or reset to the default mathematical Torus Knot 3D model"
-            >
-              {isTorusKnot ? <Box size={16} className="header-btn-icon" /> : <RotateCcw size={16} className="header-btn-icon" />}
-              <span>{isTorusKnot ? 'DEFAULT 3D MODEL: TORUS KNOT' : 'RESET TO DEFAULT TORUS KNOT'}</span>
-            </button>
-          </div>
-
-          {/* 1. Online 3D Library (Khronos & Open CDN - Text Cards) */}
-          <CollapsibleSection
-            title="Online 3D Library"
-            icon={<Globe size={12} />}
-            badge={<span style={{ fontSize: '9px', color: 'var(--accent)', fontWeight: 'bold' }}>KHRONOS &amp; THREE.JS</span>}
-            persistKey="ModelSettingsControls-online-3d-library"
-          >
+      {/* 1. Online 3D Library (Khronos & Open CDN - Text Cards) */}
+      <CollapsibleSection
+        title="Online 3D Library"
+        icon={<Globe size={12} />}
+        badge={<span style={{ fontSize: '9px', color: 'var(--accent)', fontWeight: 'bold' }}>KHRONOS &amp; THREE.JS</span>}
+        persistKey="ModelSettingsControls-online-3d-library"
+        defaultOpen={true}
+      >
             <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
               Explore official Khronos glTF benchmark assets &amp; open 3D models. Click any model to render in ASCII.
             </p>
@@ -325,6 +286,7 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
             title="Upload Custom 3D File"
             icon={<Upload size={12} />}
             persistKey="ModelSettingsControls-upload-custom-3d-file"
+            defaultOpen={false}
           >
             <input
               ref={fileInputRef}
@@ -387,13 +349,14 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
               )}
             </div>
           </CollapsibleSection>
-        </>
-      )}
 
-      {showAdjust && (
-        <>
-      {/* 4. Transformations & Scaling */}
-      <CollapsibleSection title="Transformations &amp; Scale" icon={<Sliders size={12} />} persistKey="ModelSettingsControls-transformations-scale">
+          {/* 3. Transformations & Scaling */}
+          <CollapsibleSection
+            title="Transformations &amp; Scale"
+            icon={<Sliders size={12} />}
+            persistKey="ModelSettingsControls-transformations-scale"
+            defaultOpen={false}
+          >
         {/* Uniform Scale */}
         <div className="control-row">
           <span className="control-label">Uniform Scale</span>
@@ -593,8 +556,13 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
         </div>
       </CollapsibleSection>
 
-      {/* 5. Geometry Processing & Mesh Options */}
-      <CollapsibleSection title="Mesh &amp; Normal Settings" icon={<Box size={12} />} persistKey="ModelSettingsControls-mesh-normal-settings">
+      {/* 4. Geometry Processing & Mesh Options */}
+      <CollapsibleSection
+        title="Mesh &amp; Normal Settings"
+        icon={<Box size={12} />}
+        persistKey="ModelSettingsControls-mesh-normal-settings"
+        defaultOpen={false}
+      >
         <div className="control-row">
           <span className="control-label">Auto Center Mesh</span>
           <button
@@ -661,8 +629,6 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
           </button>
         </div>
       </CollapsibleSection>
-        </>
-      )}
     </div>
   );
 };

@@ -8,7 +8,6 @@ import {
   HalftoneConfig,
   MediaColorConfig,
 } from '../types/ascii';
-import { MONOSPACE_CELL_ASPECT } from './renderer';
 import { processRasterFrame, ProcessedRasterResult } from './rasterEngine';
 
 export interface ModelRenderContext {
@@ -437,10 +436,8 @@ class HeadlessModelRenderer {
     this.dirLight.intensity = viewConfig.lightIntensity * 1.5;
     this.ambLight.intensity = viewConfig.ambientLight * 1.2;
 
-    // Aspect ratio compensation for monospace typography vs square halftones
-    const rasterMode = ctx.rasterMode || viewConfig.rasterMode || 'ascii';
-    const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
-    const aspectCorrection = isTextMode ? MONOSPACE_CELL_ASPECT : (ctx.halftoneConfig?.cellRatio ?? 1.0);
+    // Aspect ratio compensation for monospace typography vs square raster
+    const aspectCorrection = viewConfig.aspectRatio ?? 0.50;
     const viewAspect = (cols / rows) * aspectCorrection;
 
 

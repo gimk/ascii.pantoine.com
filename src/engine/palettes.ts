@@ -249,11 +249,18 @@ export class PaletteQuantizer {
   palette: ColorPalette;
   rgbColors: RGB[];
   labColors: Lab[];
+  sortedRgbColors: RGB[];
 
   constructor(palette: ColorPalette) {
     this.palette = palette;
     this.rgbColors = palette.colors.map(hexToRgb);
     this.labColors = this.rgbColors.map((c) => rgbToLab(c.r, c.g, c.b));
+    // Sort palette colors from darkest to brightest by perceived luminance
+    this.sortedRgbColors = [...this.rgbColors].sort((a, b) => {
+      const lumA = 0.299 * a.r + 0.587 * a.g + 0.114 * a.b;
+      const lumB = 0.299 * b.r + 0.587 * b.g + 0.114 * b.b;
+      return lumA - lumB;
+    });
   }
 
   findClosestIndex(r: number, g: number, b: number): number {
@@ -274,6 +281,15 @@ export class PaletteQuantizer {
   findClosestRgb(r: number, g: number, b: number): RGB {
     const idx = this.findClosestIndex(r, g, b);
     return this.rgbColors[idx];
+  }
+
+  getToneRgb(val: number): RGB {
+    const clamped = Math.max(0, Math.min(1, val));
+    const numColors = this.sortedRgbColors.length;
+    if (numColors === 0) return { r: 255, g: 255, b: 255 };
+    if (numColors === 1) return this.sortedRgbColors[0];
+    const idx = Math.min(numColors - 1, Math.floor(clamped * numColors));
+    return this.sortedRgbColors[idx];
   }
 }
 
@@ -336,6 +352,47 @@ export function evaluateMultiTone(t: number, config: MultiToneConfig): RGB {
     r: shadow.r + (highlight.r - shadow.r) * clampedT,
     g: shadow.g + (highlight.g - shadow.g) * clampedT,
     b: shadow.b + (highlight.b - shadow.b) * clampedT,
+  };
+}
+
+/**
+ * Evaluates an arbitrary N-Tone gradient or discrete palette map at scalar tone t in [0, 1].
+ * Supports 1 to 16+ color stops!
+ * - 1 Color (Monotone): Interpolates from background to the single highlight color.
+ * - 2 Colors (Duotone): Stops [shadow, highlight]
+ * - 3 Colors (Tritone): Stops [shadow, midtone, highlight]
+ * - N Colors: Evenly spaced or interpolated stops across [0, 1]
+ */
+export function evaluateNTone(t: number, toneStops: string[], bgColor: string = '#000000'): RGB {
+  if (!toneStops || toneStops.length === 0) {
+    return hexToRgb('#ffffff');
+  }
+
+  const clampedT = Math.max(0, Math.min(1, t));
+
+  // 1-Color mode: Background to single highlight color
+  if (toneStops.length === 1) {
+    const bg = hexToRgb(bgColor || '#000000');
+    const fg = hexToRgb(toneStops[0]);
+    return {
+      r: Math.round(bg.r + (fg.r - bg.r) * clampedT),
+      g: Math.round(bg.g + (fg.g - bg.g) * clampedT),
+      b: Math.round(bg.b + (fg.b - bg.b) * clampedT),
+    };
+  }
+
+  const numSegments = toneStops.length - 1;
+  const scaled = clampedT * numSegments;
+  const index = Math.min(numSegments - 1, Math.floor(scaled));
+  const u = scaled - index;
+
+  const c1 = hexToRgb(toneStops[index]);
+  const c2 = hexToRgb(toneStops[index + 1]);
+
+  return {
+    r: Math.round(c1.r + (c2.r - c1.r) * u),
+    g: Math.round(c1.g + (c2.g - c1.g) * u),
+    b: Math.round(c1.b + (c2.b - c1.b) * u),
   };
 }
 

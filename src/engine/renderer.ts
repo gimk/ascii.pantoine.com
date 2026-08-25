@@ -304,7 +304,7 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
 
   const cx = cols / 2;
   const cy = rows / 2;
-  const isSquareMode = rasterMode !== 'ascii' && rasterMode !== 'braille';
+  const isSquareMode = rasterMode !== 'ascii';
   const aspectRatio = isSquareMode ? 1.0 : (waveParams.aspectRatio || MONOSPACE_CELL_ASPECT);
   const sharedCtx = customContext || {};
 

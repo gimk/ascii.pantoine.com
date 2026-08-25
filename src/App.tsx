@@ -20,10 +20,6 @@ import {
   RenderSettings,
   MediaColorConfig,
   DEFAULT_MEDIA_COLOR_CONFIG,
-  RasterOutputMode,
-  DitherAlgorithm,
-  ToneMappingConfig,
-  HalftoneConfig,
   DEFAULT_TONE_MAPPING_CONFIG,
   DEFAULT_HALFTONE_CONFIG,
 } from './types/ascii';
@@ -68,6 +64,7 @@ import { CharsetThemeBar } from './components/CharsetThemeBar';
 import { ModelSettingsControls } from './components/ModelSettingsControls';
 import { ModelViewControls } from './components/ModelViewControls';
 import { MediaFileControls } from './components/MediaFileControls';
+import { MediaViewControls } from './components/MediaViewControls';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { generateRandomAnimation } from './engine/randomizer';
@@ -483,21 +480,6 @@ export const App: React.FC = () => {
     triggerMediaRender();
   }, [triggerMediaRender]);
 
-  const handleSelectGradient = useCallback((g: PhosphorGradient | null) => {
-    setRenderSettingsByMode((prev) => {
-      const mode = appModeRef.current;
-      return {
-        ...prev,
-        [mode]: {
-          ...prev[mode],
-          gradientConfig: g,
-          customThemeColor: '',
-        },
-      };
-    });
-    triggerMediaRender();
-  }, [triggerMediaRender]);
-
   const handleSelectMediaColorConfig = useCallback((cfg: MediaColorConfig) => {
     setRenderSettingsByMode((prev) => {
       const mode = appModeRef.current;
@@ -506,83 +488,6 @@ export const App: React.FC = () => {
         [mode]: {
           ...prev[mode],
           mediaColorConfig: cfg,
-        },
-      };
-    });
-    triggerMediaRender();
-  }, [triggerMediaRender]);
-
-  const setRasterMode = useCallback((r: RasterOutputMode) => {
-    setRenderSettingsByMode((prev) => {
-      const mode = appModeRef.current;
-      return {
-        ...prev,
-        [mode]: {
-          ...prev[mode],
-          rasterMode: r,
-        },
-      };
-    });
-    setTimeout(() => {
-      if (renderSettingsRef.current.autoRes && viewportRef.current) {
-        const optimal = viewportRef.current.getOptimalResolution();
-        if (optimal) {
-          setRenderSettingsByMode((prev) => {
-            const mode = appModeRef.current;
-            return {
-              ...prev,
-              [mode]: {
-                ...prev[mode],
-                cols: optimal.cols,
-                rows: optimal.rows,
-              },
-            };
-          });
-        }
-        viewportRef.current.autoFit();
-      }
-    }, 20);
-    triggerMediaRender();
-  }, [triggerMediaRender]);
-
-
-
-  const setDitherAlgorithm = useCallback((a: DitherAlgorithm) => {
-    setRenderSettingsByMode((prev) => {
-      const mode = appModeRef.current;
-      return {
-        ...prev,
-        [mode]: {
-          ...prev[mode],
-          ditherAlgorithm: a,
-        },
-      };
-    });
-    triggerMediaRender();
-  }, [triggerMediaRender]);
-
-  const setToneConfig = useCallback((t: ToneMappingConfig) => {
-    setRenderSettingsByMode((prev) => {
-      const mode = appModeRef.current;
-      return {
-        ...prev,
-        [mode]: {
-          ...prev[mode],
-          toneConfig: t,
-        },
-      };
-    });
-    triggerMediaRender();
-  }, [triggerMediaRender]);
-
-  const setHalftoneConfig = useCallback((h: HalftoneConfig) => {
-    setRenderSettingsByMode((prev) => {
-      const mode = appModeRef.current;
-      return {
-        ...prev,
-        [mode]: {
-          ...prev[mode],
-          halftoneConfig: h,
         },
       };
     });
@@ -615,7 +520,7 @@ export const App: React.FC = () => {
    * Previously this was three independent variables (one per source), so
    * switching source silently threw away which panel you were on.
    */
-  const [panel, setPanel] = useState<'content' | 'controls' | 'render'>('content');
+  const [panel, setPanel] = useState<'content' | 'render'>('content');
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video'>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
@@ -1819,10 +1724,7 @@ export const App: React.FC = () => {
         0,
         0,
         result.colors,
-        result.bgColor,
-        result.luminance,
-        curSettings.rasterMode || 'ascii',
-        curSettings.halftoneConfig || mediaViewConfig.halftoneConfig
+        result.bgColor
       );
       return;
     }
@@ -1932,13 +1834,11 @@ export const App: React.FC = () => {
       lastTimeRef.current = now;
 
       const activeSettings = renderSettingsRef.current;
-      const activeRasterMode: RasterOutputMode = activeSettings.rasterMode || 'ascii';
 
       // Render raster / ASCII frame
       let frameText = '';
       let frameColors: Uint8ClampedArray | null = null;
       let frameBgColor: string | undefined = undefined;
-      let frameLuminance: Float32Array | null = null;
 
       if (appMode === 'model') {
         const res = renderModelFrameData({
@@ -1957,7 +1857,6 @@ export const App: React.FC = () => {
         });
         frameText = res.text;
         frameColors = res.colors;
-        frameLuminance = res.luminance;
       } else if (appMode === 'media') {
         const result = renderAsciiMediaFrameData({
           cols,
@@ -1975,7 +1874,6 @@ export const App: React.FC = () => {
         frameText = result.text;
         frameColors = result.colors;
         frameBgColor = result.bgColor;
-        frameLuminance = result.luminance;
       } else {
         const res = renderSynthFrameData({
           cols,
@@ -1996,7 +1894,6 @@ export const App: React.FC = () => {
         });
         frameText = res.text;
         frameColors = res.colors;
-        frameLuminance = res.luminance;
       }
 
 
@@ -2005,10 +1902,7 @@ export const App: React.FC = () => {
         timeRef.current,
         currentFpsRef.current,
         frameColors,
-        frameBgColor,
-        frameLuminance,
-        activeRasterMode,
-        activeSettings.halftoneConfig || mediaViewConfig.halftoneConfig
+        frameBgColor
       );
       animFrameId = requestAnimationFrame(loop);
     };
@@ -2074,9 +1968,6 @@ export const App: React.FC = () => {
           e.preventDefault();
           setPanel('content');
         } else if (e.key === '2') {
-          e.preventDefault();
-          setPanel('controls');
-        } else if (e.key === '3') {
           e.preventDefault();
           setPanel('render');
         }
@@ -2359,7 +2250,6 @@ export const App: React.FC = () => {
           autoRes={autoRes}
           onToggleAutoRes={handleToggleAutoRes}
           onAutoResolutionChange={handleAutoResolutionChange}
-          onChangeResolution={handleManualResolutionChange}
           crtConfig={crtConfig}
           onChangeCrtConfig={setCrtConfig}
           optimizeConfig={optimizeConfig}
@@ -2384,35 +2274,26 @@ export const App: React.FC = () => {
               <button
                 className={`tab-btn ${panel === 'content' ? 'active' : ''}`}
                 onClick={() => setPanel('content')}
-                title="Choose content source & presets [Hotkeys: 1]"
+                title="Choose content source, presets & setup [Hotkeys: 1]"
               >
                 <span className="tab-btn-index">1</span>
                 <Layers size={12} className="tab-btn-icon" />
                 <span className="tab-btn-label">CONTENT</span>
               </button>
               <button
-                className={`tab-btn ${panel === 'controls' ? 'active' : ''}`}
-                onClick={() => setPanel('controls')}
-                title="Adjust active source parameters [Hotkeys: 2]"
-              >
-                <span className="tab-btn-index">2</span>
-                <Sliders size={12} className="tab-btn-icon" />
-                <span className="tab-btn-label">CONTROLS</span>
-                <span className="tab-btn-subbadge">{appMode.toUpperCase()}</span>
-              </button>
-              <button
                 className={`tab-btn ${panel === 'render' ? 'active' : ''}`}
                 onClick={() => setPanel('render')}
-                title="Charset, CRT display effects, resolution & performance [Hotkeys: 3]"
+                title="Shading, styling, palettes, charsets & resolution [Hotkeys: 2]"
               >
-                <span className="tab-btn-index">3</span>
+                <span className="tab-btn-index">2</span>
                 <Palette size={12} className="tab-btn-icon" />
                 <span className="tab-btn-label">RENDER</span>
+                <span className="tab-btn-subbadge">{appMode.toUpperCase()}</span>
               </button>
             </div>
 
             {/* ---------------------------------------------------------- */}
-            {/* CONTENT: what am I looking at                              */}
+            {/* CONTENT: define & configure the visual subject             */}
             {/* ---------------------------------------------------------- */}
             {panel === 'content' && (
               <>
@@ -2449,53 +2330,13 @@ export const App: React.FC = () => {
                 </div>
 
                 {appMode === 'synth' && (
-                  <PresetSelector
-                    activePresetId={activePreset.id}
-                    onSelectPreset={handleSelectPreset}
-                    onRandomize={handleRandomize}
-                    isRandomizing={isRandomizing}
-                  />
-                )}
-
-                {appMode === 'media' && (
-                  <MediaFileControls
-                    section="source"
-                    config={mediaConfig}
-                    onChangeConfig={handleChangeMediaConfig}
-                    viewConfig={mediaViewConfig}
-                    onChangeViewConfig={handleChangeMediaViewConfig}
-                    mediaElement={mediaElementRef.current}
-                    onFileUpload={handleMediaFileUpload}
-                    onUrlLoad={handleMediaUrlLoad}
-                  />
-                )}
-
-                {appMode === 'model' && (
-                  <ModelSettingsControls
-                    section="source"
-                    config={modelConfig}
-                    onChangeConfig={handleChangeModelConfig}
-                    onLoadCustomGeometry={handleLoadCustomGeometry}
-                    onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
-                    onLoadRemoteModel={handleLoadRemoteModel}
-                    onStartLoading={(fileName, statusText) => {
-                      setIsModelLoading(true);
-                      if (fileName) setModelLoadingFileName(fileName);
-                      if (statusText) setModelLoadingStatusText(statusText);
-                    }}
-                    onEndLoading={() => setIsModelLoading(false)}
-                  />
-                )}
-              </>
-            )}
-
-            {/* ---------------------------------------------------------- */}
-            {/* CONTROLS: shape the active source                          */}
-            {/* ---------------------------------------------------------- */}
-            {panel === 'controls' && (
-              <>
-                {appMode === 'synth' && (
                   <>
+                    <PresetSelector
+                      activePresetId={activePreset.id}
+                      onSelectPreset={handleSelectPreset}
+                      onRandomize={handleRandomize}
+                      isRandomizing={isRandomizing}
+                    />
                     <SynthControls
                       params={waveParams}
                       onChangeParams={handleParamChange}
@@ -2519,11 +2360,8 @@ export const App: React.FC = () => {
 
                 {appMode === 'media' && (
                   <MediaFileControls
-                    section="adjust"
                     config={mediaConfig}
                     onChangeConfig={handleChangeMediaConfig}
-                    viewConfig={mediaViewConfig}
-                    onChangeViewConfig={handleChangeMediaViewConfig}
                     mediaElement={mediaElementRef.current}
                     onFileUpload={handleMediaFileUpload}
                     onUrlLoad={handleMediaUrlLoad}
@@ -2531,36 +2369,50 @@ export const App: React.FC = () => {
                 )}
 
                 {appMode === 'model' && (
-                  <>
-                    <ModelSettingsControls
-                      section="adjust"
-                      config={modelConfig}
-                      onChangeConfig={handleChangeModelConfig}
-                      onLoadCustomGeometry={handleLoadCustomGeometry}
-                      onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
-                      onLoadRemoteModel={handleLoadRemoteModel}
-                      onStartLoading={(fileName, statusText) => {
-                        setIsModelLoading(true);
-                        if (fileName) setModelLoadingFileName(fileName);
-                        if (statusText) setModelLoadingStatusText(statusText);
-                      }}
-                      onEndLoading={() => setIsModelLoading(false)}
-                    />
-                    <ModelViewControls
-                      config={modelViewConfig}
-                      onChangeConfig={handleChangeModelViewConfig}
-                      onResetRotation={handleResetModelRotation}
-                    />
-                  </>
+                  <ModelSettingsControls
+                    config={modelConfig}
+                    onChangeConfig={handleChangeModelConfig}
+                    onLoadCustomGeometry={handleLoadCustomGeometry}
+                    onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                    onLoadRemoteModel={handleLoadRemoteModel}
+                    onStartLoading={(fileName, statusText) => {
+                      setIsModelLoading(true);
+                      if (fileName) setModelLoadingFileName(fileName);
+                      if (statusText) setModelLoadingStatusText(statusText);
+                    }}
+                    onEndLoading={() => setIsModelLoading(false)}
+                  />
                 )}
               </>
             )}
 
             {/* ---------------------------------------------------------- */}
-            {/* RENDER: how it is drawn                                    */}
+            {/* RENDER: shading, effects, palettes, charsets & resolution  */}
             {/* ---------------------------------------------------------- */}
             {panel === 'render' && (
               <>
+                {appMode === 'media' && (
+                  <MediaViewControls
+                    config={mediaViewConfig}
+                    onChangeConfig={handleChangeMediaViewConfig}
+                    currentTheme={theme}
+                    onChangeTheme={handleSelectTheme}
+                    customThemeColor={customThemeColor}
+                    onChangeCustomColor={handleSelectCustomColor}
+                    mediaColorConfig={mediaColorConfig}
+                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                    appMode={appMode}
+                  />
+                )}
+
+                {appMode === 'model' && (
+                  <ModelViewControls
+                    config={modelViewConfig}
+                    onChangeConfig={handleChangeModelViewConfig}
+                    onResetRotation={handleResetModelRotation}
+                  />
+                )}
+
                 <CharsetThemeBar
                   currentCharset={density}
                   onChangeCharset={setDensity}
@@ -2568,23 +2420,10 @@ export const App: React.FC = () => {
                   onChangeTheme={handleSelectTheme}
                   customThemeColor={customThemeColor}
                   onChangeCustomColor={handleSelectCustomColor}
-                  gradientConfig={gradientConfig}
-                  onChangeGradient={handleSelectGradient}
                   appMode={appMode}
                   mediaColorConfig={mediaColorConfig}
                   onChangeMediaColorConfig={handleSelectMediaColorConfig}
-                  rasterMode={currentRenderSettings.rasterMode || 'ascii'}
-                  onChangeRasterMode={setRasterMode}
-                  ditherAlgorithm={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
-                  onChangeDitherAlgorithm={setDitherAlgorithm}
-                  toneConfig={currentRenderSettings.toneConfig}
-                  onChangeToneConfig={setToneConfig}
-                  halftoneConfig={currentRenderSettings.halftoneConfig}
-                  onChangeHalftoneConfig={setHalftoneConfig}
-                  noise={appMode === 'media' ? mediaViewConfig.noise : 0}
-                  onChangeNoise={appMode === 'media' ? (n) => handleChangeMediaViewConfig({ ...mediaViewConfig, noise: n }) : undefined}
                 />
-
 
                 <OptimizeControls
                   cols={cols}
@@ -2595,8 +2434,6 @@ export const App: React.FC = () => {
                   appMode={appMode}
                   mediaElement={mediaElementRef.current}
                   mediaConfig={mediaConfig}
-                  mediaViewConfig={appMode === 'media' ? mediaViewConfig : undefined}
-                  onChangeMediaViewConfig={appMode === 'media' ? handleChangeMediaViewConfig : undefined}
                 />
               </>
             )}

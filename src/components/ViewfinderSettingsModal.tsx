@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, Tv, Cpu, Sliders, Zap, MonitorPlay, Gauge, BatteryCharging } from 'lucide-react';
+import { X, Tv, Cpu, Sliders } from 'lucide-react';
 import { CrtConfig, OptimizeConfig } from '../types/ascii';
 
 interface ViewfinderSettingsModalProps {
@@ -9,7 +9,6 @@ interface ViewfinderSettingsModalProps {
   onChangeCrtConfig: (cfg: CrtConfig) => void;
   optimizeConfig: OptimizeConfig;
   onChangeOptimizeConfig: (cfg: OptimizeConfig) => void;
-  onChangeResolution?: (cols: number, rows: number) => void;
   isStaticImage?: boolean;
   isContentColorActive?: boolean;
 }
@@ -21,7 +20,6 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
   onChangeCrtConfig,
   optimizeConfig,
   onChangeOptimizeConfig,
-  onChangeResolution,
   isStaticImage = false,
   isContentColorActive = false,
 }) => {
@@ -46,42 +44,6 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
 
   const updateOptimize = <K extends keyof OptimizeConfig>(key: K, val: OptimizeConfig[K]) => {
     onChangeOptimizeConfig({ ...optimizeConfig, [key]: val });
-  };
-
-  const applyProfile = (profile: 'main' | 'background' | 'secondary' | 'eco') => {
-    if (profile === 'main') {
-      onChangeResolution?.(120, 60);
-      onChangeOptimizeConfig({
-        ...optimizeConfig,
-        targetFps: 60,
-        pauseWhenHidden: true,
-        idleThrottle: false,
-      });
-    } else if (profile === 'background') {
-      onChangeResolution?.(90, 45);
-      onChangeOptimizeConfig({
-        ...optimizeConfig,
-        targetFps: 30,
-        pauseWhenHidden: true,
-        idleThrottle: true,
-      });
-    } else if (profile === 'secondary') {
-      onChangeResolution?.(70, 35);
-      onChangeOptimizeConfig({
-        ...optimizeConfig,
-        targetFps: 20,
-        pauseWhenHidden: true,
-        idleThrottle: true,
-      });
-    } else if (profile === 'eco') {
-      onChangeResolution?.(50, 25);
-      onChangeOptimizeConfig({
-        ...optimizeConfig,
-        targetFps: 15,
-        pauseWhenHidden: true,
-        idleThrottle: true,
-      });
-    }
   };
 
   return (
@@ -213,62 +175,6 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
               <span>Performance &amp; FPS Limits</span>
             </div>
 
-            {/* Quick 1-Click Hardware Profiles */}
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-                Hardware Performance Profiles:
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${optimizeConfig.targetFps === 60 && !optimizeConfig.idleThrottle ? 'btn-primary' : ''}`}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                  onClick={() => applyProfile('main')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                    <Zap size={11} /> MAIN / HERO
-                  </div>
-                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>60 FPS • High Fidelity • 0% Throttle</div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`btn btn-sm ${optimizeConfig.targetFps === 30 && optimizeConfig.idleThrottle ? 'btn-primary' : ''}`}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                  onClick={() => applyProfile('background')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                    <MonitorPlay size={11} /> BACKGROUND
-                  </div>
-                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>30 FPS • Balanced • Smart Throttle</div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`btn btn-sm ${optimizeConfig.targetFps === 20 && optimizeConfig.idleThrottle ? 'btn-primary' : ''}`}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                  onClick={() => applyProfile('secondary')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                    <Gauge size={11} /> SECONDARY
-                  </div>
-                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>20 FPS • Light Widget • Eco Power</div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`btn btn-sm ${optimizeConfig.targetFps === 15 && optimizeConfig.idleThrottle ? 'btn-primary' : ''}`}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 8px', gap: '2px', textAlign: 'left' }}
-                  onClick={() => applyProfile('eco')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--accent)', fontWeight: 700 }}>
-                    <BatteryCharging size={11} /> ECO / MOBILE
-                  </div>
-                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>15 FPS • Min Battery • Max Efficiency</div>
-                </button>
-              </div>
-            </div>
-
             {isStaticImage && (
               <div
                 style={{
@@ -317,7 +223,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                     value={optimizeConfig.targetFps || 60}
                     onChange={(e) => updateOptimize('targetFps', parseInt(e.target.value, 10) || 60)}
                   />
-                  <span style={{ fontSize: '11px', minWidth: '34px', textAlign: 'right' }}>
+                  <span className="numeral-badge">
                     {optimizeConfig.targetFps === 0 ? 'MAX' : `${optimizeConfig.targetFps}fps`}
                   </span>
                 </div>

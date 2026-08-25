@@ -218,7 +218,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     const halftoneCfg = opts.mediaViewConfig?.halftoneConfig || DEFAULT_HALFTONE_CONFIG;
     let svgContent = '';
 
-    if (rasterMode === 'ascii' || rasterMode === 'braille') {
+    if (rasterMode === 'ascii') {
       const charWidth = 6.015 * scale;
       const charHeight = 10.0 * scale;
       const width = cols * charWidth;
@@ -294,7 +294,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   }
 
   // Check if Halftone or Pixel Dither Mode
-  if (rasterMode !== 'ascii' && rasterMode !== 'braille' && frameLuminance) {
+  if (rasterMode !== 'ascii' && frameLuminance) {
     const halftoneCfg = opts.mediaViewConfig?.halftoneConfig || DEFAULT_HALFTONE_CONFIG;
     drawHalftoneToCanvas({
       canvas,

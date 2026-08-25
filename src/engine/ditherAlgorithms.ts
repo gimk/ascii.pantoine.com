@@ -50,7 +50,12 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
   { id: 'peano', name: 'Peano Curve', family: 'algorithmic', description: 'Continuous space-filling fractal curve scan' },
   { id: 'r-sequence', name: 'R-Sequence Quasi-Random', family: 'algorithmic', description: 'Low-discrepancy 2D metallic ratio quasi-random sequence' },
 
-  // --- Modulation & Glitch (4) ---
+  // --- Modulation & Generative (9) ---
+  { id: 'fm-modulation', name: 'Frequency Modulation (FM)', family: 'modulation', description: 'Carrier wave frequency modulation synthesizing topographic contours' },
+  { id: 'phase-modulation', name: 'Phase Modulation (PM)', family: 'modulation', description: 'Multi-frequency phase distortion and contour interference' },
+  { id: 'bytewave', name: 'ByteWave Bitwise', family: 'modulation', description: 'Low-level arithmetic bitwise boolean raster dither' },
+  { id: 'concentric-rings', name: 'Concentric Rings', family: 'modulation', description: 'Harmonic radial wave ripples and interference rings' },
+  { id: 'cellular-circuit', name: 'Cellular Circuit', family: 'modulation', description: 'Discrete cell trace network dither' },
   { id: 'scanline-shift', name: 'Scanline Phase Shift', family: 'modulation', description: 'Alternating interlaced line phase dither' },
   { id: 'sine-drift', name: 'Analog Sine Drift', family: 'modulation', description: 'CRT analog sinusoidal drift modulation' },
   { id: 'glitch-displacement', name: 'Glitch Pixel Tear', family: 'modulation', description: 'Horizontal raster displacement jitter' },
@@ -670,8 +675,73 @@ export function applyDitherAlgorithm(
     }
   }
 
-  // --- 5. MODULATION & GLITCH ---
-  else if (algorithm === 'scanline-shift') {
+  // --- 5. MODULATION & GENERATIVE ---
+  else if (algorithm === 'fm-modulation') {
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        const freq = 0.15 + v * 0.85;
+        const carrier = Math.sin((x * 0.35 + y * 0.18) * freq * Math.PI * 2);
+        const mod = Math.sin(carrier * 3.14 + v * 6.28);
+        dest[idx] = quantize(v + mod * 0.5 * quantStep * intScale);
+      }
+    }
+  } else if (algorithm === 'phase-modulation') {
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        const phase = Math.sin(x * 0.25) * Math.cos(y * 0.25) * 3.5;
+        const pMod = Math.sin(v * Math.PI * 4.0 + phase);
+        dest[idx] = quantize(v + pMod * 0.45 * quantStep * intScale);
+      }
+    }
+  } else if (algorithm === 'bytewave') {
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        const byteVal = (((x * 3) ^ (y * 5)) & 255) / 255.0 - 0.5;
+        dest[idx] = quantize(v + byteVal * quantStep * intScale);
+      }
+    }
+  } else if (algorithm === 'concentric-rings') {
+    const cx = cols / 2;
+    const cy = rows / 2;
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      const dy = y - cy;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        const dx = x - cx;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const ring = Math.sin(dist * 0.65 + v * 3.14) * 0.5;
+        dest[idx] = quantize(v + ring * quantStep * intScale);
+      }
+    }
+  } else if (algorithm === 'cellular-circuit') {
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      const cy = (y % 8) - 4;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        const cx = (x % 8) - 4;
+        const cellDist = Math.sqrt(cx * cx + cy * cy) / 4.0 - 0.5;
+        dest[idx] = quantize(v + cellDist * quantStep * intScale);
+      }
+    }
+  } else if (algorithm === 'scanline-shift') {
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
       const phase = (y % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;

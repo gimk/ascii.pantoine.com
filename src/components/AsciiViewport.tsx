@@ -2,17 +2,13 @@ import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperat
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings } from 'lucide-react';
 import {
   PhosphorTheme,
-  CrtConfig,
   PhosphorGradient,
+  CrtConfig,
   OptimizeConfig,
-  RasterOutputMode,
-  HalftoneConfig,
-  DEFAULT_HALFTONE_CONFIG,
 } from '../types/ascii';
 
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
-import { drawHalftoneToCanvas } from '../engine/halftoneRenderer';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
 
 
@@ -22,10 +18,7 @@ export interface AsciiViewportHandle {
     time: number,
     fps: number,
     colors?: Uint8ClampedArray | null,
-    bgColor?: string,
-    luminance?: Float32Array | null,
-    rasterMode?: RasterOutputMode,
-    halftoneConfig?: HalftoneConfig
+    bgColor?: string
   ) => void;
   getFrameText: () => string;
   autoFit: () => void;
@@ -38,9 +31,9 @@ interface AsciiViewportProps {
   isPlaying: boolean;
   onTogglePlay: () => void;
   onResetTime: () => void;
-  onStepFrame: () => void;
-  onMouseMove: (x: number, y: number) => void;
-  onClick: (x: number, y: number) => void;
+  onStepFrame?: () => void;
+  onMouseMove?: (x: number, y: number) => void;
+  onClick?: (x: number, y: number) => void;
   presetName: string;
   isEdited?: boolean;
   viewMode?: 'editor' | 'fullscreen';
@@ -48,7 +41,6 @@ interface AsciiViewportProps {
   autoRes?: boolean;
   onToggleAutoRes?: () => void;
   onAutoResolutionChange?: (cols: number, rows: number) => void;
-  onChangeResolution?: (cols: number, rows: number) => void;
   crtConfig?: CrtConfig;
   onChangeCrtConfig?: (cfg: CrtConfig) => void;
   optimizeConfig?: OptimizeConfig;
@@ -89,14 +81,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   autoRes = false,
   onToggleAutoRes,
   onAutoResolutionChange,
-  onChangeResolution,
   crtConfig,
   onChangeCrtConfig,
   optimizeConfig,
   onChangeOptimizeConfig,
   gradientConfig,
-  theme = 'green',
-  customThemeColor = '',
   appMode = 'synth',
   mediaType,
   isLoading = false,
@@ -118,9 +107,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const latestFrameTextRef = useRef<string>('');
   const latestColorsRef = useRef<Uint8ClampedArray | null>(null);
   const latestBgColorRef = useRef<string | undefined>(undefined);
-  const latestLuminanceRef = useRef<Float32Array | null>(null);
-  const latestRasterModeRef = useRef<RasterOutputMode>('ascii');
-  const latestHalftoneConfigRef = useRef<HalftoneConfig>(DEFAULT_HALFTONE_CONFIG);
   
   const [isColoredView, setIsColoredView] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -137,9 +123,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return null;
 
-    const isTextMode = latestRasterModeRef.current === 'ascii' || latestRasterModeRef.current === 'braille';
-    const charWidth = isTextMode ? MONOSPACE_CELL_WIDTH : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
-    const charHeight = isTextMode ? MONOSPACE_CELL_HEIGHT : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
+    const charWidth = MONOSPACE_CELL_WIDTH;
+    const charHeight = MONOSPACE_CELL_HEIGHT;
     const pad = 20;
     const availableWidth = Math.max(80, clientWidth - pad);
     const availableHeight = Math.max(60, clientHeight - pad);
@@ -185,9 +170,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return;
 
-    const isTextMode = latestRasterModeRef.current === 'ascii' || latestRasterModeRef.current === 'braille';
-    const charWidth = isTextMode ? MONOSPACE_CELL_WIDTH : (latestHalftoneConfigRef.current?.dotPitch || 8.0);
-    const charHeight = isTextMode ? MONOSPACE_CELL_HEIGHT : (charWidth * (latestHalftoneConfigRef.current?.cellRatio ?? 1.0));
+    const charWidth = MONOSPACE_CELL_WIDTH;
+    const charHeight = MONOSPACE_CELL_HEIGHT;
     const unscaledWidth = cols * charWidth;
     const unscaledHeight = rows * charHeight;
 
@@ -207,17 +191,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       frameText: string,
       colors: Uint8ClampedArray | null,
       bgColor: string | undefined,
-      luminance: Float32Array | null,
-      rasterMode: RasterOutputMode,
-      halftoneConfig: HalftoneConfig,
       currentZoom: number
     ) => {
-      if (!canvasRef.current) return;
+      if (!canvasRef.current || !colors || colors.length === 0) return;
       const canvas = canvasRef.current;
-      const isTextMode = rasterMode === 'ascii' || rasterMode === 'braille';
-
-      const cellW = isTextMode ? MONOSPACE_CELL_WIDTH : (halftoneConfig?.dotPitch || 8.0);
-      const cellH = isTextMode ? MONOSPACE_CELL_HEIGHT : (cellW * (halftoneConfig?.cellRatio ?? 1.0));
+      const cellW = MONOSPACE_CELL_WIDTH;
+      const cellH = MONOSPACE_CELL_HEIGHT;
 
       const unscaledW = Math.max(1, Math.round(cols * cellW));
       const unscaledH = Math.max(1, Math.round(rows * cellH));
@@ -239,72 +218,44 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const themeHexMap: Record<string, string> = {
-        green: '#00ff66',
-        amber: '#ffb000',
-        cyan: '#00f0ff',
-        monochrome: '#f0f0f0',
-        blood: '#ff3344',
-        paper: '#151515',
-      };
-      const fgHex = customThemeColor || (gradientConfig ? gradientConfig.color1 : (themeHexMap[theme || 'green'] || '#00ff66'));
-
-      if (!isTextMode && luminance) {
-        drawHalftoneToCanvas({
-          canvas,
-          ctx,
-          cols,
-          rows,
-          luminance,
-          colors,
-          bgColor: bgColor || '#0a0a0a',
-          fgColor: fgHex,
-          config: halftoneConfig,
-          mode: rasterMode,
-          cellWidth: cellW,
-          cellHeight: cellH,
-          dpr: currentZoom * dpr,
-        });
-      } else if (colors && colors.length > 0) {
-        ctx.save();
-        ctx.scale(currentZoom * dpr, currentZoom * dpr);
-        ctx.clearRect(0, 0, unscaledW, unscaledH);
-        if (bgColor && bgColor !== 'transparent' && bgColor !== '#0a0a0a' && bgColor !== '#000000' && bgColor !== '#000') {
-          ctx.fillStyle = bgColor;
-          ctx.fillRect(0, 0, unscaledW, unscaledH);
-        }
-        ctx.font = '10px "JuliaMono", "JetBrains Mono", "Courier New", monospace';
-
-
-        ctx.textBaseline = 'top';
-        ctx.textAlign = 'left';
-
-        let curX = 0;
-        let curY = 0;
-        const len = frameText.length;
-        for (let i = 0; i < len; i++) {
-          const ch = frameText[i];
-          if (ch === '\n') {
-            curY++;
-            curX = 0;
-            continue;
-          }
-          if (curX < cols && curY < rows) {
-            if (ch !== ' ') {
-              const cIdx = (curY * cols + curX) * 3;
-              const r = colors[cIdx];
-              const g = colors[cIdx + 1];
-              const b = colors[cIdx + 2];
-              ctx.fillStyle = `rgb(${r},${g},${b})`;
-              ctx.fillText(ch, curX * cellW, curY * cellH);
-            }
-            curX++;
-          }
-        }
-        ctx.restore();
+      ctx.save();
+      ctx.scale(currentZoom * dpr, currentZoom * dpr);
+      ctx.clearRect(0, 0, unscaledW, unscaledH);
+      if (bgColor && bgColor !== 'transparent' && bgColor !== '#0a0a0a' && bgColor !== '#000000' && bgColor !== '#000') {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, unscaledW, unscaledH);
       }
+      ctx.font = '10px "JuliaMono", "JetBrains Mono", "Courier New", monospace';
+
+
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+
+      let curX = 0;
+      let curY = 0;
+      const len = frameText.length;
+      for (let i = 0; i < len; i++) {
+        const ch = frameText[i];
+        if (ch === '\n') {
+          curY++;
+          curX = 0;
+          continue;
+        }
+        if (curX < cols && curY < rows) {
+          if (ch !== ' ') {
+            const cIdx = (curY * cols + curX) * 3;
+            const r = colors[cIdx];
+            const g = colors[cIdx + 1];
+            const b = colors[cIdx + 2];
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillText(ch, curX * cellW, curY * cellH);
+          }
+          curX++;
+        }
+      }
+      ctx.restore();
     },
-    [cols, rows, theme, customThemeColor, gradientConfig]
+    [cols, rows]
 
   );
 
@@ -314,9 +265,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         latestFrameTextRef.current,
         latestColorsRef.current,
         latestBgColorRef.current,
-        latestLuminanceRef.current,
-        latestRasterModeRef.current,
-        latestHalftoneConfigRef.current,
         zoom
       );
     }
@@ -329,22 +277,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       time: number,
       fps: number,
       colors?: Uint8ClampedArray | null,
-      bgColor?: string,
-      luminance?: Float32Array | null,
-      rasterMode: RasterOutputMode = 'ascii',
-      halftoneConfig?: HalftoneConfig
+      bgColor?: string
     ) => {
       latestFrameTextRef.current = frameText;
       latestColorsRef.current = colors || null;
       latestBgColorRef.current = bgColor;
-      latestLuminanceRef.current = luminance || null;
-      latestRasterModeRef.current = rasterMode;
-      if (halftoneConfig) latestHalftoneConfigRef.current = halftoneConfig;
 
-      const isCanvasMode = Boolean(
-        (colors && colors.length > 0) ||
-        (rasterMode !== 'ascii' && rasterMode !== 'braille' && luminance)
-      );
+      const isCanvasMode = Boolean(colors && colors.length > 0);
 
       if (isCanvasMode) {
         if (!isColoredView) {
@@ -354,9 +293,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           frameText,
           colors || null,
           bgColor,
-          luminance || null,
-          rasterMode,
-          halftoneConfig || latestHalftoneConfigRef.current,
           zoom
         );
       } else {
@@ -372,7 +308,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
 
       if (timeSpanRef.current) {
-        timeSpanRef.current.textContent = `${time.toFixed(2)}s`;
+        timeSpanRef.current.textContent = isTimelineDisabled ? 'STATIC' : `${time.toFixed(2)}s`;
       }
       if (fpsSpanRef.current) {
         fpsSpanRef.current.textContent = `${Math.round(fps)} FPS`;
@@ -434,7 +370,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     } else if (appMode !== 'media') {
       const cx = ((e.clientX - rect.left) / rect.width) * cols;
       const cy = ((e.clientY - rect.top) / rect.height) * rows;
-      onClick(cx, cy);
+      if (onClick) onClick(cx, cy);
     }
   };
 
@@ -457,7 +393,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       const mouseX = ((e.clientX - rect.left) / rect.width) * cols;
       const mouseY = ((e.clientY - rect.top) / rect.height) * rows;
       if (mouseX >= 0 && mouseX < cols && mouseY >= 0 && mouseY < rows) {
-        onMouseMove(mouseX, mouseY);
+        if (onMouseMove) onMouseMove(mouseX, mouseY);
       }
     }
   };
@@ -703,7 +639,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           onChangeCrtConfig={onChangeCrtConfig}
           optimizeConfig={optimizeConfig}
           onChangeOptimizeConfig={onChangeOptimizeConfig}
-          onChangeResolution={onChangeResolution}
           isStaticImage={isTimelineDisabled}
           isContentColorActive={isColoredView}
         />

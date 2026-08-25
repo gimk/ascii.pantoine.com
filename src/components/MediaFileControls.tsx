@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { MediaConfig, MediaViewConfig } from '../types/ascii';
-import { MediaViewControls } from './MediaViewControls';
+import { MediaConfig } from '../types/ascii';
 import {
   Upload,
   Image as ImageIcon,
@@ -23,32 +22,18 @@ import {
 interface MediaFileControlsProps {
   config: MediaConfig;
   onChangeConfig: (cfg: MediaConfig) => void;
-  viewConfig?: MediaViewConfig;
-  onChangeViewConfig?: (cfg: MediaViewConfig) => void;
   mediaElement: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   onFileUpload: (file: File) => void;
   onUrlLoad: (url: string) => void;
-  /**
-   * Which half of the panel to render.
-   *   source - paste/upload/URL and video playback: what the content IS
-   *   adjust - transform, framing, effects and tone: how it is processed
-   * Defaults to both, so existing callers are unaffected.
-   */
-  section?: 'source' | 'adjust' | 'all';
 }
 
 export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
   config,
   onChangeConfig,
-  viewConfig,
-  onChangeViewConfig,
   mediaElement,
   onFileUpload,
   onUrlLoad,
-  section = 'all',
 }) => {
-  const showSource = section === 'source' || section === 'all';
-  const showAdjust = section === 'adjust' || section === 'all';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -205,10 +190,8 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
 
   return (
     <div className="tab-content">
-      {showSource && (
-        <>
-          {/* 0. Large Clipboard Paste Hero Button */}
-          <div style={{ marginBottom: '14px' }}>
+      {/* 0. Large Clipboard Paste Hero Button */}
+      <div style={{ marginBottom: '14px' }}>
             <button
               type="button"
               className="btn btn-randomize"
@@ -371,13 +354,14 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
           </div>
         </CollapsibleSection>
       )}
-        </>
-      )}
 
-      {showAdjust && (
-        <>
       {/* 3. Transform & Framing Controls */}
-      <CollapsibleSection title="Transform &amp; Framing" icon={<Maximize2 size={12} />} persistKey="MediaFileControls-transform-framing">
+      <CollapsibleSection
+        title="Transform &amp; Framing"
+        icon={<Maximize2 size={12} />}
+        persistKey="MediaFileControls-transform-framing"
+        defaultOpen={false}
+      >
         {/* Fit Mode */}
         <div className="control-row">
           <span className="control-label">Fit Mode</span>
@@ -414,7 +398,7 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
               value={config.scale}
               onChange={(e) => update('scale', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '34px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.scale.toFixed(2)}x
             </span>
           </div>
@@ -435,7 +419,7 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
               value={config.offsetX}
               onChange={(e) => update('offsetX', parseInt(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '34px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.offsetX}%
             </span>
           </div>
@@ -456,7 +440,7 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
               value={config.offsetY}
               onChange={(e) => update('offsetY', parseInt(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '34px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.offsetY}%
             </span>
           </div>
@@ -475,7 +459,7 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
               value={config.rotation}
               onChange={(e) => update('rotation', parseInt(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '34px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.rotation}°
             </span>
           </div>
@@ -514,16 +498,6 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
           </button>
         </div>
       </CollapsibleSection>
-
-      {/* 4. EFFECT & TONAL CONTROLS (Tonal curve, Levels, Highlights/Shadows, Background) */}
-      {viewConfig && onChangeViewConfig && (
-        <MediaViewControls
-          config={viewConfig}
-          onChangeConfig={onChangeViewConfig}
-        />
-      )}
-        </>
-      )}
     </div>
   );
 };

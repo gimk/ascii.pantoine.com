@@ -53,7 +53,12 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
       </CollapsibleSection>
 
       {/* 2. Auto-Rotation & Dynamics */}
-      <CollapsibleSection title="Rotation &amp; Dynamics" icon={<RotateCw size={12} />} persistKey="ModelViewControls-rotation-dynamics">
+      <CollapsibleSection
+        title="Rotation &amp; Dynamics"
+        icon={<RotateCw size={12} />}
+        persistKey="ModelViewControls-rotation-dynamics"
+        defaultOpen={false}
+      >
         <div className="control-row">
           <span className="control-label">Auto-Rotation</span>
           <button
@@ -78,7 +83,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.autoRotateSpeedX}
               onChange={(e) => update('autoRotateSpeedX', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.autoRotateSpeedX.toFixed(2)}
             </span>
           </div>
@@ -97,7 +102,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.autoRotateSpeedY}
               onChange={(e) => update('autoRotateSpeedY', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.autoRotateSpeedY.toFixed(2)}
             </span>
           </div>
@@ -116,7 +121,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.autoRotateSpeedZ}
               onChange={(e) => update('autoRotateSpeedZ', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.autoRotateSpeedZ.toFixed(2)}
             </span>
           </div>
@@ -138,7 +143,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.manualRotationX}
               onChange={(e) => update('manualRotationX', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {Math.round((config.manualRotationX * 180) / Math.PI)}°
             </span>
           </div>
@@ -156,7 +161,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.manualRotationY}
               onChange={(e) => update('manualRotationY', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {Math.round((config.manualRotationY * 180) / Math.PI)}°
             </span>
           </div>
@@ -174,7 +179,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.manualRotationZ}
               onChange={(e) => update('manualRotationZ', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {Math.round((config.manualRotationZ * 180) / Math.PI)}°
             </span>
           </div>
@@ -188,7 +193,12 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
       </CollapsibleSection>
 
       {/* 3. Lighting & Contrast */}
-      <CollapsibleSection title="Lighting &amp; Contrast" icon={<Sun size={12} />} persistKey="ModelViewControls-lighting-contrast">
+      <CollapsibleSection
+        title="Lighting &amp; Contrast"
+        icon={<Sun size={12} />}
+        persistKey="ModelViewControls-lighting-contrast"
+        defaultOpen={false}
+      >
         {/* Light Azimuth */}
         <div className="control-row">
           <span className="control-label">Light Azimuth (Angle)</span>
@@ -202,7 +212,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.lightAngleX}
               onChange={(e) => update('lightAngleX', parseInt(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.lightAngleX}°
             </span>
           </div>
@@ -221,7 +231,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.lightAngleY}
               onChange={(e) => update('lightAngleY', parseInt(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.lightAngleY}°
             </span>
           </div>
@@ -240,7 +250,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.lightIntensity}
               onChange={(e) => update('lightIntensity', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.lightIntensity.toFixed(2)}
             </span>
           </div>
@@ -259,7 +269,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.ambientLight}
               onChange={(e) => update('ambientLight', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.ambientLight.toFixed(2)}
             </span>
           </div>
@@ -278,7 +288,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.contrast}
               onChange={(e) => update('contrast', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.contrast.toFixed(2)}
             </span>
           </div>
@@ -297,7 +307,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.brightness}
               onChange={(e) => update('brightness', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.brightness > 0 ? `+${config.brightness.toFixed(2)}` : config.brightness.toFixed(2)}
             </span>
           </div>
@@ -327,7 +337,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.edgeWeight}
               onChange={(e) => update('edgeWeight', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.edgeWeight.toFixed(1)}
             </span>
           </div>
@@ -335,7 +345,12 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
       </CollapsibleSection>
 
       {/* 4. Camera & Optics */}
-      <CollapsibleSection title="Camera &amp; Optics" icon={<Camera size={12} />} persistKey="ModelViewControls-camera-optics">
+      <CollapsibleSection
+        title="Camera &amp; Optics"
+        icon={<Camera size={12} />}
+        persistKey="ModelViewControls-camera-optics"
+        defaultOpen={false}
+      >
         {/* Camera Distance */}
         <div className="control-row">
           <span className="control-label">Camera Distance / Zoom</span>
@@ -349,7 +364,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               value={config.cameraDistance}
               onChange={(e) => update('cameraDistance', parseFloat(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+            <span className="numeral-badge">
               {config.cameraDistance.toFixed(1)}
             </span>
           </div>
@@ -369,8 +384,27 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               disabled={config.isOrthographic}
               onChange={(e) => update('fov', parseInt(e.target.value))}
             />
-            <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right', opacity: config.isOrthographic ? 0.5 : 1 }}>
+            <span className="numeral-badge" style={{ opacity: config.isOrthographic ? 0.5 : 1 }}>
               {config.fov}°
+            </span>
+          </div>
+        </div>
+
+        {/* Aspect Ratio / Horizontal Stretch */}
+        <div className="control-row">
+          <span className="control-label">Aspect Ratio (H-Stretch)</span>
+          <div className="control-input-wrapper">
+            <input
+              type="range"
+              className="range-slider"
+              min={0.30}
+              max={0.80}
+              step={0.01}
+              value={config.aspectRatio ?? 0.50}
+              onChange={(e) => update('aspectRatio', parseFloat(e.target.value))}
+            />
+            <span className="numeral-badge">
+              {(config.aspectRatio ?? 0.50).toFixed(2)}
             </span>
           </div>
         </div>
