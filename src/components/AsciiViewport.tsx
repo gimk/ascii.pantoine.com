@@ -5,6 +5,7 @@ import {
   PhosphorGradient,
   CrtConfig,
   OptimizeConfig,
+  RasterOutputMode,
 } from '../types/ascii';
 
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
@@ -18,7 +19,8 @@ export interface AsciiViewportHandle {
     time: number,
     fps: number,
     colors?: Uint8ClampedArray | null,
-    bgColor?: string
+    bgColor?: string,
+    rasterMode?: RasterOutputMode
   ) => void;
   getFrameText: () => string;
   autoFit: () => void;
@@ -170,8 +172,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return;
 
-    const charWidth = MONOSPACE_CELL_WIDTH;
-    const charHeight = MONOSPACE_CELL_HEIGHT;
+    const isPixel = latestRasterModeRef.current === 'pixel';
+    const charWidth = isPixel ? 1 : MONOSPACE_CELL_WIDTH;
+    const charHeight = isPixel ? 1 : MONOSPACE_CELL_HEIGHT;
     const unscaledWidth = cols * charWidth;
     const unscaledHeight = rows * charHeight;
 
@@ -186,17 +189,21 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   }, [cols, rows]);
 
 
+  const latestRasterModeRef = useRef<RasterOutputMode>('ascii');
+
   const drawCanvas = useCallback(
     (
       frameText: string,
       colors: Uint8ClampedArray | null,
       bgColor: string | undefined,
-      currentZoom: number
+      currentZoom: number,
+      rasterMode: RasterOutputMode = 'ascii'
     ) => {
       if (!canvasRef.current || !colors || colors.length === 0) return;
       const canvas = canvasRef.current;
-      const cellW = MONOSPACE_CELL_WIDTH;
-      const cellH = MONOSPACE_CELL_HEIGHT;
+      const isPixelMode = rasterMode === 'pixel';
+      const cellW = isPixelMode ? 1 : MONOSPACE_CELL_WIDTH;
+      const cellH = isPixelMode ? 1 : MONOSPACE_CELL_HEIGHT;
 
       const unscaledW = Math.max(1, Math.round(cols * cellW));
       const unscaledH = Math.max(1, Math.round(rows * cellH));
@@ -219,6 +226,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       if (!ctx) return;
 
       ctx.save();
+      ctx.imageSmoothingEnabled = !isPixelMode;
       ctx.scale(currentZoom * dpr, currentZoom * dpr);
       ctx.clearRect(0, 0, unscaledW, unscaledH);
       if (bgColor && bgColor !== 'transparent' && bgColor !== '#0a0a0a' && bgColor !== '#000000' && bgColor !== '#000') {
@@ -248,7 +256,11 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             const g = colors[cIdx + 1];
             const b = colors[cIdx + 2];
             ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillText(ch, curX * cellW, curY * cellH);
+            if (isPixelMode) {
+              ctx.fillRect(curX * cellW, curY * cellH, cellW, cellH);
+            } else {
+              ctx.fillText(ch, curX * cellW, curY * cellH);
+            }
           }
           curX++;
         }
@@ -256,7 +268,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       ctx.restore();
     },
     [cols, rows]
-
   );
 
   useEffect(() => {
@@ -265,7 +276,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         latestFrameTextRef.current,
         latestColorsRef.current,
         latestBgColorRef.current,
-        zoom
+        zoom,
+        latestRasterModeRef.current
       );
     }
   }, [zoom, drawCanvas, isColoredView]);
@@ -277,13 +289,17 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       time: number,
       fps: number,
       colors?: Uint8ClampedArray | null,
-      bgColor?: string
+      bgColor?: string,
+      rasterMode?: RasterOutputMode
     ) => {
       latestFrameTextRef.current = frameText;
       latestColorsRef.current = colors || null;
       latestBgColorRef.current = bgColor;
+      if (rasterMode) {
+        latestRasterModeRef.current = rasterMode;
+      }
 
-      const isCanvasMode = Boolean(colors && colors.length > 0);
+      const isCanvasMode = Boolean((colors && colors.length > 0) || rasterMode === 'pixel');
 
       if (isCanvasMode) {
         if (!isColoredView) {
@@ -293,7 +309,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           frameText,
           colors || null,
           bgColor,
-          zoom
+          zoom,
+          rasterMode || latestRasterModeRef.current
         );
       } else {
         if (isColoredView) {

@@ -12,11 +12,13 @@ import {
   ToneMappingConfig,
   MediaColorConfig,
   HalftoneConfig,
+  TonalMappingType,
 } from '../types/ascii';
 import {
   BUILTIN_PALETTES,
   PaletteQuantizer,
 } from './palettes';
+import { applyDitherAlgorithm } from './ditherAlgorithms';
 
 export interface RawFrameBuffer {
   width: number;
@@ -37,6 +39,7 @@ export interface UnifiedPipelineOptions {
   colorConfig?: MediaColorConfig;
   halftoneConfig?: HalftoneConfig;
   noise?: number;
+  denoise?: number;
   contrast?: number;
   brightness?: number;
   invert?: boolean;
@@ -52,6 +55,10 @@ export interface UnifiedPipelineOptions {
   midtones?: number;
   alphaThreshold?: number;
   saturation?: number;
+  tonalMapping?: TonalMappingType;
+  highlightColor?: string;
+  midtoneColor?: string;
+  shadowColor?: string;
 }
 
 export interface ProcessedRasterResult {
@@ -98,6 +105,27 @@ function ensureBufferCapacity(totalCells: number, cols: number, rows: number) {
     lineBuffer = new Array(cols);
   }
 }
+
+export function parseHexRgb(hex?: string, fallback = { r: 255, g: 255, b: 255 }): { r: number; g: number; b: number } {
+  if (!hex) return fallback;
+  const c = hex.replace('#', '').trim();
+  if (c.length === 3) {
+    return {
+      r: parseInt(c[0] + c[0], 16) || fallback.r,
+      g: parseInt(c[1] + c[1], 16) || fallback.g,
+      b: parseInt(c[2] + c[2], 16) || fallback.b,
+    };
+  }
+  if (c.length === 6) {
+    return {
+      r: parseInt(c.substring(0, 2), 16) || fallback.r,
+      g: parseInt(c.substring(2, 4), 16) || fallback.g,
+      b: parseInt(c.substring(4, 6), 16) || fallback.b,
+    };
+  }
+  return fallback;
+}
+
 
 // ---------------------------------------------------------------------------
 // Fritsch-Carlson Monotone Cubic Spline Interpolation for Tone Curves
@@ -293,9 +321,10 @@ export function processRasterFrame(
   }
 
   // -------------------------------------------------------------------------
-  // Step 2: Spatial Filters (Blur, Sharpen, Sobel Edges)
+  // Step 2: Spatial Filters (Blur, Denoise, Sharpen, Sobel Edges)
   // -------------------------------------------------------------------------
-  const blurRadius = options.blur && options.blur > 0 ? Math.max(1, Math.round(options.blur / 2)) : 0;
+  const totalBlur = (options.blur || 0) + (options.denoise || 0);
+  const blurRadius = totalBlur > 0 ? Math.max(1, Math.round(totalBlur / 2)) : 0;
   if (blurRadius > 0) {
     applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, blurRadius);
     for (let i = 0; i < totalCells; i++) {
@@ -447,6 +476,15 @@ export function processRasterFrame(
   }
 
   // -------------------------------------------------------------------------
+  // Step 3.5: Dithering & Error Diffusion Execution
+  // -------------------------------------------------------------------------
+  const densityLength = density.length;
+  const ditherAlgo = options.ditherAlgorithm || 'floyd-steinberg';
+  if (ditherAlgo && ditherAlgo !== 'none') {
+    applyDitherAlgorithm(lumBuffer, lumBuffer, cols, rows, ditherAlgo, densityLength);
+  }
+
+  // -------------------------------------------------------------------------
   // Step 4: Color Extraction & Retro Palette Quantization
   // -------------------------------------------------------------------------
   const paletteMode = colorCfg?.paletteMode || (colorCfg?.mode === 'content' ? 'content' : 'phosphor');
@@ -537,12 +575,84 @@ export function processRasterFrame(
       }
     }
     colorsOut = colorsBuffer;
+  } else if (options.tonalMapping && options.tonalMapping !== '1color') {
+    // Multi-Tone Color Mapping (2-color duotone, 3-color tritone, GameBoy, Cyberpunk, CRT Amber)
+    const tMode = options.tonalMapping;
+    let high = parseHexRgb(options.highlightColor || '#FFFFFF', { r: 255, g: 255, b: 255 });
+    let mid = parseHexRgb(options.midtoneColor || '#3B82F6', { r: 59, g: 130, b: 246 });
+    let low = parseHexRgb(options.shadowColor || '#000000', { r: 0, g: 0, b: 0 });
+
+    if (tMode === 'gameboy') {
+      high = { r: 155, g: 188, b: 15 };
+      mid = { r: 139, g: 172, b: 15 };
+      low = { r: 15, g: 56, b: 15 };
+    } else if (tMode === 'cyberpunk') {
+      high = { r: 0, g: 255, b: 255 };
+      mid = { r: 255, g: 0, b: 127 };
+      low = { r: 26, g: 0, b: 51 };
+    } else if (tMode === 'amber') {
+      high = { r: 255, g: 176, b: 0 };
+      mid = { r: 128, g: 88, b: 0 };
+      low = { r: 16, g: 10, b: 0 };
+    }
+
+    if (tMode === '2color') {
+      for (let i = 0; i < totalCells; i++) {
+        const lum = lumBuffer[i];
+        if (lum < 0) {
+          colorsBuffer[i * 3] = low.r;
+          colorsBuffer[i * 3 + 1] = low.g;
+          colorsBuffer[i * 3 + 2] = low.b;
+          continue;
+        }
+        const col = lum > 0.5 ? high : low;
+        colorsBuffer[i * 3] = col.r;
+        colorsBuffer[i * 3 + 1] = col.g;
+        colorsBuffer[i * 3 + 2] = col.b;
+      }
+    } else {
+      for (let i = 0; i < totalCells; i++) {
+        const lum = lumBuffer[i];
+        if (lum < 0) {
+          colorsBuffer[i * 3] = low.r;
+          colorsBuffer[i * 3 + 1] = low.g;
+          colorsBuffer[i * 3 + 2] = low.b;
+          continue;
+        }
+        let col = low;
+        if (lum > 0.66) col = high;
+        else if (lum > 0.33) col = mid;
+        colorsBuffer[i * 3] = col.r;
+        colorsBuffer[i * 3 + 1] = col.g;
+        colorsBuffer[i * 3 + 2] = col.b;
+      }
+    }
+    colorsOut = colorsBuffer;
   }
 
   // -------------------------------------------------------------------------
   // Step 5: Character Density Ramp Mapping
   // -------------------------------------------------------------------------
-  const densityLength = density.length;
+  const effectiveRasterMode = options.rasterMode || 'ascii';
+  const isPixelMode = effectiveRasterMode === 'pixel';
+
+  if (isPixelMode && !colorsOut) {
+    for (let i = 0; i < totalCells; i++) {
+      const lum = lumBuffer[i];
+      if (lum < 0) {
+        colorsBuffer[i * 3] = 0;
+        colorsBuffer[i * 3 + 1] = 0;
+        colorsBuffer[i * 3 + 2] = 0;
+      } else {
+        const byte = Math.max(0, Math.min(255, Math.round(lum * 255)));
+        colorsBuffer[i * 3] = byte;
+        colorsBuffer[i * 3 + 1] = byte;
+        colorsBuffer[i * 3 + 2] = byte;
+      }
+    }
+    colorsOut = colorsBuffer;
+  }
+
   const overrides = rawFrame.charOverrides;
 
   for (let y = 0; y < rows; y++) {
@@ -556,11 +666,16 @@ export function processRasterFrame(
         continue;
       }
 
-      let charIndex = Math.floor(val * densityLength);
-      if (charIndex < 0) charIndex = 0;
-      else if (charIndex >= densityLength) charIndex = densityLength - 1;
+      let cellChar = ' ';
+      if (isPixelMode) {
+        cellChar = val > 0.5 ? '█' : ' ';
+      } else {
+        let charIndex = Math.floor(val * densityLength);
+        if (charIndex < 0) charIndex = 0;
+        else if (charIndex >= densityLength) charIndex = densityLength - 1;
+        cellChar = density[charIndex] || ' ';
+      }
 
-      let cellChar = density[charIndex] || ' ';
       if (overrides && overrides[cellIdx]) {
         cellChar = overrides[cellIdx]!;
       }
@@ -575,7 +690,7 @@ export function processRasterFrame(
     luminance: lumBuffer,
     cols,
     rows,
-    rasterMode: 'ascii',
+    rasterMode: effectiveRasterMode,
     bgColor,
     isColored: Boolean(colorsOut && colorsOut.length > 0),
   };

@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { MediaViewConfig, BackgroundMode, PhosphorTheme, MediaColorConfig, AppMode } from '../types/ascii';
+import {
+  MediaViewConfig,
+  BackgroundMode,
+  PhosphorTheme,
+  MediaColorConfig,
+  AppMode,
+  DitherAlgorithm,
+  ResamplingMode,
+  TonalMappingType,
+} from '../types/ascii';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
 import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
 import { PaletteControls } from './PaletteControls';
-import { Sliders, Sparkles } from 'lucide-react';
+import { Sliders, Sparkles, Settings } from 'lucide-react';
 
 interface MediaViewControlsProps {
   config: MediaViewConfig;
@@ -87,6 +96,77 @@ const NumberInput: React.FC<{
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
     />
+  );
+};
+
+interface ColorPickerInputProps {
+  label: string;
+  value?: string;
+  onChange: (val: string) => void;
+}
+
+const ColorPickerInput: React.FC<ColorPickerInputProps> = ({ label, value = '#ffffff', onChange }) => {
+  const [hex, setHex] = useState(value);
+
+  useEffect(() => {
+    setHex(value);
+  }, [value]);
+
+  const handleHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+    setHex(val);
+    if (!val.startsWith('#')) val = '#' + val;
+    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+      onChange(val);
+    }
+  };
+
+  return (
+    <div className="control-row">
+      <span className="control-label">{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div
+          style={{
+            width: '24px',
+            height: '22px',
+            borderRadius: '2px',
+            border: '1px solid var(--border-color)',
+            background: value || '#ffffff',
+            position: 'relative',
+            overflow: 'hidden',
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="color"
+            value={value || '#ffffff'}
+            onChange={(e) => onChange(e.target.value)}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer',
+            }}
+          />
+        </div>
+        <input
+          type="text"
+          className="text-input"
+          value={hex}
+          onChange={handleHexChange}
+          style={{
+            width: '82px',
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono)',
+            textTransform: 'uppercase',
+            textAlign: 'center',
+          }}
+        />
+      </div>
+    </div>
   );
 };
 
@@ -690,17 +770,57 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   onChangeMediaColorConfig,
   appMode = 'media',
 }) => {
-  /**
-   * Each group resets only its own fields. A single global reset used to sit
-   * at the bottom of the panel, far from either group and ambiguous about
-   * what it would wipe.
-   */
+  const resetRenderSettings = () => {
+    onChangeConfig({
+      ...config,
+      resampling: DEFAULT_MEDIA_VIEW_CONFIG.resampling,
+      algorithm: DEFAULT_MEDIA_VIEW_CONFIG.algorithm,
+      invert: DEFAULT_MEDIA_VIEW_CONFIG.invert,
+    });
+  };
+
+  const applyStylePreset = (preset: 'retro_mac' | 'cyberpunk' | 'newspaper') => {
+    if (preset === 'retro_mac') {
+      onChangeConfig({
+        ...config,
+        algorithm: 'atkinson',
+        tonalMapping: '1color',
+        background: 'white',
+        highlightColor: '#000000',
+        shadowColor: '#000000',
+      });
+    } else if (preset === 'cyberpunk') {
+      onChangeConfig({
+        ...config,
+        algorithm: 'bayer-4x4',
+        tonalMapping: 'cyberpunk',
+        highlightColor: '#00FFFF',
+        midtoneColor: '#FF007F',
+        shadowColor: '#1A0033',
+      });
+    } else if (preset === 'newspaper') {
+      onChangeConfig({
+        ...config,
+        algorithm: 'halftone-dot',
+        tonalMapping: '1color',
+        background: 'white',
+        highlightColor: '#111827',
+        shadowColor: '#111827',
+      });
+    }
+  };
+
+  const toggleNoiseTexture = () => {
+    update('noise', config.noise > 0 ? 0 : 35);
+  };
+
   const resetEffects = () => {
     onChangeConfig({
       ...config,
       sharpenStrength: DEFAULT_MEDIA_VIEW_CONFIG.sharpenStrength,
       sharpenRadius: DEFAULT_MEDIA_VIEW_CONFIG.sharpenRadius,
       noise: DEFAULT_MEDIA_VIEW_CONFIG.noise,
+      denoise: DEFAULT_MEDIA_VIEW_CONFIG.denoise,
       blur: DEFAULT_MEDIA_VIEW_CONFIG.blur,
       brightness: DEFAULT_MEDIA_VIEW_CONFIG.brightness,
       contrast: DEFAULT_MEDIA_VIEW_CONFIG.contrast,
@@ -721,8 +841,13 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
       shadows: DEFAULT_MEDIA_VIEW_CONFIG.shadows,
       background: DEFAULT_MEDIA_VIEW_CONFIG.background,
       alphaThreshold: DEFAULT_MEDIA_VIEW_CONFIG.alphaThreshold,
+      tonalMapping: DEFAULT_MEDIA_VIEW_CONFIG.tonalMapping,
+      highlightColor: DEFAULT_MEDIA_VIEW_CONFIG.highlightColor,
+      midtoneColor: DEFAULT_MEDIA_VIEW_CONFIG.midtoneColor,
+      shadowColor: DEFAULT_MEDIA_VIEW_CONFIG.shadowColor,
     });
   };
+
   const update = <K extends keyof MediaViewConfig>(key: K, val: MediaViewConfig[K]) => {
     onChangeConfig({
       ...config,
@@ -738,12 +863,181 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
 
   return (
     <div className="tab-content">
-      {/* 1. EFFECT CONTROLS */}
+      {/* 1. RENDER SETTINGS */}
+      <CollapsibleSection
+        title="RENDER SETTINGS"
+        icon={<Settings size={12} />}
+        persistKey="MediaViewControls-render-settings"
+        defaultOpen={true}
+      >
+        {/* Output Mode Switcher: ASCII vs PIXEL */}
+        <div className="control-row">
+          <span className="control-label">Output Mode</span>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              type="button"
+              className={`chip-btn ${(!config.rasterMode || config.rasterMode === 'ascii') ? 'active' : ''}`}
+              onClick={() => update('rasterMode', 'ascii')}
+              style={{ fontSize: '9px', padding: '3px 8px' }}
+            >
+              ASCII (TEXT)
+            </button>
+            <button
+              type="button"
+              className={`chip-btn ${config.rasterMode === 'pixel' ? 'active' : ''}`}
+              onClick={() => update('rasterMode', 'pixel')}
+              style={{ fontSize: '9px', padding: '3px 8px' }}
+            >
+              PIXEL (DITHER)
+            </button>
+          </div>
+        </div>
+
+        {/* Input DPI (Pixel Mode only) */}
+        {config.rasterMode === 'pixel' && (
+          <div className="control-row">
+            <span className="control-label">Input DPI</span>
+            <div className="control-input-wrapper">
+              <input
+                type="range"
+                className="range-slider"
+                min={10}
+                max={300}
+                step={1}
+                value={config.dpi ?? 72}
+                onChange={(e) => update('dpi', parseInt(e.target.value, 10) || 72)}
+              />
+              <input
+                type="number"
+                className="number-input"
+                style={{ width: '48px', padding: '2px 4px', fontSize: '11px', textAlign: 'right' }}
+                min={10}
+                max={300}
+                value={config.dpi ?? 72}
+                onChange={(e) => update('dpi', Math.max(10, Math.min(300, parseInt(e.target.value, 10) || 72)))}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Resampling */}
+        <div className="control-row">
+          <span className="control-label">Resampling</span>
+          <select
+            className="number-input"
+            style={{ width: '140px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
+            value={config.resampling || 'preserve-details'}
+            onChange={(e) => update('resampling', e.target.value as ResamplingMode)}
+          >
+            <option value="preserve-details">Preserve Details</option>
+            <option value="nearest">Nearest (Pixel Art)</option>
+            <option value="bilinear">Bilinear Smooth</option>
+          </select>
+        </div>
+
+        {/* Algorithm */}
+        <div className="control-row">
+          <span className="control-label">Algorithm</span>
+          <select
+            className="number-input"
+            style={{ width: '140px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
+            value={config.algorithm || 'floyd-steinberg'}
+            onChange={(e) => update('algorithm', e.target.value as DitherAlgorithm)}
+          >
+            <optgroup label="Ordered Dither">
+              <option value="bayer-4x4">4×4 Bayer</option>
+              <option value="bayer-8x8">8×8 Bayer</option>
+              <option value="bayer-2x2">2×2 Bayer</option>
+              <option value="bayer-16x16">16×16 Bayer</option>
+              <option value="cluster-4x4">Clustered Dot 4×4</option>
+              <option value="cluster-8x8">Clustered Dot 8×8</option>
+            </optgroup>
+            <optgroup label="Error Diffusion">
+              <option value="floyd-steinberg">Floyd-Steinberg</option>
+              <option value="atkinson">Atkinson (Classic Mac)</option>
+              <option value="stucki">Stucki Matrix</option>
+              <option value="burkes">Burkes</option>
+              <option value="sierra-3">Sierra 3-Line</option>
+              <option value="sierra-2">Two-Row Sierra</option>
+              <option value="sierra-lite">Sierra Lite</option>
+              <option value="jjn">Jarvis-Judice-Ninke</option>
+            </optgroup>
+            <optgroup label="Special & Stochastic">
+              <option value="halftone-dot">Halftone Dot Screen</option>
+              <option value="white-noise">Random Noise Dither</option>
+              <option value="blue-noise">Blue Noise Stipple</option>
+            </optgroup>
+            <optgroup label="Threshold">
+              <option value="none">Simple Threshold (1-Bit)</option>
+            </optgroup>
+          </select>
+        </div>
+
+        {/* Quick Actions & Style Toolbar */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', marginTop: '6px' }}>
+          <button
+            type="button"
+            className={`chip-btn ${config.invert ? 'active' : ''}`}
+            onClick={() => update('invert', !config.invert)}
+            title="Invert Colors"
+            style={{ fontSize: '9px', padding: '4px 2px' }}
+          >
+            INVERT
+          </button>
+          <button
+            type="button"
+            className="chip-btn"
+            onClick={() => applyStylePreset('retro_mac')}
+            title="Classic Mac 1984 1-Bit Dither"
+            style={{ fontSize: '9px', padding: '4px 2px' }}
+          >
+            MAC
+          </button>
+          <button
+            type="button"
+            className="chip-btn"
+            onClick={() => applyStylePreset('cyberpunk')}
+            title="Cyberpunk 80s Neon Dither"
+            style={{ fontSize: '9px', padding: '4px 2px' }}
+          >
+            CYBER
+          </button>
+          <button
+            type="button"
+            className="chip-btn"
+            onClick={() => applyStylePreset('newspaper')}
+            title="Newspaper Halftone Screen"
+            style={{ fontSize: '9px', padding: '4px 2px' }}
+          >
+            NEWS
+          </button>
+          <button
+            type="button"
+            className={`chip-btn ${config.noise > 0 ? 'active' : ''}`}
+            onClick={toggleNoiseTexture}
+            title="Toggle Texture Noise"
+            style={{ fontSize: '9px', padding: '4px 2px' }}
+          >
+            NOISE
+          </button>
+          <button
+            type="button"
+            className="chip-btn"
+            onClick={resetRenderSettings}
+            title="Reset Render Settings"
+            style={{ fontSize: '9px', padding: '4px 2px' }}
+          >
+            RESET
+          </button>
+        </div>
+      </CollapsibleSection>
+
+      {/* 2. EFFECT CONTROLS */}
       <CollapsibleSection
         title="EFFECT CONTROLS"
         icon={<Sliders size={12} />}
         persistKey="MediaViewControls-effect-controls"
-        defaultOpen={true}
+        defaultOpen={false}
       >
         {/* Sharpen Strength */}
         <div className="control-row">
@@ -810,6 +1104,29 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
               max={100}
               step={1}
               onChange={(val) => update('noise', val)}
+            />
+          </div>
+        </div>
+
+        {/* Denoise */}
+        <div className="control-row">
+          <span className="control-label">Denoise</span>
+          <div className="control-input-wrapper">
+            <input
+              type="range"
+              className="range-slider"
+              min={0}
+              max={100}
+              step={1}
+              value={config.denoise || 0}
+              onChange={(e) => update('denoise', parseInt(e.target.value))}
+            />
+            <NumberInput
+              value={config.denoise || 0}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(val) => update('denoise', val)}
             />
           </div>
         </div>
@@ -883,13 +1200,13 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           </div>
         </div>
         <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={resetEffects} title="Reset sharpen, blur, noise, brightness and contrast">
+          <button className="btn btn-sm" onClick={resetEffects} title="Reset sharpen, blur, noise, denoise, brightness and contrast">
             RESET EFFECTS
           </button>
         </div>
       </CollapsibleSection>
 
-      {/* 2. TONAL CONTROLS */}
+      {/* 3. TONAL CONTROLS */}
       <CollapsibleSection
         title="TONAL CONTROLS"
         icon={<Sparkles size={12} />}
@@ -909,6 +1226,52 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
               appMode={appMode}
             />
           </div>
+        )}
+
+        {/* Multi-Tone Palette Configuration */}
+        <div className="control-row">
+          <span className="control-label">Tonal Mapping</span>
+          <select
+            className="number-input"
+            style={{ width: '140px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
+            value={config.tonalMapping || '1color'}
+            onChange={(e) => update('tonalMapping', e.target.value as TonalMappingType)}
+          >
+            <option value="1color">1 Color (Mono Tint)</option>
+            <option value="2color">2 Colors (Duotone)</option>
+            <option value="3color">3 Colors (Tritone)</option>
+            <option value="gameboy">GameBoy Classic</option>
+            <option value="cyberpunk">Cyberpunk Neon</option>
+            <option value="amber">CRT Amber Monitor</option>
+          </select>
+        </div>
+
+        {/* Highlights Picker */}
+        <ColorPickerInput
+          label="Highlights"
+          value={config.highlightColor || '#FFFFFF'}
+          onChange={(c) => update('highlightColor', c)}
+        />
+
+        {/* Midtones Picker (Visible in 3-Color and Presets) */}
+        {(config.tonalMapping === '3color' ||
+          config.tonalMapping === 'gameboy' ||
+          config.tonalMapping === 'cyberpunk' ||
+          config.tonalMapping === 'amber') && (
+          <ColorPickerInput
+            label="Midtones"
+            value={config.midtoneColor || '#3B82F6'}
+            onChange={(c) => update('midtoneColor', c)}
+          />
+        )}
+
+        {/* Shadows Picker (Visible in 2-Color, 3-Color, and Presets) */}
+        {config.tonalMapping !== '1color' && (
+          <ColorPickerInput
+            label="Shadows"
+            value={config.shadowColor || '#000000'}
+            onChange={(c) => update('shadowColor', c)}
+          />
         )}
 
         {/* Real-time Interactive Tonal Transfer Curve Graph */}

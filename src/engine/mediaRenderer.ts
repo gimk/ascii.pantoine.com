@@ -228,6 +228,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       brightness: viewConfig.brightness,
       invert: viewConfig.invert,
       blur: viewConfig.blur,
+      denoise: viewConfig.denoise,
       sharpenStrength: viewConfig.sharpenStrength,
       sharpenRadius: viewConfig.sharpenRadius,
       edgeDetection: viewConfig.edgeDetection,
@@ -240,6 +241,10 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       alphaThreshold: viewConfig.alphaThreshold,
       noise: viewConfig.noise,
       saturation: colorConfig.saturation,
+      tonalMapping: viewConfig.tonalMapping,
+      highlightColor: viewConfig.highlightColor,
+      midtoneColor: viewConfig.midtoneColor,
+      shadowColor: viewConfig.shadowColor,
     }
   );
 }

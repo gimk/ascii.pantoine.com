@@ -19,6 +19,7 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   // 1. Render / Sampling Settings
   resampling: 'preserve-details',
   algorithm: 'floyd-steinberg',
+  dpi: 72,
   invert: false,
   edgeDetection: false,
   edgeThreshold: 30,
@@ -28,11 +29,16 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   sharpenStrength: 120,
   sharpenRadius: 2,
   noise: 0,
+  denoise: 0,
   blur: 0,
   brightness: 0,
   contrast: 0,
 
   // 3. Tonal Controls (all sliders start at center)
+  tonalMapping: '1color',
+  highlightColor: '#FFFFFF',
+  midtoneColor: '#3B82F6',
+  shadowColor: '#000000',
   curvePoints: [
     [0, 0],
     [0.25, 0.25],

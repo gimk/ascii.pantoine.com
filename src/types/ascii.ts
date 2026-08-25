@@ -211,7 +211,8 @@ export type DitherAlgorithm =
   | 'white-noise'
   | 'gaussian-noise'
   | 'interleaved-gradient'
-  // Algorithmic & Space-Filling (4)
+  // Algorithmic & Space-Filling (5)
+  | 'halftone-dot'
   | 'dot-diffusion'
   | 'hilbert'
   | 'peano'
@@ -361,11 +362,14 @@ export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
   activePaletteId: 'gameboy-classic',
 };
 
+export type TonalMappingType = '1color' | '2color' | '3color' | 'gameboy' | 'cyberpunk' | 'amber';
+
 export interface MediaViewConfig {
   // 1. Render / Sampling Settings
   resampling: ResamplingMode;
   algorithm: DitherAlgorithm;
   rasterMode?: RasterOutputMode;
+  dpi?: number; // 10 to 300, default 72
   halftoneConfig?: HalftoneConfig;
   toneConfig?: ToneMappingConfig;
   invert: boolean;
@@ -377,11 +381,16 @@ export interface MediaViewConfig {
   sharpenStrength: number; // 0 to 300
   sharpenRadius: number; // 1 to 10
   noise: number; // 0 to 100
+  denoise: number; // 0 to 100
   blur: number; // 0 to 20
   brightness: number; // -100 to 100
   contrast: number; // -100 to 100
 
   // 3. Tonal Controls
+  tonalMapping?: TonalMappingType;
+  highlightColor?: string; // e.g. '#FFFFFF'
+  midtoneColor?: string; // e.g. '#3B82F6'
+  shadowColor?: string; // e.g. '#000000'
   curvePoints?: Array<[number, number]>; // editable [x, y] control points in [0..1]
   levelBlack?: number; // 0 to 100, default 0
   levelMidtones?: number; // 0 to 100, default 50 (middle)

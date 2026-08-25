@@ -518,7 +518,7 @@ export function applyDitherAlgorithm(
         dest[idx] = quantize(v + mat);
       }
     }
-  } else if (algorithm === 'cluster-8x8') {
+  } else if (algorithm === 'cluster-8x8' || algorithm === 'halftone-dot') {
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
       for (let x = 0; x < cols; x++) {

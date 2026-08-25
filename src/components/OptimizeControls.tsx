@@ -13,6 +13,9 @@ interface OptimizeControlsProps {
   appMode?: AppMode;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   mediaConfig?: MediaConfig;
+  isPixelMode?: boolean;
+  dpi?: number;
+  onChangeDpi?: (newDpi: number) => void;
 }
 
 const NumberInput: React.FC<{
@@ -95,6 +98,9 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   appMode = 'synth',
   mediaElement,
   mediaConfig,
+  isPixelMode = false,
+  dpi = 72,
+  onChangeDpi,
 }) => {
   const totalCells = cols * rows;
   const [draftCols, setDraftCols] = useState<number>(cols);
@@ -106,8 +112,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     setDraftRows(rows);
   }, [cols, rows]);
 
-  // Monospace cell aspect ratio (width / height)
-  const cellAspect = 0.55;
+  // Monospace cell aspect ratio (0.55 for characters, 1.0 for 1:1 squared pixels)
+  const cellAspect = isPixelMode ? 1.0 : 0.55;
 
   // Compute Source Media Dimensions & Native Aspect Ratio
   const { srcWidth, srcHeight, srcAspect } = useMemo(() => {
@@ -156,7 +162,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
         rows: r,
       };
     });
-  }, [srcWidth, srcAspect]);
+  }, [srcWidth, srcAspect, cellAspect]);
 
   const handleMatchRatio = () => {
     if (srcWidth <= 0 || srcHeight <= 0) return;
@@ -210,87 +216,215 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     onChangeResolution(draftCols, draftRows);
   };
 
+  const handleDpiChange = (newDpi: number) => {
+    if (onChangeDpi) {
+      onChangeDpi(newDpi);
+    }
+    if (srcWidth > 0 && srcHeight > 0) {
+      const scaleFactor = newDpi / 100;
+      const targetCols = Math.max(10, Math.round(srcWidth * scaleFactor));
+      const targetRows = Math.max(10, Math.round(srcHeight * scaleFactor));
+      onChangeResolution(targetCols, targetRows);
+    }
+  };
+
   return (
     <div className="tab-content">
       {appMode === 'media' ? (
         /* MEDIA SPECIFIC RESOLUTION & RENDER CONTROLS */
         <>
-          {/* 1. Grid Resolution */}
-          <CollapsibleSection
-            title="Grid Resolution"
-            icon={<Grid size={12} />}
-            badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
-                {cols}×{rows} ({totalCells.toLocaleString()} chars)
-              </span></>}
-            persistKey="OptimizeControls-grid-resolution"
-            defaultOpen={false}
-          >
-            {/* Media Source & Ratio Info Card */}
-            <div
-              style={{
-                padding: '8px 10px',
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '3px',
-                marginBottom: '10px',
-              }}
+          {isPixelMode ? (
+            /* 1. Pixel Mode: Simple DPI Slider & Canvas Output */
+            <CollapsibleSection
+              title="DPI / Resolution"
+              icon={<Grid size={12} />}
+              badge={
+                <span style={{ fontSize: '9.5px', color: 'var(--accent)' }}>
+                  {cols}×{rows} px ({dpi ?? 72} DPI)
+                </span>
+              }
+              persistKey="OptimizeControls-pixel-dpi"
+              defaultOpen={true}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Media File:</span>
-                <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {mediaConfig?.fileName || `${srcWidth}×${srcHeight}px`}
-                </span>
+              {/* DPI Slider */}
+              <div className="control-row" style={{ marginBottom: '10px' }}>
+                <span className="control-label">Input DPI</span>
+                <div className="control-input-wrapper">
+                  <input
+                    type="range"
+                    className="range-slider"
+                    min={10}
+                    max={300}
+                    step={1}
+                    value={dpi ?? 72}
+                    onChange={(e) => handleDpiChange(parseInt(e.target.value, 10) || 72)}
+                  />
+                  <NumberInput
+                    value={dpi ?? 72}
+                    min={10}
+                    step={1}
+                    onChange={(newDpi) => handleDpiChange(Math.max(10, Math.min(300, newDpi)))}
+                  />
+                </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Resolution:</span>
-                <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
-                  {srcWidth} × {srcHeight} px
-                </span>
+              {/* Quick DPI Preset Chips */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginBottom: '10px' }}>
+                {[
+                  { label: '25 DPI', val: 25, desc: 'Lo-Fi Pixel' },
+                  { label: '50 DPI', val: 50, desc: 'Retro 8-Bit' },
+                  { label: '72 DPI', val: 72, desc: 'Standard' },
+                  { label: '100 DPI', val: 100, desc: 'Native 1:1' },
+                  { label: '150 DPI', val: 150, desc: 'High Detail' },
+                  { label: '200 DPI', val: 200, desc: 'Ultra HD' },
+                ].map((p) => {
+                  const isActive = (dpi ?? 72) === p.val;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      className={`btn btn-sm ${isActive ? 'btn-primary' : ''}`}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        padding: '4px 2px',
+                        gap: '2px',
+                      }}
+                      onClick={() => handleDpiChange(p.val)}
+                    >
+                      <span style={{ fontWeight: 700, fontSize: '10.5px' }}>{p.label}</span>
+                      <span style={{ fontSize: '8.5px', opacity: 0.8 }}>{p.desc}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Image Ratio:</span>
-                <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-                  {srcAspect >= 1 ? `${srcAspect.toFixed(2)}:1` : `1:${(1 / srcAspect).toFixed(2)}`}
+              {/* Pixel Output Dimensions Info Card */}
+              <div
+                style={{
+                  padding: '8px 10px',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '3px',
+                  fontSize: '11px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Source Image:</span>
+                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+                    {srcWidth} × {srcHeight} px
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Output Canvas:</span>
+                  <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {cols} × {rows} px (1:1 Square)
+                  </span>
+                </div>
+              </div>
+            </CollapsibleSection>
+          ) : (
+            /* 1. ASCII Mode: Grid Resolution */
+            <CollapsibleSection
+              title="Grid Resolution"
+              icon={<Grid size={12} />}
+              badge={
+                <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                  {cols}×{rows} ({totalCells.toLocaleString()} chars)
                 </span>
+              }
+              persistKey="OptimizeControls-grid-resolution"
+              defaultOpen={false}
+            >
+              {/* Media Source & Ratio Info Card */}
+              <div
+                style={{
+                  padding: '8px 10px',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '3px',
+                  marginBottom: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Media File:</span>
+                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {mediaConfig?.fileName || `${srcWidth}×${srcHeight}px`}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Resolution:</span>
+                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+                    {srcWidth} × {srcHeight} px
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Image Ratio:</span>
+                  <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                    {srcAspect >= 1 ? `${srcAspect.toFixed(2)}:1` : `1:${(1 / srcAspect).toFixed(2)}`}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Framing Fit:</span>
+                  <span
+                    style={{
+                      color: isRatioMatched ? 'var(--accent)' : '#ffb000',
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    {isRatioMatched ? (
+                      <>
+                        <CheckCircle2 size={11} /> PERFECT (NO BORDERS)
+                      </>
+                    ) : (
+                      'CUSTOM RATIO'
+                    )}
+                  </span>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Framing Fit:</span>
-                <span
-                  style={{
-                    color: isRatioMatched ? 'var(--accent)' : '#ffb000',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                >
-                  {isRatioMatched ? (
-                    <>
-                      <CheckCircle2 size={11} /> PERFECT (NO BORDERS)
-                    </>
-                  ) : (
-                    'CUSTOM RATIO'
-                  )}
-                </span>
-              </div>
-            </div>
+              {/* Fractional Scale Presets (1/2, 1/4, 1/5, 1/6, 1/8, 1/16, 1/32, FIT) */}
+              <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
+                Scale resolutions proportional to image size with monospace aspect compensation:
+              </p>
 
-            {/* Fractional Scale Presets (1/2, 1/4, 1/5, 1/6, 1/8, 1/16, 1/32, FIT) */}
-            <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
-              Scale resolutions proportional to image size with monospace aspect compensation:
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '10px' }}>
-              {mediaFractionPresets.map((preset) => {
-                const isActive = cols === preset.cols && rows === preset.rows;
-                return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '10px' }}>
+                {mediaFractionPresets.map((preset) => {
+                  const isActive = cols === preset.cols && rows === preset.rows;
+                  return (
+                    <button
+                      key={preset.label}
+                      className={`btn btn-sm ${isActive ? 'btn-primary' : ''}`}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        padding: '5px 4px',
+                        gap: '2px',
+                      }}
+                      onClick={() => onChangeResolution(preset.cols, preset.rows)}
+                    >
+                      <span style={{ fontWeight: 700, fontSize: '11px' }}>{preset.label}</span>
+                      <span style={{ fontSize: '8.5px', opacity: 0.8 }}>
+                        {preset.cols}×{preset.rows}
+                      </span>
+                    </button>
+                  );
+                })}
+                {onMatchViewfinderRatio && (
                   <button
-                    key={preset.label}
-                    className={`btn btn-sm ${isActive ? 'btn-primary' : ''}`}
+                    className="btn btn-sm"
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -298,101 +432,83 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                       padding: '5px 4px',
                       gap: '2px',
                     }}
-                    onClick={() => onChangeResolution(preset.cols, preset.rows)}
+                    onClick={onMatchViewfinderRatio}
+                    title="Fit viewport aspect ratio"
                   >
-                    <span style={{ fontWeight: 700, fontSize: '11px' }}>{preset.label}</span>
-                    <span style={{ fontSize: '8.5px', opacity: 0.8 }}>
-                      {preset.cols}×{preset.rows}
-                    </span>
+                    <span style={{ fontWeight: 700, fontSize: '11px' }}>FIT</span>
+                    <span style={{ fontSize: '8.5px', opacity: 0.8 }}>VIEWPORT</span>
                   </button>
-                );
-              })}
-              {onMatchViewfinderRatio && (
+                )}
+              </div>
+
+              {/* Match Aspect Ratio & Lock Ratio Toggle */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+                <button
+                  className={`btn btn-sm ${lockAspectRatio ? 'btn-primary' : ''}`}
+                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  onClick={() => setLockAspectRatio(!lockAspectRatio)}
+                  title="When locked, changing columns automatically adjusts rows to maintain the image's exact ratio without borders"
+                >
+                  {lockAspectRatio ? <Lock size={11} /> : <Unlock size={11} />}
+                  RATIO LOCK {lockAspectRatio ? '[ON]' : '[OFF]'}
+                </button>
+
                 <button
                   className="btn btn-sm"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    padding: '5px 4px',
-                    gap: '2px',
-                  }}
-                  onClick={onMatchViewfinderRatio}
-                  title="Fit viewport aspect ratio"
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                  onClick={handleMatchRatio}
+                  title="Instantly snap rows to match the image aspect ratio"
                 >
-                  <span style={{ fontWeight: 700, fontSize: '11px' }}>FIT</span>
-                  <span style={{ fontSize: '8.5px', opacity: 0.8 }}>VIEWPORT</span>
+                  <Scale size={11} />
+                  MATCH RATIO
                 </button>
-              )}
-            </div>
-
-            {/* Match Aspect Ratio & Lock Ratio Toggle */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-              <button
-                className={`btn btn-sm ${lockAspectRatio ? 'btn-primary' : ''}`}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                onClick={() => setLockAspectRatio(!lockAspectRatio)}
-                title="When locked, changing columns automatically adjusts rows to maintain the image's exact ratio without borders"
-              >
-                {lockAspectRatio ? <Lock size={11} /> : <Unlock size={11} />}
-                RATIO LOCK {lockAspectRatio ? '[ON]' : '[OFF]'}
-              </button>
-
-              <button
-                className="btn btn-sm"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                onClick={handleMatchRatio}
-                title="Instantly snap rows to match the image aspect ratio"
-              >
-                <Scale size={11} />
-                MATCH RATIO
-              </button>
-            </div>
-
-            {/* Columns Slider */}
-            <div className="control-row">
-              <span className="control-label">Columns (Width)</span>
-              <div className="control-input-wrapper">
-                <input
-                  type="range"
-                  className="range-slider"
-                  min={20}
-                  max={Math.max(480, draftCols)}
-                  step={2}
-                  value={draftCols}
-                  onChange={(e) => handleMediaColsChange(parseInt(e.target.value, 10) || 120)}
-                />
-                <NumberInput
-                  value={draftCols}
-                  min={10}
-                  step={2}
-                  onChange={handleMediaColsChange}
-                />
               </div>
-            </div>
 
-            {/* Rows Slider */}
-            <div className="control-row">
-              <span className="control-label">Rows (Height)</span>
-              <div className="control-input-wrapper">
-                <input
-                  type="range"
-                  className="range-slider"
-                  min={10}
-                  max={Math.max(260, draftRows)}
-                  step={1}
-                  value={draftRows}
-                  onChange={(e) => handleMediaRowsChange(parseInt(e.target.value, 10) || 60)}
-                />
-                <NumberInput
-                  value={draftRows}
-                  min={5}
-                  step={1}
-                  onChange={handleMediaRowsChange}
-                />
+              {/* Columns Slider */}
+              <div className="control-row">
+                <span className="control-label">Columns (Width)</span>
+                <div className="control-input-wrapper">
+                  <input
+                    type="range"
+                    className="range-slider"
+                    min={20}
+                    max={Math.max(480, draftCols)}
+                    step={2}
+                    value={draftCols}
+                    onChange={(e) => handleMediaColsChange(parseInt(e.target.value, 10) || 120)}
+                  />
+                  <NumberInput
+                    value={draftCols}
+                    min={10}
+                    step={2}
+                    onChange={handleMediaColsChange}
+                  />
+                </div>
               </div>
-            </div>
-          </CollapsibleSection>
+
+              {/* Rows Slider */}
+              <div className="control-row">
+                <span className="control-label">Rows (Height)</span>
+                <div className="control-input-wrapper">
+                  <input
+                    type="range"
+                    className="range-slider"
+                    min={10}
+                    max={Math.max(260, draftRows)}
+                    step={1}
+                    value={draftRows}
+                    onChange={(e) => handleMediaRowsChange(parseInt(e.target.value, 10) || 60)}
+                  />
+                  <NumberInput
+                    value={draftRows}
+                    min={5}
+                    step={1}
+                    onChange={handleMediaRowsChange}
+                  />
+                </div>
+              </div>
+            </CollapsibleSection>
+          )}
         </>
       ) : (
         /* SYNTH & MODEL RESOLUTION CONTROLS */

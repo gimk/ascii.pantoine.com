@@ -22,6 +22,7 @@ import {
   DEFAULT_MEDIA_COLOR_CONFIG,
   DEFAULT_TONE_MAPPING_CONFIG,
   DEFAULT_HALFTONE_CONFIG,
+  RasterOutputMode,
 } from './types/ascii';
 import {
   DEFAULT_WAVE_PARAMS,
@@ -1400,12 +1401,13 @@ export const App: React.FC = () => {
   }, [modelConfig, modelViewConfig, pushModelHistorySnapshot]);
 
   // Media Handlers
-  const autoSetMediaResolution = useCallback((w: number, h: number) => {
+  const autoSetMediaResolution = useCallback((w: number, h: number, rasterModeOverride?: RasterOutputMode) => {
     if (w <= 0 || h <= 0) return;
     const srcAspect = w / h;
-    // Default grid resolution to 1/6 fraction of original media dimensions
-    const targetCols = Math.max(20, Math.round(w * (1 / 6)));
-    const targetRows = Math.max(10, Math.round((targetCols * 0.55) / srcAspect));
+    const isPixel = (rasterModeOverride || mediaViewConfig.rasterMode) === 'pixel';
+    const cellAspect = isPixel ? 1.0 : 0.55;
+    const targetCols = isPixel ? Math.min(640, w) : Math.max(20, Math.round(w * (1 / 6)));
+    const targetRows = Math.max(10, Math.round((targetCols * cellAspect) / srcAspect));
     setRenderSettingsByMode((prev) => ({
       ...prev,
       media: {
@@ -1419,7 +1421,7 @@ export const App: React.FC = () => {
     setTimeout(() => {
       viewportRef.current?.autoFit();
     }, 60);
-  }, []);
+  }, [mediaViewConfig.rasterMode]);
 
   const handleChangeMediaConfig = useCallback((newConfig: MediaConfig) => {
     setMediaConfig(newConfig);
@@ -1430,12 +1432,26 @@ export const App: React.FC = () => {
   }, [mediaViewConfig, pushMediaHistorySnapshot]);
 
   const handleChangeMediaViewConfig = useCallback((newViewConfig: MediaViewConfig) => {
+    if (newViewConfig.rasterMode !== mediaViewConfig.rasterMode) {
+      const el = mediaElementRef.current;
+      let w = 256;
+      let h = 256;
+      if (el instanceof HTMLImageElement) {
+        w = el.naturalWidth || el.width || 256;
+        h = el.naturalHeight || el.height || 256;
+      } else if (el instanceof HTMLVideoElement) {
+        w = el.videoWidth || el.width || 256;
+        h = el.videoHeight || el.height || 256;
+      }
+      autoSetMediaResolution(w, h, newViewConfig.rasterMode);
+    }
+
     setMediaViewConfig(newViewConfig);
     clearTimeout(mediaHistoryDebounceTimer.current);
     mediaHistoryDebounceTimer.current = setTimeout(() => {
       pushMediaHistorySnapshot(mediaConfig, newViewConfig);
     }, 400);
-  }, [mediaConfig, pushMediaHistorySnapshot]);
+  }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution]);
 
   const handleMediaFileUpload = useCallback((file: File) => {
     const isVid = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.webm') || file.name.endsWith('.mov');
@@ -1714,8 +1730,8 @@ export const App: React.FC = () => {
         viewConfig: mediaViewConfig,
         density: curSettings.density,
         colorConfig: mediaColorConfig,
-        rasterMode: curSettings.rasterMode || 'ascii',
-        algorithm: curSettings.ditherAlgorithm || 'floyd-steinberg',
+        rasterMode: mediaViewConfig.rasterMode || curSettings.rasterMode || 'ascii',
+        algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
         toneConfig: curSettings.toneConfig,
         halftoneConfig: curSettings.halftoneConfig,
       });
@@ -1724,7 +1740,8 @@ export const App: React.FC = () => {
         0,
         0,
         result.colors,
-        result.bgColor
+        result.bgColor,
+        result.rasterMode
       );
       return;
     }
@@ -1866,8 +1883,8 @@ export const App: React.FC = () => {
           viewConfig: mediaViewConfig,
           density: activeSettings.density,
           colorConfig: mediaColorConfig,
-          rasterMode: activeSettings.rasterMode || 'ascii',
-          algorithm: activeSettings.ditherAlgorithm || 'floyd-steinberg',
+          rasterMode: mediaViewConfig.rasterMode || activeSettings.rasterMode || 'ascii',
+          algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
           toneConfig: activeSettings.toneConfig,
           halftoneConfig: activeSettings.halftoneConfig,
         });
@@ -1885,15 +1902,16 @@ export const App: React.FC = () => {
           customRenderFn: presetType === 'custom' ? compiledFnRef.current : undefined,
           prepareFn: presetType === 'custom' ? prepareFnRef.current : undefined,
           customContext: customContextRef.current,
-          interactiveInfluence: particleConfig.enabled,
+          interactiveInfluence: true,
           luminanceBoost: particleConfig.luminanceBoost,
           colorConfig: mediaColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
-          algorithm: activeSettings.ditherAlgorithm || 'none',
+          algorithm: activeSettings.ditherAlgorithm || 'floyd-steinberg',
           toneConfig: activeSettings.toneConfig,
         });
         frameText = res.text;
         frameColors = res.colors;
+        frameBgColor = res.bgColor;
       }
 
 
@@ -1902,7 +1920,8 @@ export const App: React.FC = () => {
         timeRef.current,
         currentFpsRef.current,
         frameColors,
-        frameBgColor
+        frameBgColor,
+        appMode === 'media' ? (mediaViewConfig.rasterMode || activeSettings.rasterMode) : activeSettings.rasterMode
       );
       animFrameId = requestAnimationFrame(loop);
     };
@@ -2423,6 +2442,7 @@ export const App: React.FC = () => {
                   appMode={appMode}
                   mediaColorConfig={mediaColorConfig}
                   onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                  isPixelMode={appMode === 'media' && mediaViewConfig.rasterMode === 'pixel'}
                 />
 
                 <OptimizeControls
@@ -2434,6 +2454,9 @@ export const App: React.FC = () => {
                   appMode={appMode}
                   mediaElement={mediaElementRef.current}
                   mediaConfig={mediaConfig}
+                  isPixelMode={appMode === 'media' && mediaViewConfig.rasterMode === 'pixel'}
+                  dpi={mediaViewConfig.dpi ?? 72}
+                  onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
                 />
               </>
             )}
