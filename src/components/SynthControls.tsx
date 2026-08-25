@@ -232,7 +232,6 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           ) : undefined
         }
         persistKey="SynthControls-parametric-controls"
-        defaultOpen={true}
       >
         {/* Custom Formula Divergence / Greyed out Notice */}
         {isFormulaDivergent && (
@@ -289,7 +288,6 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
             persistKey="SynthControls-global-dynamics"
             onReset={isFormulaDivergent ? undefined : handleResetDynamics}
             resetTitle="Reset global dynamics parameters"
-            defaultOpen={true}
           >
             {renderSlider('Time Speed', 'timeSpeed', 0.0, 5.0, 0.05)}
             {renderSlider('Aspect Stretch', 'aspectRatio', 0.2, 3.0, 0.05)}

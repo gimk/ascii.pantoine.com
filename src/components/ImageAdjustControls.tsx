@@ -4,8 +4,10 @@ import { NumberInput, PrecisionSlider } from './controlPrimitives';
 import {
   ImageAdjustConfig,
   ToneMappingConfig,
+  MediaColorConfig,
   DEFAULT_IMAGE_ADJUST_CONFIG,
 } from '../types/ascii';
+import { BUILTIN_PALETTES } from '../engine/palettes';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
 import { computeAutoLevels } from '../engine/autoLevels';
 import { NToneRampEditor } from './NToneRampEditor';
@@ -896,6 +898,7 @@ interface ImageAdjustControlsProps {
   onChangeToneConfig?: (next: ToneMappingConfig) => void;
   histogram?: Uint32Array | null;
   histogramOpaque?: number;
+  mediaColorConfig?: MediaColorConfig;
 }
 
 export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
@@ -911,6 +914,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
   onChangeToneConfig,
   histogram = null,
   histogramOpaque = 0,
+  mediaColorConfig,
 }) => {
   const update = <K extends keyof ImageAdjustConfig>(key: K, val: ImageAdjustConfig[K]) => {
     onChangeConfig({
@@ -918,6 +922,31 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       [key]: val,
     });
   };
+
+  const colorBadge = useMemo(() => {
+    if (mediaColorConfig?.paletteMode === 'content') {
+      return 'RGB (CONTENT)';
+    }
+    if (mediaColorConfig?.paletteMode === 'indexed') {
+      const pal = BUILTIN_PALETTES.find((p) => p.id === mediaColorConfig.activePaletteId);
+      return pal ? pal.name : 'PRESET PALETTE';
+    }
+    if (config.tonalMapping && config.tonalMapping !== '1color') {
+      const count = config.customToneColors?.length || 3;
+      return `${count}-TONE RAMP`;
+    }
+    return '1-COLOR';
+  }, [mediaColorConfig?.paletteMode, mediaColorConfig?.activePaletteId, config.tonalMapping, config.customToneColors]);
+
+  const quantBadge = useMemo(() => {
+    if (!config.colorLevels || config.colorLevels <= 0) {
+      return 'AUTO';
+    }
+    if (config.colorLevels === 2) {
+      return '1-BIT (2 LVS)';
+    }
+    return `${config.colorLevels} LEVELS`;
+  }, [config.colorLevels]);
 
   const resetEffects = () => {
     onChangeConfig({
@@ -990,8 +1019,8 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       <CollapsibleSection
         title="COLORS"
         icon={<Palette size={12} />}
+        badge={colorBadge}
         persistKey={`${persistKeyPrefix}-colors`}
-        defaultOpen={true}
         onReset={resetColors}
         resetTitle="Reset color mode and the tone ramp stops"
       >
@@ -1036,8 +1065,8 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       <CollapsibleSection
         title="TONAL CONTROLS"
         icon={<Sparkles size={12} />}
+        badge={quantBadge}
         persistKey={`${persistKeyPrefix}-tonal-controls`}
-        defaultOpen={true}
         onReset={resetTonal}
         resetTitle="Reset curve, levels, quantize depth, highlights, midtones and shadows"
       >

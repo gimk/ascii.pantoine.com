@@ -397,6 +397,16 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
         ctx.fillStyle = ambientGlow;
         ctx.fillRect(0, 0, width, height);
       }
+
+      // CRT Scanlines (rendered directly on background behind content)
+      if (showScanlines) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+        const scanlineHeight = Math.max(1, Math.round(1.5 * scale));
+        const scanlineStep = Math.max(2, Math.round(3.0 * scale));
+        for (let y = 0; y < height; y += scanlineStep) {
+          ctx.fillRect(0, y, width, scanlineHeight);
+        }
+      }
     } else {
       ctx.clearRect(0, 0, width, height);
     }
@@ -434,16 +444,6 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
           ctx.fillText(line, 0, Math.round(row * charHeight));
         }
       }
-    }
-  }
-
-  // CRT Scanlines
-  if (showScanlines) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-    const scanlineHeight = Math.max(1, Math.round(1.5 * scale));
-    const scanlineStep = Math.max(2, Math.round(3.0 * scale));
-    for (let y = 0; y < height; y += scanlineStep) {
-      ctx.fillRect(0, y, width, scanlineHeight);
     }
   }
 

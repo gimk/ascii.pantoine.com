@@ -105,7 +105,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   resetTitle,
   headerRight,
   persistKey,
-  defaultOpen = true,
+  defaultOpen = false,
   flush = false,
   className = '',
   style,

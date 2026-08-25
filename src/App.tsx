@@ -29,8 +29,6 @@ import {
   UiThemeSettings,
 } from './types/ascii';
 import { resolvePhosphorTint, DEFAULT_PHOSPHOR_TINT } from './engine/palettes';
-import { ShaderPreset, toAdjustFields } from './engine/shaderPresets';
-import { ShaderPresetControls } from './components/ShaderPresetControls';
 import {
   DEFAULT_WAVE_PARAMS,
   compileCustomCode,
@@ -80,6 +78,7 @@ import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
 import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
+import { DITHER_ALGORITHMS } from './engine/ditherAlgorithms';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
@@ -1608,30 +1607,6 @@ export const App: React.FC = () => {
     triggerMediaRender();
   }, [appMode, triggerMediaRender]);
 
-  /**
-   * Apply a shader preset in synth / model.
-   *
-   * These modes split what the media panel keeps together: the dither algorithm
-   * lives on the render settings while everything else lives in adjustConfig,
-   * and there is no resampling filter to set. Written as one state update so
-   * the preset lands atomically rather than as two renders.
-   */
-  const applyShaderPresetToMode = useCallback((preset: ShaderPreset) => {
-    setRenderSettingsByMode((prev) => ({
-      ...prev,
-      [appMode]: {
-        ...prev[appMode],
-        ditherAlgorithm: preset.config.algorithm,
-        adjustConfig: {
-          ...(prev[appMode].adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG),
-          ...toAdjustFields(preset),
-        },
-      },
-    }));
-    if (preset.tint) {
-      handleSelectCustomColor(preset.tint);
-    }
-  }, [appMode, handleSelectCustomColor]);
 
   /**
    * Reset the colour state that lives outside adjustConfig.
@@ -2958,27 +2933,15 @@ export const App: React.FC = () => {
                 {/* Synth / Model render and tonal controls */}
                 {appMode !== 'media' && (
                   <div className="tab-content">
-                    {/*
-                      Shader presets first: pick the look, then refine it in the
-                      panels below. `current` is assembled from the two places
-                      synth and model keep these fields; resampling is absent
-                      here on purpose, and the matcher skips what a panel lacks.
-                    */}
-                    {currentRasterMode === 'pixel' && (
-                      <ShaderPresetControls
-                        current={{
-                          algorithm: currentRenderSettings.ditherAlgorithm || 'floyd-steinberg',
-                          ...(currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG),
-                        }}
-                        onApply={applyShaderPresetToMode}
-                      />
-                    )}
-
                     <CollapsibleSection
                       title="RENDER SETTINGS"
                       icon={<Settings size={12} />}
+                      badge={
+                        DITHER_ALGORITHMS.find(
+                          (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
+                        )?.name || 'Floyd-Steinberg'
+                      }
                       persistKey={`${appMode}-render-settings`}
-                      defaultOpen={true}
                     >
                       <DitherAlgorithmPicker
                         value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
@@ -3003,6 +2966,7 @@ export const App: React.FC = () => {
                       onChangeToneConfig={handleChangeToneConfig}
                       histogram={histogramSnapshot?.bins ?? null}
                       histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                      mediaColorConfig={mediaColorConfig}
                       /*
                        * Neither mode on this mount has soft alpha to cut, so
                        * the threshold has nothing to grade against. Synth

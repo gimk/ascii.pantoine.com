@@ -356,6 +356,15 @@ export async function exportVideoAnimation(
         ctx.fillRect(0, 0, width, height);
       }
 
+      // CRT Scanlines on background
+      if (showScanlines) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        const step = Math.max(2, Math.round(3 * scale));
+        for (let y = 0; y < height; y += step) {
+          ctx.fillRect(0, y, width, 1);
+        }
+      }
+
       // 2. Draw ASCII Text Lines (with Phosphor Bloom if enabled)
       ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', monospace`;
       ctx.textBaseline = 'top';
@@ -403,15 +412,6 @@ export async function exportVideoAnimation(
       }
 
       ctx.shadowBlur = 0;
-    }
-
-    // 3. Optional CRT scanlines
-    if (showScanlines) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      const step = Math.max(2, Math.round(3 * scale));
-      for (let y = 0; y < height; y += step) {
-        ctx.fillRect(0, y, width, 1);
-      }
     }
 
     // 4. Optional CRT Corner Vignette

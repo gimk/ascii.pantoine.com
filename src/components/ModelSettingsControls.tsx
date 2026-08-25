@@ -104,7 +104,6 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
         icon={<Globe size={12} />}
         badge={<span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 'bold' }}>KHRONOS &amp; THREE.JS</span>}
         persistKey="ModelSettingsControls-online-3d-library"
-        defaultOpen={true}
       >
         <p style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
           Explore official Khronos glTF benchmark assets &amp; open 3D models. Click any model to render in ASCII.
@@ -353,7 +352,6 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
         title="Transformations &amp; Scale"
         icon={<Sliders size={12} />}
         persistKey="ModelSettingsControls-transformations-scale"
-        defaultOpen={true}
         onReset={() => {
           onChangeConfig({
             ...config,

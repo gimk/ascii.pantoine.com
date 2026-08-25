@@ -303,7 +303,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 </span>
               }
               persistKey="OptimizeControls-pixel-dpi"
-              defaultOpen={true}
             >
               {/* DPI Slider */}
               <div className="control-row" style={{ marginBottom: '10px' }}>

@@ -13,11 +13,10 @@ import {
 import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
 import { DEFAULT_MEDIA_COLOR_CONFIG } from '../types/ascii';
 import { DEFAULT_PHOSPHOR_TINT } from '../engine/palettes';
+import { DITHER_ALGORITHMS } from '../engine/ditherAlgorithms';
 import { PaletteControls } from './PaletteControls';
 import { ImageAdjustControls } from './ImageAdjustControls';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
-import { ShaderPresetControls } from './ShaderPresetControls';
-import { ShaderPreset } from '../engine/shaderPresets';
 import { Settings } from 'lucide-react';
 
 interface MediaViewControlsProps {
@@ -91,18 +90,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   };
 
 
-  /*
-   * Applying a preset writes its complete field set in one update, so no
-   * setting from the previous look survives. A preset that names a tint also
-   * clears the legacy theme, since customThemeColor is what actually wins.
-   */
-  const applyShaderPreset = (preset: ShaderPreset) => {
-    onChangeConfig({ ...config, ...preset.config });
-    if (preset.tint && onChangeCustomColor) {
-      onChangeCustomColor(preset.tint);
-    }
-  };
-
   const update = <K extends keyof MediaViewConfig>(key: K, val: MediaViewConfig[K]) => {
     onChangeConfig({
       ...config,
@@ -112,22 +99,15 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
 
   return (
     <div className="tab-content">
-      {/*
-        0. SHADER PRESETS -- pick the look, then refine it below.
-        Pixel output only: most of what a preset sets is a dither screen and a
-        set of colour stops, and in ASCII output the glyph ramp carries the tone
-        instead, so the looks mostly collapse into one another.
-      */}
-      {isPixelMode && (
-        <ShaderPresetControls current={config} onApply={applyShaderPreset} />
-      )}
-
       {/* 1. RENDER SETTINGS */}
       <CollapsibleSection
         title="RENDER SETTINGS"
         icon={<Settings size={12} />}
+        badge={
+          DITHER_ALGORITHMS.find((a) => a.id === (config.algorithm || 'floyd-steinberg'))?.name ||
+          'Floyd-Steinberg'
+        }
         persistKey="MediaViewControls-render-settings"
-        defaultOpen={true}
         onReset={resetRenderSettings}
         resetTitle="Reset dither algorithm and resampling filter"
       >
@@ -164,6 +144,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         onChangeToneConfig={onChangeToneConfig}
         histogram={histogram}
         histogramOpaque={histogramOpaque}
+        mediaColorConfig={mediaColorConfig}
         paletteSlot={
           onChangeTheme ? (
             <div>

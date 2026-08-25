@@ -281,7 +281,7 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
 
       {/* Video Playback & Timeline Controls (if video source) */}
       {isVideo && (
-        <CollapsibleSection title="Video Playback" icon={<Film size={12} />} persistKey="MediaFileControls-video-playback" defaultOpen={true}>
+        <CollapsibleSection title="Video Playback" icon={<Film size={12} />} persistKey="MediaFileControls-video-playback">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <button className="btn btn-primary btn-sm" onClick={toggleVideoPlayback}>
               {isVideoPlaying ? <Pause size={12} /> : <Play size={12} />}
@@ -380,7 +380,6 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
         title="Transform &amp; Framing"
         icon={<Maximize2 size={12} />}
         persistKey="MediaFileControls-transform-framing"
-        defaultOpen={true}
         onReset={resetTransforms}
         resetTitle="Reset transforms to default fit and framing"
       >
