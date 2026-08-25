@@ -446,6 +446,33 @@ The old hardcoded `gameboy` / `cyberpunk` / `amber` tonal presets were three-sto
 ramps duplicating built-in palettes. They are gone; `LEGACY_TONAL_PRESET_PALETTES`
 migrates persisted settings and shared links onto the equivalent palette.
 
+### Render tab hierarchy & control architecture
+
+The **Render** tab follows a strict vertical workflow across all three input sources:
+
+1. **Output Mode Command Selector** ([`App.tsx`](src/App.tsx))
+   - Permanent 2-card tactical grid at the top: `ASCII` (`TEXT`) vs `PIXEL` (`DITHER`).
+   - Switches `rasterMode` universally. In media mode, switching mode triggers `autoSetMediaResolution` to adapt the virtual canvas aspect ratio between monospace (`~0.6015`) and square (`1.0`).
+
+2. **Resolution & DPI Optimizer** ([`OptimizeControls.tsx`](src/components/OptimizeControls.tsx))
+   - Placed directly under the Output Mode selector.
+   - Houses grid dimensions (`Cols × Rows`), Auto-Resolution toggle, Aspect Ratio lock, and print DPI scaling (`72`–`1200` DPI).
+
+3. **Dither Algorithm Picker** ([`DitherAlgorithmPicker.tsx`](src/components/DitherAlgorithmPicker.tsx))
+   - Universal across all three modes (`synth`, `media`, `model`).
+   - Rapid-cycle `<` and `>` stepper buttons for live auditioning of all 44 algorithms with wrap-around and counter telemetry (`[X / 44]`).
+   - 1-click hero presets (`THRESHOLD`, `FLOYD-STEINBERG`, `ATKINSON`, `BAYER 4×4`, `BAYER 8×8`, `BLUE NOISE`, `HALFTONE`, `KNUTH DOT`, `HILBERT`).
+   - Categorized `<optgroup>` select covering all 5 families.
+
+4. **Tonal Controls & Grading** ([`ImageAdjustControls.tsx`](src/components/ImageAdjustControls.tsx))
+   - **Color & Tonal Palette**: Single color mode dropdown (`1color`, `2color`, `3color`, `content`, or indexed `palette:<id>`). When in Pixel mode, CRT phosphor theme buttons are hidden to keep the interface neutral white.
+   - **Quantize Levels**: Logarithmic warp slider ($2^1$ to $2^8$) giving smooth fine control across $2\dots 16$ levels, 1-click bit-depth pills (`[AUTO]`, `[2 (1b)]`, `[4 (2b)]`... `[256 (8b)]`), fine steppers (`-`/`+`), and direct numeric entry.
+   - **Tone Curve Spline**: Monotone cubic spline editor with 5 instant presets (`LINEAR`, `S-CURVE`, `LIFT`, `CONTRAST`, `INVERT`) and live `IN: x • OUT: y` telemetry.
+   - **Tonal Balance**: Highlights, Midtones, and Shadows sliders with double-click quick-zero.
+
+5. **Character Set Ramp** ([`CharsetThemeBar.tsx`](src/components/CharsetThemeBar.tsx))
+   - Monospace density ramps (active in ASCII mode, dimmed in Pixel mode).
+
 ---
 
 ## 5. Invariants
