@@ -334,6 +334,26 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                   {crtConfig.vignette ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
                 </button>
               </div>
+
+              {/* 5. Raster Extents */}
+              <div className="control-row">
+                <span
+                  className="control-label"
+                  style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
+                >
+                  <span>Raster Bounds</span>
+                  <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                    Faint edge &amp; dimmed void, for panning
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${(crtConfig.viewportBounds ?? true) ? 'btn-primary' : ''}`}
+                  onClick={() => updateCrt('viewportBounds', !(crtConfig.viewportBounds ?? true))}
+                >
+                  {(crtConfig.viewportBounds ?? true) ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+                </button>
+              </div>
             </div>
           </div>
 

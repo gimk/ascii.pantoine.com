@@ -13,7 +13,7 @@
 
 ## ✦ Overview
 
-**Raster Studio** (v1.6) lets you synthesize complex procedural visual fields, rasterize 2D media and 3D meshes into real-time ASCII, Braille, Halftone screen prints, and pixel dithered artworks. Fine-tune your visuals with 40+ professional dithering algorithms, 30+ curated color palettes (Game Boy, CGA, C64, Risograph, CMYK, Cyberpunk), live tone mapping curves, vector SVG exporters, animated GIFs, and HD videos directly from your browser.
+**Raster Studio** (v2.0) lets you synthesize complex procedural visual fields, rasterize 2D media and 3D meshes into real-time ASCII, Braille, Halftone screen prints, and pixel dithered artworks. Fine-tune your visuals with 40+ professional dithering algorithms, 30+ curated color palettes (Game Boy, CGA, C64, Risograph, CMYK, Cyberpunk), live tone mapping curves, vector SVG exporters, animated GIFs, and HD videos directly from your browser.
 
 ---
 

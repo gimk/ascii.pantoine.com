@@ -26,7 +26,37 @@ const hexToRgb = (hex: string): [number, number, number] => {
 
 /** Manual zoom range for the viewfinder steppers. */
 const ZOOM_MIN = 0.1;
-const ZOOM_MAX = 12.0;
+/*
+ * Deep enough to sit on a single dither cell. Beyond roughly 13x the canvas
+ * backing store hits MAX_BACKING_DIM and drawCanvas rasterizes at a reduced
+ * scale, letting the browser upscale the residual -- soft, but never blank.
+ */
+const ZOOM_MAX = 64.0;
+
+/**
+ * Widest canvas any browser will allocate per dimension. Past this a canvas
+ * silently becomes blank rather than throwing, so both draw paths clamp to it.
+ */
+const MAX_BACKING_DIM = 16384;
+
+/** Preset stops offered by the zoom readout menu. */
+const ZOOM_PRESETS = [1, 2, 4, 8, 16] as const;
+
+/**
+ * The viewfinder camera: where the raster sits on screen and how big it is.
+ *
+ * `tx`/`ty` are the raster's top-left corner in CSS pixels within the
+ * container's content box. Centring used to be a CSS flex accident, which is
+ * precisely why the view could not be moved; it is now just a value of t.
+ */
+export interface ViewTransform {
+  scale: number;
+  tx: number;
+  ty: number;
+}
+
+/** Keep at least this much of the raster on screen, so it can never be lost. */
+const PAN_KEEP_VISIBLE_PX = 80;
 
 
 export interface AsciiViewportHandle {
@@ -152,12 +182,17 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const isDraggingRef = useRef<boolean>(false);
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const [zoom, setZoom] = useState<number>(1.0);
+  const [view, setView] = useState<ViewTransform>({ scale: 1.0, tx: 0, ty: 0 });
+  const viewRef = useRef<ViewTransform>(view);
+  viewRef.current = view;
+  /** Read-only alias; the render body only ever cares about the scale. */
+  const zoom = view.scale;
   const [activeRasterMode, setActiveRasterMode] = useState<RasterOutputMode>('ascii');
   const activeRasterModeRef = useRef<RasterOutputMode>('ascii');
-  const zoomRef = useRef<number>(1.0);
-  zoomRef.current = zoom;
   const [copied, setCopied] = useState<boolean>(false);
+  const [isZoomMenuOpen, setIsZoomMenuOpen] = useState<boolean>(false);
+  /** Bumped on container resize purely to force a culled canvas to repaint. */
+  const [resizeTick, setResizeTick] = useState<number>(0);
 
   const getOptimalResolution = useCallback((): { cols: number; rows: number } | null => {
     if (!containerRef.current) return null;
@@ -236,6 +271,125 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return { cols: bestCols, rows: bestRows };
   }, [activeRasterMode]);
 
+  /* ======================================================================
+     View transform: content geometry, pan clamping, and the two ways to
+     change scale (about a point, or about the viewport centre).
+     ====================================================================== */
+
+  const latestRasterModeRef = useRef<RasterOutputMode>('ascii');
+
+  /**
+   * On-screen size of the raster at a given scale.
+   *
+   * Derived from the same cell constants both draw paths use rather than
+   * measured, so a fit can be computed before anything has been laid out.
+   */
+  const getContentSize = useCallback(
+    (scale: number) => {
+      const isPixel = latestRasterModeRef.current === 'pixel';
+      const cellW = isPixel ? 1 : MONOSPACE_CELL_WIDTH;
+      const cellH = isPixel ? 1 : MONOSPACE_CELL_HEIGHT;
+      return { w: cols * cellW * scale, h: rows * cellH * scale };
+    },
+    [cols, rows]
+  );
+
+  /**
+   * Hold the pan so a sliver of the raster always overlaps the viewport.
+   * Without this, one enthusiastic flick leaves you staring at empty space
+   * with no clue which direction home is.
+   */
+  const clampPan = useCallback(
+    (tx: number, ty: number, scale: number): { tx: number; ty: number } => {
+      const el = containerRef.current;
+      if (!el) return { tx, ty };
+      const { clientWidth, clientHeight } = el;
+      const { w, h } = getContentSize(scale);
+      const keepX = Math.min(w, PAN_KEEP_VISIBLE_PX);
+      const keepY = Math.min(h, PAN_KEEP_VISIBLE_PX);
+      return {
+        tx: Math.max(keepX - w, Math.min(clientWidth - keepX, tx)),
+        ty: Math.max(keepY - h, Math.min(clientHeight - keepY, ty)),
+      };
+    },
+    [getContentSize]
+  );
+
+  /** The pan that puts the raster dead centre at a given scale. */
+  const centerFor = useCallback(
+    (scale: number): { tx: number; ty: number } => {
+      const el = containerRef.current;
+      if (!el) return { tx: 0, ty: 0 };
+      const { w, h } = getContentSize(scale);
+      return {
+        tx: Math.round((el.clientWidth - w) / 2),
+        ty: Math.round((el.clientHeight - h) / 2),
+      };
+    },
+    [getContentSize]
+  );
+
+  /**
+   * Pixel mode only ever sits on whole device pixels per cell.
+   *
+   * The steppers always maintained that ladder; every other way in (a fit, a
+   * preset, the wheel) did not, and a fractional rung makes cells alternate
+   * between N and N+1 pixels wide -- ruinous for the one mode whose entire
+   * point is hard cell edges. Below one device pixel per cell the ladder has
+   * no rung left, so the scale passes through untouched.
+   */
+  const snapScaleToCellGrid = useCallback((s: number, mode: 'round' | 'floor' = 'round'): number => {
+    if (latestRasterModeRef.current !== 'pixel') return s;
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    if (s * dpr < 1) return s;
+    // A fit floors: rounding up would push the raster back past the edge it
+    // was just asked to fit inside.
+    const rungs = mode === 'floor' ? Math.floor(s * dpr) : Math.round(s * dpr);
+    return Math.max(1, rungs) / dpr;
+  }, []);
+
+  /**
+   * Scale about a point, keeping whatever sits under it pinned in place.
+   *
+   * `px`/`py` are container-relative. The maths is independent of how the
+   * scale is realised (canvas backing store or CSS transform) because the
+   * content always grows from the stage origin.
+   */
+  const zoomAbout = useCallback(
+    (nextScale: number, px: number, py: number) => {
+      setView((prev) => {
+        const snapped = snapScaleToCellGrid(nextScale);
+        const s2 = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number(snapped.toFixed(3))));
+        if (s2 === prev.scale) return prev;
+        const ux = (px - prev.tx) / prev.scale;
+        const uy = (py - prev.ty) / prev.scale;
+        return { scale: s2, ...clampPan(px - ux * s2, py - uy * s2, s2) };
+      });
+    },
+    [clampPan, snapScaleToCellGrid]
+  );
+
+  /** Scale about the middle of the viewport, for buttons and hotkeys. */
+  const zoomAboutCenter = useCallback(
+    (nextScale: number) => {
+      const el = containerRef.current;
+      if (!el) return;
+      zoomAbout(nextScale, el.clientWidth / 2, el.clientHeight / 2);
+    },
+    [zoomAbout]
+  );
+
+  const panBy = useCallback(
+    (dx: number, dy: number) => {
+      setView((prev) => ({ ...prev, ...clampPan(prev.tx + dx, prev.ty + dy, prev.scale) }));
+    },
+    [clampPan]
+  );
+
+  const recenter = useCallback(() => {
+    setView((prev) => ({ ...prev, ...centerFor(prev.scale) }));
+  }, [centerFor]);
+
   /*
    * Zoom bounds for the manual steppers. autoFit already fits up to 5x, so the
    * old 3x button ceiling could not even step back to a scale the Fit button
@@ -263,20 +417,31 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const rungFloor = 1 / dpr;
 
     if (isPixel && z >= rungFloor - 1e-9) {
+      /*
+       * Rungs are counted in single device pixels per cell; a coarse step just
+       * crosses several of them at once. Quantising the *current* rung to a
+       * multiple of the step instead put 100% on a 1x display at rung 0, so
+       * one coarse click jumped straight to 400% and the click back landed
+       * below the floor and fell through to the linear creep below -- zoom in
+       * by 300 points, zoom out by 25.
+       */
       const cellsPerClick = coarse ? 4 : 1;
-      // Land on a whole multiple of the step so a mid-range starting zoom
-      // (from a fit, say) snaps onto the ladder instead of carrying an offset.
-      const currentRung = Math.round((z * dpr) / cellsPerClick);
-      const next = ((currentRung + dir) * cellsPerClick) / dpr;
-      if (next >= rungFloor) {
-        return Math.min(ZOOM_MAX, Number(next.toFixed(2)));
+      const currentRung = Math.max(1, Math.round(z * dpr));
+      const nextRung = currentRung + dir * cellsPerClick;
+      if (nextRung >= 1) {
+        return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number((nextRung / dpr).toFixed(2))));
+      }
+      // Stepping down from the floor itself: land exactly on it before the
+      // linear range below takes over, so no rung is skipped on the way out.
+      if (z > rungFloor + 1e-9) {
+        return Number(rungFloor.toFixed(2));
       }
       /*
-       * Below one device pixel per cell the backing store cannot shrink any
-       * further and the browser downsamples the blit instead, so the cell
-       * ladder has no rung left to step to. Falling through to linear steps
-       * is what lets a grid larger than the viewport be zoomed out to fit --
-       * clamping at rungFloor here pinned the minimum to 100% on a 1x display.
+       * Already at one device pixel per cell and still going down. The backing
+       * store cannot shrink further and the browser downsamples the blit
+       * instead, so the ladder has no rung left. Falling through to linear
+       * steps is what lets a grid larger than the viewport be zoomed out to
+       * fit -- clamping here pinned the minimum to 100% on a 1x display.
        */
     }
 
@@ -315,48 +480,161 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      * where flooring yields 0 and the old max(1, ..) pinned it to 100% -- so
      * "fit" could not actually shrink an oversized grid to fit.
      */
+    /*
+     * Land on the cell ladder rather than a whole CSS scale: on a 1.5x display
+     * a "whole" scale of 3 is 4.5 device pixels per cell, which is exactly the
+     * alternating-width artefact the ladder exists to avoid.
+     */
     const fitScale = isPixel && rawFit >= 1
-      ? Math.min(ZOOM_MAX, Math.floor(rawFit))
+      ? Math.min(ZOOM_MAX, snapScaleToCellGrid(rawFit, 'floor'))
       : Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, rawFit));
-    setZoom(Number(fitScale.toFixed(2)));
-  }, [cols, rows]);
+    // Fitting owns the pan too: a fit that left the raster off-centre would
+    // be a strange sort of fit, and this is the one action that always
+    // recovers a lost view.
+    const scale = Number(fitScale.toFixed(2));
+    setView({ scale, ...centerFor(scale) });
+  }, [cols, rows, centerFor, snapScaleToCellGrid]);
 
+  /**
+   * Split the frame once per distinct frame, so a culled draw can address a
+   * row directly instead of walking the whole string to find it. A pan or a
+   * zoom re-draws the same text, which is exactly when the cache pays.
+   */
+  const linesCacheRef = useRef<{ text: string; lines: string[] } | null>(null);
+  const getFrameLines = useCallback((text: string): string[] => {
+    const cached = linesCacheRef.current;
+    if (cached && cached.text === text) return cached.lines;
+    const lines = text.split('\n');
+    linesCacheRef.current = { text, lines };
+    return lines;
+  }, []);
 
-  const latestRasterModeRef = useRef<RasterOutputMode>('ascii');
+  /**
+   * Bumped by every setFrame. The engine renders into a module-level colour
+   * buffer that it mutates in place, so the buffer's identity says nothing
+   * about whether the pixels changed -- comparing it was why a render change
+   * only appeared after a zoom. A counter cannot lie in the same way: if it
+   * has not advanced, no new frame arrived and only the view can have moved.
+   */
+  const frameSeqRef = useRef<number>(0);
+
+  /** What the canvas currently holds, so a pure pan can skip repainting. */
+  const lastDrawRef = useRef<{
+    seq: number;
+    scale: number;
+    mode: RasterOutputMode;
+    culled: boolean;
+    cols: number;
+    rows: number;
+  } | null>(null);
 
   const drawCanvas = useCallback(
     (
       frameText: string,
       colors: Uint8ClampedArray | null,
       bgColor: string | undefined,
-      currentZoom: number,
+      v: ViewTransform,
       rasterMode: RasterOutputMode = 'ascii'
     ) => {
-      if (!canvasRef.current || !colors || colors.length === 0) return;
       const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+
+      /*
+       * No content: wipe rather than return. Bailing out left whatever was
+       * last painted sitting on a canvas that is still displayed, so an empty
+       * viewfinder could keep showing a ghost of the previous source.
+       */
+      if (!colors || colors.length === 0) {
+        const blankCtx = canvas.getContext('2d');
+        if (blankCtx) blankCtx.clearRect(0, 0, canvas.width, canvas.height);
+        lastDrawRef.current = null;
+        return;
+      }
+
       const isPixelMode = rasterMode === 'pixel';
       const cellW = isPixelMode ? 1 : MONOSPACE_CELL_WIDTH;
       const cellH = isPixelMode ? 1 : MONOSPACE_CELL_HEIGHT;
-
-      const unscaledW = Math.max(1, Math.round(cols * cellW));
-      const unscaledH = Math.max(1, Math.round(rows * cellH));
+      const unscaledW = Math.max(1, cols * cellW);
+      const unscaledH = Math.max(1, rows * cellH);
       const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      const scale = v.scale;
 
-      const targetW = Math.max(1, Math.round(unscaledW * currentZoom * dpr));
-      const targetH = Math.max(1, Math.round(unscaledH * currentZoom * dpr));
-
-      if (canvas.width !== targetW || canvas.height !== targetH) {
-        canvas.width = targetW;
-        canvas.height = targetH;
-      }
-
-      const cssW = `${Math.round(unscaledW * currentZoom)}px`;
-      const cssH = `${Math.round(unscaledH * currentZoom)}px`;
-      if (canvas.style.width !== cssW) canvas.style.width = cssW;
-      if (canvas.style.height !== cssH) canvas.style.height = cssH;
+      /*
+       * Two regimes, picked by whether the whole raster still fits in a canvas.
+       *
+       *  - Whole-raster (the common case): the backing store holds every cell
+       *    and the canvas carries the pan as a CSS translate, so dragging costs
+       *    nothing at all.
+       *  - Culled (deep zoom): the backing store is the viewport and only the
+       *    cells actually on screen are painted. This is the only way past the
+       *    16384px limit -- beyond it a canvas silently goes blank -- and it is
+       *    also far less work, since at that magnification a handful of cells
+       *    fill the screen. Panning repaints, but only those few cells.
+       */
+      const culled = Math.max(unscaledW, unscaledH) * scale * dpr > MAX_BACKING_DIM;
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+
+      const prev = lastDrawRef.current;
+      const sameContent =
+        prev !== null &&
+        prev.seq === frameSeqRef.current &&
+        prev.scale === scale &&
+        prev.mode === rasterMode &&
+        prev.culled === culled &&
+        prev.cols === cols &&
+        prev.rows === rows;
+
+      // A pan in whole-raster mode just moves the bitmap that is already there.
+      if (sameContent && !culled) {
+        const translate = `translate3d(${v.tx}px, ${v.ty}px, 0)`;
+        if (canvas.style.transform !== translate) canvas.style.transform = translate;
+        return;
+      }
+
+      lastDrawRef.current = {
+        seq: frameSeqRef.current,
+        scale,
+        mode: rasterMode,
+        culled,
+        cols,
+        rows,
+      };
+
+      /*
+       * Visible cell window. In whole-raster mode this stays the entire grid,
+       * so both regimes share one drawing loop.
+       */
+      const viewW = container.clientWidth;
+      const viewH = container.clientHeight;
+      const stepX = cellW * scale;
+      const stepY = cellH * scale;
+      let col0 = 0;
+      let col1 = cols;
+      let row0 = 0;
+      let row1 = rows;
+      if (culled) {
+        col0 = Math.max(0, Math.min(cols, Math.floor(-v.tx / stepX)));
+        col1 = Math.max(col0, Math.min(cols, Math.ceil((viewW - v.tx) / stepX)));
+        row0 = Math.max(0, Math.min(rows, Math.floor(-v.ty / stepY)));
+        row1 = Math.max(row0, Math.min(rows, Math.ceil((viewH - v.ty) / stepY)));
+      }
+
+      // Where cell (0,0) sits inside the canvas box, in CSS pixels.
+      const originX = culled ? v.tx : 0;
+      const originY = culled ? v.ty : 0;
+
+      const cssW = culled ? viewW : Math.round(unscaledW * scale);
+      const cssH = culled ? viewH : Math.round(unscaledH * scale);
+      const cssWpx = `${cssW}px`;
+      const cssHpx = `${cssH}px`;
+      if (canvas.style.width !== cssWpx) canvas.style.width = cssWpx;
+      if (canvas.style.height !== cssHpx) canvas.style.height = cssHpx;
+
+      const translate = culled ? 'none' : `translate3d(${v.tx}px, ${v.ty}px, 0)`;
+      if (canvas.style.transform !== translate) canvas.style.transform = translate;
 
       /*
        * Pixel mode: rasterize one cell per pixel into a cols x rows ImageData,
@@ -366,27 +644,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
        * regular dither grid resampled that way produces moire.
        */
       if (isPixelMode) {
-        // Snap the backing store to a whole number of device pixels per cell so
-        // every pixel comes out the same size instead of alternating 2px/3px.
-        // Cap the scale so a large grid at deep zoom cannot ask for a canvas
-        // past the browser's per-dimension limit, which yields a blank canvas
-        // rather than an error.
-        const MAX_BACKING_DIM = 16384;
-        const scaleCeiling = Math.max(
-          1,
-          Math.floor(MAX_BACKING_DIM / Math.max(cols, rows, 1))
-        );
-        const cellScale = Math.min(
-          scaleCeiling,
-          Math.max(1, Math.round(currentZoom * dpr))
-        );
-        const snappedW = cols * cellScale;
-        const snappedH = rows * cellScale;
-        if (canvas.width !== snappedW || canvas.height !== snappedH) {
-          canvas.width = snappedW;
-          canvas.height = snappedH;
-        }
-
         let buf = pixelBufferCanvasRef.current;
         if (!buf) {
           buf = document.createElement('canvas');
@@ -426,74 +683,116 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         }
         bctx.putImageData(img, 0, 0);
 
+        // Whole device pixels per cell, so every cell comes out the same size
+        // instead of alternating 2px/3px along the grid.
+        const cellPx = Math.max(1, Math.round(scale * dpr));
+
+        let backingW: number;
+        let backingH: number;
+        if (culled) {
+          backingW = Math.max(1, Math.round(viewW * dpr));
+          backingH = Math.max(1, Math.round(viewH * dpr));
+        } else {
+          const scaleCeiling = Math.max(1, Math.floor(MAX_BACKING_DIM / Math.max(cols, rows, 1)));
+          const snapped = Math.min(scaleCeiling, cellPx);
+          backingW = cols * snapped;
+          backingH = rows * snapped;
+        }
+        if (canvas.width !== backingW || canvas.height !== backingH) {
+          canvas.width = backingW;
+          canvas.height = backingH;
+        }
+
         ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.imageSmoothingEnabled = false;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (bgColor && bgColor !== 'transparent') {
-          ctx.fillStyle = bgColor;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (culled) {
+          const sw = col1 - col0;
+          const sh = row1 - row0;
+          if (sw > 0 && sh > 0) {
+            // Anchor on whole device pixels so cell edges stay hard.
+            const dx = Math.round(originX * dpr) + col0 * cellPx;
+            const dy = Math.round(originY * dpr) + row0 * cellPx;
+            if (bgColor && bgColor !== 'transparent') {
+              ctx.fillStyle = bgColor;
+              ctx.fillRect(dx, dy, sw * cellPx, sh * cellPx);
+            }
+            ctx.drawImage(buf, col0, row0, sw, sh, dx, dy, sw * cellPx, sh * cellPx);
+          }
+        } else {
+          if (bgColor && bgColor !== 'transparent') {
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          ctx.drawImage(buf, 0, 0, cols, rows, 0, 0, canvas.width, canvas.height);
         }
-        ctx.drawImage(buf, 0, 0, cols, rows, 0, 0, canvas.width, canvas.height);
         ctx.restore();
         return;
       }
 
+      // Coloured ASCII: one fillText per non-blank visible cell.
+      const backingW = Math.max(1, Math.round(cssW * dpr));
+      const backingH = Math.max(1, Math.round(cssH * dpr));
+      if (canvas.width !== backingW || canvas.height !== backingH) {
+        canvas.width = backingW;
+        canvas.height = backingH;
+      }
+
       ctx.save();
-      ctx.imageSmoothingEnabled = !isPixelMode;
-      ctx.scale(currentZoom * dpr, currentZoom * dpr);
-      ctx.clearRect(0, 0, unscaledW, unscaledH);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.clearRect(0, 0, cssW, cssH);
+      ctx.translate(originX, originY);
+      ctx.scale(scale, scale);
+
       if (bgColor && bgColor !== 'transparent' && bgColor !== '#0a0a0a' && bgColor !== '#000000' && bgColor !== '#000') {
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, unscaledW, unscaledH);
       }
+
       ctx.font = '10px "JuliaMono", "JetBrains Mono", "Courier New", monospace';
-
-
       ctx.textBaseline = 'top';
       ctx.textAlign = 'left';
 
-      let curX = 0;
-      let curY = 0;
-      const len = frameText.length;
-      for (let i = 0; i < len; i++) {
-        const ch = frameText[i];
-        if (ch === '\n') {
-          curY++;
-          curX = 0;
-          continue;
-        }
-        if (curX < cols && curY < rows) {
-          if (ch !== ' ') {
-            const cIdx = (curY * cols + curX) * 3;
-            const r = colors[cIdx];
-            const g = colors[cIdx + 1];
-            const b = colors[cIdx + 2];
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            if (isPixelMode) {
-              ctx.fillRect(curX * cellW, curY * cellH, cellW, cellH);
-            } else {
-              ctx.fillText(ch, curX * cellW, curY * cellH);
-            }
-          }
-          curX++;
+      const lines = getFrameLines(frameText);
+      for (let y = row0; y < row1; y++) {
+        const line = lines[y];
+        if (!line) continue;
+        const rowBase = y * cols;
+        const yPx = y * cellH;
+        const end = Math.min(col1, line.length);
+        for (let x = col0; x < end; x++) {
+          const ch = line[x];
+          if (ch === ' ') continue;
+          const cIdx = (rowBase + x) * 3;
+          ctx.fillStyle = `rgb(${colors[cIdx]},${colors[cIdx + 1]},${colors[cIdx + 2]})`;
+          ctx.fillText(ch, x * cellW, yPx);
         }
       }
       ctx.restore();
     },
-    [cols, rows]
+    [cols, rows, getFrameLines]
   );
 
+  /*
+   * Depends on the whole transform, not just the scale: once the draw is
+   * culled the canvas is viewport-anchored, so a pan changes which cells are
+   * on screen. drawCanvas short-circuits a pan that only needs its CSS
+   * translate moved, so the uncelled case stays free.
+   */
   useEffect(() => {
     if (isColoredView && latestFrameTextRef.current) {
       drawCanvas(
         latestFrameTextRef.current,
         latestColorsRef.current,
         latestBgColorRef.current,
-        zoom,
+        view,
         latestRasterModeRef.current
       );
     }
-  }, [zoom, drawCanvas, isColoredView]);
+  }, [view, drawCanvas, isColoredView, resizeTick]);
 
 
   useImperativeHandle(ref, () => ({
@@ -505,6 +804,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       bgColor?: string,
       rasterMode?: RasterOutputMode
     ) => {
+      // A new frame, by definition: invalidates the pan short-circuit in
+      // drawCanvas regardless of whether the buffers came back identical.
+      frameSeqRef.current++;
       latestFrameTextRef.current = frameText;
       latestColorsRef.current = colors || null;
       latestBgColorRef.current = bgColor;
@@ -529,7 +831,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           frameText,
           colors || null,
           bgColor,
-          zoom,
+          // Read through the ref: setFrame runs from the animation loop and
+          // must never paint at a transform the view has already moved past.
+          viewRef.current,
           rasterMode || latestRasterModeRef.current
         );
       } else {
@@ -556,12 +860,71 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     getOptimalResolution,
   }));
 
+  /**
+   * Set by the mode-switch restore below to let a remembered view survive the
+   * refit that a resolution change would otherwise trigger on top of it.
+   */
+  const skipNextAutoFitRef = useRef<boolean>(false);
+
   useEffect(() => {
     const timer = setTimeout(() => {
+      if (skipNextAutoFitRef.current) {
+        skipNextAutoFitRef.current = false;
+        return;
+      }
       autoFit();
     }, 50);
     return () => clearTimeout(timer);
   }, [viewMode, autoFit]);
+
+  /*
+   * Each content source keeps its own camera, so flipping synth -> media ->
+   * model and back returns you to where you were rather than to a fresh fit.
+   * Declared after the auto-fit effect so its flag lands before that timer.
+   */
+  const viewByModeRef = useRef<Record<string, ViewTransform>>({});
+  const prevAppModeRef = useRef<string>(appMode);
+  useEffect(() => {
+    const prev = prevAppModeRef.current;
+    if (prev === appMode) return;
+    viewByModeRef.current[prev] = viewRef.current;
+    prevAppModeRef.current = appMode;
+    const saved = viewByModeRef.current[appMode];
+    if (saved) {
+      skipNextAutoFitRef.current = true;
+      setView(saved);
+    }
+  }, [appMode]);
+
+  /*
+   * A shrinking viewfinder can strand a panned raster outside the box. Clamp
+   * rather than recentre: recentring would yank a view the user just placed.
+   */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let resizeTimer: any;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        setView((prev) => {
+          const next = clampPan(prev.tx, prev.ty, prev.scale);
+          return next.tx === prev.tx && next.ty === prev.ty ? prev : { ...prev, ...next };
+        });
+        /*
+         * A culled canvas is sized to the viewport, so it has to be repainted
+         * at the new size even when the clamp above leaves the pan untouched
+         * and produces no state change of its own.
+         */
+        setResizeTick((t) => t + 1);
+      }, 140);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimer);
+    };
+  }, [clampPan]);
 
   /*
    * Report the viewfinder's aspect to the sidebar so the resolution controls
@@ -630,10 +993,38 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const getSurfaceElement = (): HTMLElement | null =>
     (isColoredView ? canvasRef.current : preRef.current) || containerRef.current;
 
+  /*
+   * Drag routing. Media has no competing left-drag gesture, so it gets the
+   * obvious one; synth keeps its particle clicks and model keeps its orbit,
+   * and both reach the pan through the middle button. Space is already
+   * play/pause app-wide, so it deliberately is not a pan modifier here.
+   */
+  const panDragRef = useRef<{ pointerId: number; startX: number; startY: number; tx: number; ty: number } | null>(null);
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+
+  const isPanGesture = (e: React.PointerEvent<HTMLDivElement>): boolean =>
+    e.button === 1 || (e.button === 0 && appMode === 'media');
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const targetElement = getSurfaceElement();
     if (!targetElement) return;
     const rect = targetElement.getBoundingClientRect();
+
+    if (isPanGesture(e)) {
+      panDragRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        tx: viewRef.current.tx,
+        ty: viewRef.current.ty,
+      };
+      setIsPanning(true);
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
+
     if (rect.width <= 0 || rect.height <= 0) return;
 
     if (appMode === 'model') {
@@ -650,6 +1041,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panDragRef.current;
+    if (pan && pan.pointerId === e.pointerId) {
+      // Absolute from the gesture origin rather than accumulated deltas, so a
+      // clamped edge does not bleed drift into the rest of the drag.
+      const nextTx = pan.tx + (e.clientX - pan.startX);
+      const nextTy = pan.ty + (e.clientY - pan.startY);
+      setView((prev) => ({ ...prev, ...clampPan(nextTx, nextTy, prev.scale) }));
+      return;
+    }
+
     const targetElement = getSurfaceElement();
     if (!targetElement) return;
     const rect = targetElement.getBoundingClientRect();
@@ -674,6 +1075,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (panDragRef.current && panDragRef.current.pointerId === e.pointerId) {
+      panDragRef.current = null;
+      setIsPanning(false);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
     if (appMode === 'model') {
       isDraggingRef.current = false;
       try {
@@ -682,12 +1091,159 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     }
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (appMode === 'model' && onWheelZoom) {
-      e.preventDefault();
-      onWheelZoom(e.deltaY > 0 ? 0.2 : -0.2);
-    }
+  /*
+   * Middle-click otherwise arms Windows' autoscroll, which hijacks the drag
+   * and leaves a scroll cursor stuck over the viewfinder. Only the mousedown
+   * event suppresses it; preventing the pointer event is not enough.
+   */
+  const handleMouseDownNative = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button === 1) e.preventDefault();
   };
+
+  /**
+   * Keyboard and menu zoom steps.
+   *
+   * Pixel mode rides the whole-cell ladder stepZoom maintains; everything else
+   * moves multiplicatively, because stepZoom's 1% fine step would need a
+   * hundred presses to double and is meant for the on-screen steppers.
+   */
+  const nudgeZoom = useCallback(
+    (dir: 1 | -1) => {
+      const cur = viewRef.current.scale;
+      const next =
+        latestRasterModeRef.current === 'pixel'
+          ? stepZoom(cur, dir)
+          : cur * (dir > 0 ? 1.25 : 1 / 1.25);
+      zoomAboutCenter(next);
+    },
+    [stepZoom, zoomAboutCenter]
+  );
+
+  /*
+   * Wheel handling has to be a native non-passive listener: React registers
+   * onWheel passively, so the preventDefault the model-mode dolly already
+   * relied on was silently doing nothing.
+   */
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      // Trackpad pinch arrives as ctrl+wheel, which is why it shares a branch
+      // with the explicit modifier.
+      const zoomModifier = e.ctrlKey || e.metaKey;
+
+      /*
+       * On the stacked narrow layout the page itself scrolls, so a bare wheel
+       * belongs to the document -- swallowing it would trap the reader inside
+       * the viewfinder with no way down to the controls. The model dolly still
+       * responds, since it never needed to consume the event.
+       */
+      const isNarrowLayout =
+        typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+      if (isNarrowLayout && !zoomModifier) {
+        if (appMode === 'model' && onWheelZoom) {
+          onWheelZoom(e.deltaY > 0 ? 0.2 : -0.2);
+        }
+        return;
+      }
+
+      const horizontal =
+        !zoomModifier && (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY));
+      if (horizontal) {
+        e.preventDefault();
+        const delta = e.shiftKey && Math.abs(e.deltaX) < Math.abs(e.deltaY) ? e.deltaY : e.deltaX;
+        panBy(-delta, 0);
+        return;
+      }
+
+      // Model mode spends the bare wheel on the camera dolly, so the view
+      // zoom there needs the modifier.
+      if (!zoomModifier && appMode === 'model' && onWheelZoom) {
+        e.preventDefault();
+        onWheelZoom(e.deltaY > 0 ? 0.2 : -0.2);
+        return;
+      }
+
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cur = viewRef.current.scale;
+      /*
+       * One wheel notch is one rung, never a coarse jump: a plain mouse wheel
+       * reports deltaY of 100-120 per notch, so keying "coarse" off the
+       * magnitude made every ordinary tick a four-cell leap.
+       */
+      const next =
+        latestRasterModeRef.current === 'pixel'
+          ? stepZoom(cur, e.deltaY > 0 ? -1 : 1)
+          : cur * Math.exp(-e.deltaY * 0.0015);
+      zoomAbout(next, e.clientX - rect.left, e.clientY - rect.top);
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [appMode, onWheelZoom, panBy, zoomAbout, stepZoom]);
+
+  /* Viewport hotkeys. 1 and 2 belong to the sidebar panels, hence 0 and 9. */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const t = e.target;
+      const isInput =
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        (t instanceof HTMLElement && t.isContentEditable);
+      if (isInput || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const nudge = e.shiftKey ? 60 : 15;
+      switch (e.key) {
+        case '0':
+          e.preventDefault();
+          autoFit();
+          break;
+        case '9':
+          e.preventDefault();
+          zoomAboutCenter(1);
+          break;
+        case '+':
+        case '=':
+          e.preventDefault();
+          nudgeZoom(1);
+          break;
+        case '-':
+        case '_':
+          e.preventDefault();
+          nudgeZoom(-1);
+          break;
+        case 'c':
+        case 'C':
+          e.preventDefault();
+          recenter();
+          break;
+        // Scroll semantics: the arrow moves the viewport, so the raster
+        // travels the other way.
+        case 'ArrowLeft':
+          e.preventDefault();
+          panBy(nudge, 0);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          panBy(-nudge, 0);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          panBy(0, nudge);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          panBy(0, -nudge);
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [autoFit, zoomAboutCenter, nudgeZoom, recenter, panBy]);
 
   const copySnapshot = () => {
     const text = latestFrameTextRef.current || preRef.current?.textContent || '';
@@ -705,17 +1261,42 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const [ar, ag, ab] = hexToRgb(asciiColor);
   const asciiGlow = `rgba(${ar}, ${ag}, ${ab}, 0.11)`;
 
+  // A couple of pixels of slack, so a fit that rounded to an odd number of
+  // pixels does not permanently claim the view is panned.
+  const centredPan = centerFor(view.scale);
+  const isOffCentre =
+    Math.abs(view.tx - centredPan.tx) > 2 || Math.abs(view.ty - centredPan.ty) > 2;
+
+  /*
+   * Default on: absent from older saved settings and shared links.
+   *
+   * Suppressed entirely while the media prompt is up. The grid still has a
+   * nominal size with nothing loaded, so the bounds would outline an empty
+   * rectangle and dim the space around it -- a frame around no picture, which
+   * reads as a broken viewfinder rather than an empty one.
+   */
+  const showViewportBounds =
+    !showMediaPlaceholder && (crtConfig ? (crtConfig.viewportBounds ?? true) : true);
+  const contentBounds = cols > 0 && rows > 0 ? getContentSize(view.scale) : null;
+
   return (
     <div className="viewport-pane">
       {/* Visual Canvas Container */}
       <div
         ref={containerRef}
-        className={`viewport-canvas-container ${showCrtGlow ? 'crt-glow-enabled' : ''} ${appMode === 'model' ? 'model-orbit-active' : ''}`}
+        className={[
+          'viewport-canvas-container',
+          showCrtGlow ? 'crt-glow-enabled' : '',
+          appMode === 'model' ? 'model-orbit-active' : '',
+          appMode === 'media' ? 'viewport-pan-ready' : '',
+          isPanning ? 'viewport-panning' : '',
+        ].filter(Boolean).join(' ')}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        onWheel={handleWheel}
+        onMouseDown={handleMouseDownNative}
+        onDoubleClick={autoFit}
         style={{
           ...(showCrtGlow ? {
             background: `radial-gradient(circle at center, ${asciiGlow} 0%, transparent 70%)`,
@@ -724,7 +1305,32 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       >
         {showScanlines && <div className="scanline-overlay" />}
         {showVignette && <div className="crt-vignette-overlay" />}
-        {/* Hardware-Accelerated Monospace Colored ASCII Canvas */}
+
+        {/*
+          Content bounds and the void outside them. One element does both: the
+          hairline is its border, and a very large spread box-shadow tints
+          everything beyond it. Deliberately faint -- it should tell you where
+          the raster ends when you are panned off it, and be invisible
+          otherwise.
+        */}
+        {showViewportBounds && contentBounds && (
+          <div
+            className="viewport-bounds"
+            aria-hidden="true"
+            style={{
+              transform: `translate3d(${view.tx}px, ${view.ty}px, 0)`,
+              width: `${contentBounds.w}px`,
+              height: `${contentBounds.h}px`,
+            }}
+          />
+        )}
+
+        {/*
+          The canvas lives outside the stage because a culled draw anchors it to
+          the viewport and paints the pan itself; in whole-raster mode
+          drawCanvas gives it its own CSS translate instead. Either way it is
+          positioned from the same origin as the stage.
+        */}
         <canvas
           ref={canvasRef}
           className="ascii-canvas"
@@ -740,39 +1346,50 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           }}
         />
 
-        {/* Directional Phosphor Bloom Underlayer (Character Bloom) */}
-        {showPhosphorBloom && !isColoredView && (
+        {/*
+          The movable stage, carrying the text surfaces. The CRT overlays, the
+          media prompt and the spinner sit outside it and so stay screen-fixed.
+          Scale is still realised on the <pre> itself; only the translation
+          lives here.
+        */}
+        <div
+          className="viewport-stage"
+          style={{ transform: `translate3d(${view.tx}px, ${view.ty}px, 0)` }}
+        >
+          {/* Directional Phosphor Bloom Underlayer (Character Bloom) */}
+          {showPhosphorBloom && !isColoredView && (
+            <pre
+              ref={bloomPreRef}
+              aria-hidden="true"
+              className={`ascii-pre ascii-bloom-pre ${gradientConfig ? 'gradient-enabled' : 'single-glow-enabled'}`}
+              style={{
+                transform: `scale(${zoom})`,
+                fontSize: '10px',
+                color: gradientConfig ? 'transparent' : asciiColor,
+                textShadow: gradientConfig ? undefined : `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}`,
+                ...(gradientConfig ? ({
+                  '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
+                } as React.CSSProperties) : {}),
+              }}
+            />
+          )}
+
+          {/* Sharp Foreground ASCII Text */}
           <pre
-            ref={bloomPreRef}
-            aria-hidden="true"
-            className={`ascii-pre ascii-bloom-pre ${gradientConfig ? 'gradient-enabled' : 'single-glow-enabled'}`}
+            ref={preRef}
+            className={`ascii-pre ${gradientConfig ? 'gradient-enabled' : ''} ${showPhosphorBloom && !gradientConfig ? 'single-glow-enabled' : ''}`}
             style={{
+              display: isColoredView ? 'none' : 'block',
               transform: `scale(${zoom})`,
               fontSize: '10px',
               color: gradientConfig ? 'transparent' : asciiColor,
-              textShadow: gradientConfig ? undefined : `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}`,
+              textShadow: showPhosphorBloom && !gradientConfig ? `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}` : 'none',
               ...(gradientConfig ? ({
                 '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
               } as React.CSSProperties) : {}),
             }}
           />
-        )}
-
-        {/* Sharp Foreground ASCII Text */}
-        <pre
-          ref={preRef}
-          className={`ascii-pre ${gradientConfig ? 'gradient-enabled' : ''} ${showPhosphorBloom && !gradientConfig ? 'single-glow-enabled' : ''}`}
-          style={{
-            display: isColoredView ? 'none' : 'block',
-            transform: `scale(${zoom})`,
-            fontSize: '10px',
-            color: gradientConfig ? 'transparent' : asciiColor,
-            textShadow: showPhosphorBloom && !gradientConfig ? `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}` : 'none',
-            ...(gradientConfig ? ({
-              '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
-            } as React.CSSProperties) : {}),
-          }}
-        />
+        </div>
 
         {/* No-Media Prompt: fixed size, outside the zoomed raster surface */}
         {showMediaPlaceholder && !isLoading && (
@@ -880,28 +1497,65 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             PRESET: <strong>{presetName}{isEdited ? ' <edited>' : ''}</strong>
           </span>
 
-          <div className="btn-group">
+          <div className="btn-group zoom-control-group">
             <button
               className="btn btn-sm"
-              onClick={(e) => setZoom((z) => stepZoom(z, -1, e.shiftKey))}
-              title="Zoom Out (hold Shift for a coarse step)"
+              onClick={(e) => zoomAboutCenter(stepZoom(viewRef.current.scale, -1, e.shiftKey))}
+              title="Zoom Out (hold Shift for a coarse step) [-]"
             >
               <ZoomOut size={12} />
             </button>
             <button
-              className="btn btn-sm"
-              onClick={autoFit}
-              title="Auto Fit"
+              className={`btn btn-sm zoom-readout-btn ${isZoomMenuOpen ? 'btn-primary' : ''}`}
+              onClick={() => setIsZoomMenuOpen((o) => !o)}
+              title="Zoom presets, fit and recentre"
             >
               {(zoom * 100).toFixed(0)}%
+              {/* Quiet marker that the view is panned off-centre, so a lost
+                  raster is always one glance and one click from recovery. */}
+              {isOffCentre && <span className="zoom-offcentre-dot" aria-label="panned" />}
             </button>
             <button
               className="btn btn-sm"
-              onClick={(e) => setZoom((z) => stepZoom(z, 1, e.shiftKey))}
-              title="Zoom In (hold Shift for a coarse step)"
+              onClick={(e) => zoomAboutCenter(stepZoom(viewRef.current.scale, 1, e.shiftKey))}
+              title="Zoom In (hold Shift for a coarse step) [+]"
             >
               <ZoomIn size={12} />
             </button>
+
+            {isZoomMenuOpen && (
+              <>
+                <div className="zoom-menu-scrim" onClick={() => setIsZoomMenuOpen(false)} />
+                <div className="zoom-menu" role="menu">
+                  <button
+                    className="zoom-menu-item"
+                    onClick={() => { autoFit(); setIsZoomMenuOpen(false); }}
+                  >
+                    <span>FIT</span>
+                    <span className="zoom-menu-key">0</span>
+                  </button>
+                  {ZOOM_PRESETS.map((p) => (
+                    <button
+                      key={p}
+                      className={`zoom-menu-item ${Math.abs(zoom - p) < 0.005 ? 'active' : ''}`}
+                      onClick={() => { zoomAboutCenter(p); setIsZoomMenuOpen(false); }}
+                    >
+                      <span>{p * 100}%</span>
+                      {p === 1 && <span className="zoom-menu-key">9</span>}
+                    </button>
+                  ))}
+                  <div className="zoom-menu-sep" />
+                  <button
+                    className="zoom-menu-item"
+                    onClick={() => { recenter(); setIsZoomMenuOpen(false); }}
+                    disabled={!isOffCentre}
+                  >
+                    <span>RECENTRE</span>
+                    <span className="zoom-menu-key">C</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           <button className="btn btn-sm" onClick={copySnapshot} title="Copy Current Frame">

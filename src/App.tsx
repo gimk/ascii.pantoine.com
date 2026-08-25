@@ -78,6 +78,7 @@ import { CollapsibleSection } from './components/CollapsibleSection';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
+import { ShortcutsModal } from './components/ShortcutsModal';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
@@ -98,13 +99,76 @@ import {
   Type,
   Grid,
   Settings,
+  Keyboard,
+  X,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
 const LOCAL_STORAGE_UI_THEME_KEY = 'ascii_studio_ui_theme_settings';
 
+/** One-time nudge towards the render panel after a first media upload. */
+const LOCAL_STORAGE_RENDER_HINT_KEY = 'ascii_studio_render_hint_seen';
+
 /** DPI a freshly loaded media source starts at: 1:1 with the source pixels. */
 const MEDIA_DEFAULT_DPI = 100;
+
+/** Parse a #rgb / #rrggbb accent into channels, falling back to phosphor green. */
+const parseAccentChannels = (hex: string): [number, number, number] => {
+  let cleaned = hex.replace('#', '').trim();
+  if (cleaned.length === 3) {
+    cleaned = cleaned.split('').map((c) => c + c).join('');
+  }
+  const num = parseInt(cleaned, 16);
+  if (Number.isNaN(num) || cleaned.length !== 6) return [0, 255, 102];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+};
+
+/**
+ * Derive the whole interface palette from one accent colour.
+ *
+ * A dark accent gets a paper-white interface (dark ink on light stock); every
+ * other accent gets the CRT treatment, where each surface is a progressively
+ * less severe tint of the accent itself.
+ *
+ * This used to be inlined at four call sites. The copies had drifted: in both
+ * dark-mode ones the blue channel was computed from `g`, so a green accent
+ * produced a teal interface. One implementation, one place to be wrong.
+ */
+const buildInterfaceTint = (r: number, g: number, b: number, usePaperTheme: boolean) => {
+  if (!usePaperTheme) {
+    // CRT: scale the accent towards black, with a floor so the darkest
+    // surfaces never collapse into a single indistinguishable black.
+    const surface = (k: number, base: number, floor: number) =>
+      `rgb(${Math.max(floor, Math.round(r * k + base))}, ` +
+      `${Math.max(floor, Math.round(g * k + base))}, ` +
+      `${Math.max(floor, Math.round(b * k + base))})`;
+    return {
+      bgPrimary: surface(0.035, 2, 2),
+      bgPanel: surface(0.06, 5, 5),
+      bgControl: surface(0.11, 9, 10),
+      bgControlHover: surface(0.16, 14, 16),
+      borderColor: surface(0.24, 18, 24),
+      textMuted: `rgb(${Math.round(r * 0.65 + 30)}, ${Math.round(g * 0.65 + 30)}, ${Math.round(b * 0.65 + 30)})`,
+      textDim: `rgb(${Math.round(r * 0.35 + 15)}, ${Math.round(g * 0.35 + 15)}, ${Math.round(b * 0.35 + 15)})`,
+      glowAlpha: 0.11,
+    };
+  }
+  // Paper: pull each neutral stop towards the accent by a small amount.
+  const stock = (nr: number, ng: number, nb: number, k: number) =>
+    `rgb(${Math.round(nr - (255 - r) * k)}, ` +
+    `${Math.round(ng - (255 - g) * k)}, ` +
+    `${Math.round(nb - (255 - b) * k)})`;
+  return {
+    bgPrimary: stock(244, 242, 236, 0.05),
+    bgPanel: stock(234, 232, 224, 0.08),
+    bgControl: stock(224, 220, 210, 0.12),
+    bgControlHover: stock(212, 207, 197, 0.16),
+    borderColor: stock(186, 182, 172, 0.22),
+    textMuted: `rgb(${Math.round(r * 0.6 + 65)}, ${Math.round(g * 0.6 + 65)}, ${Math.round(b * 0.6 + 65)})`,
+    textDim: `rgb(${Math.round(r * 0.4 + 115)}, ${Math.round(g * 0.4 + 115)}, ${Math.round(b * 0.4 + 115)})`,
+    glowAlpha: 0.05,
+  };
+};
 
 /**
  * The three content sources. Kept as data so the picker, its badge and the
@@ -613,6 +677,7 @@ export const App: React.FC = () => {
     initialUrlData.mode === 'fullscreen' ? 'fullscreen' : 'editor'
   );
   const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
@@ -627,6 +692,45 @@ export const App: React.FC = () => {
    * switching source silently threw away which panel you were on.
    */
   const [panel, setPanel] = useState<'content' | 'render'>('content');
+
+  /*
+   * Landing a media file is the moment the render controls become the
+   * interesting half of the app, and nothing on screen says so. Fires once
+   * ever, on the transition from no source to a source -- not on a reload or a
+   * shared link that already had one, where the nudge would be noise.
+   */
+  const [showRenderHint, setShowRenderHint] = useState<boolean>(false);
+  const hasMediaSource = appMode === 'media' && Boolean(mediaConfig.fileData);
+  const hadMediaSourceRef = useRef<boolean>(hasMediaSource);
+
+  const dismissRenderHint = useCallback(() => {
+    setShowRenderHint(false);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_RENDER_HINT_KEY, '1');
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const wasEmpty = !hadMediaSourceRef.current;
+    hadMediaSourceRef.current = hasMediaSource;
+    if (!hasMediaSource || !wasEmpty) return;
+    try {
+      if (localStorage.getItem(LOCAL_STORAGE_RENDER_HINT_KEY) === '1') return;
+    } catch {}
+    setShowRenderHint(true);
+  }, [hasMediaSource]);
+
+  /*
+   * Arriving at the panel is the hint succeeding, so retire it for good --
+   * here rather than on the tab's onClick, so the `2` hotkey and any other
+   * route to the panel count too.
+   */
+  useEffect(() => {
+    if (panel === 'render' && showRenderHint) dismissRenderHint();
+  }, [panel, showRenderHint, dismissRenderHint]);
+
+  // Pointless once they are already looking at the panel it points to.
+  const isRenderHintVisible = showRenderHint && panel !== 'render';
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video'>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
@@ -1058,136 +1162,51 @@ export const App: React.FC = () => {
       '--grad-color-2',
     ];
 
-    if (effectiveGradientConfig) {
-      let cleaned = effectiveGradientConfig.color1.replace('#', '').trim();
-      if (cleaned.length === 3) {
-        cleaned = cleaned.split('').map((c) => c + c).join('');
-      }
-      const num = parseInt(cleaned, 16);
-      const [r, g, b] = (Number.isNaN(num) || cleaned.length !== 6)
-        ? [0, 255, 102]
-        : [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+    /*
+     * Both custom paths tint the interface from a single seed: a gradient
+     * leads with its first stop, otherwise the chosen accent stands alone.
+     * Only the gradient path additionally publishes the gradient variables.
+     */
+    const seed = effectiveGradientConfig ? effectiveGradientConfig.color1 : effectiveCustomUiColor;
 
-      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-      const isLightMode = luminance < 80;
-
-      document.body.className = isLightMode ? 'theme-custom theme-paper' : 'theme-custom';
-
-      if (!isLightMode) {
-        // Dark CRT mode: very dark tint of color1
-        const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))})`;
-        const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))})`;
-        const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))})`;
-        const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))})`;
-        const borderColor = `rgb(${Math.max(24, Math.round(r * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))})`;
-        const textMuted = `rgb(${Math.round(r * 0.65 + 30)}, ${Math.round(g * 0.65 + 30)}, ${Math.round(b * 0.65 + 30)})`;
-        const textDim = `rgb(${Math.round(r * 0.35 + 15)}, ${Math.round(g * 0.35 + 15)}, ${Math.round(b * 0.35 + 15)})`;
-
-        document.body.style.setProperty('--bg-primary', bgPrimary);
-        document.body.style.setProperty('--bg-panel', bgPanel);
-        document.body.style.setProperty('--bg-control', bgControl);
-        document.body.style.setProperty('--bg-control-hover', bgControlHover);
-        document.body.style.setProperty('--border-color', borderColor);
-        document.body.style.setProperty('--border-active', effectiveGradientConfig.color1);
-        document.body.style.setProperty('--text-primary', effectiveGradientConfig.color1);
-        document.body.style.setProperty('--text-muted', textMuted);
-        document.body.style.setProperty('--text-dim', textDim);
-        document.body.style.setProperty('--accent', effectiveGradientConfig.color1);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.11)`);
-      } else {
-        // Light / White mode: background is a very light tint of color1
-        const bgPrimary = `rgb(${Math.round(244 - (255 - r) * 0.05)}, ${Math.round(242 - (255 - g) * 0.05)}, ${Math.round(236 - (255 - b) * 0.05)})`;
-        const bgPanel = `rgb(${Math.round(234 - (255 - r) * 0.08)}, ${Math.round(232 - (255 - g) * 0.08)}, ${Math.round(224 - (255 - b) * 0.08)})`;
-        const bgControl = `rgb(${Math.round(224 - (255 - r) * 0.12)}, ${Math.round(220 - (255 - g) * 0.12)}, ${Math.round(210 - (255 - b) * 0.12)})`;
-        const bgControlHover = `rgb(${Math.round(212 - (255 - r) * 0.16)}, ${Math.round(207 - (255 - g) * 0.16)}, ${Math.round(197 - (255 - b) * 0.16)})`;
-        const borderColor = `rgb(${Math.round(186 - (255 - r) * 0.22)}, ${Math.round(182 - (255 - g) * 0.22)}, ${Math.round(172 - (255 - b) * 0.22)})`;
-        const textMuted = `rgb(${Math.round(r * 0.6 + 65)}, ${Math.round(g * 0.6 + 65)}, ${Math.round(b * 0.6 + 65)})`;
-        const textDim = `rgb(${Math.round(r * 0.4 + 115)}, ${Math.round(g * 0.4 + 115)}, ${Math.round(b * 0.4 + 115)})`;
-
-        document.body.style.setProperty('--bg-primary', bgPrimary);
-        document.body.style.setProperty('--bg-panel', bgPanel);
-        document.body.style.setProperty('--bg-control', bgControl);
-        document.body.style.setProperty('--bg-control-hover', bgControlHover);
-        document.body.style.setProperty('--border-color', borderColor);
-        document.body.style.setProperty('--border-active', effectiveGradientConfig.color1);
-        document.body.style.setProperty('--text-primary', effectiveGradientConfig.color1);
-        document.body.style.setProperty('--text-muted', textMuted);
-        document.body.style.setProperty('--text-dim', textDim);
-        document.body.style.setProperty('--accent', effectiveGradientConfig.color1);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.05)`);
-      }
-
-      document.body.style.setProperty('--text-gradient', `linear-gradient(${effectiveGradientConfig.angle}deg, ${effectiveGradientConfig.color1}, ${effectiveGradientConfig.color2})`);
-      document.body.style.setProperty('--grad-color-1', effectiveGradientConfig.color1);
-      document.body.style.setProperty('--grad-color-2', effectiveGradientConfig.color2);
+    if (!seed) {
+      document.body.className = `theme-${effectiveUiTheme}`;
+      allVars.forEach((v) => document.body.style.removeProperty(v));
       return;
     }
 
-    document.body.style.removeProperty('--text-gradient');
-    document.body.style.removeProperty('--grad-color-1');
-    document.body.style.removeProperty('--grad-color-2');
+    const [r, g, b] = parseAccentChannels(seed);
 
-    if (effectiveCustomUiColor) {
-      let cleaned = effectiveCustomUiColor.replace('#', '').trim();
-      if (cleaned.length === 3) {
-        cleaned = cleaned.split('').map((c) => c + c).join('');
-      }
-      const num = parseInt(cleaned, 16);
-      const [r, g, b] = (Number.isNaN(num) || cleaned.length !== 6)
-        ? [0, 255, 102]
-        : [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+    // A dark accent cannot carry an interface on black, so it flips to paper.
+    const usePaperTheme = 0.299 * r + 0.587 * g + 0.114 * b < 80;
+    document.body.className = usePaperTheme ? 'theme-custom theme-paper' : 'theme-custom';
 
-      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-      const isLightMode = luminance < 80;
+    const tint = buildInterfaceTint(r, g, b, usePaperTheme);
+    const accent = `rgb(${r}, ${g}, ${b})`;
 
-      document.body.className = isLightMode ? 'theme-custom theme-paper' : 'theme-custom';
+    document.body.style.setProperty('--bg-primary', tint.bgPrimary);
+    document.body.style.setProperty('--bg-panel', tint.bgPanel);
+    document.body.style.setProperty('--bg-control', tint.bgControl);
+    document.body.style.setProperty('--bg-control-hover', tint.bgControlHover);
+    document.body.style.setProperty('--border-color', tint.borderColor);
+    document.body.style.setProperty('--border-active', accent);
+    document.body.style.setProperty('--text-primary', accent);
+    document.body.style.setProperty('--text-muted', tint.textMuted);
+    document.body.style.setProperty('--text-dim', tint.textDim);
+    document.body.style.setProperty('--accent', accent);
+    document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, ${tint.glowAlpha})`);
 
-      if (!isLightMode) {
-        // Dark CRT mode: very dark tint of the selected color
-        const bgPrimary = `rgb(${Math.max(2, Math.round(r * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))}, ${Math.max(2, Math.round(g * 0.035 + 2))})`;
-        const bgPanel = `rgb(${Math.max(5, Math.round(r * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))}, ${Math.max(5, Math.round(g * 0.06 + 5))})`;
-        const bgControl = `rgb(${Math.max(10, Math.round(r * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))}, ${Math.max(10, Math.round(g * 0.11 + 9))})`;
-        const bgControlHover = `rgb(${Math.max(16, Math.round(r * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))}, ${Math.max(16, Math.round(g * 0.16 + 14))})`;
-        const borderColor = `rgb(${Math.max(24, Math.round(r * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))}, ${Math.max(24, Math.round(g * 0.24 + 18))})`;
-        const textMuted = `rgb(${Math.round(r * 0.65 + 30)}, ${Math.round(g * 0.65 + 30)}, ${Math.round(b * 0.65 + 30)})`;
-        const textDim = `rgb(${Math.round(r * 0.35 + 15)}, ${Math.round(g * 0.35 + 15)}, ${Math.round(b * 0.35 + 15)})`;
-
-        document.body.style.setProperty('--bg-primary', bgPrimary);
-        document.body.style.setProperty('--bg-panel', bgPanel);
-        document.body.style.setProperty('--bg-control', bgControl);
-        document.body.style.setProperty('--bg-control-hover', bgControlHover);
-        document.body.style.setProperty('--border-color', borderColor);
-        document.body.style.setProperty('--border-active', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--text-primary', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--text-muted', textMuted);
-        document.body.style.setProperty('--text-dim', textDim);
-        document.body.style.setProperty('--accent', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.11)`);
-      } else {
-        // Light / White mode: background is a very light tint of the selected color, dark text
-        const bgPrimary = `rgb(${Math.round(244 - (255 - r) * 0.05)}, ${Math.round(242 - (255 - g) * 0.05)}, ${Math.round(236 - (255 - b) * 0.05)})`;
-        const bgPanel = `rgb(${Math.round(234 - (255 - r) * 0.08)}, ${Math.round(232 - (255 - g) * 0.08)}, ${Math.round(224 - (255 - b) * 0.08)})`;
-        const bgControl = `rgb(${Math.round(224 - (255 - r) * 0.12)}, ${Math.round(220 - (255 - g) * 0.12)}, ${Math.round(210 - (255 - b) * 0.12)})`;
-        const bgControlHover = `rgb(${Math.round(212 - (255 - r) * 0.16)}, ${Math.round(207 - (255 - g) * 0.16)}, ${Math.round(197 - (255 - b) * 0.16)})`;
-        const borderColor = `rgb(${Math.round(186 - (255 - r) * 0.22)}, ${Math.round(182 - (255 - g) * 0.22)}, ${Math.round(172 - (255 - b) * 0.22)})`;
-        const textMuted = `rgb(${Math.round(r * 0.6 + 65)}, ${Math.round(g * 0.6 + 65)}, ${Math.round(b * 0.6 + 65)})`;
-        const textDim = `rgb(${Math.round(r * 0.4 + 115)}, ${Math.round(g * 0.4 + 115)}, ${Math.round(b * 0.4 + 115)})`;
-
-        document.body.style.setProperty('--bg-primary', bgPrimary);
-        document.body.style.setProperty('--bg-panel', bgPanel);
-        document.body.style.setProperty('--bg-control', bgControl);
-        document.body.style.setProperty('--bg-control-hover', bgControlHover);
-        document.body.style.setProperty('--border-color', borderColor);
-        document.body.style.setProperty('--border-active', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--text-primary', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--text-muted', textMuted);
-        document.body.style.setProperty('--text-dim', textDim);
-        document.body.style.setProperty('--accent', `rgb(${r}, ${g}, ${b})`);
-        document.body.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.05)`);
-      }
+    if (effectiveGradientConfig) {
+      document.body.style.setProperty(
+        '--text-gradient',
+        `linear-gradient(${effectiveGradientConfig.angle}deg, ${effectiveGradientConfig.color1}, ${effectiveGradientConfig.color2})`
+      );
+      document.body.style.setProperty('--grad-color-1', effectiveGradientConfig.color1);
+      document.body.style.setProperty('--grad-color-2', effectiveGradientConfig.color2);
     } else {
-      document.body.className = `theme-${effectiveUiTheme}`;
-      allVars.forEach((v) => document.body.style.removeProperty(v));
+      document.body.style.removeProperty('--text-gradient');
+      document.body.style.removeProperty('--grad-color-1');
+      document.body.style.removeProperty('--grad-color-2');
     }
   }, [effectiveUiTheme, effectiveCustomUiColor, effectiveGradientConfig]);
 
@@ -2161,6 +2180,10 @@ export const App: React.FC = () => {
         if (!(appMode === 'media' && mediaConfig.mediaType === 'image')) {
           setIsPlaying((p) => !p);
         }
+      } else if (e.key === '?' && !isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // Shift is part of typing '?' on most layouts, so it is not excluded.
+        e.preventDefault();
+        setIsShortcutsOpen((o) => !o);
       } else if (e.key.toLowerCase() === 'r' && !isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (appMode === 'synth') {
           e.preventDefault();
@@ -2365,7 +2388,7 @@ export const App: React.FC = () => {
               <span className="brand-full">RASTER STUDIO</span>
             </div>
           </div>
-          <span className="brand-version">v1.6</span>
+          <span className="brand-version">v2.0</span>
         </div>
 
 
@@ -2415,6 +2438,15 @@ export const App: React.FC = () => {
           >
             <Share2 size={13} className="header-btn-icon" />
             <span className="btn-label">SHARE</span>
+          </button>
+
+          <button
+            className={`btn btn-sm ${isShortcutsOpen ? 'btn-primary' : ''}`}
+            onClick={() => setIsShortcutsOpen(true)}
+            title="Keyboard & pointer shortcuts (?)"
+            aria-label="Keyboard and pointer shortcuts"
+          >
+            <Keyboard size={13} className="header-btn-icon" />
           </button>
         </div>
       </header>
@@ -2489,7 +2521,9 @@ export const App: React.FC = () => {
                 <span className="tab-btn-label">CONTENT</span>
               </button>
               <button
-                className={`tab-btn ${panel === 'render' ? 'active' : ''}`}
+                className={`tab-btn ${panel === 'render' ? 'active' : ''} ${
+                  isRenderHintVisible ? 'tab-btn-hint' : ''
+                }`}
                 onClick={() => setPanel('render')}
                 title="Shading, styling, palettes, charsets & resolution [Hotkeys: 2]"
               >
@@ -2498,6 +2532,24 @@ export const App: React.FC = () => {
                 <span className="tab-btn-label">RENDER</span>
                 <span className="tab-btn-subbadge">{appMode.toUpperCase()}</span>
               </button>
+
+              {isRenderHintVisible && (
+                <div className="tab-hint" role="status">
+                  <span className="tab-hint-text">
+                    Media loaded. Style it in <strong>RENDER</strong> &mdash; dithering, palette,
+                    tone &amp; resolution.
+                  </span>
+                  <button
+                    type="button"
+                    className="tab-hint-close"
+                    onClick={dismissRenderHint}
+                    title="Dismiss"
+                    aria-label="Dismiss hint"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* ---------------------------------------------------------- */}
@@ -2887,6 +2939,13 @@ export const App: React.FC = () => {
           setExportInitialTab('image');
           setIsExportOpen(true);
         }}
+      />
+
+      {/* Keyboard & Pointer Reference */}
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+        appMode={appMode}
       />
     </div>
   );

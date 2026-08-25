@@ -152,7 +152,7 @@ export function generateModeJsonPreset(props: {
 }): string {
   const base = {
     generator: 'ASCII Studio (https://ascii.pantoine.com)',
-    version: '1.6.0',
+    version: '2.0.0',
     mode: props.appMode || 'synth',
     name: props.name,
     density: props.density,

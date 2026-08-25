@@ -355,16 +355,45 @@ html, body, #root {
   min-height: 100% !important;
 }
 
+/*
+ * The viewfinder is a camera over the raster, not a frame around it. Centring
+ * used to be flex alignment, which is exactly why the view could not move; the
+ * stage below carries an explicit translation instead and centring is just one
+ * value of it.
+ */
 .viewport-canvas-container {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
   position: relative;
   cursor: crosshair;
   background: transparent;
   transition: background 0.15s ease;
+  /* Stop the browser claiming drags and pinches we handle ourselves. */
+  touch-action: none;
+}
+
+/* Media owns the plain left-drag; every mode reaches the pan via middle-drag. */
+.viewport-pan-ready {
+  cursor: grab;
+}
+
+.viewport-canvas-container.viewport-panning,
+.viewport-pan-ready:active {
+  cursor: grabbing;
+}
+
+.viewport-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  /*
+   * Below the CRT overlays (z-index 10/12), the media prompt (45) and the
+   * loading card (50) -- those are screen furniture and must not ride the pan.
+   * translate3d already promotes this to its own compositor layer, so no
+   * will-change hint on top of it.
+   */
+  z-index: 2;
 }
 
 .viewport-canvas-container.crt-glow-enabled {
@@ -383,8 +412,12 @@ html, body, #root {
   word-spacing: 0px;
   color: var(--text-primary);
   text-shadow: none;
-  transform-origin: center center;
-  transition: transform 0.05s ease;
+  /*
+   * Top-left origin so the zoom-about-a-point maths in AsciiViewport holds for
+   * the text path as it does for the canvas, and no transform transition --
+   * an easing curve on a live pan smears it.
+   */
+  transform-origin: 0 0;
   pointer-events: none;
   font-variant-ligatures: none !important;
   -webkit-font-variant-ligatures: none !important;
@@ -396,17 +429,48 @@ html, body, #root {
   z-index: 2;
 }
 
+/*
+ * Anchored to the container origin rather than the stage: past the zoom where
+ * a whole-raster backing store would exceed the browser's canvas limit,
+ * drawCanvas switches to painting only the visible cells and positions them
+ * itself. Below that it sets its own translate, so either way the transform is
+ * owned by the draw code, not by CSS layout.
+ */
 .ascii-canvas {
   pointer-events: none;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
   z-index: 2;
   border-radius: 2px;
   max-width: none;
   max-height: none;
 }
 
+/*
+ * Raster extents. The border is the edge; the very large spread shadow tints
+ * the void beyond it. Both are deliberately near-threshold -- this is a
+ * wayfinding hint for a panned view, not a frame around the artwork.
+ */
+.viewport-bounds {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  z-index: 1;
+  box-sizing: content-box;
+  outline: 1px solid rgba(128, 128, 128, 0.16);
+  box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.16);
+}
+
 .ascii-bloom-pre {
   position: absolute;
+  /* Pinned to the stage origin so it stays registered with the sharp layer,
+     which the old flex-static-position placement only did by accident. */
+  top: 0;
+  left: 0;
   z-index: 1;
   pointer-events: none;
   filter: blur(3.5px) brightness(1.25);
@@ -483,6 +547,97 @@ html, body, #root {
   background: var(--text-primary);
   pointer-events: none;
   z-index: 2;
+}
+
+/* ==========================================================================
+   Zoom readout & preset menu (viewport bottom bar)
+   ========================================================================== */
+.zoom-control-group {
+  position: relative;
+}
+
+.zoom-readout-btn {
+  min-width: 58px;
+  justify-content: center;
+  position: relative;
+}
+
+.zoom-offcentre-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent-glow);
+}
+
+/* Catches the click-away without needing a document listener. */
+.zoom-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.zoom-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 61;
+  min-width: 130px;
+  padding: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 18px var(--accent-glow);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.zoom-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.zoom-menu-item:hover:not(:disabled) {
+  background: var(--bg-control-hover);
+  color: var(--accent);
+}
+
+.zoom-menu-item.active {
+  color: var(--accent);
+}
+
+.zoom-menu-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.zoom-menu-key {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 10px;
+}
+
+.zoom-menu-sep {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--border-color);
 }
 
 /* Viewport Controls Bar */
@@ -644,6 +799,15 @@ html, body, #root {
     flex-shrink: 0;
   }
 
+  /*
+   * The page scrolls on this layout, so a vertical touch drag has to reach it.
+   * Panning by touch gives up the vertical axis here rather than stranding the
+   * reader on a viewfinder they cannot scroll past.
+   */
+  .viewport-canvas-container {
+    touch-action: pan-y;
+  }
+
   .sidebar-pane {
     width: 100%;
     height: auto;
@@ -752,6 +916,99 @@ html, body, #root {
   white-space: nowrap;
   transition: all 0.15s ease-in-out;
   user-select: none;
+}
+
+/* ==========================================================================
+   One-time nudge towards the render panel after a first media upload
+   ========================================================================== */
+.tab-btn.tab-btn-hint {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  animation: tab-hint-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes tab-hint-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 10px 1px var(--accent-glow); }
+}
+
+/*
+ * Spans the render tab's half of the nav, so the arrow lands on the tab it is
+ * talking about without measuring anything: both tabs are flex:1 either side
+ * of a 6px gap.
+ */
+.tab-hint {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: calc(50% + 3px);
+  right: 8px;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  box-shadow: 0 0 18px var(--accent-glow);
+  animation: tab-hint-in 0.22s ease-out both;
+}
+
+.tab-hint::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: var(--accent);
+}
+
+@keyframes tab-hint-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tab-hint-text {
+  flex: 1;
+  font-size: 10px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  text-align: left;
+  white-space: normal;
+}
+
+.tab-hint-text strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.tab-hint-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-hint-close:hover {
+  color: var(--accent);
+  border-color: var(--border-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-btn.tab-btn-hint {
+    animation: none;
+    box-shadow: 0 0 10px 1px var(--accent-glow);
+  }
+  .tab-hint { animation: none; }
 }
 
 .tab-btn-index {
@@ -2181,6 +2438,99 @@ select:disabled {
   padding: 14px;
   overflow-y: auto;
   flex: 1;
+}
+
+/* ==========================================================================
+   Keyboard & Pointer reference
+   ========================================================================== */
+.shortcut-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.shortcut-row + .shortcut-row {
+  border-top: 1px solid var(--border-color);
+}
+
+.shortcut-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+/* Which content source a binding belongs to; lit when it is the active one. */
+.shortcut-scope {
+  padding: 1px 5px;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.shortcut-scope-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.shortcut-key {
+  min-width: 20px;
+  padding: 2px 6px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  border-radius: 2px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.shortcut-plus {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.shortcut-gesture {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-style: italic;
+  letter-spacing: 0.06em;
 }
 
 .modal-footer {

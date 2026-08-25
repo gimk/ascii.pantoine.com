@@ -14,6 +14,12 @@ export interface CrtConfig {
   vignette: boolean;
   phosphorBloom: boolean; // character soft bloom
   glow?: boolean; // legacy compatibility fallback
+  /**
+   * Hairline around the raster extents plus a faint tint outside them, so a
+   * panned or zoomed-out view still reads where the image ends. Optional so
+   * older shared links and saved settings default it on.
+   */
+  viewportBounds?: boolean;
 }
 
 export interface ParticleConfig {
@@ -434,12 +440,17 @@ export const DEFAULT_IMAGE_ADJUST_CONFIG: ImageAdjustConfig = {
   brightness: 0,
   contrast: 0,
   /*
-   * Duotone by default: two flat colours at a threshold reads as a deliberate
-   * look, where a mono tint just reads as "the picture, but green". Stops are
-   * set explicitly because the engine would otherwise fall back to plain
-   * white-on-black.
+   * Monochrome by default.
+   *
+   * Duotone is the more striking look and was the default for exactly that
+   * reason, but it breaks the first thing a new user sees: it paints every
+   * cell below the luminance threshold in shadowColor, and against the dark
+   * viewfinder that renders half the glyphs invisible. Mono keeps colours out
+   * of the raster entirely, so ASCII takes the single-tint text path and every
+   * glyph reads. The duotone stops below stay set, ready for the moment
+   * someone chooses that look deliberately.
    */
-  tonalMapping: '2color',
+  tonalMapping: '1color',
   highlightColor: '#00ff66',
   midtoneColor: '#00a848',
   shadowColor: '#0a0a0a',
