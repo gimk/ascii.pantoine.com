@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, createContext, useContext, useId, useMemo } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 const STORAGE_KEY = 'ascii_studio_collapsed_sections';
@@ -29,6 +29,43 @@ function persistCollapsed(id: string, collapsed: boolean): void {
     // storage unavailable (private mode, quota) - collapse still works for the session
   }
 }
+
+interface AccordionContextType {
+  autoCollapse: boolean;
+  nestLevel: number;
+  openSectionId: string | null;
+  setOpenSectionId: (id: string | null) => void;
+}
+
+export const AccordionContext = createContext<AccordionContextType>({
+  autoCollapse: true,
+  nestLevel: 0,
+  openSectionId: null,
+  setOpenSectionId: () => {},
+});
+
+export const AccordionProvider: React.FC<{
+  autoCollapse: boolean;
+  children: React.ReactNode;
+}> = ({ autoCollapse, children }) => {
+  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+
+  const value = useMemo(
+    () => ({
+      autoCollapse,
+      nestLevel: 0,
+      openSectionId,
+      setOpenSectionId,
+    }),
+    [autoCollapse, openSectionId]
+  );
+
+  return (
+    <AccordionContext.Provider value={value}>
+      {children}
+    </AccordionContext.Provider>
+  );
+};
 
 export interface CollapsibleSectionProps {
   /** Header label. Rendered uppercase by the stylesheet. */
@@ -74,18 +111,54 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   style,
   children,
 }) => {
-  const [isOpen, setIsOpen] = useState<boolean>(() => {
+  const { autoCollapse, nestLevel, openSectionId, setOpenSectionId } = useContext(AccordionContext);
+  const isTopLevel = nestLevel === 0;
+  const autoId = useId();
+  const sectionId = persistKey || autoId;
+
+  // Local state for independent / nested mode or when autoCollapse is false
+  const [localOpen, setLocalOpen] = useState<boolean>(() => {
     if (persistKey && persistKey in collapsedMap) return !collapsedMap[persistKey];
     return defaultOpen;
   });
 
+  // On first mount when autoCollapse is active: if no section is active yet and this section defaults open, claim active
+  useEffect(() => {
+    if (autoCollapse && isTopLevel && openSectionId === null && localOpen) {
+      setOpenSectionId(sectionId);
+    }
+  }, [autoCollapse, isTopLevel, localOpen, openSectionId, sectionId, setOpenSectionId]);
+
+  const isOpen = (autoCollapse && isTopLevel)
+    ? (openSectionId === sectionId || (openSectionId === null && localOpen))
+    : localOpen;
+
   const toggle = useCallback(() => {
-    setIsOpen((prev) => {
-      const next = !prev;
-      if (persistKey) persistCollapsed(persistKey, !next);
-      return next;
-    });
-  }, [persistKey]);
+    if (autoCollapse && isTopLevel) {
+      const isCurrentlyOpen = (openSectionId === sectionId || (openSectionId === null && localOpen));
+      const nextOpen = !isCurrentlyOpen;
+      setOpenSectionId(nextOpen ? sectionId : '__none__');
+      setLocalOpen(nextOpen);
+      if (persistKey) persistCollapsed(persistKey, !nextOpen);
+    } else {
+      setLocalOpen((prev) => {
+        const next = !prev;
+        if (persistKey) persistCollapsed(persistKey, !next);
+        return next;
+      });
+    }
+  }, [autoCollapse, isTopLevel, openSectionId, sectionId, localOpen, persistKey, setOpenSectionId]);
+
+  // Nested context value increments nestLevel so children know they are nested
+  const nestedContextValue = useMemo(
+    () => ({
+      autoCollapse,
+      nestLevel: nestLevel + 1,
+      openSectionId,
+      setOpenSectionId,
+    }),
+    [autoCollapse, nestLevel, openSectionId, setOpenSectionId]
+  );
 
   return (
     <div
@@ -144,7 +217,11 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         </span>
       </div>
 
-      {isOpen && <div className="collapsible-body">{children}</div>}
+      {isOpen && (
+        <AccordionContext.Provider value={nestedContextValue}>
+          <div className="collapsible-body">{children}</div>
+        </AccordionContext.Provider>
+      )}
     </div>
   );
 };

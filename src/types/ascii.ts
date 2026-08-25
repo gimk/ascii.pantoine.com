@@ -137,6 +137,7 @@ export interface UiThemeSettings {
   uiTheme: PhosphorTheme;
   customUiColor: string;
   syncUiWithAscii: boolean;
+  autoCollapsePanels?: boolean;
 }
 
 export interface CharsetOption {

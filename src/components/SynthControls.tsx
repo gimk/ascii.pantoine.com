@@ -5,8 +5,6 @@ import { DEFAULT_WAVE_PARAMS } from '../engine/math';
 import {
   Sliders,
   Code2,
-  ChevronDown,
-  ChevronRight,
   AlertTriangle,
   Plus,
   RefreshCw,
@@ -123,10 +121,6 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
   isFormulaDivergent,
   onOverrideFormulaWithSliders,
 }) => {
-  // Collapsible section state
-  const [isSlidersOpen, setIsSlidersOpen] = useState<boolean>(true);
-  const [isFormulaOpen, setIsFormulaOpen] = useState<boolean>(true);
-
   const handleResetDynamics = () => {
     if (onResetDynamics) {
       onResetDynamics();
@@ -219,390 +213,344 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
       {/* ========================================================================= */}
       {/* SECTION 1: PARAMETRIC CONTROLS (SLIDERS) */}
       {/* ========================================================================= */}
-      <div
-        style={{
-          border: '1px solid var(--border-color)',
-          borderRadius: '4px',
-          backgroundColor: 'var(--bg-panel)',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Section Header Toggle */}
-        <button
-          onClick={() => setIsSlidersOpen(!isSlidersOpen)}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 12px',
-            background: 'var(--bg-control)',
-            border: 'none',
-            borderBottom: isSlidersOpen ? '1px solid var(--border-color)' : 'none',
-            color: 'var(--text-primary)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Sliders size={13} style={{ color: 'var(--accent)' }} />
-            <span>PARAMETRIC CONTROLS</span>
-            {isFormulaDivergent && (
-              <span
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  padding: '1px 4px',
-                  borderRadius: '2px',
-                  marginLeft: '4px',
-                }}
-              >
-                OVERRIDDEN
-              </span>
-            )}
-          </div>
-          {isSlidersOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
-
-        {/* Sliders Content */}
-        {isSlidersOpen && (
-          <div style={{ padding: '10px' }}>
-            {/* Custom Formula Divergence / Greyed out Notice */}
-            {isFormulaDivergent && (
-              <div
-                style={{
-                  background: 'var(--accent-glow)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '4px',
-                  padding: '10px 12px',
-                  marginBottom: '12px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    color: 'var(--accent)',
-                    fontWeight: 700,
-                    fontSize: '11px',
-                    marginBottom: '3px',
-                  }}
-                >
-                  <AlertTriangle size={12} />
-                  <span>CUSTOM FORMULA OVERRIDE ACTIVE</span>
-                </div>
-                <p
-                  style={{
-                    fontSize: '10.5px',
-                    color: 'var(--text-muted)',
-                    lineHeight: 1.35,
-                    margin: '0 0 8px 0',
-                  }}
-                >
-                  The formula code contains custom expressions that do not match these sliders.
-                  Sliders are currently disabled to prevent accidental formula corruption.
-                </p>
-                <button
-                  className="btn btn-sm btn-primary"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '4px 10px',
-                    fontSize: '10.5px',
-                    fontWeight: 700,
-                  }}
-                  onClick={onOverrideFormulaWithSliders}
-                  title="Strip custom formula expressions and regenerate from slider parameters"
-                >
-                  <RefreshCw size={11} /> OVERRIDE FORMULA WITH SLIDERS
-                </button>
-              </div>
-            )}
-
-            {/* Sliders Area (Greyed out when divergent) */}
-            <div
+      <CollapsibleSection
+        title="PARAMETRIC CONTROLS"
+        icon={<Sliders size={13} />}
+        badge={
+          isFormulaDivergent ? (
+            <span
               style={{
-                opacity: isFormulaDivergent ? 0.38 : 1,
-                filter: isFormulaDivergent ? 'grayscale(0.85)' : 'none',
-                pointerEvents: isFormulaDivergent ? 'none' : 'auto',
-                transition: 'opacity 0.2s ease, filter 0.2s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '14px',
+                fontSize: '10px',
+                color: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                padding: '1px 4px',
+                borderRadius: '2px',
               }}
             >
-              {/* Global & Matrix Settings */}
-              <CollapsibleSection
-                title="Global Dynamics"
-                icon={<Sliders size={12} />}
-                persistKey="SynthControls-global-dynamics"
-                onReset={isFormulaDivergent ? undefined : handleResetDynamics}
-                resetTitle="Reset global dynamics parameters"
-              >
-                {renderSlider('Time Speed', 'timeSpeed', 0.0, 3.0, 0.05)}
-                {renderSlider('Aspect Compensation', 'aspectRatio', 0.1, 2.0, 0.01)}
-                {renderSlider('Contrast', 'contrast', 0.2, 3.0, 0.1)}
-                {renderSlider('Brightness Bias', 'bias', -1.0, 1.0, 0.05)}
-
-                <div className="control-row" style={{ marginTop: '6px' }}>
-                  <span className="control-label">Invert Characters</span>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${params.invert ? 'btn-primary' : ''}`}
-                    disabled={isFormulaDivergent}
-                    onClick={() => update('invert', !params.invert)}
-                  >
-                    {params.invert ? 'INVERTED [ON]' : 'NORMAL [OFF]'}
-                  </button>
-                </div>
-              </CollapsibleSection>
-
-              {/* Primary Radial Wave */}
-              <CollapsibleSection title="Primary Radial Wave" icon={<CircleDot size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(dist)</span></>} persistKey="SynthControls-1-primary-radial-wave">
-                {renderSlider('Amplitude', 'radialAmp', 0.0, 2.0, 0.05)}
-                {renderSlider('Frequency', 'radialFreq', 0.01, 0.4, 0.01)}
-                {renderSlider('Wave Speed', 'radialSpeed', -3.0, 3.0, 0.1)}
-                {renderSlider('Center Offset X', 'radialCenterOffsetX', -40, 40, 1, 0)}
-                {renderSlider('Center Offset Y', 'radialCenterOffsetY', -20, 20, 1, 0)}
-              </CollapsibleSection>
-
-              {/* Secondary Harmonic Ripple */}
-              <CollapsibleSection title="Secondary Harmonic Ripple" icon={<Waves size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Cell Interference</span></>} persistKey="SynthControls-2-secondary-harmonic-ripple">
-                {renderSlider('Harmonic Amplitude', 'radial2Amp', 0.0, 2.0, 0.05)}
-                {renderSlider('Harmonic Frequency', 'radial2Freq', 0.02, 0.6, 0.01)}
-                {renderSlider('Harmonic Speed', 'radial2Speed', -4.0, 4.0, 0.1)}
-              </CollapsibleSection>
-
-              {/* Directional Waves */}
-              <CollapsibleSection title="Directional Waves (X, Y, Diagonal)" icon={<Move size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span></>} persistKey="SynthControls-3-directional-waves-x-y-diagonal">
-                {renderSlider('X Amplitude', 'xAmp', 0.0, 1.5, 0.05)}
-                {renderSlider('X Frequency', 'xFreq', 0.01, 0.3, 0.01)}
-                {renderSlider('X Speed', 'xSpeed', -2.0, 2.0, 0.1)}
-                <hr style={{ borderColor: 'var(--border-color)', margin: '6px 0' }} />
-                {renderSlider('Y Amplitude', 'yAmp', 0.0, 1.5, 0.05)}
-                {renderSlider('Y Frequency', 'yFreq', 0.01, 0.3, 0.01)}
-                {renderSlider('Y Speed', 'ySpeed', -2.0, 2.0, 0.1)}
-                <hr style={{ borderColor: 'var(--border-color)', margin: '6px 0' }} />
-                {renderSlider('Diagonal (X+Y) Amp', 'diagAmp', 0.0, 1.5, 0.05)}
-                {renderSlider('Diagonal Frequency', 'diagFreq', 0.01, 0.3, 0.01)}
-                {renderSlider('Diagonal Speed', 'diagSpeed', -2.0, 2.0, 0.1)}
-              </CollapsibleSection>
-
-              {/* Spiral / Vortex */}
-              <CollapsibleSection title="Angular Spiral Vortex" icon={<RotateCw size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(θ * arms)</span></>} persistKey="SynthControls-4-angular-spiral-vortex">
-                {renderSlider('Spiral Amplitude', 'spiralAmp', 0.0, 2.0, 0.05)}
-                {renderSlider('Arm Count', 'spiralArms', 1, 12, 1, 0)}
-                {renderSlider('Rotation Speed', 'spiralSpeed', -5.0, 5.0, 0.1)}
-                {renderSlider('Spiral Twist', 'spiralTwist', 0.0, 0.4, 0.01)}
-              </CollapsibleSection>
-
-              {/* Depth / Tunnel Warp */}
-              <CollapsibleSection title="Wormhole Tunnel [1 / dist]" icon={<Eye size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>3D Perspective</span></>} persistKey="SynthControls-5-wormhole-tunnel-1-dist">
-                {renderSlider('Tunnel Amplitude', 'tunnelAmp', 0.0, 2.0, 0.05)}
-                {renderSlider('Warp Power', 'tunnelPower', 5, 80, 1, 0)}
-                {renderSlider('Tunnel Speed', 'tunnelSpeed', -4.0, 4.0, 0.1)}
-              </CollapsibleSection>
-
-              {/* Concentric Rings */}
-              <CollapsibleSection title="Concentric Rings" icon={<Disc size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Harmonic Bands</span></>} persistKey="SynthControls-6-concentric-rings">
-                {renderSlider('Rings Amplitude', 'ringsAmp', 0.0, 2.0, 0.05)}
-                {renderSlider('Base Radius', 'ringsRadius', 5, 80, 1, 0)}
-                {renderSlider('Pulse Speed', 'ringsSpeed', -4.0, 4.0, 0.1)}
-                {renderSlider('Ring Multiplier', 'ringsCount', 1, 6, 1, 0)}
-              </CollapsibleSection>
-
-              {/* Dual Interference */}
-              <CollapsibleSection title="Dual Interference Moiré" icon={<Radio size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Dual Emitters</span></>} persistKey="SynthControls-7-dual-interference-moir">
-                {renderSlider('Interference Amp', 'dualEmitterAmp', 0.0, 2.0, 0.05)}
-                {renderSlider('Emitter Spacing', 'dualEmitterSpacing', 5, 60, 1, 0)}
-                {renderSlider('Wave Frequency', 'dualEmitterFreq', 0.02, 0.4, 0.01)}
-                {renderSlider('Wave Speed', 'dualEmitterSpeed', -4.0, 4.0, 0.1)}
-              </CollapsibleSection>
-
-              {/* Starfield & Cosmic Sparkle */}
-              <CollapsibleSection title="Starfield &amp; Cosmic Sparkle" icon={<Sparkles size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Procedural Sky</span></>} persistKey="SynthControls-8-starfield-cosmic-sparkle">
-                {renderSlider('Star Brightness', 'starfieldIntensity', 0.0, 2.0, 0.05)}
-                {renderSlider('Star Quantity', 'starfieldDensity', 0.1, 5.0, 0.1)}
-                {renderSlider('Sparkle Frequency', 'starfieldSpeed', 0.0, 8.0, 0.1)}
-                {renderSlider('Star Dispersion', 'starfieldScale', 15, 200, 5, 0)}
-              </CollapsibleSection>
+              OVERRIDDEN
+            </span>
+          ) : undefined
+        }
+        persistKey="SynthControls-parametric-controls"
+        defaultOpen={true}
+      >
+        {/* Custom Formula Divergence / Greyed out Notice */}
+        {isFormulaDivergent && (
+          <div
+            style={{
+              background: 'var(--accent-glow)',
+              border: '1px solid var(--accent)',
+              borderRadius: '4px',
+              padding: '10px 12px',
+              marginBottom: '12px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                color: 'var(--accent)',
+                fontWeight: 700,
+                fontSize: '11px',
+                marginBottom: '3px',
+              }}
+            >
+              <AlertTriangle size={12} />
+              <span>CUSTOM FORMULA OVERRIDE ACTIVE</span>
             </div>
+            <p
+              style={{
+                margin: 0,
+                fontSize: '10.5px',
+                lineHeight: '1.4',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              The visual output is currently driven by the custom JavaScript formula in the
+              &quot;Advanced Formula&quot; section below. Sliders are disconnected from the canvas.
+            </p>
+            <button
+              onClick={onOverrideFormulaWithSliders}
+              className="btn btn-sm btn-primary"
+              style={{ marginTop: '8px', width: '100%', fontSize: '10.5px' }}
+            >
+              <RefreshCw size={11} style={{ marginRight: '4px' }} />
+              Re-link Sliders (Reset to Parametric Mode)
+            </button>
           </div>
         )}
-      </div>
+
+        {/* Nested Wave Generators */}
+        <div className="collapsible-nest" style={{ marginTop: 0 }}>
+          <CollapsibleSection
+            title="Global Dynamics"
+            icon={<Sliders size={12} />}
+            persistKey="SynthControls-global-dynamics"
+            onReset={isFormulaDivergent ? undefined : handleResetDynamics}
+            resetTitle="Reset global dynamics parameters"
+            defaultOpen={true}
+          >
+            {renderSlider('Time Speed', 'timeSpeed', 0.0, 5.0, 0.05)}
+            {renderSlider('Aspect Stretch', 'aspectRatio', 0.2, 3.0, 0.05)}
+            {renderSlider('Contrast / Gain', 'contrast', 0.2, 4.0, 0.05)}
+            {renderSlider('Luminance Bias', 'bias', -1.0, 1.0, 0.05)}
+            <div className="control-row">
+              <span className="control-label">Invert Output</span>
+              <button
+                type="button"
+                className={`btn btn-sm ${params.invert ? 'btn-primary' : ''}`}
+                onClick={() => update('invert', !params.invert)}
+              >
+                {params.invert ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Primary Radial Wave"
+            icon={<CircleDot size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(dist)</span>}
+            persistKey="SynthControls-1-primary-radial-wave"
+          >
+            {renderSlider('Amplitude', 'radialAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('Frequency', 'radialFreq', 0.1, 40.0, 0.1)}
+            {renderSlider('Speed', 'radialSpeed', -5.0, 5.0, 0.1)}
+            {renderSlider('Center Offset X', 'radialCenterOffsetX', -2.0, 2.0, 0.05)}
+            {renderSlider('Center Offset Y', 'radialCenterOffsetY', -2.0, 2.0, 0.05)}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Secondary Harmonic Ripple"
+            icon={<Waves size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Cell Interference</span>}
+            persistKey="SynthControls-2-secondary-harmonic-ripple"
+          >
+            {renderSlider('Amplitude', 'radial2Amp', 0.0, 3.0, 0.05)}
+            {renderSlider('Frequency', 'radial2Freq', 0.1, 40.0, 0.1)}
+            {renderSlider('Speed', 'radial2Speed', -5.0, 5.0, 0.1)}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Directional Waves (X, Y, Diagonal)"
+            icon={<Move size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span>}
+            persistKey="SynthControls-3-directional-waves-x-y-diagonal"
+          >
+            {renderSlider('X Wave Amplitude', 'xAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('X Frequency', 'xFreq', 0.1, 40.0, 0.1)}
+            {renderSlider('X Speed', 'xSpeed', -5.0, 5.0, 0.1)}
+            <div style={{ height: '4px' }} />
+            {renderSlider('Y Wave Amplitude', 'yAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('Y Frequency', 'yFreq', 0.1, 40.0, 0.1)}
+            {renderSlider('Y Speed', 'ySpeed', -5.0, 5.0, 0.1)}
+            <div style={{ height: '4px' }} />
+            {renderSlider('Diagonal Amplitude', 'diagAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('Diagonal Frequency', 'diagFreq', 0.1, 40.0, 0.1)}
+            {renderSlider('Diagonal Speed', 'diagSpeed', -5.0, 5.0, 0.1)}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Angular Spiral Vortex"
+            icon={<RotateCw size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(θ * arms)</span>}
+            persistKey="SynthControls-4-angular-spiral-vortex"
+          >
+            {renderSlider('Spiral Amplitude', 'spiralAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('Spiral Arms', 'spiralArms', 1, 16, 1, 0)}
+            {renderSlider('Rotation Speed', 'spiralSpeed', -5.0, 5.0, 0.1)}
+            {renderSlider('Twist Tightness', 'spiralTwist', -10.0, 10.0, 0.1)}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Wormhole Tunnel [1 / dist]"
+            icon={<Eye size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>3D Perspective</span>}
+            persistKey="SynthControls-5-wormhole-tunnel-1-dist"
+          >
+            {renderSlider('Tunnel Amplitude', 'tunnelAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('Tunnel Power / Depth', 'tunnelPower', 0.1, 4.0, 0.05)}
+            {renderSlider('Tunnel Speed (Zoom)', 'tunnelSpeed', -5.0, 5.0, 0.1)}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Concentric Rings"
+            icon={<Disc size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Harmonic Bands</span>}
+            persistKey="SynthControls-6-concentric-rings"
+          >
+            {renderSlider('Rings Amplitude', 'ringsAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('Rings Radius', 'ringsRadius', 0.1, 2.0, 0.05)}
+            {renderSlider('Expansion Speed', 'ringsSpeed', -5.0, 5.0, 0.1)}
+            {renderSlider('Rings Count', 'ringsCount', 1, 20, 1, 0)}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Dual Interference Moiré"
+            icon={<Radio size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Dual Emitters</span>}
+            persistKey="SynthControls-7-dual-interference-moir"
+          >
+            {renderSlider('Dual Amplitude', 'dualEmitterAmp', 0.0, 3.0, 0.05)}
+            {renderSlider('Emitter Spacing', 'dualEmitterSpacing', 0.1, 3.0, 0.05)}
+            {renderSlider('Emitter Frequency', 'dualEmitterFreq', 0.1, 30.0, 0.1)}
+            {renderSlider('Interference Speed', 'dualEmitterSpeed', -5.0, 5.0, 0.1)}
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Starfield & Cosmic Sparkle"
+            icon={<Sparkles size={12} />}
+            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Procedural Sky</span>}
+            persistKey="SynthControls-8-starfield-cosmic-sparkle"
+          >
+            {renderSlider('Star Brightness', 'starfieldIntensity', 0.0, 2.0, 0.05)}
+            {renderSlider('Star Quantity', 'starfieldDensity', 0.1, 5.0, 0.1)}
+            {renderSlider('Sparkle Frequency', 'starfieldSpeed', 0.0, 8.0, 0.1)}
+            {renderSlider('Star Dispersion', 'starfieldScale', 15, 200, 5, 0)}
+          </CollapsibleSection>
+        </div>
+      </CollapsibleSection>
 
       {/* ========================================================================= */}
       {/* SECTION 2: ADVANCED (FORMULA CODE) */}
       {/* ========================================================================= */}
-      <div
-        style={{
-          border: '1px solid var(--border-color)',
-          borderRadius: '4px',
-          backgroundColor: 'var(--bg-panel)',
-          overflow: 'hidden',
-        }}
+      <CollapsibleSection
+        title="ADVANCED FORMULA"
+        icon={<Code2 size={13} />}
+        badge={
+          compileError ? (
+            <span
+              style={{
+                fontSize: '10px',
+                color: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                padding: '1px 4px',
+                borderRadius: '2px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
+              }}
+            >
+              <AlertTriangle size={10} /> SYNTAX ERROR
+            </span>
+          ) : undefined
+        }
+        persistKey="SynthControls-advanced-formula"
+        defaultOpen={false}
       >
-        {/* Section Header Toggle */}
-        <button
-          onClick={() => setIsFormulaOpen(!isFormulaOpen)}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 12px',
-            background: 'var(--bg-control)',
-            border: 'none',
-            borderBottom: isFormulaOpen ? '1px solid var(--border-color)' : 'none',
-            color: 'var(--text-primary)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Code2 size={13} style={{ color: 'var(--accent)' }} />
-            <span>ADVANCED FORMULA</span>
-            {compileError && (
-              <span
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  padding: '1px 4px',
-                  borderRadius: '2px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                  marginLeft: '4px',
-                }}
-              >
-                <AlertTriangle size={10} /> SYNTAX ERROR
-              </span>
-            )}
-          </div>
-          {isFormulaOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
+        <div style={{ marginBottom: '6px' }}>
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+            Inputs: <code>x, y, time, dist, dx, dy, cols, rows, angle, ctx</code>
+          </span>
+        </div>
 
-        {/* Formula Editor Content */}
-        {isFormulaOpen && (
-          <div style={{ padding: '10px' }}>
-            <div style={{ marginBottom: '6px' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                Inputs: <code>x, y, time, dist, dx, dy, cols, rows, angle, ctx</code>
-              </span>
-            </div>
+        {/* Main Render Code Editor */}
+        <textarea
+          className="code-editor-area"
+          style={{ minHeight: '220px', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
+          value={code}
+          onChange={(e) => onChangeFormula(e.target.value, prepareCode)}
+          spellCheck={false}
+          placeholder="return Math.sin(dist * 0.1 - time);"
+        />
 
-            {/* Main Render Code Editor */}
-            <textarea
-              className="code-editor-area"
-              style={{ minHeight: '220px', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
-              value={code}
-              onChange={(e) => onChangeFormula(e.target.value, prepareCode)}
-              spellCheck={false}
-              placeholder="return Math.sin(dist * 0.1 - time);"
-            />
-
-            {compileError && (
-              <div className="code-error-box" style={{ marginTop: '6px' }}>
-                <AlertTriangle size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                <strong>Runtime / Syntax Error:</strong> {compileError}
-              </div>
-            )}
-
-            {/* Quick math helper buttons */}
-            <div style={{ marginTop: '8px' }}>
-              <div
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--text-muted)',
-                  marginBottom: '4px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}
-              >
-                Insert Wave Snippet
-              </div>
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => insertSnippet('val += Math.sin(dist * 0.15 - time * 1.5) * 0.5;')}
-                  title="Insert Radial Sine Wave"
-                >
-                  <Plus size={10} /> sin(dist)
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => insertSnippet('val += Math.cos(dx * 0.10 + time * 1.0) * 0.4;')}
-                  title="Insert Horizontal Swell"
-                >
-                  <Plus size={10} /> cos(dx)
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => insertSnippet('val += Math.sin(dy * 0.10 + time * 1.0) * 0.4;')}
-                  title="Insert Vertical Swell"
-                >
-                  <Plus size={10} /> sin(dy)
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => insertSnippet('val += Math.sin(angle * 4.0 - time * 2.0) * 0.4;')}
-                  title="Insert Spiral Arms"
-                >
-                  <Plus size={10} /> sin(angle)
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() =>
-                    insertSnippet('val += Math.sin(Math.hypot(dx - 15, dy - 8) * 0.2 - time * 2.0) * 0.5;')
-                  }
-                  title="Insert Offset Emitter Interference"
-                >
-                  <Plus size={10} /> hypot
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => insertSnippet('val += Math.sin(35 / Math.max(0.1, dist + 2) - time * 2.0) * 0.6;')}
-                  title="Insert 3D Depth Tunnel"
-                >
-                  <Plus size={10} /> tunnel
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => insertSnippet('val += (1 / (Math.abs(dist - 25) + 1)) * 0.8;')}
-                  title="Insert Concentric Harmonic Ring"
-                >
-                  <Plus size={10} /> rings
-                </button>
-              </div>
-            </div>
-
-            {/* Optional ctx.prepare frame state */}
-            <div style={{ marginTop: '10px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>
-                Optional Frame State (<code>ctx.prepare</code>):
-              </div>
-              <textarea
-                className="code-editor-area"
-                style={{ minHeight: '55px', fontSize: '10.5px' }}
-                value={prepareCode || ''}
-                onChange={(e) => onChangeFormula(code, e.target.value)}
-                spellCheck={false}
-                placeholder="// e.g. ctx.activeWaves = [...];"
-              />
-            </div>
+        {compileError && (
+          <div className="code-error-box" style={{ marginTop: '6px' }}>
+            <AlertTriangle size={12} style={{ display: 'inline', marginRight: '4px' }} />
+            <strong>Runtime / Syntax Error:</strong> {compileError}
           </div>
         )}
-      </div>
+
+        {/* Quick math helper buttons */}
+        <div style={{ marginTop: '8px' }}>
+          <div
+            style={{
+              fontSize: '10px',
+              color: 'var(--text-muted)',
+              marginBottom: '4px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Insert Wave Snippet
+          </div>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(dist * 0.15 - time * 1.5) * 0.5;')}
+              title="Insert Radial Sine Wave"
+            >
+              <Plus size={10} /> sin(dist)
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.cos(dx * 0.10 + time * 1.0) * 0.4;')}
+              title="Insert Horizontal Swell"
+            >
+              <Plus size={10} /> cos(dx)
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(dy * 0.10 + time * 1.0) * 0.4;')}
+              title="Insert Vertical Swell"
+            >
+              <Plus size={10} /> sin(dy)
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(angle * 4.0 - time * 2.0) * 0.4;')}
+              title="Insert Spiral Arms"
+            >
+              <Plus size={10} /> sin(angle)
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() =>
+                insertSnippet('val += Math.sin(Math.hypot(dx - 15, dy - 8) * 0.2 - time * 2.0) * 0.5;')
+              }
+              title="Insert Offset Emitter Interference"
+            >
+              <Plus size={10} /> hypot
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += Math.sin(35 / Math.max(0.1, dist + 2) - time * 2.0) * 0.6;')}
+              title="Insert 3D Depth Tunnel"
+            >
+              <Plus size={10} /> tunnel
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => insertSnippet('val += (1 / (Math.abs(dist - 25) + 1)) * 0.8;')}
+              title="Insert Concentric Harmonic Ring"
+            >
+              <Plus size={10} /> rings
+            </button>
+          </div>
+        </div>
+
+        {/* Optional ctx.prepare frame state */}
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>
+            Optional Frame State (<code>ctx.prepare</code>):
+          </div>
+          <textarea
+            className="code-editor-area"
+            style={{ minHeight: '55px', fontSize: '10.5px' }}
+            value={prepareCode || ''}
+            onChange={(e) => onChangeFormula(code, e.target.value)}
+            spellCheck={false}
+            placeholder="// e.g. ctx.activeWaves = [...];"
+          />
+        </div>
+      </CollapsibleSection>
     </div>
   );
 };

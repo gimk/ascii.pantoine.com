@@ -75,7 +75,7 @@ import { ModelViewControls } from './components/ModelViewControls';
 import { MediaUploadControls, MediaFramingControls } from './components/MediaFileControls';
 import { MediaViewControls } from './components/MediaViewControls';
 import { ImageAdjustControls } from './components/ImageAdjustControls';
-import { CollapsibleSection } from './components/CollapsibleSection';
+import { CollapsibleSection, AccordionProvider } from './components/CollapsibleSection';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
 import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
@@ -523,6 +523,7 @@ export const App: React.FC = () => {
           uiTheme: parsed.uiTheme || 'green',
           customUiColor: parsed.customUiColor || '',
           syncUiWithAscii: parsed.syncUiWithAscii !== undefined ? parsed.syncUiWithAscii : true,
+          autoCollapsePanels: parsed.autoCollapsePanels !== undefined ? parsed.autoCollapsePanels : true,
         };
       }
     } catch {}
@@ -530,6 +531,7 @@ export const App: React.FC = () => {
       uiTheme: 'green',
       customUiColor: '',
       syncUiWithAscii: true,
+      autoCollapsePanels: true,
     };
   });
 
@@ -2648,7 +2650,8 @@ export const App: React.FC = () => {
         {/* Right Sidebar Control Panel */}
         {viewMode === 'editor' && (
           <div className="sidebar-pane">
-            <div className="tab-nav">
+            <AccordionProvider autoCollapse={!!uiThemeSettings.autoCollapsePanels}>
+              <div className="tab-nav">
               <button
                 className={`tab-btn ${panel === 'content' ? 'active' : ''}`}
                 onClick={() => setPanel('content')}
@@ -3038,6 +3041,7 @@ export const App: React.FC = () => {
                 )}
               </>
             )}
+            </AccordionProvider>
             {/* Sidebar Credits Line */}
             <div className="sidebar-credits">
               <span>

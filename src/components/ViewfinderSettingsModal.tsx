@@ -15,6 +15,7 @@ const DEFAULT_UI_THEME_SETTINGS: UiThemeSettings = {
   uiTheme: 'green',
   customUiColor: '',
   syncUiWithAscii: true,
+  autoCollapsePanels: true,
 };
 
 interface ViewfinderSettingsModalProps {
@@ -251,6 +252,28 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* 4. Automatic Collapse / Single Panel Mode */}
+              <div className="control-row" style={{ marginTop: '4px' }}>
+                <span className="control-label" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span>Automatic Collapse (Single Panel)</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
+                    Keep only one top-level panel open at a time
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${uiThemeSettings.autoCollapsePanels ? 'btn-primary' : ''}`}
+                  onClick={() =>
+                    onChangeUiThemeSettings?.({
+                      ...uiThemeSettings,
+                      autoCollapsePanels: !uiThemeSettings.autoCollapsePanels,
+                    })
+                  }
+                >
+                  {uiThemeSettings.autoCollapsePanels ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+                </button>
               </div>
             </div>
           </div>
