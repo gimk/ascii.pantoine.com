@@ -58,15 +58,12 @@
 - **Delta-Time Physics**: Framerate-independent lifespan, speed integration, and turbulence damping.
 - **Interactive Bursts**: Click or drag directly on the canvas to spawn responsive particle bursts.
 
-### 📦 Multi-Format Media, Vector & Code Exporters (`EXPORT`)
+### 📦 Media & Vector Exporters (`EXPORT`)
 - **Vector SVG (`.svg`)**: Resolution-independent vector SVG exports for halftones, braille, and ASCII.
 - **High-DPI PNG & JPG (`.png` / `.jpg`)**: Ultra crisp multi-scale still renders.
+- **Colour Separation (`.zip` / layered `.svg`)**: One file per ink, ready to edit independently in Illustrator or Figma, or to hand to a screen-printing press.
 - **Animated GIF Exporter (`.gif`)**: Client-side animated GIF rendering via `gifenc` with custom duration and scale.
 - **HD Video Exporter (`.mp4` / `.webm`)**: Direct WebCodecs / MediaRecorder capture for web and social media.
-- **Astro Component (`.astro`)**: Self-contained component with embedded animation loop.
-- **Standalone HTML (`.html`)**: Single-file plug-and-play HTML document.
-- **JSON Configuration (`.json`)**: Reusable state configuration object.
-- **Text Snapshot (`.txt`)**: Instant ASCII frame clipboard copy.
 
 
 ### 🔗 Shareable URLs & Fullscreen Viewfinder (`SHARE`)

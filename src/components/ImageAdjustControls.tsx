@@ -1,12 +1,14 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { NumberInput, PrecisionSlider, DeferredColorInput } from './controlPrimitives';
 import {
   ImageAdjustConfig,
+  ToneMappingConfig,
   DEFAULT_IMAGE_ADJUST_CONFIG,
 } from '../types/ascii';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
-import { Sliders, Sparkles, Minus, Plus, Palette } from 'lucide-react';
+import { computeAutoLevels } from '../engine/autoLevels';
+import { Sliders, Sparkles, Minus, Plus, Palette, BarChart3 } from 'lucide-react';
 
 interface ColorPickerInputProps {
   label: string;
@@ -609,6 +611,343 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
   );
 };
 
+/* ========================================================================
+   LEVELS
+
+   Drives ToneMappingConfig.levelsBlack / levelsMidtones / levelsWhite, which
+   the engine has always applied (rasterEngine step 3) but which nothing could
+   reach until now.
+
+   Placed *after* the tone curve because that is the pipeline order: the curve
+   runs first and levels reads its output. The histogram shown is sampled at
+   exactly that point, so the bars under the handles are the tone the handles
+   actually operate on.
+   ======================================================================== */
+
+interface LevelsControlProps {
+  config: ToneMappingConfig;
+  onChangeConfig: (next: ToneMappingConfig) => void;
+  /** 256 bins of the luminance entering this stage, or null when no frame has been seen. */
+  histogram: Uint32Array | null;
+  histogramOpaque: number;
+}
+
+/** Track geometry, in the SVG's own user units. */
+const LV_W = 256;
+const LV_HIST_H = 56;
+const LV_TRACK_Y = 60;
+const LV_TRACK_H = 12;
+
+type LevelsHandle = 'black' | 'mid' | 'white';
+
+const LevelsControl: React.FC<LevelsControlProps> = ({
+  config,
+  onChangeConfig,
+  histogram,
+  histogramOpaque,
+}) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [active, setActive] = useState<LevelsHandle | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const noteTimer = useRef<number | null>(null);
+
+  const black = config.levelsBlack ?? 0;
+  const mid = config.levelsMidtones ?? 50;
+  const white = config.levelsWhite ?? 100;
+
+  /*
+   * Where the midtone sits between the endpoints. The engine turns exactly
+   * this into the levels gamma, so holding it fixed while an endpoint moves is
+   * what stops a stretch from silently also re-gamma-ing the image.
+   */
+  const midNorm = white > black ? (mid - black) / (white - black) : 0.5;
+  const gamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
+
+  const flash = (msg: string) => {
+    setNote(msg);
+    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => setNote(null), 2600);
+  };
+
+  useEffect(
+    () => () => {
+      if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+    },
+    []
+  );
+
+  /** Commit endpoints, carrying the midtone so the gamma survives the move. */
+  const commit = (nextBlack: number, nextWhite: number, keepGamma = true) => {
+    const b = Math.max(0, Math.min(95, nextBlack));
+    const w = Math.max(b + 5, Math.min(100, nextWhite));
+    const m = keepGamma
+      ? b + midNorm * (w - b)
+      : Math.max(b + 1, Math.min(w - 1, mid));
+    onChangeConfig({
+      ...config,
+      levelsBlack: Number(b.toFixed(2)),
+      levelsWhite: Number(w.toFixed(2)),
+      levelsMidtones: Number(Math.max(b + 1, Math.min(w - 1, m)).toFixed(2)),
+    });
+  };
+
+  const handleAuto = () => {
+    if (!histogram || histogramOpaque <= 0) {
+      flash('NO FRAME SAMPLED YET');
+      return;
+    }
+    const res = computeAutoLevels(histogram, histogramOpaque);
+    if (!res) {
+      flash('IMAGE HAS NO RANGE TO STRETCH');
+      return;
+    }
+    commit(res.black, res.white);
+    flash(`SET ${res.black.toFixed(0)} → ${res.white.toFixed(0)}`);
+  };
+
+  const handleReset = () => {
+    onChangeConfig({ ...config, levelsBlack: 0, levelsMidtones: 50, levelsWhite: 100 });
+  };
+
+  const posToPercent = (e: React.PointerEvent) => {
+    const el = svgRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(rect.left, Math.min(rect.right, e.clientX));
+    return ((x - rect.left) / rect.width) * 100;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    const p = posToPercent(e);
+    // Nearest handle wins. Midtone loses ties so the endpoints, which are what
+    // people reach for, stay grabbable when all three bunch up.
+    const d = {
+      black: Math.abs(p - black),
+      white: Math.abs(p - white),
+      mid: Math.abs(p - mid) + 0.001,
+    };
+    const pick = (Object.keys(d) as LevelsHandle[]).reduce((a, b) => (d[b] < d[a] ? b : a));
+    setActive(pick);
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!active) return;
+    const p = posToPercent(e);
+    if (active === 'black') {
+      commit(Math.min(p, white - 5), white);
+    } else if (active === 'white') {
+      commit(black, Math.max(p, black + 5));
+    } else {
+      // The midtone is an absolute position, not a ratio, so it moves alone.
+      onChangeConfig({
+        ...config,
+        levelsMidtones: Number(Math.max(black + 1, Math.min(white - 1, p)).toFixed(2)),
+      });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    setActive(null);
+    svgRef.current?.releasePointerCapture?.(e.pointerId);
+  };
+
+  /*
+   * Bars are scaled by the square root of their count. A linear histogram of a
+   * real image is one spike and 255 invisible bins -- the flat background is
+   * usually an order of magnitude more cells than everything else combined.
+   */
+  const bars = useMemo(() => {
+    if (!histogram || histogramOpaque <= 0) return null;
+    let peak = 0;
+    for (let i = 0; i < 256; i++) if (histogram[i] > peak) peak = histogram[i];
+    if (peak <= 0) return null;
+    const scale = Math.sqrt(peak);
+    const out: number[] = new Array(256);
+    for (let i = 0; i < 256; i++) {
+      out[i] = (Math.sqrt(histogram[i]) / scale) * LV_HIST_H;
+    }
+    return out;
+  }, [histogram, histogramOpaque]);
+
+  const isNeutral = black === 0 && white === 100 && Math.abs(mid - 50) < 0.01;
+  const px = (pct: number) => (pct / 100) * LV_W;
+
+  const handleMark = (pct: number, fill: string, stroke: string, id: LevelsHandle) => (
+    <g
+      key={id}
+      transform={`translate(${px(pct).toFixed(2)}, 0)`}
+      style={{ cursor: 'ew-resize' }}
+    >
+      <line
+        x1={0}
+        y1={0}
+        x2={0}
+        y2={LV_TRACK_Y + LV_TRACK_H}
+        stroke={stroke}
+        strokeWidth={active === id ? 1.6 : 0.8}
+        opacity={active === id ? 0.9 : 0.5}
+      />
+      <path
+        d={`M 0 ${LV_TRACK_Y} L -5 ${LV_TRACK_Y + LV_TRACK_H} L 5 ${LV_TRACK_Y + LV_TRACK_H} Z`}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={0.8}
+      />
+    </g>
+  );
+
+  return (
+    <div
+      style={{
+        marginBottom: '14px',
+        padding: '10px',
+        background: 'var(--bg-primary)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '3px',
+        width: '100%',
+        boxSizing: 'border-box',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '9.5px',
+          fontWeight: 700,
+          color: 'var(--text-muted)',
+          marginBottom: '6px',
+          fontFamily: 'var(--font-mono)',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>LEVELS</span>
+          {!isNeutral && (
+            <span style={{ color: 'var(--accent)', fontSize: '9px', fontWeight: 600 }}>
+              ACTIVE
+            </span>
+          )}
+        </span>
+        <button
+          className="btn btn-sm"
+          style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px', color: 'var(--text-muted)' }}
+          onClick={handleReset}
+          title="Reset black, midtone and white points to 0 / 50 / 100"
+        >
+          RESET
+        </button>
+      </div>
+
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '260px',
+          margin: '0 auto',
+          background: '#040404',
+          border: '1px solid var(--border-color)',
+          borderRadius: '3px',
+          overflow: 'hidden',
+        }}
+      >
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${LV_W} ${LV_TRACK_Y + LV_TRACK_H + 2}`}
+          preserveAspectRatio="none"
+          style={{ display: 'block', width: '100%', height: '84px', touchAction: 'none' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          {/* Everything outside [black, white] is clipped flat by the engine. */}
+          <rect x={0} y={0} width={px(black)} height={LV_HIST_H} fill="rgba(0,0,0,0.55)" />
+          <rect
+            x={px(white)}
+            y={0}
+            width={LV_W - px(white)}
+            height={LV_HIST_H}
+            fill="rgba(255,255,255,0.07)"
+          />
+
+          {bars ? (
+            <g fill="var(--accent)" opacity={0.75}>
+              {bars.map((h, i) =>
+                h > 0 ? (
+                  <rect key={i} x={i} y={LV_HIST_H - h} width={1} height={h} />
+                ) : null
+              )}
+            </g>
+          ) : (
+            <text
+              x={LV_W / 2}
+              y={LV_HIST_H / 2 + 3}
+              textAnchor="middle"
+              fontSize={9}
+              fill="var(--text-dim)"
+              fontFamily="var(--font-mono)"
+            >
+              NO FRAME SAMPLED
+            </text>
+          )}
+
+          {/* Black-to-white gradient strip: the output ramp the handles map onto. */}
+          <defs>
+            <linearGradient id="levels-ramp" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#000000" />
+              <stop offset="100%" stopColor="#ffffff" />
+            </linearGradient>
+          </defs>
+          <rect x={0} y={LV_TRACK_Y - 3} width={LV_W} height={2} fill="url(#levels-ramp)" />
+
+          {handleMark(black, '#000000', 'var(--text-muted)', 'black')}
+          {handleMark(mid, '#808080', 'var(--text-muted)', 'mid')}
+          {handleMark(white, '#ffffff', 'var(--text-muted)', 'white')}
+        </svg>
+      </div>
+
+      <div
+        style={{
+          maxWidth: '260px',
+          margin: '6px auto 0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '8.5px',
+            color: 'var(--text-dim)',
+            fontFamily: 'var(--font-mono)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {note ? (
+            <span style={{ color: 'var(--accent)' }}>{note}</span>
+          ) : (
+            <>
+              BLACK {black.toFixed(0)} &bull; MID {mid.toFixed(0)} &bull; WHITE {white.toFixed(0)}
+              {' '}&bull; &gamma; {gamma.toFixed(2)}
+            </>
+          )}
+        </span>
+        <button
+          className="btn btn-sm"
+          style={{ padding: '1px 8px', fontSize: '8.5px', height: '18px', whiteSpace: 'nowrap' }}
+          onClick={handleAuto}
+          title="Set the black and white points from the image's own histogram, clipping 0.1% at each end"
+        >
+          <BarChart3 size={9} style={{ marginRight: '3px' }} />
+          AUTO LEVELS
+        </button>
+      </div>
+    </div>
+  );
+};
+
 interface ImageAdjustControlsProps {
   config: ImageAdjustConfig;
   onChangeConfig: (next: ImageAdjustConfig) => void;
@@ -633,6 +972,20 @@ interface ImageAdjustControlsProps {
   onResetPalette?: () => void;
   resetDefaults?: ImageAdjustConfig;
   persistKeyPrefix?: string;
+
+  /*
+   * Levels lives in ToneMappingConfig, not ImageAdjustConfig -- a second store,
+   * held alongside this one in RenderSettings. Passed in rather than merged so
+   * the two keep their existing homes and their existing persistence.
+   *
+   * Omit all three and the Levels block simply does not render, which is how
+   * any host that has no tone config stays working.
+   */
+  toneConfig?: ToneMappingConfig;
+  onChangeToneConfig?: (next: ToneMappingConfig) => void;
+  /** Latest luminance histogram from the render loop; see ProcessedRasterResult. */
+  histogram?: Uint32Array | null;
+  histogramOpaque?: number;
 }
 
 export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
@@ -644,6 +997,10 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
   showInvert = false,
   onResetPalette,
   persistKeyPrefix = 'MediaViewControls',
+  toneConfig,
+  onChangeToneConfig,
+  histogram = null,
+  histogramOpaque = 0,
 }) => {
   const update = <K extends keyof ImageAdjustConfig>(key: K, val: ImageAdjustConfig[K]) => {
     onChangeConfig({
@@ -680,6 +1037,11 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       alphaThreshold: resetDefaults.alphaThreshold,
       colorLevels: resetDefaults.colorLevels ?? 0,
     });
+    // Levels is in this panel, so RESET TONAL has to clear it too -- otherwise
+    // the reset leaves the one control that clips the image still clipping it.
+    if (toneConfig && onChangeToneConfig) {
+      onChangeToneConfig({ ...toneConfig, levelsBlack: 0, levelsMidtones: 50, levelsWhite: 100 });
+    }
   };
 
   const resetColors = () => {
@@ -928,6 +1290,24 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
           <span>Tonal Transfer Curve</span>
         </div>
         <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
+
+        {/*
+          Levels follows the curve because the engine applies them in that
+          order, and the histogram drawn here is sampled between the two.
+        */}
+        {toneConfig && onChangeToneConfig && (
+          <>
+            <div className="tonal-subheading">
+              <span>Levels &amp; Auto Range</span>
+            </div>
+            <LevelsControl
+              config={toneConfig}
+              onChangeConfig={onChangeToneConfig}
+              histogram={histogram}
+              histogramOpaque={histogramOpaque}
+            />
+          </>
+        )}
 
         {/* Tonal Balance: Highlights, Midtones, Shadows */}
         <div className="tonal-subheading">

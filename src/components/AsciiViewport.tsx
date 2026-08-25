@@ -107,6 +107,12 @@ export interface AsciiViewportHandle {
   getFrameText: () => string;
   autoFit: () => void;
   getOptimalResolution: () => { cols: number; rows: number } | null;
+  /**
+   * Current framing in a form that survives a different screen: the scale plus
+   * the point at the centre of the viewport, as a fraction of the raster.
+   * Null before the container has been measured.
+   */
+  getViewFraming: () => { scale: number; cx: number; cy: number } | null;
 }
 
 interface AsciiViewportProps {
@@ -158,6 +164,11 @@ interface AsciiViewportProps {
    * mode.
    */
   showMediaPlaceholder?: boolean;
+  /**
+   * Framing carried by a share link, applied once instead of the initial
+   * auto-fit. Same shape as getViewFraming returns.
+   */
+  initialView?: { scale: number; cx: number; cy: number } | null;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -196,6 +207,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onOrbitRotate,
   onWheelZoom,
   showMediaPlaceholder = false,
+  initialView = null,
 }, ref) => {
   const isTimelineDisabled = appMode === 'media' && mediaType === 'image';
   const containerRef = useRef<HTMLDivElement>(null);
@@ -363,6 +375,44 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       };
     },
     [getContentSize]
+  );
+
+  /*
+   * Framing as a share link carries it.
+   *
+   * The pan is stored in pixels, which is meaningless on someone else's
+   * window: the same tx frames completely different parts of the image on a
+   * 3440px monitor and a 1280px laptop. Expressing it as the fraction of the
+   * raster sitting under the centre of the viewport reproduces what the sender
+   * was looking at at any size. Fractions outside 0..1 are legal and mean the
+   * raster is panned partly off screen, which is a view someone may have
+   * chosen deliberately.
+   */
+  const getViewFraming = useCallback((): { scale: number; cx: number; cy: number } | null => {
+    const el = containerRef.current;
+    if (!el) return null;
+    const v = viewRef.current;
+    const { w, h } = getContentSize(v.scale);
+    if (w <= 0 || h <= 0) return null;
+    return {
+      scale: Number(v.scale.toFixed(4)),
+      cx: Number(((el.clientWidth / 2 - v.tx) / w).toFixed(4)),
+      cy: Number(((el.clientHeight / 2 - v.ty) / h).toFixed(4)),
+    };
+  }, [getContentSize]);
+
+  /** Inverse of getViewFraming, against this viewport's own size. */
+  const framingToView = useCallback(
+    (f: { scale: number; cx: number; cy: number }): ViewTransform | null => {
+      const el = containerRef.current;
+      if (!el) return null;
+      const scale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, f.scale));
+      const { w, h } = getContentSize(scale);
+      const tx = el.clientWidth / 2 - f.cx * w;
+      const ty = el.clientHeight / 2 - f.cy * h;
+      return { scale, ...clampPan(tx, ty, scale) };
+    },
+    [getContentSize, clampPan]
   );
 
   /**
@@ -1039,6 +1089,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     getFrameText: () => latestFrameTextRef.current,
     autoFit,
     getOptimalResolution,
+    getViewFraming,
   }));
 
   /**
@@ -1057,6 +1108,28 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     }, 50);
     return () => clearTimeout(timer);
   }, [viewMode, autoFit]);
+
+  /*
+   * A share link's framing, applied instead of the first auto-fit.
+   *
+   * Once only: after that the camera belongs to whoever is driving it, and
+   * re-applying on a later render would yank the view back mid-gesture. It
+   * runs on the same delay as the auto-fit above and rides its skip flag,
+   * because the container has to be measured before a fraction can be turned
+   * back into a pan.
+   */
+  const initialViewAppliedRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!initialView || initialViewAppliedRef.current) return;
+    const timer = setTimeout(() => {
+      const next = framingToView(initialView);
+      if (!next) return;
+      initialViewAppliedRef.current = true;
+      skipNextAutoFitRef.current = true;
+      setView(next);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [initialView, framingToView]);
 
   /*
    * Each content source keeps its own camera, so flipping synth -> media ->

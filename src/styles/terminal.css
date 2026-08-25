@@ -2285,9 +2285,15 @@ select:disabled {
   color: var(--accent);
 }
 
-/* Header Action Buttons (EXPORT & SHARE) - High Visibility */
-.btn-header-export,
-.btn-header-share {
+/*
+ * Header actions.
+ *
+ * EXPORT is the loud one: getting the picture out is what the studio is for.
+ * SHARE sits quietly beside it -- still there, no longer competing. Two
+ * identically shouting buttons next to each other meant neither read as the
+ * primary action.
+ */
+.btn-header-export {
   border: 1.5px solid var(--accent) !important;
   color: var(--accent) !important;
   background-color: rgba(255, 255, 255, 0.05) !important;
@@ -2296,22 +2302,43 @@ select:disabled {
   box-shadow: 0 0 8px var(--accent-glow) !important;
 }
 
-.btn-header-export .header-btn-icon,
-.btn-header-share .header-btn-icon {
+.btn-header-export .header-btn-icon {
   color: var(--accent) !important;
   stroke: var(--accent) !important;
 }
 
-.btn-header-export:hover,
+.btn-header-share {
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  background-color: transparent;
+  font-weight: 600;
+}
+
+.btn-header-share .header-btn-icon {
+  color: var(--text-muted);
+  stroke: var(--text-muted);
+}
+
+/* Full accent on hover, so the quieter styling never reads as disabled. */
 .btn-header-share:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.btn-header-share:hover .header-btn-icon {
+  color: var(--accent);
+  stroke: var(--accent);
+}
+
+.btn-header-export:hover {
   background-color: var(--accent) !important;
   color: var(--bg-primary) !important;
   border-color: var(--accent) !important;
   box-shadow: 0 0 16px var(--accent) !important;
 }
 
-.btn-header-export:hover .header-btn-icon,
-.btn-header-share:hover .header-btn-icon {
+.btn-header-export:hover .header-btn-icon {
   color: var(--bg-primary) !important;
   stroke: var(--bg-primary) !important;
 }
@@ -2458,62 +2485,39 @@ select:disabled {
   box-shadow: 0 0 30px var(--accent-glow);
 }
 
-.export-category-nav {
-  display: flex;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
-  padding: 0;
-}
-
-.export-category-btn {
-  flex: 1;
-  padding: 9px 12px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.export-category-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-control-hover);
-}
-
-.export-category-btn.active {
-  color: var(--accent);
-  background: var(--bg-panel);
-  border-bottom-color: var(--accent);
-}
-
+/*
+ * The only nav the export dialog has, since the MEDIA / CODE / DATA row above
+ * it went away with the code and data exporters. Sized accordingly.
+ */
 .export-subtab-nav {
   display: flex;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 10px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-color);
   overflow-x: auto;
 }
 
 .export-subtab-btn {
-  padding: 4px 10px;
+  /*
+   * Share the row evenly, but never shrink below the label -- `min-width:
+   * max-content` against a growable basis means four tabs fill the width on a
+   * desktop and the nav scrolls horizontally on a phone rather than squashing
+   * "GIF Animation" into two illegible lines.
+   */
+  flex: 1 1 auto;
+  min-width: max-content;
+  justify-content: center;
+  padding: 9px 14px;
   background: var(--bg-control);
   border: 1px solid var(--border-color);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
@@ -2645,12 +2649,37 @@ select:disabled {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  /* Two or three buttons will not fit on one line on a phone. */
+  flex-wrap: wrap;
+}
+
+/*
+ * The download button carries the filename, which the user types, so its width
+ * is unbounded by default -- a long name pushed the button past the modal edge.
+ * The label is truncated in JS to keep the extension visible; this is the
+ * backstop for a viewport narrow enough that even the truncated form overflows.
+ */
+.btn-download-file {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.btn-download-file .download-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* GIF Exporter Styles */
 .gif-config-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /*
+   * Two columns only while a column can still hold a row of buttons. Hard
+   * coding repeat(2, 1fr) left a ~140px cell on a phone, which the five-button
+   * resolution group overflowed straight out of the modal.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 10px;
   margin-bottom: 14px;
   background: var(--bg-primary);
@@ -2662,6 +2691,8 @@ select:disabled {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Grid items are min-content by default and would refuse to shrink. */
+  min-width: 0;
 }
 
 .gif-config-label {
@@ -2673,6 +2704,8 @@ select:disabled {
 .gif-btn-group {
   display: flex;
   gap: 4px;
+  /* Wrap rather than overflow: the separation tab has five-button groups. */
+  flex-wrap: wrap;
 }
 
 .gif-btn-group .btn {
@@ -2873,4 +2906,76 @@ select:disabled {
   font-size: 9px;
   letter-spacing: 0.1em;
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   Colour separation tab
+   ---------------------------------------------------------------------------
+   The generate action and the output summary live outside .gif-config-grid.
+   Inside it they trailed the format-specific cells, so switching format moved
+   the primary button — the one control the user is actually aiming at.
+   -------------------------------------------------------------------------- */
+
+.sep-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  /* Stacks under the summary on a phone rather than squeezing the button. */
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.sep-action-summary {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  /* Takes the slack so the button keeps its size at every width. */
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sep-action-btn {
+  flex: 0 0 auto;
+  min-width: 168px;
+  justify-content: center;
+}
+
+/* Note text in the shared format-options slot. */
+.sep-slot-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--accent);
+}
+
+/*
+ * The PNG slot has no controls. Muted rather than accent-coloured, so an empty
+ * slot does not read as a warning, and padded to roughly a button row's height
+ * so the grid row does not visibly shrink when PNG is picked.
+ */
+.sep-slot-note--filler {
+  color: var(--text-dim);
+  padding-top: 2px;
+}
+
+.sep-plate-card {
+  /* .gif-preview-card centres its children for image previews; a list wants
+     the full width and a left edge. */
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.sep-plate-card-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
 }

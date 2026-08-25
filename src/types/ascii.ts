@@ -467,10 +467,14 @@ export interface MediaViewConfig extends ImageAdjustConfig {
   algorithm: DitherAlgorithm;
   rasterMode?: RasterOutputMode;
   dpi?: number; // 10 to 300, default 72
+  /*
+   * Levels lives in toneConfig above, as levelsBlack / levelsMidtones /
+   * levelsWhite. A near-identically named levelBlack / levelMidtones /
+   * levelWhite triple used to sit here too; nothing ever read it, and having
+   * two of them one letter apart is how the media adjustConfig shadowing bug
+   * happened (pipeline.md §1.2). Removed rather than wired up.
+   */
   toneConfig?: ToneMappingConfig;
-  levelBlack?: number; // 0 to 100, default 0
-  levelMidtones?: number; // 0 to 100, default 50 (middle)
-  levelWhite?: number; // 0 to 100, default 100
   background: BackgroundMode;
   colorConfig?: MediaColorConfig;
 }

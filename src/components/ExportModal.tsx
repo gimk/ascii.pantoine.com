@@ -4,37 +4,28 @@ import {
   Copy,
   Download,
   Check,
-  Bot,
   Film,
   Video,
   Loader2,
   Play,
   RotateCcw,
-  Code2,
-  Database,
-  FileCode,
-  FileText,
   Camera,
+  Layers,
   Info,
 } from 'lucide-react';
-import {
-  generateAstroComponent,
-  generateStandaloneHtml,
-  generateAiPrompt,
-  generateHtmlEmbed,
-  generateMarkdownSnippet,
-  generateAsciiTextFrame,
-  generateModeJsonPreset,
-} from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
 import { exportAsciiImage } from '../engine/imageExporter';
+import {
+  exportColorSeparation,
+  SeparationResult,
+  SeparationStyle,
+  MAX_PLATES,
+} from '../engine/separationExporter';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
 import * as THREE from 'three';
 import {
   WaveParams,
-  ParticleConfig,
-  OptimizeConfig,
   PhosphorTheme,
   CrtConfig,
   PhosphorGradient,
@@ -58,8 +49,6 @@ interface ExportModalProps {
   params: WaveParams;
   customCode?: string;
   customPrepare?: string;
-  particleConfig: ParticleConfig;
-  optimizeConfig?: OptimizeConfig;
   cols: number;
   rows: number;
   density: string;
@@ -69,7 +58,7 @@ interface ExportModalProps {
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
   crtConfig?: CrtConfig;
-  initialTab?: 'prompt' | 'astro' | 'html' | 'html_embed' | 'markdown' | 'json' | 'ascii' | 'image' | 'gif' | 'video';
+  initialTab?: ExportTab;
   appMode?: AppMode;
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
@@ -84,24 +73,34 @@ interface ExportModalProps {
   adjustConfig?: ImageAdjustConfig;
 }
 
-export type ExportTab =
-  | 'image'
-  | 'gif'
-  | 'video'
-  | 'html_embed'
-  | 'markdown'
-  | 'astro'
-  | 'html'
-  | 'prompt'
-  | 'json'
-  | 'ascii';
+/**
+ * Export is rendered media only.
+ *
+ * The code and data categories -- Astro component, standalone HTML, HTML/
+ * Markdown embed, AI prompt, JSON preset, raw ASCII frame -- are gone along
+ * with their generators. They belonged to an earlier direction where the
+ * output was a snippet to paste into a site; the app is a raster studio now
+ * and the output is a picture.
+ */
+export type ExportTab = 'image' | 'separation' | 'gif' | 'video';
 
-export type ExportCategory = 'media' | 'code' | 'data';
-
-const getCategoryForTab = (tab: ExportTab): ExportCategory => {
-  if (tab === 'image' || tab === 'gif' || tab === 'video') return 'media';
-  if (tab === 'astro' || tab === 'html' || tab === 'prompt' || tab === 'html_embed' || tab === 'markdown') return 'code';
-  return 'data';
+/**
+ * Shortens a filename for display while keeping the extension.
+ *
+ * The name is whatever the user typed, so the download button's width was
+ * effectively unbounded and a long one pushed it past the modal edge. Trimmed
+ * from the middle rather than the end because the extension is the part that
+ * says what you are about to get -- "my-really-long...-plates.zip" is useful,
+ * "my-really-long-expo..." is not.
+ */
+const truncateFileName = (fileName: string, max = 28): string => {
+  if (fileName.length <= max) return fileName;
+  const dot = fileName.lastIndexOf('.');
+  // No extension, or one long enough to be something else entirely.
+  if (dot <= 0 || fileName.length - dot > 12) return `${fileName.slice(0, max - 1)}…`;
+  const ext = fileName.slice(dot);
+  const head = Math.max(4, max - ext.length - 1);
+  return `${fileName.slice(0, head)}…${ext}`;
 };
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -112,8 +111,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   params,
   customCode,
   customPrepare,
-  particleConfig,
-  optimizeConfig,
   cols,
   rows,
   density,
@@ -123,7 +120,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   customThemeColor,
   gradientConfig,
   crtConfig,
-  initialTab = 'prompt',
+  initialTab = 'image',
   appMode = 'synth',
   modelConfig,
   modelViewConfig,
@@ -138,8 +135,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   mediaElement,
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
-  const [activeCategory, setActiveCategory] = useState<ExportCategory>(getCategoryForTab(initialTab));
-  const [copied, setCopied] = useState<boolean>(false);
   const [customBaseName, setCustomBaseName] = useState<string>('');
 
   // Still Image Export States
@@ -154,6 +149,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [isCapturingImage, setIsCapturingImage] = useState<boolean>(false);
   const [imageCopied, setImageCopied] = useState<boolean>(false);
+
+  /*
+   * Colour Separation States.
+   *
+   * Own format, scale and quality rather than borrowing the still export's.
+   * Every other media tab owns its own (gifScale, videoScale), and sharing
+   * meant choosing the plate file type on a different tab -- and the choices
+   * genuinely differ: a separation is usually wanted as SVG for layered import
+   * where the still is usually a PNG.
+   */
+  const [sepFormat, setSepFormat] = useState<'png' | 'jpg' | 'svg'>('svg');
+  const [sepScale, setSepScale] = useState<number>(2.0);
+  const [sepQuality, setSepQuality] = useState<number>(0.95);
+  const [sepStyle, setSepStyle] = useState<SeparationStyle>('color');
+  const [sepLayeredSvg, setSepLayeredSvg] = useState<boolean>(true);
+  const [sepResult, setSepResult] = useState<SeparationResult | null>(null);
+  const [isSeparating, setIsSeparating] = useState<boolean>(false);
+  const [sepError, setSepError] = useState<string | null>(null);
 
   // GIF Recording States
   const [gifDuration, setGifDuration] = useState<number>(2.0);
@@ -272,24 +285,73 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     imageUrl,
   ]);
 
-  const isTabDisabled = useCallback(
-    (tab: ExportTab): boolean => {
-      if (tab === 'astro' || tab === 'html' || tab === 'prompt') {
-        return appMode !== 'synth';
-      }
-      return false;
-    },
-    [appMode]
-  );
+  /*
+   * Separation is generated on demand, not on every option change like the
+   * still preview. It renders the frame and then paints one file per ink, so
+   * on a sixteen-colour palette that is sixteen canvases and a ZIP -- not
+   * something to run on every keystroke in the filename field.
+   */
+  const handleGenerateSeparation = useCallback(async () => {
+    setIsSeparating(true);
+    setSepError(null);
+    try {
+      const res = await exportColorSeparation({
+        name,
+        format: sepFormat,
+        quality: sepQuality,
+        scale: sepScale,
+        style: sepStyle,
+        layeredSvg: sepFormat === 'svg' && sepLayeredSvg,
+        time: currentTime,
+        currentAsciiFrame,
+        type,
+        params,
+        customCode,
+        customPrepare,
+        density,
+        cols,
+        rows,
+        theme,
+        customThemeColor,
+        gradientConfig,
+        crtConfig,
+        appMode,
+        modelConfig,
+        modelViewConfig,
+        geometry,
+        mediaConfig,
+        mediaViewConfig,
+        mediaColorConfig,
+        mediaElement,
+        rasterMode,
+        ditherAlgorithm,
+        toneConfig,
+        adjustConfig,
+      });
+      setSepResult((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        prev?.plates.forEach((p) => URL.revokeObjectURL(p.url));
+        return res;
+      });
+    } catch (err: any) {
+      console.error('Colour Separation Error:', err);
+      setSepError(err?.message || 'Separation failed');
+    } finally {
+      setIsSeparating(false);
+    }
+  }, [
+    name, sepFormat, sepQuality, sepScale, sepStyle, sepLayeredSvg,
+    currentTime, currentAsciiFrame, type, params, customCode, customPrepare,
+    density, cols, rows, theme, customThemeColor, gradientConfig, crtConfig,
+    appMode, modelConfig, modelViewConfig, geometry, mediaConfig,
+    mediaViewConfig, mediaColorConfig, mediaElement, rasterMode,
+    ditherAlgorithm, toneConfig, adjustConfig,
+  ]);
 
   useEffect(() => {
     if (isOpen) {
-      let targetTab: ExportTab = (initialTab as ExportTab) || 'image';
-      if (isTabDisabled(targetTab)) {
-        targetTab = 'html_embed';
-      }
-      setActiveTab(targetTab);
-      setActiveCategory(getCategoryForTab(targetTab));
+      // Every remaining tab works in every mode, so there is nothing to gate.
+      setActiveTab((initialTab as ExportTab) || 'image');
     }
     if (isOpen && (activeTab === 'image' || initialTab === 'image')) {
       handleCaptureImage();
@@ -314,7 +376,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         setIsRecordingVideo(false);
       }
     }
-  }, [isOpen, initialTab, appMode, isTabDisabled]);
+  }, [isOpen, initialTab, appMode]);
 
   // Re-capture image when still image options change while tab is active
   useEffect(() => {
@@ -322,6 +384,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       handleCaptureImage();
     }
   }, [isOpen, activeTab, imageFormat, imageQuality, imageScale, imageTransparentBg, imageIncludeCrt]);
+
+  /*
+   * Drop a generated separation as soon as anything that shaped it changes.
+   * Not regenerated automatically -- that is the expensive part -- but a stale
+   * archive must never stay downloadable behind controls that no longer
+   * describe it.
+   */
+  useEffect(() => {
+    setSepResult((prev) => {
+      if (!prev) return prev;
+      if (prev.url) URL.revokeObjectURL(prev.url);
+      prev.plates.forEach((p) => URL.revokeObjectURL(p.url));
+      return null;
+    });
+    setSepError(null);
+  }, [isOpen, sepFormat, sepScale, sepQuality, sepStyle, sepLayeredSvg, cols, rows, rasterMode, appMode]);
 
   if (!isOpen) return null;
 
@@ -334,6 +412,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const stillExportW = Math.round(cols * stillCellW);
   const stillExportH = Math.round(rows * stillCellH);
 
+  // Same cell geometry as the still export, at this tab's own scale.
+  const sepCellW = isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_WIDTH * sepScale;
+  const sepCellH = isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_HEIGHT * sepScale;
+  const sepExportW = Math.round(cols * sepCellW);
+  const sepExportH = Math.round(rows * sepCellH);
+
   const gifCellW = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_WIDTH * gifScale;
   const gifCellH = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_HEIGHT * gifScale;
   const gifExportW = Math.round(cols * gifCellW);
@@ -344,79 +428,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const videoExportW = Math.round(cols * videoCellW);
   const videoExportH = Math.round(rows * videoCellH);
 
-  const exportCfg = {
-    name,
-    type,
-    params,
-    customCode,
-    customPrepare,
-    particleConfig,
-    optimizeConfig,
-    cols,
-    rows,
-    density,
-    fps: optimizeConfig?.targetFps !== undefined ? optimizeConfig.targetFps : 60,
-    appMode,
-    theme,
-    customThemeColor,
-    gradientConfig,
-    crtConfig,
-    modelConfig,
-    modelViewConfig,
-    mediaConfig,
-    mediaViewConfig,
-    mediaColorConfig,
-    rasterMode: effectiveRasterMode,
-    ditherAlgorithm,
-    adjustConfig,
-    toneConfig,
-  };
-
   const getExtension = (): string => {
     switch (activeTab) {
       case 'image': return imageFormat === 'jpg' ? '.jpg' : imageFormat === 'svg' ? '.svg' : '.png';
-
-      case 'prompt': return '-ai-prompt.txt';
-      case 'astro': return '.astro';
-      case 'html': return '-standalone.html';
-      case 'html_embed': return '-embed.html';
-      case 'markdown': return '.md';
-      case 'json': return '.json';
-      case 'ascii': return '-frame.txt';
+      // A layered SVG is one file; everything else is an archive of plates.
+      case 'separation': return sepFormat === 'svg' && sepLayeredSvg ? '-plates.svg' : '-plates.zip';
       case 'gif': return '.gif';
       case 'video': return videoExtension;
     }
   };
 
   const effectiveFileName = `${(customBaseName.trim() || defaultBaseName).replace(/\.[^/.]+$/, '')}${getExtension()}`;
-
-  const handleSelectCategory = (cat: ExportCategory) => {
-    setActiveCategory(cat);
-    if (cat === 'media') {
-      if (activeTab !== 'image' && activeTab !== 'gif' && activeTab !== 'video') setActiveTab('image');
-    } else if (cat === 'code') {
-      if (appMode !== 'synth') {
-        if (activeTab !== 'html_embed' && activeTab !== 'markdown') setActiveTab('html_embed');
-      } else {
-        if (
-          activeTab !== 'html_embed' &&
-          activeTab !== 'markdown' &&
-          activeTab !== 'astro' &&
-          activeTab !== 'html' &&
-          activeTab !== 'prompt'
-        ) {
-          setActiveTab('html_embed');
-        }
-      }
-    } else if (cat === 'data') {
-      if (activeTab !== 'json' && activeTab !== 'ascii') setActiveTab('json');
-    }
-  };
-
-  const handleSelectSubTab = (tab: ExportTab) => {
-    if (isTabDisabled(tab)) return;
-    setActiveTab(tab);
-  };
 
   const handleRecordGif = async () => {
     setIsRecordingGif(true);
@@ -526,107 +548,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
-  const getExportContent = (): { text: string; mimeType: string } => {
-    switch (activeTab) {
-      case 'image':
-        return {
-          text: '',
-          mimeType: imageFormat === 'jpg' ? 'image/jpeg' : 'image/png',
-        };
-      case 'html_embed':
-        return {
-          text: generateHtmlEmbed({
-            name,
-            frameText: currentAsciiFrame,
-            cols,
-            rows,
-            theme,
-            customThemeColor,
-          }),
-          mimeType: 'text/html',
-        };
-      case 'markdown':
-        return {
-          text: generateMarkdownSnippet({
-            name,
-            frameText: currentAsciiFrame,
-            appMode,
-            cols,
-            rows,
-          }),
-          mimeType: 'text/markdown',
-        };
-      case 'prompt':
-        return {
-          text: generateAiPrompt(exportCfg),
-          mimeType: 'text/plain',
-        };
-      case 'astro':
-        return {
-          text: generateAstroComponent(exportCfg),
-          mimeType: 'text/plain',
-        };
-      case 'html':
-        return {
-          text: generateStandaloneHtml(exportCfg),
-          mimeType: 'text/html',
-        };
-      case 'json':
-        return {
-          text: generateModeJsonPreset({
-            appMode,
-            name,
-            type,
-            params,
-            customCode,
-            customPrepare,
-            particleConfig,
-            optimizeConfig,
-            cols,
-            rows,
-            density,
-            theme,
-            customThemeColor,
-            gradientConfig,
-            crtConfig,
-            modelConfig,
-            modelViewConfig,
-            mediaConfig,
-            mediaViewConfig,
-            mediaColorConfig,
-            rasterMode: effectiveRasterMode,
-            ditherAlgorithm,
-            adjustConfig,
-            toneConfig,
-          }),
-          mimeType: 'application/json',
-        };
-      case 'ascii':
-        return {
-          text: generateAsciiTextFrame({
-            name,
-            frameText: currentAsciiFrame,
-            cols,
-            rows,
-            appMode,
-          }),
-          mimeType: 'text/plain',
-        };
-      case 'gif':
-        return {
-          text: '',
-          mimeType: 'image/gif',
-        };
-      case 'video':
-        return {
-          text: '',
-          mimeType: videoExtension === '.mp4' ? 'video/mp4' : 'video/webm',
-        };
-    }
-  };
 
-  const { text, mimeType } = getExportContent();
-
+  /** Only the still image has a clipboard form; the rest are archives or video. */
   const handleCopy = async () => {
     if (activeTab === 'image') {
       if (!imageBlob) return;
@@ -660,18 +583,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } catch (e) {
         console.warn('Clipboard write failed:', e);
       }
-      return;
     }
-    if (activeTab === 'gif' || activeTab === 'video') return;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
   };
 
   const handleDownload = () => {
     if (activeTab === 'image') {
       if (!imageBlob) return;
       const url = URL.createObjectURL(imageBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = effectiveFileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    if (activeTab === 'separation') {
+      if (!sepResult?.blob) return;
+      const url = URL.createObjectURL(sepResult.blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = effectiveFileName;
@@ -697,15 +625,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       a.download = effectiveFileName;
       a.click();
       URL.revokeObjectURL(url);
-      return;
     }
-    const blob = new Blob([text], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = effectiveFileName;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const modeBadge =
@@ -723,163 +643,37 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        {/* Level 1: Primary Category Nav */}
-        <div className="export-category-nav">
-          <button
-            className={`export-category-btn ${activeCategory === 'media' ? 'active' : ''}`}
-            onClick={() => handleSelectCategory('media')}
-          >
-            <Film size={13} />
-            MEDIA CAPTURE
-          </button>
-          <button
-            className={`export-category-btn ${activeCategory === 'code' ? 'active' : ''}`}
-            onClick={() => handleSelectCategory('code')}
-          >
-            <Code2 size={13} />
-            CODE & EMBED
-          </button>
-          <button
-            className={`export-category-btn ${activeCategory === 'data' ? 'active' : ''}`}
-            onClick={() => handleSelectCategory('data')}
-          >
-            <Database size={13} />
-            RAW DATA
-          </button>
-        </div>
-
-        {/* Level 2: Sub-Tabs Nav */}
+        {/* Output Tabs */}
         <div className="export-subtab-nav">
-          {activeCategory === 'media' && (
-            <>
-              <button
-                className={`export-subtab-btn ${activeTab === 'image' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('image')}
-              >
-                <Camera size={11} />
-                Still Image (.png / .jpg)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('gif')}
-              >
-                <Film size={11} />
-                GIF Animation (.gif)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'video' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('video')}
-              >
-                <Video size={11} />
-                Video Clip (.mp4 / .webm)
-              </button>
-            </>
-          )}
-
-          {activeCategory === 'code' && (
-            <>
-              <button
-                className={`export-subtab-btn ${activeTab === 'html_embed' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('html_embed')}
-              >
-                <Code2 size={11} />
-                HTML &lt;pre&gt; Embed (.html)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'markdown' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('markdown')}
-              >
-                <FileText size={11} />
-                Markdown Snippet (.md)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'astro' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('astro')}
-                disabled={isTabDisabled('astro')}
-                style={
-                  isTabDisabled('astro')
-                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
-                    : undefined
-                }
-                title={
-                  isTabDisabled('astro')
-                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
-                    : 'Astro Component (.astro)'
-                }
-              >
-                <FileCode size={11} />
-                Astro Component (.astro)
-                {isTabDisabled('astro') && (
-                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
-                )}
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'html' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('html')}
-                disabled={isTabDisabled('html')}
-                style={
-                  isTabDisabled('html')
-                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
-                    : undefined
-                }
-                title={
-                  isTabDisabled('html')
-                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
-                    : 'Standalone HTML Wave Engine (.html)'
-                }
-              >
-                <Play size={11} />
-                Standalone Engine (.html)
-                {isTabDisabled('html') && (
-                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
-                )}
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'prompt' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('prompt')}
-                disabled={isTabDisabled('prompt')}
-                style={
-                  isTabDisabled('prompt')
-                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
-                    : undefined
-                }
-                title={
-                  isTabDisabled('prompt')
-                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
-                    : 'AI Prompt (.txt)'
-                }
-              >
-                <Bot size={11} />
-                AI Prompt (.txt)
-                {isTabDisabled('prompt') && (
-                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
-                )}
-              </button>
-            </>
-          )}
-
-          {activeCategory === 'data' && (
-            <>
-              <button
-                className={`export-subtab-btn ${activeTab === 'json' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('json')}
-              >
-                <Database size={11} />
-                {appMode === 'model'
-                  ? '3D Model Preset (.json)'
-                  : appMode === 'media'
-                  ? 'Media Preset (.json)'
-                  : 'Synth Preset (.json)'}
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'ascii' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('ascii')}
-              >
-                <FileText size={11} />
-                ASCII Text Frame (.txt)
-              </button>
-            </>
-          )}
+          <button
+            className={`export-subtab-btn ${activeTab === 'image' ? 'active' : ''}`}
+            onClick={() => setActiveTab('image')}
+          >
+            <Camera size={14} />
+            Still Image
+          </button>
+          <button
+            className={`export-subtab-btn ${activeTab === 'separation' ? 'active' : ''}`}
+            onClick={() => setActiveTab('separation')}
+            title="One file per colour, for editing each ink separately"
+          >
+            <Layers size={14} />
+            Colour Plates
+          </button>
+          <button
+            className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
+            onClick={() => setActiveTab('gif')}
+          >
+            <Film size={14} />
+            GIF Animation
+          </button>
+          <button
+            className={`export-subtab-btn ${activeTab === 'video' ? 'active' : ''}`}
+            onClick={() => setActiveTab('video')}
+          >
+            <Video size={14} />
+            Video Clip
+          </button>
         </div>
 
         {/* Code Content */}
@@ -972,14 +766,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       <button
                         className={`btn ${!imageTransparentBg ? 'btn-primary' : ''}`}
                         onClick={() => setImageTransparentBg(false)}
+                        title="Paint the background behind the raster"
                       >
-                        Theme CRT
+                        FILL
                       </button>
                       <button
                         className={`btn ${imageTransparentBg ? 'btn-primary' : ''}`}
                         onClick={() => setImageTransparentBg(true)}
+                        title="Leave the background empty"
                       >
-                        Transparent
+                        TRANSPARENT
                       </button>
                     </div>
                   </div>
@@ -1039,6 +835,271 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   <img src={imageUrl} alt="Captured Still Frame Preview" className="gif-preview-img" style={{ maxHeight: '240px' }} />
                   <div style={{ marginTop: '8px', fontSize: '10.5px', color: 'var(--text-muted)' }}>
                     Dimensions: {imageDimensions?.width}×{imageDimensions?.height}px • Format: {imageFormat.toUpperCase()} • Size: {(imageBlob ? (imageBlob.size / 1024).toFixed(1) : 0)} KB • Time: {currentTime.toFixed(2)}s
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'separation' ? (
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  padding: '9px 11px',
+                  marginBottom: '10px',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '3px',
+                  fontSize: '10.5px',
+                  color: 'var(--text-muted)',
+                  lineHeight: 1.5,
+                }}
+              >
+                <Info size={13} style={{ flexShrink: 0, marginTop: '1px', color: 'var(--accent)' }} />
+                <span>
+                  Splits the render into one file per colour, so each ink can be edited on its own.
+                  Plates arrive as a <strong style={{ color: 'var(--text-primary)' }}>.zip</strong>,
+                  except layered SVG which is a single file.
+                </span>
+              </div>
+
+              <div className="gif-config-grid">
+                {/* Format */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Plate Format</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { id: 'svg', label: 'SVG (Vector)' },
+                      { id: 'png', label: 'PNG (Raster)' },
+                      { id: 'jpg', label: 'JPG (Photo)' },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        disabled={isSeparating}
+                        className={`btn ${sepFormat === f.id ? 'btn-primary' : ''}`}
+                        onClick={() => setSepFormat(f.id as 'png' | 'jpg' | 'svg')}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Resolution scale */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Resolution Scale ({sepExportW}×{sepExportH}px per plate)</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { val: 1.0, label: '1x' },
+                      { val: 1.5, label: '1.5x' },
+                      { val: 2.0, label: '2x (HD)' },
+                      { val: 3.0, label: '3x' },
+                      { val: 4.0, label: '4x (4K)' },
+                    ].map((s) => (
+                      <button
+                        key={s.val}
+                        disabled={isSeparating}
+                        className={`btn ${sepScale === s.val ? 'btn-primary' : ''}`}
+                        onClick={() => setSepScale(s.val)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Plate style */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Plate Style</span>
+                  <div className="gif-btn-group">
+                    <button
+                      disabled={isSeparating || sepFormat === 'jpg'}
+                      className={`btn ${sepStyle === 'color' && sepFormat !== 'jpg' ? 'btn-primary' : ''}`}
+                      onClick={() => setSepStyle('color')}
+                      title="Each plate in its own colour on transparency. Stack them to rebuild the image."
+                    >
+                      Colour on Transparent
+                    </button>
+                    <button
+                      disabled={isSeparating}
+                      className={`btn ${sepStyle === 'ink' || sepFormat === 'jpg' ? 'btn-primary' : ''}`}
+                      onClick={() => setSepStyle('ink')}
+                      title="Coverage mask, black on white. What a screen-printing press wants."
+                    >
+                      Ink Plate (Black on White)
+                    </button>
+                  </div>
+                </div>
+
+                {/*
+                  Format-specific options share a single slot, always rendered.
+                  Letting them mount and unmount changed the grid's item count
+                  between formats, so every control below shuffled to a new cell
+                  whenever the format changed.
+                */}
+                <div className="gif-config-item">
+                  {sepFormat === 'svg' ? (
+                    <>
+                      <span className="gif-config-label">SVG Layout</span>
+                      <div className="gif-btn-group">
+                        <button
+                          disabled={isSeparating}
+                          className={`btn ${sepLayeredSvg ? 'btn-primary' : ''}`}
+                          onClick={() => setSepLayeredSvg(true)}
+                          title="One SVG with a named layer per ink — what Illustrator and Figma read on import"
+                        >
+                          One File, Layered
+                        </button>
+                        <button
+                          disabled={isSeparating}
+                          className={`btn ${!sepLayeredSvg ? 'btn-primary' : ''}`}
+                          onClick={() => setSepLayeredSvg(false)}
+                          title="A separate SVG file per ink, in a ZIP"
+                        >
+                          One File Per Ink
+                        </button>
+                      </div>
+                    </>
+                  ) : sepFormat === 'jpg' ? (
+                    <>
+                      <span className="gif-config-label">JPG Quality ({Math.round(sepQuality * 100)}%)</span>
+                      <div className="gif-btn-group">
+                        {[0.8, 0.9, 0.95, 1.0].map((q) => (
+                          <button
+                            key={q}
+                            disabled={isSeparating}
+                            className={`btn ${sepQuality === q ? 'btn-primary' : ''}`}
+                            onClick={() => setSepQuality(q)}
+                          >
+                            {Math.round(q * 100)}%
+                          </button>
+                        ))}
+                      </div>
+                      <span className="sep-slot-note">
+                        JPG has no transparency, so plates are forced to ink. Use PNG or SVG to stack them.
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="gif-config-label">PNG Options</span>
+                      <span className="sep-slot-note sep-slot-note--filler">
+                        Nothing to set. PNG keeps its alpha channel, so colour plates stack back into
+                        the original image.
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/*
+                The generate action sits outside the grid. As a grid cell it was
+                the item that moved most, because it trailed every conditional
+                one — and it is the control the user is reaching for.
+              */}
+              <div className="sep-action-row">
+                <div className="sep-action-summary">
+                  {sepResult && !sepResult.analysis.refusal
+                    ? `${sepResult.analysis.plates.length} plates · ${sepExportW}×${sepExportH}px each · ${
+                        sepFormat === 'svg' && sepLayeredSvg ? 'layered SVG' : 'ZIP archive'
+                      }`
+                    : `${sepExportW}×${sepExportH}px per plate · ${
+                        sepFormat === 'svg' && sepLayeredSvg ? 'layered SVG' : 'ZIP archive'
+                      }`}
+                </div>
+                <button
+                  disabled={isSeparating}
+                  className="btn btn-primary sep-action-btn"
+                  onClick={handleGenerateSeparation}
+                >
+                  {isSeparating ? <Loader2 size={11} className="dice-spin" /> : <Layers size={11} />}
+                  {isSeparating ? 'SEPARATING…' : sepResult ? 'REGENERATE PLATES' : 'GENERATE PLATES'}
+                </button>
+              </div>
+
+              {sepError && (
+                <div className="gif-progress-box">
+                  <div style={{ fontSize: '11px', color: 'var(--accent)' }}>{sepError}</div>
+                </div>
+              )}
+
+              {/*
+                Refusals explain themselves and point at the control that fixes
+                it. A separation that cannot run is nearly always a colour-mode
+                choice, not a failure.
+              */}
+              {sepResult?.analysis.refusal && (
+                <div className="gif-progress-box">
+                  <div style={{ fontSize: '11px', color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                    {sepResult.analysis.refusal === 'mono' && (
+                      <>
+                        <strong style={{ color: 'var(--accent)' }}>NOTHING TO SEPARATE.</strong>{' '}
+                        This render is monochrome — a single tint applied over the whole raster, so
+                        there is only one ink. Pick a palette, Duotone, Tritone or Content colour in
+                        the <strong>COLORS</strong> panel first.
+                      </>
+                    )}
+                    {sepResult.analysis.refusal === 'too-many' && (
+                      <>
+                        <strong style={{ color: 'var(--accent)' }}>
+                          {sepResult.analysis.distinctColors} DISTINCT COLOURS.
+                        </strong>{' '}
+                        That is past the {MAX_PLATES}-plate limit and would not be editable by hand
+                        anyway. Choose an indexed palette, or set <strong>Quantize Levels</strong> in
+                        TONAL CONTROLS to reduce the render to a countable set of inks.
+                      </>
+                    )}
+                    {sepResult.analysis.refusal === 'empty' && (
+                      <>
+                        <strong style={{ color: 'var(--accent)' }}>FRAME IS EMPTY.</strong>{' '}
+                        Every cell is transparent, so there is nothing to split.
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Plate list */}
+              {sepResult && !sepResult.analysis.refusal && (
+                <div className="gif-preview-card sep-plate-card">
+                  <div className="sep-plate-card-title">
+                    PLATE BREAKDOWN • {sepResult.blob ? (sepResult.blob.size / 1024).toFixed(1) : 0} KB
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {sepResult.analysis.plates.map((plate, i) => (
+                      <div
+                        key={plate.hex + i}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          // Five fields per row; on a phone they need somewhere to go.
+                          flexWrap: 'wrap',
+                          fontSize: '10px',
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        <span style={{ color: 'var(--text-dim)', minWidth: '20px' }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        <span
+                          style={{
+                            width: '14px',
+                            height: '14px',
+                            flexShrink: 0,
+                            background: plate.hex,
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '2px',
+                          }}
+                        />
+                        <span style={{ color: 'var(--text-primary)', minWidth: '64px' }}>{plate.hex}</span>
+                        <span>{plate.cellCount.toLocaleString()} cells</span>
+                        <span style={{ color: 'var(--text-dim)' }}>
+                          {((plate.cellCount / sepResult.analysis.opaqueCells) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1130,7 +1191,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               )}
             </div>
-          ) : activeTab === 'video' ? (
+          ) : (
             <div>
               {/* Video Configuration */}
               <div className="gif-config-grid">
@@ -1246,44 +1307,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               )}
             </div>
-          ) : (
-            <>
-              {activeCategory === 'code' && appMode !== 'synth' && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 10px',
-                    marginBottom: '8px',
-                    background: 'var(--bg-control)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '3px',
-                    fontSize: '10.5px',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <Info size={13} color="var(--accent)" />
-                  <span>
-                    {appMode === 'model'
-                      ? '3D Model mode exports self-contained HTML/Markdown embeds or rendered media captures.'
-                      : 'Media mode exports self-contained HTML/Markdown embeds or rendered media captures.'}
-                  </span>
-                </div>
-              )}
-              <textarea
-                className="code-editor-area"
-                style={{
-                  minHeight: '280px',
-                  fontFamily: 'var(--font-mono)',
-                  fontVariantLigatures: 'none',
-                  WebkitFontVariantLigatures: 'none',
-                  fontFeatureSettings: '"liga" 0, "calt" 0, "dlig" 0',
-                }}
-                value={text}
-                readOnly
-              />
-            </>
           )}
         </div>
 
@@ -1309,12 +1332,40 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 {imageCopied ? 'IMAGE COPIED' : 'COPY IMAGE'}
               </button>
               <button
-                className="btn btn-primary"
+                className="btn btn-primary btn-download-file"
                 onClick={handleDownload}
+                title={`Download ${effectiveFileName}`}
                 disabled={!imageBlob || isCapturingImage}
               >
                 <Download size={12} />
-                DOWNLOAD {effectiveFileName}
+                DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
+              </button>
+            </>
+          ) : activeTab === 'separation' ? (
+            <>
+              <button
+                className="btn"
+                onClick={handleGenerateSeparation}
+                disabled={isSeparating}
+                title="Re-render the frame and rebuild every plate"
+              >
+                <RotateCcw size={12} />
+                {sepResult ? 'REGENERATE' : 'GENERATE'}
+              </button>
+              <button
+                className="btn btn-primary btn-download-file"
+                onClick={handleDownload}
+                disabled={!sepResult?.blob || isSeparating}
+                title={
+                  sepResult?.analysis.refusal
+                    ? 'This render has nothing to separate'
+                    : !sepResult
+                    ? 'Generate the plates first'
+                    : `Download ${effectiveFileName}`
+                }
+              >
+                <Download size={12} />
+                DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
               </button>
             </>
           ) : activeTab === 'gif' ? (
@@ -1340,15 +1391,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </button>
               ) : (
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-download-file"
                   onClick={handleDownload}
+                  title={`Download ${effectiveFileName}`}
                 >
                   <Download size={12} />
-                  DOWNLOAD {effectiveFileName}
+                  DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
                 </button>
               )}
             </>
-          ) : activeTab === 'video' ? (
+          ) : (
             <>
               {videoUrl && (
                 <button
@@ -1371,24 +1423,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </button>
               ) : (
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-download-file"
                   onClick={handleDownload}
+                  title={`Download ${effectiveFileName}`}
                 >
                   <Download size={12} />
-                  DOWNLOAD {effectiveFileName}
+                  DOWNLOAD <span className="download-file-name">{truncateFileName(effectiveFileName)}</span>
                 </button>
               )}
-            </>
-          ) : (
-            <>
-              <button className="btn" onClick={handleCopy}>
-                {copied ? <Check size={12} /> : <Copy size={12} />}
-                {copied ? 'COPIED TO CLIPBOARD' : 'COPY CODE'}
-              </button>
-              <button className="btn btn-primary" onClick={handleDownload}>
-                <Download size={12} />
-                DOWNLOAD {effectiveFileName}
-              </button>
             </>
           )}
         </div>

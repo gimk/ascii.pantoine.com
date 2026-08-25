@@ -239,6 +239,15 @@ export interface ProcessedRasterResult {
   rasterMode: RasterOutputMode;
   bgColor: string;
   isColored: boolean;
+  /**
+   * Distribution of the luminance entering the levels stage, 256 bins.
+   *
+   * Live module buffer, not a copy -- the same contract as `luminance`. Read
+   * it before the next frame, or copy it if you need to hold on to it.
+   */
+  histogram: Uint32Array;
+  /** Opaque cells counted into `histogram`; the denominator for a percentile. */
+  histogramOpaque: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +272,45 @@ let paletteIndexBuffer = new Int32Array(0);
 let colorsBuffer = new Uint8ClampedArray(0);
 let cachedLines: string[] = [];
 let lineBuffer: string[] = [];
+
+/**
+ * Distribution of the luminance entering the levels stage, 256 bins. Fixed
+ * size, so unlike the per-cell buffers it never reallocates.
+ *
+ * Sampled after the spatial filters and after the tone curve, immediately
+ * before levels is applied. That position is what makes AUTO LEVELS
+ * idempotent: nothing in step 3 feeds back into step 2 or into the curve, so
+ * the reading does not move when the levels it produced are applied. Sampling
+ * the post-grade luminance instead would walk the image toward pure black and
+ * white on every press.
+ */
+const histogramBuffer = new Uint32Array(256);
+let histogramOpaque = 0;
+/** Returned by the degenerate-size early exits, so consumers never see undefined. */
+export const EMPTY_HISTOGRAM = new Uint32Array(256);
+
+/**
+ * The nothing-to-render result: no grid, no source, no WebGL context.
+ *
+ * Shared because every source has a degenerate early exit of its own and they
+ * were four hand-copied object literals. Adding a field to
+ * ProcessedRasterResult broke all of them at once, which is the cheap version
+ * of this lesson.
+ */
+export function emptyRasterResult(rasterMode: RasterOutputMode = 'ascii'): ProcessedRasterResult {
+  return {
+    text: '',
+    colors: null,
+    luminance: new Float32Array(0),
+    cols: 0,
+    rows: 0,
+    rasterMode,
+    bgColor: '#0a0a0a',
+    isColored: false,
+    histogram: EMPTY_HISTOGRAM,
+    histogramOpaque: 0,
+  };
+}
 
 // Palette quantizer cache
 let cachedPaletteId = '';
@@ -548,16 +596,7 @@ export function processRasterFrame(
   const totalCells = cols * rows;
 
   if (cols <= 0 || rows <= 0) {
-    return {
-      text: '',
-      colors: null,
-      luminance: new Float32Array(0),
-      cols: 0,
-      rows: 0,
-      rasterMode: options.rasterMode || 'ascii',
-      bgColor: '#0a0a0a',
-      isColored: false,
-    };
+    return emptyRasterResult(options.rasterMode || 'ascii');
   }
 
   ensureBufferCapacity(totalCells, cols, rows);
@@ -712,6 +751,27 @@ export function processRasterFrame(
   const curveLut = options.curvePoints && options.curvePoints.length >= 2 ? createToneCurveLUT(options.curvePoints) : null;
   const noiseAmp = (options.noise || 0) / 200.0;
   const posterizeBits = toneCfg?.posterizeBits || 0;
+
+  /*
+   * Histogram tap. Runs its own short pass rather than folding into the loop
+   * below, because it has to read the value *after* the curve and *before*
+   * levels, and those two are adjacent steps inside that loop.
+   */
+  histogramBuffer.fill(0);
+  histogramOpaque = 0;
+  for (let i = 0; i < totalCells; i++) {
+    const raw = lumBuffer[i];
+    if (raw < 0) continue; // transparent
+    let v = raw;
+    if (curveLut) {
+      v = curveLut[Math.max(0, Math.min(255, Math.round(v * 255)))];
+    }
+    let bin = Math.round(v * 255);
+    if (bin < 0) bin = 0;
+    else if (bin > 255) bin = 255;
+    histogramBuffer[bin]++;
+    histogramOpaque++;
+  }
 
   for (let i = 0; i < totalCells; i++) {
     let val = lumBuffer[i];
@@ -1159,5 +1219,7 @@ export function processRasterFrame(
     rasterMode: effectiveRasterMode,
     bgColor,
     isColored: Boolean(colorsOut && colorsOut.length > 0),
+    histogram: histogramBuffer,
+    histogramOpaque,
   };
 }

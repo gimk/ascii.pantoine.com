@@ -7,7 +7,7 @@ import {
   ImageAdjustConfig,
 } from '../types/ascii';
 import { evaluateParametricWave } from './math';
-import { processRasterFrame, toPipelineAdjustments, ProcessedRasterResult } from './rasterEngine';
+import { processRasterFrame, toPipelineAdjustments, emptyRasterResult, ProcessedRasterResult } from './rasterEngine';
 
 export const MONOSPACE_CELL_WIDTH = 6.015;
 export const MONOSPACE_CELL_HEIGHT = 10.0;
@@ -102,16 +102,7 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
   }
 
   if (cols <= 0 || rows <= 0) {
-    return {
-      text: '',
-      colors: null,
-      luminance: new Float32Array(0),
-      cols: 0,
-      rows: 0,
-      rasterMode,
-      bgColor: '#0a0a0a',
-      isColored: false,
-    };
+    return emptyRasterResult(rasterMode);
   }
 
   const cx = cols / 2;

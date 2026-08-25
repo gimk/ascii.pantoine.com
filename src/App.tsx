@@ -24,6 +24,7 @@ import {
   DEFAULT_TONE_MAPPING_CONFIG,
   DEFAULT_IMAGE_ADJUST_CONFIG,
   ImageAdjustConfig,
+  ToneMappingConfig,
   RasterOutputMode,
   UiThemeSettings,
 } from './types/ascii';
@@ -76,13 +77,14 @@ import { MediaViewControls } from './components/MediaViewControls';
 import { ImageAdjustControls } from './components/ImageAdjustControls';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
-import { ExportModal } from './components/ExportModal';
+import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
   decodeShareFromUrl,
+  ShareView,
   updateUrlMode,
 } from './engine/share';
 
@@ -677,6 +679,8 @@ export const App: React.FC = () => {
     initialUrlData.mode === 'fullscreen' ? 'fullscreen' : 'editor'
   );
   const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
+  /** Viewfinder framing sampled when SHARE is pressed; see the button below. */
+  const [shareView, setShareView] = useState<ShareView | null>(null);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
 
   // Playback state
@@ -692,6 +696,51 @@ export const App: React.FC = () => {
    * switching source silently threw away which panel you were on.
    */
   const [panel, setPanel] = useState<'content' | 'render'>('content');
+
+  /* ======================================================================
+     Luminance histogram, for the Levels control.
+
+     processRasterFrame hands its histogram back on every frame, as a live
+     module buffer it overwrites next time round. Two consequences shape this:
+     it has to be copied to be held, and it must not be promoted to state per
+     frame -- a synth loop runs at 60fps and would re-render the whole sidebar
+     that often to redraw 256 bars.
+
+     So: sampled only while the Render panel is open, throttled, and copied on
+     the way out.
+     ====================================================================== */
+  const [histogramSnapshot, setHistogramSnapshot] =
+    useState<{ bins: Uint32Array; opaque: number } | null>(null);
+  const wantsHistogramRef = useRef<boolean>(false);
+  const lastHistogramPushRef = useRef<number>(0);
+
+  const captureHistogram = useCallback(
+    (res: { histogram: Uint32Array; histogramOpaque: number }) => {
+      if (!wantsHistogramRef.current) return;
+      const now = performance.now();
+      if (now - lastHistogramPushRef.current < 200) return;
+      lastHistogramPushRef.current = now;
+      setHistogramSnapshot({
+        bins: new Uint32Array(res.histogram),
+        opaque: res.histogramOpaque,
+      });
+    },
+    []
+  );
+
+  const isRenderPanelOpen = panel === 'render';
+  useEffect(() => {
+    wantsHistogramRef.current = isRenderPanelOpen;
+    if (!isRenderPanelOpen) return;
+    /*
+     * A static image renders once and then sits there, so opening the panel
+     * would otherwise show an empty histogram until something else happened to
+     * invalidate the frame. Force one pass; the throttle guard is reset so it
+     * is not swallowed.
+     */
+    lastHistogramPushRef.current = 0;
+    triggerMediaRender();
+  }, [isRenderPanelOpen, triggerMediaRender]);
 
   /*
    * Landing a media file is the moment the render controls become the
@@ -732,7 +781,7 @@ export const App: React.FC = () => {
   // Pointless once they are already looking at the panel it points to.
   const isRenderHintVisible = showRenderHint && panel !== 'render';
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
-  const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video'>('image');
+  const [exportInitialTab, setExportInitialTab] = useState<ExportTab>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
 
   // Undo / Redo History Stack (Separate stacks for Synth, Media, and Model modes)
@@ -1545,6 +1594,18 @@ export const App: React.FC = () => {
     }));
   }, [appMode]);
 
+  /*
+   * Levels lives in toneConfig, this record's other grading store. Nothing
+   * wrote it before the Levels control existed, so it had no setter.
+   */
+  const handleChangeToneConfig = useCallback((next: ToneMappingConfig) => {
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      [appMode]: { ...prev[appMode], toneConfig: next },
+    }));
+    triggerMediaRender();
+  }, [appMode, triggerMediaRender]);
+
   /**
    * Apply a shader preset in synth / model.
    *
@@ -1936,6 +1997,7 @@ export const App: React.FC = () => {
         algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
         toneConfig: curSettings.toneConfig,
       });
+      captureHistogram(result);
       viewportRef.current?.setFrame(
         result.text,
         0,
@@ -2073,6 +2135,7 @@ export const App: React.FC = () => {
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
+        captureHistogram(res);
         frameText = res.text;
         frameColors = res.colors;
       } else if (appMode === 'media') {
@@ -2088,6 +2151,7 @@ export const App: React.FC = () => {
           algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
           toneConfig: activeSettings.toneConfig,
         });
+        captureHistogram(result);
         frameText = result.text;
         frameColors = result.colors;
         frameBgColor = result.bgColor;
@@ -2110,6 +2174,7 @@ export const App: React.FC = () => {
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
+        captureHistogram(res);
         frameText = res.text;
         frameColors = res.colors;
         frameBgColor = res.bgColor;
@@ -2255,10 +2320,37 @@ export const App: React.FC = () => {
       modelViewConfig: appMode === 'model' ? modelViewConfig : undefined,
       mediaConfig: appMode === 'media' ? mediaConfig : undefined,
       mediaViewConfig: appMode === 'media' ? mediaViewConfig : undefined,
-      mediaColorConfig: appMode === 'media' ? mediaColorConfig : undefined,
+
+      /*
+       * The render settings, which decodeShareFromUrl has always read back but
+       * this snapshot never sent. A link therefore arrived with the recipient's
+       * defaults for all of them -- no dither algorithm, no grading, no palette.
+       *
+       * Media was the accidental exception: its raster mode, algorithm and whole
+       * adjust config ride along inside mediaViewConfig, which was already here.
+       * The other two modes lost everything. Sourced exactly as the ExportModal
+       * call site does, media fallback included, so a link and an export of the
+       * same state agree.
+       */
+      rasterMode: appMode === 'media'
+        ? (mediaViewConfig.rasterMode || currentRenderSettings.rasterMode)
+        : currentRenderSettings.rasterMode,
+      ditherAlgorithm: appMode === 'media'
+        ? (mediaViewConfig.algorithm || currentRenderSettings.ditherAlgorithm)
+        : currentRenderSettings.ditherAlgorithm,
+      toneConfig: currentRenderSettings.toneConfig,
+      adjustConfig: currentRenderSettings.adjustConfig,
+
+      /*
+       * Not gated on media mode: synth and model both hand this to the engine as
+       * `colorConfig`, so it carries the palette and saturation for every mode.
+       * Gating it dropped the palette from every non-media link.
+       */
+      mediaColorConfig,
     }),
     [
       appMode,
+      currentRenderSettings,
       modelConfig,
       isModelEdited,
       mediaConfig,
@@ -2453,25 +2545,36 @@ export const App: React.FC = () => {
             </>
           )}
 
+          {/* SHARE then EXPORT: the export is the primary action, so it sits last. */}
+          <button
+            className="btn btn-sm btn-header-share"
+            onClick={() => {
+              /*
+               * Framing is read here, not held in currentFullState. The camera
+               * lives inside the viewport and changes on every wheel notch and
+               * drag; threading it up as reactive state would re-encode the
+               * share payload throughout a pan. Sampled at the moment the user
+               * asks to share, which is also exactly the view they mean.
+               */
+              setShareView(viewportRef.current?.getViewFraming() ?? null);
+              setIsShareOpen(true);
+            }}
+            title="Share Fullscreen Viewfinder link"
+          >
+            <Share2 size={13} className="header-btn-icon" />
+            <span className="btn-label">SHARE</span>
+          </button>
+
           <button
             className="btn btn-sm btn-header-export"
             onClick={() => {
               setExportInitialTab('image');
               setIsExportOpen(true);
             }}
-            title="Download or Export Media & Code"
+            title="Download the render as an image, colour plates, GIF or video"
           >
             <Download size={13} className="header-btn-icon" />
             <span className="btn-label">EXPORT</span>
-          </button>
-
-          <button
-            className="btn btn-sm btn-header-share"
-            onClick={() => setIsShareOpen(true)}
-            title="Share Fullscreen Viewfinder link"
-          >
-            <Share2 size={13} className="header-btn-icon" />
-            <span className="btn-label">SHARE</span>
           </button>
 
           <button
@@ -2533,6 +2636,7 @@ export const App: React.FC = () => {
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
           showMediaPlaceholder={appMode === 'media' && !mediaConfig.fileData}
+          initialView={sharedState?.view ?? null}
 
           isLoading={appMode === 'model' && isModelLoading}
           loadingFileName={modelLoadingFileName}
@@ -2824,6 +2928,10 @@ export const App: React.FC = () => {
                     mediaColorConfig={mediaColorConfig}
                     onChangeMediaColorConfig={handleSelectMediaColorConfig}
                     appMode={appMode}
+                    toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                    onChangeToneConfig={handleChangeToneConfig}
+                    histogram={histogramSnapshot?.bins ?? null}
+                    histogramOpaque={histogramSnapshot?.opaque ?? 0}
                   />
                 )}
 
@@ -2879,6 +2987,10 @@ export const App: React.FC = () => {
                       onChangeConfig={handleChangeAdjustConfig}
                       persistKeyPrefix={`${appMode}-image-adjust`}
                       onResetPalette={handleResetPalette}
+                      toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                      onChangeToneConfig={handleChangeToneConfig}
+                      histogram={histogramSnapshot?.bins ?? null}
+                      histogramOpaque={histogramSnapshot?.opaque ?? 0}
                       paletteSlot={
                         <div>
                           {/* No subheading: the COLORS panel title already says this. */}
@@ -2938,8 +3050,6 @@ export const App: React.FC = () => {
         params={waveParams}
         customCode={customCode}
         customPrepare={customPrepare}
-        particleConfig={particleConfig}
-        optimizeConfig={optimizeConfig}
         cols={cols}
         rows={rows}
         density={density}
@@ -2968,7 +3078,7 @@ export const App: React.FC = () => {
       <ShareModal
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
-        state={currentFullState}
+        state={shareView ? { ...currentFullState, view: shareView } : currentFullState}
         onOpenExport={() => {
           setExportInitialTab('image');
           setIsExportOpen(true);

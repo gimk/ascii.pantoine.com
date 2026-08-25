@@ -8,7 +8,7 @@ import {
   ImageAdjustConfig,
   MediaColorConfig,
 } from '../types/ascii';
-import { processRasterFrame, toPipelineAdjustments, ProcessedRasterResult } from './rasterEngine';
+import { processRasterFrame, toPipelineAdjustments, emptyRasterResult, ProcessedRasterResult } from './rasterEngine';
 
 export interface ModelRenderContext {
 
@@ -325,30 +325,12 @@ class HeadlessModelRenderer {
     const { cols, rows, time, density, geometry, modelConfig, viewConfig } = ctx;
 
     if (cols <= 0 || rows <= 0 || !geometry || !geometry.attributes?.position || geometry.attributes.position.count === 0) {
-      return {
-        text: '',
-        colors: null,
-        luminance: new Float32Array(0),
-        cols: 0,
-        rows: 0,
-        rasterMode: ctx.rasterMode || 'ascii',
-        bgColor: '#0a0a0a',
-        isColored: false,
-      };
+      return emptyRasterResult(ctx.rasterMode || 'ascii');
     }
     if (!this.renderer || !this.canvas) {
       this.initRenderer();
       if (!this.renderer || !this.canvas) {
-        return {
-          text: '',
-          colors: null,
-          luminance: new Float32Array(0),
-          cols: 0,
-          rows: 0,
-          rasterMode: ctx.rasterMode || 'ascii',
-          bgColor: '#0a0a0a',
-          isColored: false,
-        };
+        return emptyRasterResult(ctx.rasterMode || 'ascii');
       }
     }
 

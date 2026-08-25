@@ -5,6 +5,7 @@ import {
   ImageAdjustConfig,
   PhosphorTheme,
   MediaColorConfig,
+  ToneMappingConfig,
   AppMode,
   ResamplingMode,
   RasterOutputMode,
@@ -34,6 +35,17 @@ interface MediaViewControlsProps {
    * it in two places and config.rasterMode is frequently undefined.
    */
   rasterMode?: RasterOutputMode;
+
+  /*
+   * Levels state and its histogram, forwarded straight to ImageAdjustControls.
+   * Media's grading otherwise lives in `config` (MediaViewConfig), but levels
+   * is the one part that does not: it sits in the mode's toneConfig, which the
+   * host owns. See pipeline.md §4.
+   */
+  toneConfig?: ToneMappingConfig;
+  onChangeToneConfig?: (next: ToneMappingConfig) => void;
+  histogram?: Uint32Array | null;
+  histogramOpaque?: number;
 }
 
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
@@ -47,6 +59,10 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   onChangeMediaColorConfig,
   appMode = 'media',
   rasterMode,
+  toneConfig,
+  onChangeToneConfig,
+  histogram = null,
+  histogramOpaque = 0,
 }) => {
   const isPixelMode = (rasterMode || config.rasterMode) === 'pixel';
 
@@ -152,6 +168,10 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         showAlphaCutoff={config.background === 'transparent'}
         showInvert
         onResetPalette={resetPalette}
+        toneConfig={toneConfig}
+        onChangeToneConfig={onChangeToneConfig}
+        histogram={histogram}
+        histogramOpaque={histogramOpaque}
         paletteSlot={
           onChangeTheme ? (
             <div>
