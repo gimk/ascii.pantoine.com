@@ -23,7 +23,7 @@ import {
 interface SynthControlsProps {
   params: WaveParams;
   onChangeParams: (updated: WaveParams) => void;
-  onResetParams: () => void;
+  onResetDynamics?: () => void;
   code: string;
   prepareCode?: string;
   compileError: string | null;
@@ -115,7 +115,7 @@ const NumberField: React.FC<{
 export const SynthControls: React.FC<SynthControlsProps> = ({
   params,
   onChangeParams,
-  onResetParams,
+  onResetDynamics,
   code,
   prepareCode,
   compileError,
@@ -126,6 +126,21 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
   // Collapsible section state
   const [isSlidersOpen, setIsSlidersOpen] = useState<boolean>(true);
   const [isFormulaOpen, setIsFormulaOpen] = useState<boolean>(true);
+
+  const handleResetDynamics = () => {
+    if (onResetDynamics) {
+      onResetDynamics();
+    } else {
+      onChangeParams({
+        ...params,
+        timeSpeed: DEFAULT_WAVE_PARAMS.timeSpeed,
+        aspectRatio: DEFAULT_WAVE_PARAMS.aspectRatio,
+        contrast: DEFAULT_WAVE_PARAMS.contrast,
+        bias: DEFAULT_WAVE_PARAMS.bias,
+        invert: DEFAULT_WAVE_PARAMS.invert,
+      });
+    }
+  };
 
   const update = <K extends keyof WaveParams>(key: K, value: WaveParams[K]) => {
     onChangeParams({
@@ -323,7 +338,13 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               }}
             >
               {/* Global & Matrix Settings */}
-              <CollapsibleSection title="Global Dynamics" icon={<Sliders size={12} />} persistKey="SynthControls-global-dynamics">
+              <CollapsibleSection
+                title="Global Dynamics"
+                icon={<Sliders size={12} />}
+                persistKey="SynthControls-global-dynamics"
+                onReset={isFormulaDivergent ? undefined : handleResetDynamics}
+                resetTitle="Reset global dynamics parameters"
+              >
                 {renderSlider('Time Speed', 'timeSpeed', 0.0, 3.0, 0.05)}
                 {renderSlider('Aspect Compensation', 'aspectRatio', 0.1, 2.0, 0.01)}
                 {renderSlider('Contrast', 'contrast', 0.2, 3.0, 0.1)}
@@ -337,11 +358,6 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                     onClick={() => update('invert', !params.invert)}
                   >
                     {params.invert ? 'INVERTED [ON]' : 'NORMAL [OFF]'}
-                  </button>
-                </div>
-                <div className="collapsible-actions">
-                  <button className="btn btn-sm" onClick={onResetParams} disabled={isFormulaDivergent}>
-                    RESET DYNAMICS
                   </button>
                 </div>
               </CollapsibleSection>

@@ -128,6 +128,8 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         icon={<Settings size={12} />}
         persistKey="MediaViewControls-render-settings"
         defaultOpen={true}
+        onReset={resetRenderSettings}
+        resetTitle="Reset dither algorithm and resampling filter"
       >
         {/* Dither Algorithm Selector with Rapid Stepper & Category Filter */}
         <DitherAlgorithmPicker
@@ -140,7 +142,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           <span className="control-label">Resampling</span>
           <select
             className="number-input"
-            style={{ width: '150px', textAlign: 'left', padding: '2px 4px', fontSize: '10.5px' }}
+            style={{ width: '165px', textAlign: 'left', padding: '2px 6px', fontSize: '11px', height: '24px' }}
             value={config.resampling || 'preserve-details'}
             onChange={(e) => update('resampling', e.target.value as ResamplingMode)}
           >
@@ -148,16 +150,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             <option value="nearest">Nearest (Pixel Art)</option>
             <option value="bilinear">Bilinear Smooth</option>
           </select>
-        </div>
-
-        <div className="collapsible-actions">
-          <button
-            className="btn btn-sm"
-            onClick={resetRenderSettings}
-            title="Reset dither algorithm and resampling filter"
-          >
-            RESET RENDER
-          </button>
         </div>
       </CollapsibleSection>
 

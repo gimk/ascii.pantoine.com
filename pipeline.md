@@ -231,7 +231,7 @@ resolve. The output's natural depth is the *default*, never a ceiling:
 ```
 auto = ASCII output          → density.length      (one level per glyph)
        indexed palette       → palette.colors.length
-       2color / 3color       → 2 / 3
+       2color / 3color / ntone → 2 / 3 / N (customToneColors.length)
        otherwise (pixel)     → 256                 (continuous)
 
 ditherLevels = max(2, explicit colorLevels || auto)
@@ -341,10 +341,11 @@ image collapses to a single colour.
 With `dither = none`, the same code runs with error propagation switched off: nearest
 palette entry, no carry.
 
-#### `2color` / `3color` — user duotone/tritone
+#### `2color` / `3color` / `ntone` — user N-tone multi-color ramp
 
-Hard thresholds at 0.5, or 0.33/0.66, into the highlight/midtone/shadow colours.
-Transparent cells take the shadow colour rather than the sentinel, since these ramps
+Discrete tonal mapping across $N$ custom color stops ($N = 2 \dots 8$ in `customToneColors`, or `[shadowColor, midtoneColor, highlightColor]`):
+$$\text{stopIdx} = \min(N - 1, \lfloor \text{lum} \times N \rfloor)$$
+Transparent cells take the shadow colour (stop 0) rather than the sentinel, since these ramps
 are opaque by definition.
 
 #### phosphor / `1color`

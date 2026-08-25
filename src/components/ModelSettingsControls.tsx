@@ -11,7 +11,6 @@ import {
 import {
   Upload,
   FileCode,
-  RotateCcw,
   Sliders,
   Box,
   AlertCircle,
@@ -355,6 +354,19 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
         icon={<Sliders size={12} />}
         persistKey="ModelSettingsControls-transformations-scale"
         defaultOpen={true}
+        onReset={() => {
+          onChangeConfig({
+            ...config,
+            scale: 1.0,
+            scaleX: 1.0,
+            scaleY: 1.0,
+            scaleZ: 1.0,
+            offsetX: 0,
+            offsetY: 0,
+            offsetZ: 0,
+          });
+        }}
+        resetTitle="Reset model transformation and scaling"
       >
         {/* Uniform Scale */}
         <div className="control-row">
@@ -529,29 +541,6 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
               onChange={(e) => update('offsetZ', parseFloat(e.target.value) || 0)}
             />
           </div>
-        </div>
-
-        {/* Reset Transforms */}
-        <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
-          <button
-            className="btn btn-sm"
-            style={{ width: '100%' }}
-            onClick={() => {
-              onChangeConfig({
-                ...config,
-                scale: 1.0,
-                scaleX: 1.0,
-                scaleY: 1.0,
-                scaleZ: 1.0,
-                offsetX: 0,
-                offsetY: 0,
-                offsetZ: 0,
-              });
-            }}
-          >
-            <RotateCcw size={10} />
-            RESET TRANSFORMS
-          </button>
         </div>
       </CollapsibleSection>
 

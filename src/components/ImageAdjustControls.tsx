@@ -1,6 +1,6 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { NumberInput, PrecisionSlider, DeferredColorInput } from './controlPrimitives';
+import { NumberInput, PrecisionSlider } from './controlPrimitives';
 import {
   ImageAdjustConfig,
   ToneMappingConfig,
@@ -8,30 +8,8 @@ import {
 } from '../types/ascii';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
 import { computeAutoLevels } from '../engine/autoLevels';
+import { NToneRampEditor } from './NToneRampEditor';
 import { Sliders, Sparkles, Minus, Plus, Palette, BarChart3 } from 'lucide-react';
-
-interface ColorPickerInputProps {
-  label: string;
-  value?: string;
-  onChange: (val: string) => void;
-}
-
-/**
- * Labelled row wrapper around DeferredColorInput. The picker no longer emits a
- * value per mouse move, so dragging a tone stop does not re-rasterize the
- * frame on every frame of the drag.
- */
-const ColorPickerInput: React.FC<ColorPickerInputProps> = ({ label, value = '#ffffff', onChange }) => (
-  <div className="control-row">
-    <span className="control-label">{label}</span>
-    <DeferredColorInput
-      value={value}
-      fallback="#ffffff"
-      hexFieldWidth="82px"
-      onChange={onChange}
-    />
-  </div>
-);
 
 // ---------------------------------------------------------------------------
 // High-Accuracy Quantize Levels Control
@@ -95,51 +73,23 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
     }
   };
 
-  const getReadoutBadge = () => {
-    if (normalizedVal === 0) {
-      return 'AUTO (NATURAL)';
-    }
-    if (normalizedVal === 2) return '2 LEVELS (1-BIT)';
-    if (normalizedVal === 4) return '4 LEVELS (2-BIT)';
-    if (normalizedVal === 8) return '8 LEVELS (3-BIT)';
-    if (normalizedVal === 16) return '16 LEVELS (4-BIT)';
-    if (normalizedVal === 32) return '32 LEVELS (5-BIT)';
-    if (normalizedVal === 64) return '64 LEVELS (6-BIT)';
-    if (normalizedVal === 128) return '128 LEVELS (7-BIT)';
-    if (normalizedVal === 256) return '256 LEVELS (8-BIT)';
-    return `${normalizedVal} LEVELS`;
-  };
-
   return (
-    <div style={{ marginBottom: '12px' }}>
-      <div className="control-row" style={{ marginBottom: '4px' }}>
-        <span
-          className="control-label"
-          title="Quantization depth fed to the dither pass. 0 = auto (charset ramp or palette length)."
+    <div style={{ marginBottom: '20px' }}>
+      <div className="tonal-subheading">
+        <span>Quantization &amp; Dither Depth</span>
+        <button
+          type="button"
+          className="btn btn-sm"
+          style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+          onClick={() => onChange(0)}
+          title="Reset Quantization Depth to Auto"
         >
-          Quantize Levels
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span
-            style={{
-              fontSize: '8.5px',
-              fontFamily: 'var(--font-mono)',
-              fontWeight: 800,
-              letterSpacing: '0.4px',
-              padding: '2px 6px',
-              borderRadius: '2px',
-              background: normalizedVal === 0 ? 'var(--accent-glow)' : 'var(--bg-control)',
-              border: `1px solid ${normalizedVal === 0 ? 'var(--accent)' : 'var(--border-color)'}`,
-              color: normalizedVal === 0 ? 'var(--accent)' : 'var(--text-primary)',
-            }}
-          >
-            {getReadoutBadge()}
-          </span>
-        </div>
+          RESET
+        </button>
       </div>
 
       {/* Quick Bit-Depth Preset Chips */}
-      <div className="quantize-chip-row">
+      <div className="quantize-chip-row" style={{ marginTop: '4px', marginBottom: '8px' }}>
         {QUANTIZE_PRESETS.map((p) => {
           const isSelected = normalizedVal === p.value;
           return (
@@ -280,7 +230,6 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
   const [cursorPos, setCursorPos] = useState<{ inVal: number; outVal: number } | null>(null);
 
   const rawPoints = config.curvePoints && config.curvePoints.length >= 2 ? config.curvePoints : DEFAULT_CURVE_POINTS;
-  // Ensure points are sorted by X coordinate
   const sortedPoints = [...rawPoints].sort((a, b) => a[0] - b[0]);
 
   const samples = 96;
@@ -304,7 +253,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
     const clientX = Math.max(rect.left, Math.min(rect.right, e.clientX));
     const clientY = Math.max(rect.top, Math.min(rect.bottom, e.clientY));
     const normX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const normY = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height)); // 0=bottom, 1=top
+    const normY = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height));
     return { normX, normY };
   };
 
@@ -320,7 +269,6 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
     const { normX, normY } = getSvgNormalizedCoords(e);
     if (sortedPoints.length >= 12) return;
 
-    // Check if clicking close to an existing point
     const threshold = 0.04;
     for (let k = 0; k < sortedPoints.length; k++) {
       const dist = Math.hypot(sortedPoints[k][0] - normX, sortedPoints[k][1] - normY);
@@ -402,33 +350,12 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
       : null;
 
   return (
-    <div
-      style={{
-        marginBottom: '14px',
-        padding: '10px',
-        background: 'var(--bg-primary)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '3px',
-        width: '100%',
-        boxSizing: 'border-box',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontSize: '9.5px',
-          fontWeight: 700,
-          color: 'var(--text-muted)',
-          marginBottom: '6px',
-          fontFamily: 'var(--font-mono)',
-        }}
-      >
+    <div style={{ marginBottom: '20px' }}>
+      <div className="tonal-subheading">
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>TONE CURVE (SPLINE)</span>
+          <span>Tonal Transfer Curve</span>
           {activeOrHoveredPoint && (
-            <span style={{ color: 'var(--accent)', fontSize: '9px', fontWeight: 600 }}>
+            <span style={{ color: 'var(--accent)', fontSize: '8.5px', fontWeight: 600 }}>
               IN: {Math.round(activeOrHoveredPoint[0] * 255)} • OUT: {Math.round(activeOrHoveredPoint[1] * 255)}
             </span>
           )}
@@ -439,8 +366,9 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
             {sortedPoints.length} PTS
           </span>
           <button
+            type="button"
             className="btn btn-sm"
-            style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px', color: 'var(--text-muted)' }}
+            style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
             onClick={handleReset}
             title="Reset Tone Curve to Linear 1:1"
           >
@@ -449,163 +377,174 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
         </div>
       </div>
 
-      {/* Quick Curve Presets Toolbar */}
-      <div className="curve-preset-bar">
-        {CURVE_PRESETS.map((cp) => (
-          <button
-            key={cp.name}
-            type="button"
-            className="curve-preset-btn"
-            onClick={() => handleApplyPreset(cp.points)}
-            title={cp.title}
-          >
-            {cp.name}
-          </button>
-        ))}
-      </div>
-
-      {/* SQUARED 1:1 Aspect Ratio Graph */}
       <div
         style={{
-          width: '100%',
-          maxWidth: '260px',
-          aspectRatio: '1 / 1',
-          margin: '0 auto',
-          position: 'relative',
-          background: '#040404',
+          padding: '10px',
+          background: 'var(--bg-primary)',
           border: '1px solid var(--border-color)',
           borderRadius: '3px',
-          overflow: 'hidden',
-          cursor: activePointIdx !== null ? 'grabbing' : 'crosshair',
-          touchAction: 'none',
-          userSelect: 'none',
+          width: '100%',
+          boxSizing: 'border-box',
         }}
-        onDoubleClick={handleReset}
       >
-        <svg
-          ref={svgRef}
-          viewBox="0 0 100 100"
-          style={{ width: '100%', height: '100%', display: 'block' }}
-          onPointerDown={handleSvgPointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onPointerLeave={() => {
-            setCursorPos(null);
-            setHoveredPointIdx(null);
-            if (activePointIdx === null) setActivePointIdx(null);
+        {/* Quick Curve Presets Toolbar */}
+        <div className="curve-preset-bar" style={{ marginTop: 0 }}>
+          {CURVE_PRESETS.map((cp) => (
+            <button
+              key={cp.name}
+              type="button"
+              className="curve-preset-btn"
+              onClick={() => handleApplyPreset(cp.points)}
+              title={cp.title}
+            >
+              {cp.name}
+            </button>
+          ))}
+        </div>
+
+        {/* SQUARED 1:1 Aspect Ratio Graph */}
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '260px',
+            aspectRatio: '1 / 1',
+            margin: '0 auto',
+            position: 'relative',
+            background: '#040404',
+            border: '1px solid var(--border-color)',
+            borderRadius: '3px',
+            overflow: 'hidden',
+            cursor: activePointIdx !== null ? 'grabbing' : 'crosshair',
+            touchAction: 'none',
+            userSelect: 'none',
           }}
+          onDoubleClick={handleReset}
         >
-          <defs>
-            <linearGradient id="interactiveSplineGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
-            </linearGradient>
-          </defs>
+          <svg
+            ref={svgRef}
+            viewBox="0 0 100 100"
+            style={{ width: '100%', height: '100%', display: 'block' }}
+            onPointerDown={handleSvgPointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onPointerLeave={() => {
+              setCursorPos(null);
+              setHoveredPointIdx(null);
+              if (activePointIdx === null) setActivePointIdx(null);
+            }}
+          >
+            <defs>
+              <linearGradient id="interactiveSplineGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
+                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+              </linearGradient>
+            </defs>
 
-          {/* Grid lines (25%, 50%, 75%) */}
-          <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.12)" strokeWidth="0.7" strokeDasharray="2 2" />
-          <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
+            {/* Grid lines (25%, 50%, 75%) */}
+            <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
+            <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.12)" strokeWidth="0.7" strokeDasharray="2 2" />
+            <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
 
-          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.12)" strokeWidth="0.7" strokeDasharray="2 2" />
-          <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
+            <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
+            <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.12)" strokeWidth="0.7" strokeDasharray="2 2" />
+            <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" strokeDasharray="2 2" />
 
-          {/* 45-degree Neutral 1:1 Diagonal */}
-          <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.24)" strokeWidth="0.75" strokeDasharray="3 3" />
+            {/* 45-degree Neutral 1:1 Diagonal */}
+            <line x1="0" y1="100" x2="100" y2="0" stroke="rgba(255,255,255,0.24)" strokeWidth="0.75" strokeDasharray="3 3" />
 
-          {/* Fill under Curve */}
-          <path d={areaD} fill="url(#interactiveSplineGrad)" pointerEvents="none" />
+            {/* Fill under Curve */}
+            <path d={areaD} fill="url(#interactiveSplineGrad)" pointerEvents="none" />
 
-          {/* Active Transfer Curve */}
-          <path
-            d={pathD}
-            fill="none"
-            stroke="var(--accent)"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            pointerEvents="none"
-          />
+            {/* Active Transfer Curve */}
+            <path
+              d={pathD}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              pointerEvents="none"
+            />
 
-          {/* Interactive Editable Control Points (Draggable in both X and Y!) */}
-          {sortedPoints.map((pt, idx) => {
-            const svgX = pt[0] * 100;
-            const svgY = 100 - pt[1] * 100;
-            const isSelected = activePointIdx === idx || hoveredPointIdx === idx;
-            const isEndpoint = idx === 0 || idx === sortedPoints.length - 1;
+            {/* Interactive Editable Control Points (Draggable in both X and Y!) */}
+            {sortedPoints.map((pt, idx) => {
+              const svgX = pt[0] * 100;
+              const svgY = 100 - pt[1] * 100;
+              const isSelected = activePointIdx === idx || hoveredPointIdx === idx;
+              const isEndpoint = idx === 0 || idx === sortedPoints.length - 1;
 
-            return (
-              <g
-                key={idx}
-                style={{ cursor: isSelected ? 'grabbing' : 'grab' }}
-                onPointerDown={(e) => handlePointPointerDown(idx, e)}
-                onDoubleClick={(e) => handlePointDoubleClick(idx, e)}
-                onPointerEnter={() => setHoveredPointIdx(idx)}
-                onPointerLeave={() => setHoveredPointIdx(null)}
-              >
-                {/* Outer Glow Ring on Hover/Active */}
-                {isSelected && (
+              return (
+                <g
+                  key={idx}
+                  style={{ cursor: isSelected ? 'grabbing' : 'grab' }}
+                  onPointerDown={(e) => handlePointPointerDown(idx, e)}
+                  onDoubleClick={(e) => handlePointDoubleClick(idx, e)}
+                  onPointerEnter={() => setHoveredPointIdx(idx)}
+                  onPointerLeave={() => setHoveredPointIdx(null)}
+                >
+                  {/* Outer Glow Ring on Hover/Active */}
+                  {isSelected && (
+                    <circle
+                      cx={svgX}
+                      cy={svgY}
+                      r="7"
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth="1.2"
+                      strokeOpacity="0.7"
+                    />
+                  )}
+
+                  {/* Main Point Handle */}
                   <circle
                     cx={svgX}
                     cy={svgY}
-                    r="7"
-                    fill="none"
-                    stroke="var(--accent)"
-                    strokeWidth="1.2"
-                    strokeOpacity="0.7"
+                    r={isEndpoint ? 4.2 : 3.8}
+                    fill={isEndpoint ? (idx === 0 ? '#000000' : '#ffffff') : 'var(--accent)'}
+                    stroke={isEndpoint ? 'var(--accent)' : '#ffffff'}
+                    strokeWidth={1.5}
                   />
-                )}
 
-                {/* Main Point Handle */}
-                <circle
-                  cx={svgX}
-                  cy={svgY}
-                  r={isEndpoint ? 4.2 : 3.8}
-                  fill={isEndpoint ? (idx === 0 ? '#000000' : '#ffffff') : 'var(--accent)'}
-                  stroke={isEndpoint ? 'var(--accent)' : '#ffffff'}
-                  strokeWidth={1.5}
-                />
+                  {/* Hit target extension for easy grabbing */}
+                  <circle cx={svgX} cy={svgY} r="10" fill="transparent" />
+                </g>
+              );
+            })}
 
-                {/* Hit target extension for easy grabbing */}
-                <circle cx={svgX} cy={svgY} r="10" fill="transparent" />
-              </g>
-            );
-          })}
+            {/* Hover Crosshair / Cursor position */}
+            {cursorPos && (
+              <circle
+                cx={(cursorPos.inVal / 255) * 100}
+                cy={100 - evaluateMonotoneCubicSpline(sortedPoints, cursorPos.inVal / 255) * 100}
+                r="2.2"
+                fill="none"
+                stroke="var(--text-primary)"
+                strokeWidth="0.8"
+                strokeDasharray="1 1"
+                pointerEvents="none"
+              />
+            )}
+          </svg>
+        </div>
 
-          {/* Hover Crosshair / Cursor position */}
-          {cursorPos && (
-            <circle
-              cx={(cursorPos.inVal / 255) * 100}
-              cy={100 - evaluateMonotoneCubicSpline(sortedPoints, cursorPos.inVal / 255) * 100}
-              r="2.2"
-              fill="none"
-              stroke="var(--text-primary)"
-              strokeWidth="0.8"
-              strokeDasharray="1 1"
-              pointerEvents="none"
-            />
-          )}
-        </svg>
-      </div>
-
-      {/* Axis Reference Scale */}
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '260px',
-          margin: '4px auto 0',
-          display: 'flex',
-          justifyContent: 'space-between',
-          fontSize: '8px',
-          color: 'var(--text-dim)',
-          fontFamily: 'var(--font-mono)',
-        }}
-      >
-        <span>IN: 0</span>
-        <span>128</span>
-        <span>255</span>
+        {/* Axis Reference Scale */}
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '260px',
+            margin: '4px auto 0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '8px',
+            color: 'var(--text-dim)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          <span>IN: 0</span>
+          <span>128</span>
+          <span>255</span>
+        </div>
       </div>
     </div>
   );
@@ -627,12 +566,10 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
 interface LevelsControlProps {
   config: ToneMappingConfig;
   onChangeConfig: (next: ToneMappingConfig) => void;
-  /** 256 bins of the luminance entering this stage, or null when no frame has been seen. */
   histogram: Uint32Array | null;
   histogramOpaque: number;
 }
 
-/** Track geometry, in the SVG's own user units. */
 const LV_W = 256;
 const LV_HIST_H = 56;
 const LV_TRACK_Y = 60;
@@ -655,28 +592,14 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
   const mid = config.levelsMidtones ?? 50;
   const white = config.levelsWhite ?? 100;
 
-  /*
-   * Where the midtone sits between the endpoints. The engine turns exactly
-   * this into the levels gamma, so holding it fixed while an endpoint moves is
-   * what stops a stretch from silently also re-gamma-ing the image.
-   */
   const midNorm = white > black ? (mid - black) / (white - black) : 0.5;
   const gamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
 
-  const flash = (msg: string) => {
-    setNote(msg);
-    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
-    noteTimer.current = window.setTimeout(() => setNote(null), 2600);
-  };
+  const isNeutral =
+    (config.levelsBlack ?? 0) === 0 &&
+    (config.levelsWhite ?? 100) === 100 &&
+    Math.abs((config.levelsMidtones ?? 50) - 50) < 0.01;
 
-  useEffect(
-    () => () => {
-      if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
-    },
-    []
-  );
-
-  /** Commit endpoints, carrying the midtone so the gamma survives the move. */
   const commit = (nextBlack: number, nextWhite: number, keepGamma = true) => {
     const b = Math.max(0, Math.min(95, nextBlack));
     const w = Math.max(b + 5, Math.min(100, nextWhite));
@@ -691,24 +614,6 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
     });
   };
 
-  const handleAuto = () => {
-    if (!histogram || histogramOpaque <= 0) {
-      flash('NO FRAME SAMPLED YET');
-      return;
-    }
-    const res = computeAutoLevels(histogram, histogramOpaque);
-    if (!res) {
-      flash('IMAGE HAS NO RANGE TO STRETCH');
-      return;
-    }
-    commit(res.black, res.white);
-    flash(`SET ${res.black.toFixed(0)} → ${res.white.toFixed(0)}`);
-  };
-
-  const handleReset = () => {
-    onChangeConfig({ ...config, levelsBlack: 0, levelsMidtones: 50, levelsWhite: 100 });
-  };
-
   const posToPercent = (e: React.PointerEvent) => {
     const el = svgRef.current;
     if (!el) return 0;
@@ -719,8 +624,6 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     const p = posToPercent(e);
-    // Nearest handle wins. Midtone loses ties so the endpoints, which are what
-    // people reach for, stay grabbable when all three bunch up.
     const d = {
       black: Math.abs(p - black),
       white: Math.abs(p - white),
@@ -740,7 +643,6 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
     } else if (active === 'white') {
       commit(black, Math.max(p, black + 5));
     } else {
-      // The midtone is an absolute position, not a ratio, so it moves alone.
       onChangeConfig({
         ...config,
         levelsMidtones: Number(Math.max(black + 1, Math.min(white - 1, p)).toFixed(2)),
@@ -753,11 +655,44 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
     svgRef.current?.releasePointerCapture?.(e.pointerId);
   };
 
-  /*
-   * Bars are scaled by the square root of their count. A linear histogram of a
-   * real image is one spike and 255 invisible bins -- the flat background is
-   * usually an order of magnitude more cells than everything else combined.
-   */
+  const flashNote = (msg: string) => {
+    setNote(msg);
+    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => setNote(null), 1800);
+  };
+
+  const handleReset = () => {
+    onChangeConfig({
+      ...config,
+      levelsBlack: 0,
+      levelsMidtones: 50,
+      levelsWhite: 100,
+    });
+    flashNote('RESET');
+  };
+
+  const handleAuto = () => {
+    if (!histogram || histogramOpaque <= 0) {
+      flashNote('NO HISTOGRAM');
+      return;
+    }
+    const res = computeAutoLevels(histogram, histogramOpaque);
+    if (!res) {
+      flashNote('NO SIGNAL');
+      return;
+    }
+    const b = Math.max(0, Math.min(95, res.black));
+    const w = Math.max(b + 5, Math.min(100, res.white));
+    const m = b + midNorm * (w - b);
+    onChangeConfig({
+      ...config,
+      levelsBlack: Number(b.toFixed(2)),
+      levelsWhite: Number(w.toFixed(2)),
+      levelsMidtones: Number(Math.max(b + 1, Math.min(w - 1, m)).toFixed(2)),
+    });
+    flashNote(`AUTO: ${b.toFixed(0)} / ${w.toFixed(0)}`);
+  };
+
   const bars = useMemo(() => {
     if (!histogram || histogramOpaque <= 0) return null;
     let peak = 0;
@@ -771,7 +706,6 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
     return out;
   }, [histogram, histogramOpaque]);
 
-  const isNeutral = black === 0 && white === 100 && Math.abs(mid - 50) < 0.01;
   const px = (pct: number) => (pct / 100) * LV_W;
 
   const handleMark = (pct: number, fill: string, stroke: string, id: LevelsHandle) => (
@@ -799,40 +733,30 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
   );
 
   return (
-    <div
-      style={{
-        marginBottom: '14px',
-        padding: '10px',
-        background: 'var(--bg-primary)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '3px',
-        width: '100%',
-        boxSizing: 'border-box',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontSize: '9.5px',
-          fontWeight: 700,
-          color: 'var(--text-muted)',
-          marginBottom: '6px',
-          fontFamily: 'var(--font-mono)',
-        }}
-      >
+    <div style={{ marginBottom: '20px' }}>
+      <div className="tonal-subheading">
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>LEVELS</span>
+          <span>Levels &amp; Histogram</span>
           {!isNeutral && (
-            <span style={{ color: 'var(--accent)', fontSize: '9px', fontWeight: 600 }}>
+            <span
+              style={{
+                color: 'var(--accent)',
+                fontSize: '8px',
+                fontWeight: 700,
+                padding: '1px 4px',
+                background: 'var(--accent-glow)',
+                border: '1px solid var(--accent)',
+                borderRadius: '2px',
+              }}
+            >
               ACTIVE
             </span>
           )}
         </span>
         <button
+          type="button"
           className="btn btn-sm"
-          style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px', color: 'var(--text-muted)' }}
+          style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
           onClick={handleReset}
           title="Reset black, midtone and white points to 0 / 50 / 100"
         >
@@ -842,107 +766,121 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
 
       <div
         style={{
-          width: '100%',
-          maxWidth: '260px',
-          margin: '0 auto',
-          background: '#040404',
+          padding: '10px',
+          background: 'var(--bg-primary)',
           border: '1px solid var(--border-color)',
           borderRadius: '3px',
-          overflow: 'hidden',
+          width: '100%',
+          boxSizing: 'border-box',
         }}
       >
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${LV_W} ${LV_TRACK_Y + LV_TRACK_H + 2}`}
-          preserveAspectRatio="none"
-          style={{ display: 'block', width: '100%', height: '84px', touchAction: 'none' }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-        >
-          {/* Everything outside [black, white] is clipped flat by the engine. */}
-          <rect x={0} y={0} width={px(black)} height={LV_HIST_H} fill="rgba(0,0,0,0.55)" />
-          <rect
-            x={px(white)}
-            y={0}
-            width={LV_W - px(white)}
-            height={LV_HIST_H}
-            fill="rgba(255,255,255,0.07)"
-          />
-
-          {bars ? (
-            <g fill="var(--accent)" opacity={0.75}>
-              {bars.map((h, i) =>
-                h > 0 ? (
-                  <rect key={i} x={i} y={LV_HIST_H - h} width={1} height={h} />
-                ) : null
-              )}
-            </g>
-          ) : (
-            <text
-              x={LV_W / 2}
-              y={LV_HIST_H / 2 + 3}
-              textAnchor="middle"
-              fontSize={9}
-              fill="var(--text-dim)"
-              fontFamily="var(--font-mono)"
-            >
-              NO FRAME SAMPLED
-            </text>
-          )}
-
-          {/* Black-to-white gradient strip: the output ramp the handles map onto. */}
-          <defs>
-            <linearGradient id="levels-ramp" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#000000" />
-              <stop offset="100%" stopColor="#ffffff" />
-            </linearGradient>
-          </defs>
-          <rect x={0} y={LV_TRACK_Y - 3} width={LV_W} height={2} fill="url(#levels-ramp)" />
-
-          {handleMark(black, '#000000', 'var(--text-muted)', 'black')}
-          {handleMark(mid, '#808080', 'var(--text-muted)', 'mid')}
-          {handleMark(white, '#ffffff', 'var(--text-muted)', 'white')}
-        </svg>
-      </div>
-
-      <div
-        style={{
-          maxWidth: '260px',
-          margin: '6px auto 0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-        }}
-      >
-        <span
+        {/* Histogram Box */}
+        <div
           style={{
-            fontSize: '8.5px',
-            color: 'var(--text-dim)',
-            fontFamily: 'var(--font-mono)',
-            whiteSpace: 'nowrap',
+            width: '100%',
+            maxWidth: '260px',
+            margin: '0 auto',
+            background: '#040404',
+            border: '1px solid var(--border-color)',
+            borderRadius: '3px',
+            overflow: 'hidden',
           }}
         >
-          {note ? (
-            <span style={{ color: 'var(--accent)' }}>{note}</span>
-          ) : (
-            <>
-              BLACK {black.toFixed(0)} &bull; MID {mid.toFixed(0)} &bull; WHITE {white.toFixed(0)}
-              {' '}&bull; &gamma; {gamma.toFixed(2)}
-            </>
-          )}
-        </span>
-        <button
-          className="btn btn-sm"
-          style={{ padding: '1px 8px', fontSize: '8.5px', height: '18px', whiteSpace: 'nowrap' }}
-          onClick={handleAuto}
-          title="Set the black and white points from the image's own histogram, clipping 0.1% at each end"
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${LV_W} ${LV_TRACK_Y + LV_TRACK_H + 2}`}
+            preserveAspectRatio="none"
+            style={{ display: 'block', width: '100%', height: '84px', touchAction: 'none' }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+          >
+            {/* Everything outside [black, white] is clipped flat by the engine. */}
+            <rect x={0} y={0} width={px(black)} height={LV_HIST_H} fill="rgba(0,0,0,0.55)" />
+            <rect
+              x={px(white)}
+              y={0}
+              width={LV_W - px(white)}
+              height={LV_HIST_H}
+              fill="rgba(255,255,255,0.07)"
+            />
+
+            {bars ? (
+              <g fill="var(--accent)" opacity={0.75}>
+                {bars.map((h, i) =>
+                  h > 0 ? (
+                    <rect key={i} x={i} y={LV_HIST_H - h} width={1} height={h} />
+                  ) : null
+                )}
+              </g>
+            ) : (
+              <text
+                x={LV_W / 2}
+                y={LV_HIST_H / 2 + 3}
+                textAnchor="middle"
+                fontSize={9}
+                fill="var(--text-dim)"
+                fontFamily="var(--font-mono)"
+              >
+                NO FRAME SAMPLED
+              </text>
+            )}
+
+            {/* Gradient track along the bottom */}
+            <defs>
+              <linearGradient id="levels-ramp" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#000000" />
+                <stop offset="100%" stopColor="#ffffff" />
+              </linearGradient>
+            </defs>
+            <rect x={0} y={LV_TRACK_Y - 3} width={LV_W} height={2} fill="url(#levels-ramp)" />
+
+            {handleMark(black, '#000000', 'var(--text-muted)', 'black')}
+            {handleMark(mid, '#808080', 'var(--text-muted)', 'mid')}
+            {handleMark(white, '#ffffff', 'var(--text-muted)', 'white')}
+          </svg>
+        </div>
+
+        {/* Telemetry & Auto Levels */}
+        <div
+          style={{
+            maxWidth: '260px',
+            margin: '6px auto 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+          }}
         >
-          <BarChart3 size={9} style={{ marginRight: '3px' }} />
-          AUTO LEVELS
-        </button>
+          <span
+            style={{
+              fontSize: '8.5px',
+              color: 'var(--text-dim)',
+              fontFamily: 'var(--font-mono)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {note ? (
+              <span style={{ color: 'var(--accent)' }}>{note}</span>
+            ) : (
+              <>
+                BLACK {black.toFixed(0)} &bull; MID {mid.toFixed(0)} &bull; WHITE {white.toFixed(0)}
+                {' '}&bull; &gamma; {gamma.toFixed(2)}
+              </>
+            )}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ padding: '1px 8px', fontSize: '8.5px', height: '18px', whiteSpace: 'nowrap' }}
+            onClick={handleAuto}
+            title="Set the black and white points from the image's own histogram, clipping 0.1% at each end"
+          >
+            <BarChart3 size={9} style={{ marginRight: '3px' }} />
+            AUTO LEVELS
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -953,37 +891,12 @@ interface ImageAdjustControlsProps {
   onChangeConfig: (next: ImageAdjustConfig) => void;
   paletteSlot?: React.ReactNode;
   showAlphaCutoff?: boolean;
-  /**
-   * Show the luminance invert toggle.
-   *
-   * Off by default: synth and model each already carry their own "Invert
-   * Characters" control over a different backing field, so surfacing this one
-   * there would be two near-identical toggles. Media has none of its own.
-   */
   showInvert?: boolean;
-  /**
-   * Reset the half of the colour state this component does not own: the
-   * palette mode and the tint both live in MediaColorConfig, held by the host.
-   *
-   * Without it RESET COLORS could only clear tonalMapping, which the Color Mode
-   * selector ignores while a palette or content mode is active -- so the reset
-   * revealed the multi-tone stops without moving the selector that governs them.
-   */
   onResetPalette?: () => void;
   resetDefaults?: ImageAdjustConfig;
   persistKeyPrefix?: string;
-
-  /*
-   * Levels lives in ToneMappingConfig, not ImageAdjustConfig -- a second store,
-   * held alongside this one in RenderSettings. Passed in rather than merged so
-   * the two keep their existing homes and their existing persistence.
-   *
-   * Omit all three and the Levels block simply does not render, which is how
-   * any host that has no tone config stays working.
-   */
   toneConfig?: ToneMappingConfig;
   onChangeToneConfig?: (next: ToneMappingConfig) => void;
-  /** Latest luminance histogram from the render loop; see ProcessedRasterResult. */
   histogram?: Uint32Array | null;
   histogramOpaque?: number;
 }
@@ -1022,11 +935,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       ...(showInvert ? { invert: resetDefaults.invert } : {}),
     });
   };
-  /*
-   * The two resets follow the two panels. Before the split this was one action
-   * that also cleared the colour mode and the tone stops -- harmless while they
-   * shared a panel, a cross-panel surprise now that they do not.
-   */
+
   const resetTonal = () => {
     onChangeConfig({
       ...config,
@@ -1037,11 +946,18 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       alphaThreshold: resetDefaults.alphaThreshold,
       colorLevels: resetDefaults.colorLevels ?? 0,
     });
-    // Levels is in this panel, so RESET TONAL has to clear it too -- otherwise
-    // the reset leaves the one control that clips the image still clipping it.
     if (toneConfig && onChangeToneConfig) {
       onChangeToneConfig({ ...toneConfig, levelsBlack: 0, levelsMidtones: 50, levelsWhite: 100 });
     }
+  };
+
+  const resetTonalBalance = () => {
+    onChangeConfig({
+      ...config,
+      highlights: resetDefaults.highlights ?? 0,
+      midtones: resetDefaults.midtones ?? 0,
+      shadows: resetDefaults.shadows ?? 0,
+    });
   };
 
   const resetColors = () => {
@@ -1051,24 +967,195 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       highlightColor: resetDefaults.highlightColor,
       midtoneColor: resetDefaults.midtoneColor,
       shadowColor: resetDefaults.shadowColor,
+      customToneColors: resetDefaults.customToneColors ? [...resetDefaults.customToneColors] : ['#0a0a0a', '#00a848', '#00ff66'],
     });
     onResetPalette?.();
   };
 
+  const handleUpdateToneStops = (newStops: string[]) => {
+    const shadow = newStops[0] || '#000000';
+    const highlight = newStops[newStops.length - 1] || '#ffffff';
+    const mid = newStops.length > 2 ? newStops[Math.floor(newStops.length / 2)] : '#3b82f6';
+
+    onChangeConfig({
+      ...config,
+      tonalMapping: 'ntone',
+      customToneColors: newStops,
+      shadowColor: shadow,
+      midtoneColor: mid,
+      highlightColor: highlight,
+    });
+  };
+
   return (
     <>
+      {/* COLORS */}
+      <CollapsibleSection
+        title="COLORS"
+        icon={<Palette size={12} />}
+        persistKey={`${persistKeyPrefix}-colors`}
+        defaultOpen={true}
+        onReset={resetColors}
+        resetTitle="Reset color mode and the tone ramp stops"
+      >
+        {paletteSlot}
+
+        {config.tonalMapping && config.tonalMapping !== '1color' && (
+          <div style={{ marginTop: '6px' }}>
+            <div className="tonal-subheading">
+              <span>N-Tone Ramp Editor</span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+                onClick={() =>
+                  handleUpdateToneStops(
+                    resetDefaults.customToneColors
+                      ? [...resetDefaults.customToneColors]
+                      : ['#0a0a0a', '#00a848', '#00ff66']
+                  )
+                }
+                title="Reset Ramp to default green tones"
+              >
+                RESET
+              </button>
+            </div>
+            <NToneRampEditor
+              stops={
+                config.customToneColors && config.customToneColors.length >= 2
+                  ? config.customToneColors
+                  : [
+                      config.shadowColor || '#0a0a0a',
+                      config.midtoneColor || '#00a848',
+                      config.highlightColor || '#00ff66',
+                    ]
+              }
+              onChangeStops={handleUpdateToneStops}
+            />
+          </div>
+        )}
+      </CollapsibleSection>
+
+      {/* TONAL CONTROLS */}
+      <CollapsibleSection
+        title="TONAL CONTROLS"
+        icon={<Sparkles size={12} />}
+        persistKey={`${persistKeyPrefix}-tonal-controls`}
+        defaultOpen={true}
+        onReset={resetTonal}
+        resetTitle="Reset curve, levels, quantize depth, highlights, midtones and shadows"
+      >
+        {/* Quantize depth */}
+        <QuantizeLevelsControl
+          value={config.colorLevels}
+          onChange={(val) => update('colorLevels', val)}
+        />
+
+        {/* Real-time Interactive Tonal Transfer Curve Graph */}
+        <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
+
+        {/* Levels & Auto Range */}
+        {toneConfig && onChangeToneConfig && (
+          <LevelsControl
+            config={toneConfig}
+            onChangeConfig={onChangeToneConfig}
+            histogram={histogram}
+            histogramOpaque={histogramOpaque}
+          />
+        )}
+
+        {/* Tonal Balance: Highlights, Midtones, Shadows */}
+        <div className="tonal-subheading">
+          <span>Tonal Balance</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+            onClick={resetTonalBalance}
+            title="Reset highlights, midtones, and shadows to 0"
+          >
+            RESET
+          </button>
+        </div>
+
+        {/* Highlights */}
+        <div className="control-row">
+          <span className="control-label">Highlights</span>
+          <PrecisionSlider
+            value={config.highlights}
+            sliderMin={-100}
+            sliderMax={100}
+            step={1}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.highlights}
+            onChange={(val) => update('highlights', val)}
+          />
+        </div>
+
+        {/* Midtones */}
+        <div className="control-row">
+          <span className="control-label">Midtones</span>
+          <PrecisionSlider
+            value={config.midtones}
+            sliderMin={-100}
+            sliderMax={100}
+            step={1}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.midtones}
+            onChange={(val) => update('midtones', val)}
+          />
+        </div>
+
+        {/* Shadows */}
+        <div className="control-row">
+          <span className="control-label">Shadows</span>
+          <PrecisionSlider
+            value={config.shadows}
+            sliderMin={-100}
+            sliderMax={100}
+            step={1}
+            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.shadows}
+            onChange={(val) => update('shadows', val)}
+          />
+        </div>
+
+        {/* Alpha Threshold */}
+        {showAlphaCutoff && (
+          <div style={{ marginTop: '20px' }}>
+            <div className="tonal-subheading">
+              <span>Alpha Cutoff</span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+                onClick={() => update('alphaThreshold', DEFAULT_IMAGE_ADJUST_CONFIG.alphaThreshold)}
+                title="Reset alpha cutoff threshold"
+              >
+                RESET
+              </button>
+            </div>
+            <div className="control-row">
+              <span className="control-label">Threshold</span>
+              <PrecisionSlider
+                value={config.alphaThreshold}
+                sliderMin={0}
+                sliderMax={255}
+                step={5}
+                resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.alphaThreshold}
+                onChange={(val) => update('alphaThreshold', val)}
+              />
+            </div>
+          </div>
+        )}
+      </CollapsibleSection>
+
       {/* EFFECT CONTROLS */}
       <CollapsibleSection
         title="EFFECT CONTROLS"
         icon={<Sliders size={12} />}
         persistKey={`${persistKeyPrefix}-effect-controls`}
         defaultOpen={false}
+        onReset={resetEffects}
+        resetTitle="Reset invert, sharpen, blur, noise, denoise, brightness and contrast"
       >
-        {/*
-          Invert sits with the other per-pixel operations rather than in the
-          render settings, which are about how the raster is produced rather
-          than how it is graded.
-        */}
         {showInvert && (
           <div className="control-row">
             <span className="control-label">Invert Luminance</span>
@@ -1201,227 +1288,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
             onChange={(val) => update('contrast', val)}
           />
         </div>
-
-        <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={resetEffects} title="Reset invert, sharpen, blur, noise, denoise, brightness and contrast">
-            RESET EFFECTS
-          </button>
-        </div>
-      </CollapsibleSection>
-
-      {/*
-        COLORS — which colours come out.
-        Split from the tonal panel because these are two different decisions on
-        opposite sides of the pipeline: the engine shapes tone (levels, gamma,
-        curve) and only then assigns colour. The old single panel interleaved
-        them and led with colour, which is the step that happens last. Keeping
-        the mode selector and the stops it reveals adjacent also makes their
-        dependency legible -- the stops only exist for duotone and tritone.
-      */}
-      <CollapsibleSection
-        title="COLORS"
-        icon={<Palette size={12} />}
-        persistKey={`${persistKeyPrefix}-colors`}
-        defaultOpen={true}
-      >
-        {/* Color mode, palette and tint (host-provided) */}
-        {paletteSlot}
-
-        {/* Colour stops for duotone / tritone ramps */}
-        {config.tonalMapping !== '1color' && (
-          <div style={{ marginTop: '4px' }}>
-            <div className="tonal-subheading">
-              <span>Multi-Tone Stops</span>
-            </div>
-            <ColorPickerInput
-              label="Highlights"
-              value={config.highlightColor || '#FFFFFF'}
-              onChange={(c) => update('highlightColor', c)}
-            />
-            {config.tonalMapping === '3color' && (
-              <ColorPickerInput
-                label="Midtones"
-                value={config.midtoneColor || '#3B82F6'}
-                onChange={(c) => update('midtoneColor', c)}
-              />
-            )}
-            <ColorPickerInput
-              label="Shadows"
-              value={config.shadowColor || '#000000'}
-              onChange={(c) => update('shadowColor', c)}
-            />
-          </div>
-        )}
-
-        <div className="collapsible-actions">
-          <button
-            className="btn btn-sm"
-            onClick={resetColors}
-            title="Reset color mode and the duotone / tritone stops"
-          >
-            RESET COLORS
-          </button>
-        </div>
-      </CollapsibleSection>
-
-      {/*
-        TONAL CONTROLS — how tone is distributed before colours are assigned.
-        Quantize depth lives here rather than in COLORS: it is named colorLevels
-        and its auto value comes from the palette size, but it reduces the tone
-        ramp, and it is the control that makes the dither algorithm matter.
-      */}
-      <CollapsibleSection
-        title="TONAL CONTROLS"
-        icon={<Sparkles size={12} />}
-        persistKey={`${persistKeyPrefix}-tonal-controls`}
-        defaultOpen={true}
-      >
-        {/* Quantize depth with High-Accuracy Control */}
-        <div className="tonal-subheading">
-          <span>Quantization &amp; Dither Depth</span>
-        </div>
-        <QuantizeLevelsControl
-          value={config.colorLevels}
-          onChange={(val) => update('colorLevels', val)}
-        />
-
-        {/* Real-time Interactive Tonal Transfer Curve Graph */}
-        <div className="tonal-subheading">
-          <span>Tonal Transfer Curve</span>
-        </div>
-        <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
-
-        {/*
-          Levels follows the curve because the engine applies them in that
-          order, and the histogram drawn here is sampled between the two.
-        */}
-        {toneConfig && onChangeToneConfig && (
-          <>
-            <div className="tonal-subheading">
-              <span>Levels &amp; Auto Range</span>
-            </div>
-            <LevelsControl
-              config={toneConfig}
-              onChangeConfig={onChangeToneConfig}
-              histogram={histogram}
-              histogramOpaque={histogramOpaque}
-            />
-          </>
-        )}
-
-        {/* Tonal Balance: Highlights, Midtones, Shadows */}
-        <div className="tonal-subheading">
-          <span>Tonal Balance</span>
-        </div>
-
-        {/* Highlights */}
-        <div className="control-row">
-          <span className="control-label">Highlights</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={-100}
-              max={100}
-              step={1}
-              value={config.highlights}
-              onChange={(e) => update('highlights', parseInt(e.target.value, 10))}
-              onDoubleClick={() => update('highlights', 0)}
-              title="Double-click to reset to 0"
-            />
-            <NumberInput
-              value={config.highlights}
-              min={-100}
-              max={100}
-              step={1}
-              onChange={(val) => update('highlights', val)}
-            />
-          </div>
-        </div>
-
-        {/* Midtones */}
-        <div className="control-row">
-          <span className="control-label">Midtones</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={-100}
-              max={100}
-              step={1}
-              value={config.midtones}
-              onChange={(e) => update('midtones', parseInt(e.target.value, 10))}
-              onDoubleClick={() => update('midtones', 0)}
-              title="Double-click to reset to 0"
-            />
-            <NumberInput
-              value={config.midtones}
-              min={-100}
-              max={100}
-              step={1}
-              onChange={(val) => update('midtones', val)}
-            />
-          </div>
-        </div>
-
-        {/* Shadows */}
-        <div className="control-row">
-          <span className="control-label">Shadows</span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={-100}
-              max={100}
-              step={1}
-              value={config.shadows}
-              onChange={(e) => update('shadows', parseInt(e.target.value, 10))}
-              onDoubleClick={() => update('shadows', 0)}
-              title="Double-click to reset to 0"
-            />
-            <NumberInput
-              value={config.shadows}
-              min={-100}
-              max={100}
-              step={1}
-              onChange={(val) => update('shadows', val)}
-            />
-          </div>
-        </div>
-
-        {/* Alpha Threshold */}
-        {showAlphaCutoff && (
-          <>
-            <div className="tonal-subheading">
-              <span>Alpha Cutoff</span>
-            </div>
-            <div className="control-row">
-              <span className="control-label">Threshold</span>
-              <div className="control-input-wrapper">
-                <input
-                  type="range"
-                  className="range-slider"
-                  min={0}
-                  max={255}
-                  step={5}
-                  value={config.alphaThreshold}
-                  onChange={(e) => update('alphaThreshold', parseInt(e.target.value, 10))}
-                />
-                <span className="numeral-badge">
-                  {config.alphaThreshold}
-                </span>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={resetTonal} title="Reset curve, quantize depth, highlights, midtones and shadows">
-            RESET TONAL
-          </button>
-        </div>
       </CollapsibleSection>
     </>
   );
 };
-

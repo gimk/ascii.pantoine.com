@@ -381,6 +381,8 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
         icon={<Maximize2 size={12} />}
         persistKey="MediaFileControls-transform-framing"
         defaultOpen={true}
+        onReset={resetTransforms}
+        resetTitle="Reset transforms to default fit and framing"
       >
         {/* Fit Mode */}
         <div className="control-row">
@@ -508,13 +510,6 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
             title="Flip Vertical"
           >
             <FlipVertical size={11} /> FLIP Y
-          </button>
-        </div>
-
-        {/* Reset Transforms Button */}
-        <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={resetTransforms}>
-            RESET TRANSFORMS
           </button>
         </div>
       </CollapsibleSection>

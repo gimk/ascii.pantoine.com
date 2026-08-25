@@ -49,6 +49,8 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             icon={<RotateCw size={12} />}
             persistKey="ModelViewControls-rotation-dynamics"
             defaultOpen={false}
+            onReset={onResetRotation}
+            resetTitle="Reset 3D rotation angles to 0°"
           >
             <div className="control-row">
               <span className="control-label">Auto-Rotation</span>
@@ -174,12 +176,6 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
                   {Math.round((config.manualRotationZ * 180) / Math.PI)}°
                 </span>
               </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-              <button className="btn btn-sm" style={{ flex: 1 }} onClick={onResetRotation}>
-                RESET ANGLES (0°)
-              </button>
             </div>
           </CollapsibleSection>
 

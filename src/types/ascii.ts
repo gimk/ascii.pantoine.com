@@ -378,7 +378,7 @@ export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
  * were three-stop ramps duplicating built-in palettes and are migrated to
  * them on load.
  */
-export type TonalMappingType = '1color' | '2color' | '3color';
+export type TonalMappingType = '1color' | '2color' | '3color' | 'ntone';
 
 /** Legacy tonal presets -> the built-in palette that reproduces them. */
 export const LEGACY_TONAL_PRESET_PALETTES: Record<string, string> = {
@@ -411,6 +411,7 @@ export interface ImageAdjustConfig {
   highlightColor?: string; // e.g. '#FFFFFF'
   midtoneColor?: string; // e.g. '#3B82F6'
   shadowColor?: string; // e.g. '#000000'
+  customToneColors?: string[]; // Array of N hex color stops from shadow (0%) to highlight (100%)
   curvePoints?: Array<[number, number]>; // editable [x, y] control points in [0..1]
   highlights: number; // -100 to 100, default 0 (middle)
   midtones: number; // -100 to 100, default 0 (middle)
@@ -454,6 +455,7 @@ export const DEFAULT_IMAGE_ADJUST_CONFIG: ImageAdjustConfig = {
   highlightColor: '#00ff66',
   midtoneColor: '#00a848',
   shadowColor: '#0a0a0a',
+  customToneColors: ['#0a0a0a', '#00a848', '#00ff66'],
   highlights: 0,
   midtones: 0,
   shadows: 0,

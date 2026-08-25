@@ -91,37 +91,38 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            gap: '5px',
             flexShrink: 0,
+            fontSize: '11px',
           }}
         >
-          <Cpu size={12} style={{ color: 'var(--accent)' }} />
+          <Cpu size={13} style={{ color: 'var(--accent)' }} />
           <span>Algorithm</span>
         </span>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexWrap: 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
           {/* Previous */}
           <button
             type="button"
             className="slider-nudge-btn"
             onClick={() => handleStep(-1)}
             title="Previous algorithm (wraps around)"
-            style={{ width: '22px', height: '22px', padding: 0 }}
+            style={{ width: '24px', height: '24px', padding: 0 }}
           >
-            <ChevronLeft size={12} />
+            <ChevronLeft size={13} />
           </button>
 
           {/* Grouped Select Dropdown */}
           <select
             className="number-input"
             style={{
-              width: '160px',
+              width: '165px',
               textAlign: 'left',
-              padding: '2px 4px',
-              fontSize: '10px',
+              padding: '2px 6px',
+              fontSize: '11px',
               fontFamily: 'var(--font-mono)',
               fontWeight: 700,
-              height: '22px',
+              height: '24px',
             }}
             value={value}
             onChange={(e) => onChange(e.target.value as DitherAlgorithm)}
@@ -143,9 +144,9 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
             className="slider-nudge-btn"
             onClick={() => handleStep(1)}
             title="Next algorithm (wraps around)"
-            style={{ width: '22px', height: '22px', padding: 0 }}
+            style={{ width: '24px', height: '24px', padding: 0 }}
           >
-            <ChevronRight size={12} />
+            <ChevronRight size={13} />
           </button>
 
           {/* Surprise Me / Randomizer Button */}
@@ -155,14 +156,14 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
             onClick={handleRandomize}
             title="Surprise Me: pick a random algorithm"
             style={{
-              width: '22px',
-              height: '22px',
+              width: '24px',
+              height: '24px',
               padding: 0,
               color: 'var(--accent)',
             }}
           >
             <Dices
-              size={12}
+              size={13}
               style={{
                 transform: isRolling ? 'rotate(360deg)' : 'none',
                 transition: 'transform 0.45s ease',
@@ -172,17 +173,8 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
         </div>
       </div>
 
-      {/* 2. Family Category Tabs (ALL is on the far right) */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '2px',
-          marginBottom: '6px',
-          overflowX: 'auto',
-          paddingBottom: '2px',
-        }}
-        className="dither-family-bar"
-      >
+      {/* 2. Family Category Grid (Matches Quantize Level Buttons, No Overflow) */}
+      <div className="dither-family-grid">
         <button
           type="button"
           className={`dither-family-tab ${selectedFamily === 'error-diffusion' ? 'active' : ''}`}
@@ -239,9 +231,9 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '4px',
-          marginBottom: '6px',
-          maxHeight: selectedFamily === 'all' ? '320px' : undefined,
+          gap: '5px',
+          marginBottom: '8px',
+          maxHeight: selectedFamily === 'all' ? '340px' : undefined,
           overflowY: selectedFamily === 'all' ? 'auto' : undefined,
           paddingRight: selectedFamily === 'all' ? '2px' : undefined,
         }}
@@ -258,24 +250,25 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '2px',
-                padding: '4px 3px',
-                minHeight: '38px',
-                fontSize: '8.5px',
+                gap: '3px',
+                padding: '5px 4px',
+                minHeight: '44px',
+                fontSize: '10px',
                 textAlign: 'center',
                 overflow: 'hidden',
               }}
               onClick={() => onChange(algo.id)}
               title={`${algo.name}: ${algo.description}`}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', maxWidth: '100%' }}>
-                <DitherSwatchIcon type={algo.patternType} size={11} active={isSelected} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', maxWidth: '100%' }}>
+                <DitherSwatchIcon type={algo.patternType} size={12} active={isSelected} />
                 <span
                   style={{
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                     fontWeight: 700,
+                    fontSize: '10px',
                   }}
                 >
                   {algo.name.split(' ')[0]}
@@ -284,8 +277,8 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
               {algo.badge && (
                 <span
                   style={{
-                    fontSize: '7.5px',
-                    opacity: isSelected ? 1 : 0.75,
+                    fontSize: '8.5px',
+                    opacity: isSelected ? 1 : 0.8,
                     color: isSelected ? 'var(--accent)' : 'var(--text-dim)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
@@ -304,25 +297,26 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
       {/* 4. Telemetry & Algorithm Inspector Footer */}
       <div
         style={{
-          padding: '5px 7px',
+          padding: '8px 10px',
           background: 'var(--bg-primary)',
           border: '1px solid var(--border-color)',
-          borderRadius: '2px',
-          fontSize: '8.5px',
+          borderRadius: '3px',
+          fontSize: '10.5px',
           color: 'var(--text-dim)',
           fontFamily: 'var(--font-mono)',
-          lineHeight: '1.3',
+          lineHeight: '1.4',
           display: 'flex',
           flexDirection: 'column',
-          gap: '3px',
+          gap: '5px',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
-            <DitherSwatchIcon type={currentMeta.patternType} size={12} active={true} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
+            <DitherSwatchIcon type={currentMeta.patternType} size={14} active={true} />
             <strong
               style={{
                 color: 'var(--text-primary)',
+                fontSize: '11.5px',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -333,11 +327,11 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
             {currentMeta.badge && (
               <span
                 style={{
-                  fontSize: '7.5px',
+                  fontSize: '9.5px',
                   fontWeight: 700,
                   color: 'var(--accent)',
                   border: '1px solid rgba(255, 170, 0, 0.4)',
-                  padding: '0 3px',
+                  padding: '1px 5px',
                   borderRadius: '2px',
                   whiteSpace: 'nowrap',
                 }}
@@ -348,7 +342,7 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
           </div>
           <span
             style={{
-              fontSize: '8px',
+              fontSize: '10px',
               color: 'var(--accent)',
               fontWeight: 800,
               flexShrink: 0,
@@ -358,20 +352,20 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
           </span>
         </div>
 
-        <div style={{ color: 'var(--text-muted)', fontSize: '8px' }}>
+        <div style={{ color: 'var(--text-secondary)', fontSize: '10px', lineHeight: '1.35' }}>
           {currentMeta.description}
         </div>
 
         {currentMeta.tags && currentMeta.tags.length > 0 && (
-          <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginTop: '1px' }}>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
             {currentMeta.tags.map((t) => (
               <span
                 key={t}
                 style={{
-                  fontSize: '7.5px',
+                  fontSize: '9px',
                   color: 'var(--text-dim)',
                   background: 'var(--bg-secondary)',
-                  padding: '1px 3px',
+                  padding: '2px 5px',
                   borderRadius: '2px',
                 }}
               >

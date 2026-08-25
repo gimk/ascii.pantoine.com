@@ -30,6 +30,27 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
         icon={<Activity size={12} />}
         persistKey="ParticleControls-simulation-particle-system"
         badge={config.enabled ? 'ON' : 'OFF'}
+        onReset={() => onChange({ ...DEFAULT_PARTICLE_CONFIG, enabled: config.enabled })}
+        resetTitle="Reset particle physics settings"
+        headerRight={
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{
+              fontSize: '8.5px',
+              height: '18px',
+              padding: '1px 6px',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              color: 'var(--text-muted)',
+              borderColor: 'var(--border-color)',
+            }}
+            onClick={onClearParticles}
+            title="Clear all active particles"
+          >
+            CLEAR
+          </button>
+        }
       >
         <div className="control-row">
           <span className="control-label">Particles Active</span>
@@ -188,21 +209,6 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
               </div>
             </div>
           </CollapsibleSection>
-        </div>
-
-        <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={onClearParticles} title="Clear Active Particles">
-            CLEAR PARTICLES
-          </button>
-          <button
-            className="btn btn-sm"
-            // Physics only: the defaults are off, but resetting tuning from
-            // inside the open panel should not also flip the system off.
-            onClick={() => onChange({ ...DEFAULT_PARTICLE_CONFIG, enabled: config.enabled })}
-            title="Reset Particle Settings"
-          >
-            RESET PHYSICS
-          </button>
         </div>
       </CollapsibleSection>
     </div>

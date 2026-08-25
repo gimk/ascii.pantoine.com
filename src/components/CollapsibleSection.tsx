@@ -30,7 +30,7 @@ function persistCollapsed(id: string, collapsed: boolean): void {
   }
 }
 
-interface CollapsibleSectionProps {
+export interface CollapsibleSectionProps {
   /** Header label. Rendered uppercase by the stylesheet. */
   title: string;
   /** Small glyph shown before the title, matching the old headers. */
@@ -41,6 +41,11 @@ interface CollapsibleSectionProps {
    * without expanding: the active source, the resolution, the chosen preset.
    */
   badge?: React.ReactNode;
+  /** Optional inline reset button rendered right inside the header on the right side. */
+  onReset?: () => void;
+  resetTitle?: string;
+  /** Optional custom header right node */
+  headerRight?: React.ReactNode;
   /**
    * Stable id for persisting open/closed state across reloads. Omit to make
    * the section always start at `defaultOpen`.
@@ -59,6 +64,9 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
   icon,
   badge,
+  onReset,
+  resetTitle,
+  headerRight,
   persistKey,
   defaultOpen = true,
   flush = false,
@@ -84,10 +92,17 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
       className={`collapsible-section ${flush ? 'flush' : ''} ${isOpen ? 'open' : 'closed'} ${className}`}
       style={style}
     >
-      <button
-        type="button"
+      <div
         className="collapsible-header"
         onClick={toggle}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        }}
         aria-expanded={isOpen}
         title={isOpen ? `Collapse ${title}` : `Expand ${title}`}
       >
@@ -98,10 +113,45 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
             <span className="collapsible-badge">{badge}</span>
           )}
         </span>
-        <span className="collapsible-chevron">
-          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span
+          className="collapsible-header-right"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          {onReset && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{
+                fontSize: '8.5px',
+                height: '18px',
+                padding: '1px 6px',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                color: 'var(--text-muted)',
+                borderColor: 'var(--border-color)',
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onReset();
+              }}
+              title={resetTitle || `Reset ${title}`}
+            >
+              RESET
+            </button>
+          )}
+          {headerRight && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', alignItems: 'center' }}
+            >
+              {headerRight}
+            </div>
+          )}
+          <span className="collapsible-chevron">
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </span>
         </span>
-      </button>
+      </div>
 
       {isOpen && <div className="collapsible-body">{children}</div>}
     </div>

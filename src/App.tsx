@@ -2779,7 +2779,16 @@ export const App: React.FC = () => {
                     <SynthControls
                       params={waveParams}
                       onChangeParams={handleParamChange}
-                      onResetParams={() => handleParamChange(DEFAULT_WAVE_PARAMS)}
+                      onResetDynamics={() =>
+                        handleParamChange({
+                          ...waveParams,
+                          timeSpeed: DEFAULT_WAVE_PARAMS.timeSpeed,
+                          aspectRatio: DEFAULT_WAVE_PARAMS.aspectRatio,
+                          contrast: DEFAULT_WAVE_PARAMS.contrast,
+                          bias: DEFAULT_WAVE_PARAMS.bias,
+                          invert: DEFAULT_WAVE_PARAMS.invert,
+                        })
+                      }
                       code={customCode}
                       prepareCode={customPrepare}
                       compileError={compileError}

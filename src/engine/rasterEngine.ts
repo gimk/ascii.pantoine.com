@@ -58,6 +58,7 @@ export interface UnifiedPipelineOptions {
   highlightColor?: string;
   midtoneColor?: string;
   shadowColor?: string;
+  customToneColors?: string[];
   colorLevels?: number;
   /** Monochrome tint, baked into pixel output where CSS cannot reach. */
   monoTint?: string;
@@ -226,6 +227,7 @@ export function toPipelineAdjustments(
     highlightColor: adjust.highlightColor,
     midtoneColor: adjust.midtoneColor,
     shadowColor: adjust.shadowColor,
+    customToneColors: adjust.customToneColors,
     colorLevels: adjust.colorLevels,
   };
 }
@@ -864,6 +866,8 @@ export function processRasterFrame(
     autoLevels = 2;
   } else if (tonal === '3color') {
     autoLevels = 3;
+  } else if (tonal === 'ntone' && options.customToneColors && options.customToneColors.length >= 2) {
+    autoLevels = options.customToneColors.length;
   } else {
     autoLevels = 256;
   }
@@ -1101,44 +1105,39 @@ export function processRasterFrame(
     }
     colorsOut = colorsBuffer;
   } else if (options.tonalMapping && options.tonalMapping !== '1color') {
-    // Multi-tone mapping. The fixed hardware looks that used to live here
-    // (GameBoy, Cyberpunk, Amber) are built-in palettes now, so this branch is
-    // only the user-defined duotone and tritone ramps.
+    // Multi-tone N-color ramp mapping. Supports arbitrary N (2 to 8+) color stops.
     const tMode = options.tonalMapping;
-    const high = parseHexRgb(options.highlightColor || '#FFFFFF', { r: 255, g: 255, b: 255 });
-    const mid = parseHexRgb(options.midtoneColor || '#3B82F6', { r: 59, g: 130, b: 246 });
-    const low = parseHexRgb(options.shadowColor || '#000000', { r: 0, g: 0, b: 0 });
+    let rawStops: string[];
 
-    if (tMode === '2color') {
-      for (let i = 0; i < totalCells; i++) {
-        const lum = lumBuffer[i];
-        if (lum < 0) {
-          colorsBuffer[i * 3] = low.r;
-          colorsBuffer[i * 3 + 1] = low.g;
-          colorsBuffer[i * 3 + 2] = low.b;
-          continue;
-        }
-        const col = lum > 0.5 ? high : low;
-        colorsBuffer[i * 3] = col.r;
-        colorsBuffer[i * 3 + 1] = col.g;
-        colorsBuffer[i * 3 + 2] = col.b;
-      }
+    if (tMode === 'ntone' && options.customToneColors && options.customToneColors.length >= 2) {
+      rawStops = options.customToneColors;
+    } else if (tMode === '2color') {
+      rawStops = [options.shadowColor || '#000000', options.highlightColor || '#FFFFFF'];
     } else {
-      for (let i = 0; i < totalCells; i++) {
-        const lum = lumBuffer[i];
-        if (lum < 0) {
-          colorsBuffer[i * 3] = low.r;
-          colorsBuffer[i * 3 + 1] = low.g;
-          colorsBuffer[i * 3 + 2] = low.b;
-          continue;
-        }
-        let col = low;
-        if (lum > 0.66) col = high;
-        else if (lum > 0.33) col = mid;
-        colorsBuffer[i * 3] = col.r;
-        colorsBuffer[i * 3 + 1] = col.g;
-        colorsBuffer[i * 3 + 2] = col.b;
+      rawStops = [
+        options.shadowColor || '#000000',
+        options.midtoneColor || '#3B82F6',
+        options.highlightColor || '#FFFFFF',
+      ];
+    }
+
+    const numStops = rawStops.length;
+    const parsedStops = rawStops.map((hex) => parseHexRgb(hex, { r: 128, g: 128, b: 128 }));
+
+    for (let i = 0; i < totalCells; i++) {
+      const lum = lumBuffer[i];
+      if (lum < 0) {
+        colorsBuffer[i * 3] = parsedStops[0].r;
+        colorsBuffer[i * 3 + 1] = parsedStops[0].g;
+        colorsBuffer[i * 3 + 2] = parsedStops[0].b;
+        continue;
       }
+      const val = Math.max(0, Math.min(0.9999, lum));
+      const stopIdx = Math.min(numStops - 1, Math.floor(val * numStops));
+      const col = parsedStops[stopIdx];
+      colorsBuffer[i * 3] = col.r;
+      colorsBuffer[i * 3 + 1] = col.g;
+      colorsBuffer[i * 3 + 2] = col.b;
     }
     colorsOut = colorsBuffer;
   }
