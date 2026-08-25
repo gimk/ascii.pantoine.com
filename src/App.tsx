@@ -77,7 +77,7 @@ import { MediaViewControls } from './components/MediaViewControls';
 import { ImageAdjustControls } from './components/ImageAdjustControls';
 import { CollapsibleSection } from './components/CollapsibleSection';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
-import { ExportModal } from './components/ExportModal';
+import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { generateRandomAnimation } from './engine/randomizer';
@@ -781,7 +781,7 @@ export const App: React.FC = () => {
   // Pointless once they are already looking at the panel it points to.
   const isRenderHintVisible = showRenderHint && panel !== 'render';
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
-  const [exportInitialTab, setExportInitialTab] = useState<'prompt' | 'astro' | 'html' | 'json' | 'ascii' | 'image' | 'gif' | 'video'>('image');
+  const [exportInitialTab, setExportInitialTab] = useState<ExportTab>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
 
   // Undo / Redo History Stack (Separate stacks for Synth, Media, and Model modes)
@@ -3049,8 +3049,6 @@ export const App: React.FC = () => {
         params={waveParams}
         customCode={customCode}
         customPrepare={customPrepare}
-        particleConfig={particleConfig}
-        optimizeConfig={optimizeConfig}
         cols={cols}
         rows={rows}
         density={density}

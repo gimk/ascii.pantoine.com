@@ -2458,42 +2458,6 @@ select:disabled {
   box-shadow: 0 0 30px var(--accent-glow);
 }
 
-.export-category-nav {
-  display: flex;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
-  padding: 0;
-}
-
-.export-category-btn {
-  flex: 1;
-  padding: 9px 12px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.export-category-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-control-hover);
-}
-
-.export-category-btn.active {
-  color: var(--accent);
-  background: var(--bg-panel);
-  border-bottom-color: var(--accent);
-}
-
 .export-subtab-nav {
   display: flex;
   gap: 6px;

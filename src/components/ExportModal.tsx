@@ -4,29 +4,15 @@ import {
   Copy,
   Download,
   Check,
-  Bot,
   Film,
   Video,
   Loader2,
   Play,
   RotateCcw,
-  Code2,
-  Database,
-  FileCode,
-  FileText,
   Camera,
   Layers,
   Info,
 } from 'lucide-react';
-import {
-  generateAstroComponent,
-  generateStandaloneHtml,
-  generateAiPrompt,
-  generateHtmlEmbed,
-  generateMarkdownSnippet,
-  generateAsciiTextFrame,
-  generateModeJsonPreset,
-} from '../engine/exporter';
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
 import { exportAsciiImage } from '../engine/imageExporter';
@@ -40,8 +26,6 @@ import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer'
 import * as THREE from 'three';
 import {
   WaveParams,
-  ParticleConfig,
-  OptimizeConfig,
   PhosphorTheme,
   CrtConfig,
   PhosphorGradient,
@@ -65,8 +49,6 @@ interface ExportModalProps {
   params: WaveParams;
   customCode?: string;
   customPrepare?: string;
-  particleConfig: ParticleConfig;
-  optimizeConfig?: OptimizeConfig;
   cols: number;
   rows: number;
   density: string;
@@ -76,7 +58,7 @@ interface ExportModalProps {
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;
   crtConfig?: CrtConfig;
-  initialTab?: 'prompt' | 'astro' | 'html' | 'html_embed' | 'markdown' | 'json' | 'ascii' | 'image' | 'gif' | 'video';
+  initialTab?: ExportTab;
   appMode?: AppMode;
   modelConfig?: ModelConfig;
   modelViewConfig?: ModelViewConfig;
@@ -91,26 +73,16 @@ interface ExportModalProps {
   adjustConfig?: ImageAdjustConfig;
 }
 
-export type ExportTab =
-  | 'image'
-  | 'separation'
-  | 'gif'
-  | 'video'
-  | 'html_embed'
-  | 'markdown'
-  | 'astro'
-  | 'html'
-  | 'prompt'
-  | 'json'
-  | 'ascii';
-
-export type ExportCategory = 'media' | 'code' | 'data';
-
-const getCategoryForTab = (tab: ExportTab): ExportCategory => {
-  if (tab === 'image' || tab === 'separation' || tab === 'gif' || tab === 'video') return 'media';
-  if (tab === 'astro' || tab === 'html' || tab === 'prompt' || tab === 'html_embed' || tab === 'markdown') return 'code';
-  return 'data';
-};
+/**
+ * Export is rendered media only.
+ *
+ * The code and data categories -- Astro component, standalone HTML, HTML/
+ * Markdown embed, AI prompt, JSON preset, raw ASCII frame -- are gone along
+ * with their generators. They belonged to an earlier direction where the
+ * output was a snippet to paste into a site; the app is a raster studio now
+ * and the output is a picture.
+ */
+export type ExportTab = 'image' | 'separation' | 'gif' | 'video';
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
@@ -120,8 +92,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   params,
   customCode,
   customPrepare,
-  particleConfig,
-  optimizeConfig,
   cols,
   rows,
   density,
@@ -131,7 +101,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   customThemeColor,
   gradientConfig,
   crtConfig,
-  initialTab = 'prompt',
+  initialTab = 'image',
   appMode = 'synth',
   modelConfig,
   modelViewConfig,
@@ -146,8 +116,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   mediaElement,
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
-  const [activeCategory, setActiveCategory] = useState<ExportCategory>(getCategoryForTab(initialTab));
-  const [copied, setCopied] = useState<boolean>(false);
   const [customBaseName, setCustomBaseName] = useState<string>('');
 
   // Still Image Export States
@@ -361,24 +329,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     ditherAlgorithm, toneConfig, adjustConfig,
   ]);
 
-  const isTabDisabled = useCallback(
-    (tab: ExportTab): boolean => {
-      if (tab === 'astro' || tab === 'html' || tab === 'prompt') {
-        return appMode !== 'synth';
-      }
-      return false;
-    },
-    [appMode]
-  );
-
   useEffect(() => {
     if (isOpen) {
-      let targetTab: ExportTab = (initialTab as ExportTab) || 'image';
-      if (isTabDisabled(targetTab)) {
-        targetTab = 'html_embed';
-      }
-      setActiveTab(targetTab);
-      setActiveCategory(getCategoryForTab(targetTab));
+      // Every remaining tab works in every mode, so there is nothing to gate.
+      setActiveTab((initialTab as ExportTab) || 'image');
     }
     if (isOpen && (activeTab === 'image' || initialTab === 'image')) {
       handleCaptureImage();
@@ -403,7 +357,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         setIsRecordingVideo(false);
       }
     }
-  }, [isOpen, initialTab, appMode, isTabDisabled]);
+  }, [isOpen, initialTab, appMode]);
 
   // Re-capture image when still image options change while tab is active
   useEffect(() => {
@@ -455,83 +409,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const videoExportW = Math.round(cols * videoCellW);
   const videoExportH = Math.round(rows * videoCellH);
 
-  const exportCfg = {
-    name,
-    type,
-    params,
-    customCode,
-    customPrepare,
-    particleConfig,
-    optimizeConfig,
-    cols,
-    rows,
-    density,
-    fps: optimizeConfig?.targetFps !== undefined ? optimizeConfig.targetFps : 60,
-    appMode,
-    theme,
-    customThemeColor,
-    gradientConfig,
-    crtConfig,
-    modelConfig,
-    modelViewConfig,
-    mediaConfig,
-    mediaViewConfig,
-    mediaColorConfig,
-    rasterMode: effectiveRasterMode,
-    ditherAlgorithm,
-    adjustConfig,
-    toneConfig,
-  };
-
   const getExtension = (): string => {
     switch (activeTab) {
       case 'image': return imageFormat === 'jpg' ? '.jpg' : imageFormat === 'svg' ? '.svg' : '.png';
       // A layered SVG is one file; everything else is an archive of plates.
       case 'separation': return sepFormat === 'svg' && sepLayeredSvg ? '-plates.svg' : '-plates.zip';
-
-      case 'prompt': return '-ai-prompt.txt';
-      case 'astro': return '.astro';
-      case 'html': return '-standalone.html';
-      case 'html_embed': return '-embed.html';
-      case 'markdown': return '.md';
-      case 'json': return '.json';
-      case 'ascii': return '-frame.txt';
       case 'gif': return '.gif';
       case 'video': return videoExtension;
     }
   };
 
   const effectiveFileName = `${(customBaseName.trim() || defaultBaseName).replace(/\.[^/.]+$/, '')}${getExtension()}`;
-
-  const handleSelectCategory = (cat: ExportCategory) => {
-    setActiveCategory(cat);
-    if (cat === 'media') {
-      if (activeTab !== 'image' && activeTab !== 'separation' && activeTab !== 'gif' && activeTab !== 'video') {
-        setActiveTab('image');
-      }
-    } else if (cat === 'code') {
-      if (appMode !== 'synth') {
-        if (activeTab !== 'html_embed' && activeTab !== 'markdown') setActiveTab('html_embed');
-      } else {
-        if (
-          activeTab !== 'html_embed' &&
-          activeTab !== 'markdown' &&
-          activeTab !== 'astro' &&
-          activeTab !== 'html' &&
-          activeTab !== 'prompt'
-        ) {
-          setActiveTab('html_embed');
-        }
-      }
-    } else if (cat === 'data') {
-      if (activeTab !== 'json' && activeTab !== 'ascii') setActiveTab('json');
-    }
-  };
-
-  const handleSelectSubTab = (tab: ExportTab) => {
-    if (isTabDisabled(tab)) return;
-    setActiveTab(tab);
-  };
 
   const handleRecordGif = async () => {
     setIsRecordingGif(true);
@@ -641,114 +529,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   };
 
-  const getExportContent = (): { text: string; mimeType: string } => {
-    switch (activeTab) {
-      case 'image':
-        return {
-          text: '',
-          mimeType: imageFormat === 'jpg' ? 'image/jpeg' : 'image/png',
-        };
-      case 'html_embed':
-        return {
-          text: generateHtmlEmbed({
-            name,
-            frameText: currentAsciiFrame,
-            cols,
-            rows,
-            theme,
-            customThemeColor,
-          }),
-          mimeType: 'text/html',
-        };
-      case 'markdown':
-        return {
-          text: generateMarkdownSnippet({
-            name,
-            frameText: currentAsciiFrame,
-            appMode,
-            cols,
-            rows,
-          }),
-          mimeType: 'text/markdown',
-        };
-      case 'prompt':
-        return {
-          text: generateAiPrompt(exportCfg),
-          mimeType: 'text/plain',
-        };
-      case 'astro':
-        return {
-          text: generateAstroComponent(exportCfg),
-          mimeType: 'text/plain',
-        };
-      case 'html':
-        return {
-          text: generateStandaloneHtml(exportCfg),
-          mimeType: 'text/html',
-        };
-      case 'json':
-        return {
-          text: generateModeJsonPreset({
-            appMode,
-            name,
-            type,
-            params,
-            customCode,
-            customPrepare,
-            particleConfig,
-            optimizeConfig,
-            cols,
-            rows,
-            density,
-            theme,
-            customThemeColor,
-            gradientConfig,
-            crtConfig,
-            modelConfig,
-            modelViewConfig,
-            mediaConfig,
-            mediaViewConfig,
-            mediaColorConfig,
-            rasterMode: effectiveRasterMode,
-            ditherAlgorithm,
-            adjustConfig,
-            toneConfig,
-          }),
-          mimeType: 'application/json',
-        };
-      case 'ascii':
-        return {
-          text: generateAsciiTextFrame({
-            name,
-            frameText: currentAsciiFrame,
-            cols,
-            rows,
-            appMode,
-          }),
-          mimeType: 'text/plain',
-        };
-      case 'separation':
-        // Binary like image/gif/video: the blob is built by its own handler,
-        // and there is no text form to copy.
-        return {
-          text: '',
-          mimeType: sepFormat === 'svg' && sepLayeredSvg ? 'image/svg+xml' : 'application/zip',
-        };
-      case 'gif':
-        return {
-          text: '',
-          mimeType: 'image/gif',
-        };
-      case 'video':
-        return {
-          text: '',
-          mimeType: videoExtension === '.mp4' ? 'video/mp4' : 'video/webm',
-        };
-    }
-  };
 
-  const { text, mimeType } = getExportContent();
-
+  /** Only the still image has a clipboard form; the rest are archives or video. */
   const handleCopy = async () => {
     if (activeTab === 'image') {
       if (!imageBlob) return;
@@ -782,14 +564,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } catch (e) {
         console.warn('Clipboard write failed:', e);
       }
-      return;
     }
-    // The binary tabs have no text form; copying would silently clear the
-    // clipboard rather than do nothing.
-    if (activeTab === 'gif' || activeTab === 'video' || activeTab === 'separation') return;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
   };
 
   const handleDownload = () => {
@@ -831,15 +606,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       a.download = effectiveFileName;
       a.click();
       URL.revokeObjectURL(url);
-      return;
     }
-    const blob = new Blob([text], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = effectiveFileName;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const modeBadge =
@@ -857,171 +624,37 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        {/* Level 1: Primary Category Nav */}
-        <div className="export-category-nav">
-          <button
-            className={`export-category-btn ${activeCategory === 'media' ? 'active' : ''}`}
-            onClick={() => handleSelectCategory('media')}
-          >
-            <Film size={13} />
-            MEDIA CAPTURE
-          </button>
-          <button
-            className={`export-category-btn ${activeCategory === 'code' ? 'active' : ''}`}
-            onClick={() => handleSelectCategory('code')}
-          >
-            <Code2 size={13} />
-            CODE & EMBED
-          </button>
-          <button
-            className={`export-category-btn ${activeCategory === 'data' ? 'active' : ''}`}
-            onClick={() => handleSelectCategory('data')}
-          >
-            <Database size={13} />
-            RAW DATA
-          </button>
-        </div>
-
-        {/* Level 2: Sub-Tabs Nav */}
+        {/* Output Tabs */}
         <div className="export-subtab-nav">
-          {activeCategory === 'media' && (
-            <>
-              <button
-                className={`export-subtab-btn ${activeTab === 'image' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('image')}
-              >
-                <Camera size={11} />
-                Still Image (.png / .jpg)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'separation' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('separation')}
-                title="One file per colour, for editing each ink separately"
-              >
-                <Layers size={11} />
-                Colour Plates (.svg / .png)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('gif')}
-              >
-                <Film size={11} />
-                GIF Animation (.gif)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'video' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('video')}
-              >
-                <Video size={11} />
-                Video Clip (.mp4 / .webm)
-              </button>
-            </>
-          )}
-
-          {activeCategory === 'code' && (
-            <>
-              <button
-                className={`export-subtab-btn ${activeTab === 'html_embed' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('html_embed')}
-              >
-                <Code2 size={11} />
-                HTML &lt;pre&gt; Embed (.html)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'markdown' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('markdown')}
-              >
-                <FileText size={11} />
-                Markdown Snippet (.md)
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'astro' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('astro')}
-                disabled={isTabDisabled('astro')}
-                style={
-                  isTabDisabled('astro')
-                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
-                    : undefined
-                }
-                title={
-                  isTabDisabled('astro')
-                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
-                    : 'Astro Component (.astro)'
-                }
-              >
-                <FileCode size={11} />
-                Astro Component (.astro)
-                {isTabDisabled('astro') && (
-                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
-                )}
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'html' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('html')}
-                disabled={isTabDisabled('html')}
-                style={
-                  isTabDisabled('html')
-                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
-                    : undefined
-                }
-                title={
-                  isTabDisabled('html')
-                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
-                    : 'Standalone HTML Wave Engine (.html)'
-                }
-              >
-                <Play size={11} />
-                Standalone Engine (.html)
-                {isTabDisabled('html') && (
-                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
-                )}
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'prompt' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('prompt')}
-                disabled={isTabDisabled('prompt')}
-                style={
-                  isTabDisabled('prompt')
-                    ? { opacity: 0.35, cursor: 'not-allowed', filter: 'grayscale(1)' }
-                    : undefined
-                }
-                title={
-                  isTabDisabled('prompt')
-                    ? 'Only available for Procedural Wave Synthesizer (interactive mathematical formula)'
-                    : 'AI Prompt (.txt)'
-                }
-              >
-                <Bot size={11} />
-                AI Prompt (.txt)
-                {isTabDisabled('prompt') && (
-                  <span style={{ fontSize: '9px', opacity: 0.7, marginLeft: '3px' }}>[SYNTH ONLY]</span>
-                )}
-              </button>
-            </>
-          )}
-
-          {activeCategory === 'data' && (
-            <>
-              <button
-                className={`export-subtab-btn ${activeTab === 'json' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('json')}
-              >
-                <Database size={11} />
-                {appMode === 'model'
-                  ? '3D Model Preset (.json)'
-                  : appMode === 'media'
-                  ? 'Media Preset (.json)'
-                  : 'Synth Preset (.json)'}
-              </button>
-              <button
-                className={`export-subtab-btn ${activeTab === 'ascii' ? 'active' : ''}`}
-                onClick={() => handleSelectSubTab('ascii')}
-              >
-                <FileText size={11} />
-                ASCII Text Frame (.txt)
-              </button>
-            </>
-          )}
+          <button
+            className={`export-subtab-btn ${activeTab === 'image' ? 'active' : ''}`}
+            onClick={() => setActiveTab('image')}
+          >
+            <Camera size={11} />
+            Still Image (.png / .jpg)
+          </button>
+          <button
+            className={`export-subtab-btn ${activeTab === 'separation' ? 'active' : ''}`}
+            onClick={() => setActiveTab('separation')}
+            title="One file per colour, for editing each ink separately"
+          >
+            <Layers size={11} />
+            Colour Plates (.svg / .png)
+          </button>
+          <button
+            className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
+            onClick={() => setActiveTab('gif')}
+          >
+            <Film size={11} />
+            GIF Animation (.gif)
+          </button>
+          <button
+            className={`export-subtab-btn ${activeTab === 'video' ? 'active' : ''}`}
+            onClick={() => setActiveTab('video')}
+          >
+            <Video size={11} />
+            Video Clip (.mp4 / .webm)
+          </button>
         </div>
 
         {/* Code Content */}
@@ -1528,7 +1161,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               )}
             </div>
-          ) : activeTab === 'video' ? (
+          ) : (
             <div>
               {/* Video Configuration */}
               <div className="gif-config-grid">
@@ -1644,44 +1277,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               )}
             </div>
-          ) : (
-            <>
-              {activeCategory === 'code' && appMode !== 'synth' && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 10px',
-                    marginBottom: '8px',
-                    background: 'var(--bg-control)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '3px',
-                    fontSize: '10.5px',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <Info size={13} color="var(--accent)" />
-                  <span>
-                    {appMode === 'model'
-                      ? '3D Model mode exports self-contained HTML/Markdown embeds or rendered media captures.'
-                      : 'Media mode exports self-contained HTML/Markdown embeds or rendered media captures.'}
-                  </span>
-                </div>
-              )}
-              <textarea
-                className="code-editor-area"
-                style={{
-                  minHeight: '280px',
-                  fontFamily: 'var(--font-mono)',
-                  fontVariantLigatures: 'none',
-                  WebkitFontVariantLigatures: 'none',
-                  fontFeatureSettings: '"liga" 0, "calt" 0, "dlig" 0',
-                }}
-                value={text}
-                readOnly
-              />
-            </>
           )}
         </div>
 
@@ -1773,7 +1368,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </button>
               )}
             </>
-          ) : activeTab === 'video' ? (
+          ) : (
             <>
               {videoUrl && (
                 <button
@@ -1803,17 +1398,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   DOWNLOAD {effectiveFileName}
                 </button>
               )}
-            </>
-          ) : (
-            <>
-              <button className="btn" onClick={handleCopy}>
-                {copied ? <Check size={12} /> : <Copy size={12} />}
-                {copied ? 'COPIED TO CLIPBOARD' : 'COPY CODE'}
-              </button>
-              <button className="btn btn-primary" onClick={handleDownload}>
-                <Download size={12} />
-                DOWNLOAD {effectiveFileName}
-              </button>
             </>
           )}
         </div>

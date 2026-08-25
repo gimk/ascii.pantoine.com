@@ -443,7 +443,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   Recommended Alternatives:
                 </div>
                 <div>
-                  • <strong>Export Rendered Art</strong>: Open the Export dialog to download your artwork as an <strong>Image (PNG/JPG)</strong>, <strong>GIF Loop</strong>, <strong>Video Clip</strong>, or <strong>HTML &lt;pre&gt; Embed</strong>.
+                  • <strong>Export Rendered Art</strong>: Open the Export dialog to download your artwork as an <strong>Image (PNG/JPG/SVG)</strong>, <strong>Colour Plates</strong>, <strong>GIF Loop</strong>, or <strong>Video Clip</strong>.
                 </div>
                 <div>
                   • <strong>Live Link Sharing</strong>:{' '}
@@ -464,7 +464,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   }}
                 >
                   <Download size={13} />
-                  OPEN EXPORT DIALOG (IMAGE / GIF / VIDEO / HTML)
+                  OPEN EXPORT DIALOG (IMAGE / PLATES / GIF / VIDEO)
                 </button>
               )}
             </div>
