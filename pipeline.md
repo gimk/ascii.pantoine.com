@@ -10,13 +10,17 @@ produce the raw frame that goes in, and in how the result is painted afterwards.
 
 ```
                  ┌───────────────────┐
-  synth ────────►│                   │
-  media ────────►│  processRasterFrame├──► ProcessedRasterResult ──┬──► viewport
-  model ────────►│   6 stages        │                            ├──► image export
+  synth ────────►│                   │                            ┌──► viewport
+  media ────────►│  processRasterFrame├──► ProcessedRasterResult ──┼──► image export
+  model ────────►│   6 stages        │                            ├──► colour separation
                  └───────────────────┘                            ├──► GIF export
                           ▲                                       └──► video export
                     all state arrives as
                     UnifiedPipelineOptions
+
+  A shared link is the same contract by another route: it carries the state that
+  produces the frame rather than the frame, and drops the same way if a field is
+  missing. See §4.
 ```
 
 ---
@@ -179,6 +183,7 @@ One pass, per cell, in this exact order:
 1. **Tone curve** — monotone cubic spline through `curvePoints`, baked to a 256-entry
    LUT once per frame
 2. **Levels** — black/white clip plus a gamma derived from the midtone position
+   (`toneConfig.levelsBlack / levelsMidtones / levelsWhite`)
 3. **Contrast / brightness** — `(v - 0.5)·tan((c+100)·π/400) + 0.5 + b`
 4. **Shadows / highlights** — split at 0.5, each half pushed independently
 5. **Midtones** — `pow(v, 2^(-m/50))`
@@ -188,6 +193,35 @@ One pass, per cell, in this exact order:
 
 > **State:** `lumBuffer` = fully graded luminance. This is the last step that sees
 > continuous tone in the general case.
+
+#### The histogram tap
+
+A short dedicated pass runs **between step 1 and step 2 of the list above** — after
+the tone curve, before levels — filling a 256-bin `histogramBuffer` and counting
+opaque cells into `histogramOpaque`. Both ride out on `ProcessedRasterResult` as live
+module buffers, the same contract as `luminance`.
+
+That position is the whole point. **AUTO LEVELS is idempotent because nothing
+downstream of the tap feeds back upstream of it**, so the reading does not move when
+the levels it produced are applied, and pressing the button twice is a no-op.
+Sampling the fully graded luminance instead would walk the image toward pure black
+and white on every press. Sampling `srcLumBuffer` would be idempotent too but would
+ignore blur, sharpen and edges, so the endpoints would not match what levels actually
+sees.
+
+`computeAutoLevels` ([`autoLevels.ts`](src/engine/autoLevels.ts)) takes the endpoints
+at a percentile — 0.1% each end by default, the same figure Photoshop uses — not at
+the absolute min and max. One specular highlight is otherwise enough to pin white at
+100 and the button appears to do nothing on exactly the images that most need it. It
+returns `null` when the span is under 5 bins; a flat image should be left alone
+rather than stretched into noise.
+
+Midtones are left at 50. The operation is a contrast stretch, not a re-gamma. In the
+UI, dragging an endpoint carries the midtone with it so the derived gamma stays fixed
+— otherwise stretching an image would silently re-gamma it too.
+
+`ImageAdjustControls` renders Levels **after** the tone curve, matching the engine
+order, so the histogram under the handles is the tone the handles operate on.
 
 ### Step 3.5 — Quantization depth and dithering
 
@@ -338,11 +372,20 @@ viewport relies on this.
 ### Result
 
 ```ts
-{ text, colors, luminance, cols, rows, rasterMode, bgColor, isColored }
+{ text, colors, luminance, cols, rows, rasterMode, bgColor, isColored,
+  histogram, histogramOpaque }
 ```
 
-`luminance` is the live `lumBuffer` — not a copy. Consumers must read it before the
-next frame overwrites it.
+`luminance` and `histogram` are the live module buffers — not copies. Consumers must
+read them before the next frame overwrites them. App copies the histogram on its way
+into React state, throttled to 200 ms and only while the Render panel is open: a
+synth loop produces 60 frames a second and would otherwise re-render the sidebar that
+often to redraw 256 bars nobody is looking at.
+
+Every source has a degenerate early exit — no grid, no media element, no WebGL
+context — and they were four hand-copied object literals that all broke the moment a
+field was added. They now share `emptyRasterResult(rasterMode)`, exported from the
+engine.
 
 ---
 
@@ -412,6 +455,70 @@ Loop over frames, dispatch to the mode renderer, funnel each result through
   ($1\times = 1\text{px/cell}$) and no CRT filters, avoiding monospace font spacing anomalies and preserving sharp dithered pixel output.
 Same forwarding requirement as stills (`rasterMode`, `ditherAlgorithm`, `toneConfig`, `adjustConfig`).
 
+### 3.4 Colour separation ([`separation.ts`](src/engine/separation.ts), [`separationExporter.ts`](src/engine/separationExporter.ts))
+
+One file per ink, so each colour can be edited independently in Illustrator, Figma,
+or on a press.
+
+**It costs almost nothing structurally, because of invariant 1.** `luminance[i] < 0`
+means transparent and every painter already skips those cells. Masking a plate is
+therefore just writing `-1` into the cells belonging to other inks — the canvas and
+SVG painters needed no changes at all.
+
+```
+renderExportFrame(opts)          ← one render, shared with the still export
+      │
+      ├── analyzeSeparation()    → the distinct colours, dark to light
+      │
+      └── per plate: maskLuminance() / maskText()  → existing painters → ZIP
+```
+
+**Rendered once, re-masked per plate.** A per-plate re-render would be N times the
+work and, worse, would give the dither N chances to land differently — the plates
+would no longer add back up to the original.
+
+**The plates partition the opaque cells exactly**: every opaque cell is in exactly
+one plate, none is doubled or missed, no transparent cell leaks in, and no plate is
+empty. That property is what the separation *is*, so it is verified directly rather
+than assumed.
+
+**Two styles.** `color` puts each plate in its own colour on transparency, so
+stacking them rebuilds the image. `ink` drops the colour buffer entirely, which makes
+the painters fall back to `fgColor` — black on white, a coverage mask. JPG has no
+alpha, so choosing it forces `ink`; a colour plate on an opaque ground cannot stack
+and would silently not work.
+
+**No CRT effects, either raster mode.** Scanlines or bloom on a separation bake a
+screen artefact into every plate and compound N times when they are stacked back up.
+
+**ASCII needs its own SVG path.** `exportPixelRasterToSvg` draws rects; running an
+ASCII separation through it emits squares where the glyphs belong — plates that are
+right as masks and wrong as artwork. `buildAsciiPlateSvg` emits `<text>` runs
+instead, one per row, since a plate is a single ink and needs only one fill.
+
+**Layered SVG.** `exportPixelRasterToSvg` gained an opt-in `groupId` that emits a
+bare `<g>` rather than a whole document, so the plates can be stacked into one file
+as named layers — what Illustrator and Figma read on import. The background rect is
+skipped in group mode; a layer painting its own opaque ground would hide everything
+beneath it. An ink-style layered SVG gets its white ground on the root instead.
+
+**Refusals carry a reason** rather than producing an empty archive:
+
+| refusal | when | what the UI says to do |
+|---|---|---|
+| `mono` | `colors === null` — the 1color path leaves colour to CSS (§2.4) | pick a palette or duotone in COLORS |
+| `too-many` | more than `MAX_PLATES` (64) distinct colours | choose an indexed palette, or set Quantize Levels |
+| `empty` | nothing opaque in the frame | — |
+
+In practice the count is right by construction: an indexed palette yields exactly its
+own entries, `2color`/`3color` yield 2 or 3, pixel output with an explicit
+`colorLevels` yields that many greys. Only `content` colour, being continuous, runs
+past the cap.
+
+Packaging is [`zip.ts`](src/engine/zip.ts), a stored-method ZIP writer with no
+dependency — PNG and JPG already carry their own deflate. It exists because firing N
+downloads from a single gesture is throttled or blocked by Chrome and Safari.
+
 ---
 
 ## 4. State
@@ -431,6 +538,56 @@ store in practice, since nothing else reads it, but it is not keyed by mode and 
 
 Media is also the exception to the `adjustConfig` rule: its grading lives in
 `mediaViewConfig`, not in `RenderSettings.adjustConfig`. See §1.2.
+
+Levels is the one piece of grading that is **not** in `adjustConfig` in any mode: it
+lives in `RenderSettings.toneConfig`, alongside it. `ImageAdjustControls` therefore
+takes `toneConfig` and `onChangeToneConfig` as separate props rather than merging the
+two stores, and `MediaViewControls` forwards them through.
+
+> A near-identical `levelBlack` / `levelMidtones` / `levelWhite` triple used to sit on
+> `MediaViewConfig` as well, written by the media preset defaults and read by nothing.
+> It is gone. Two grading triples one letter apart is precisely the shape of the
+> `adjustConfig` shadowing bug in §1.2.
+
+### The share payload ([`share.ts`](src/engine/share.ts))
+
+`FullAnimationState` is the wire format. **Everything the engine needs must be put
+into it explicitly** — this is invariant 4 applied to links rather than exports, and
+it has already been violated once: `rasterMode`, `ditherAlgorithm`, `toneConfig` and
+`adjustConfig` were declared on the interface and read back on load, but
+`currentFullState` never wrote them, so every link opened with the recipient's
+defaults. Media was the accidental exception, since its raster mode, algorithm and
+whole adjust config ride inside `mediaViewConfig`. `mediaColorConfig` was separately
+gated on media mode despite synth and model both feeding it to the engine as
+`colorConfig`.
+
+**Two codecs.**
+
+| version | parameter | encoding |
+|---|---|---|
+| v1 | `data=` | raw JSON, base64. Read only; never written now |
+| v2 | `s=` | JSON → `deflate-raw` → base64url, payload stamped `v: 2` |
+
+Separate parameter names rather than one with a version marker: the two forms cannot
+be told apart from their contents, because a legacy base64 payload can begin with any
+character, so any marker chosen is one a v1 link might already start with. base64url
+(`+/` → `-_`, padding dropped) because `+` and `=` get percent-escaped or split by
+the chat clients and mail readers these links travel through.
+
+**Decoding happens before mount.** `DecompressionStream` has no synchronous form, and
+`App` reads the decoded link from a `useMemo` that seeds twenty `useState`
+initializers. `main.tsx` awaits `prepareShareFromUrl()` and renders after it settles;
+`decodeShareFromUrl()` then answers from the cache. Without that call it still reads
+v1 links, so a caller that forgets loses compressed links but nothing misbehaves
+silently.
+
+**Framing** (`view: { scale, cx, cy }`) is the scale plus the point at the centre of
+the viewport **as a fraction of the raster**. A pixel offset is meaningless on
+another screen — the same `tx` frames a completely different part of the image on a
+3440px monitor and a 1280px laptop. Sampled when SHARE is pressed rather than held in
+`currentFullState`, because the camera changes on every wheel notch and would
+otherwise re-encode the payload throughout a pan. `AsciiViewport` applies it once via
+`initialView`, riding the auto-fit effect's existing `skipNextAutoFitRef`.
 
 ### The single colour selector
 
@@ -482,6 +639,7 @@ The **Render** tab follows a strict vertical workflow across all three input sou
    - **Color & Tonal Palette**: Single color mode dropdown (`1color`, `2color`, `3color`, `content`, or indexed `palette:<id>`). When in Pixel mode, CRT phosphor theme buttons are hidden to keep the interface neutral white.
    - **Quantize Levels**: Logarithmic warp slider ($2^1$ to $2^8$) giving smooth fine control across $2\dots 16$ levels, 1-click bit-depth pills (`[AUTO]`, `[2 (1b)]`, `[4 (2b)]`... `[256 (8b)]`), fine steppers (`-`/`+`), and direct numeric entry.
    - **Tone Curve Spline**: Monotone cubic spline editor with 5 instant presets (`LINEAR`, `S-CURVE`, `LIFT`, `CONTRAST`, `INVERT`) and live `IN: x • OUT: y` telemetry.
+   - **Levels & Auto Range**: Square-root-scaled histogram of the luminance entering the levels stage, with draggable black / midtone / white handles and an `AUTO LEVELS` button. Placed *after* the curve because that is the engine's order. Writes `toneConfig`, not `adjustConfig`. See §2.3.
    - **Tonal Balance**: Highlights, Midtones, and Shadows sliders with double-click quick-zero.
 
 5. **Character Set Ramp** ([`CharsetThemeBar.tsx`](src/components/CharsetThemeBar.tsx))
@@ -501,16 +659,25 @@ Things that will silently break rendering if violated.
 3. **`srcLumBuffer` is the only pre-filter record.** The grade ratio and the sentinel
    restore both read it. It must be snapshotted before step 2 and never written
    afterwards.
-4. **Export paths must forward all four render settings.** Missing one produces an
-   export that differs from what the user sees.
-5. **`ProcessedRasterResult.luminance` is live, not a copy.**
+4. **Every path out must forward all four render settings** — `rasterMode`,
+   `ditherAlgorithm`, `toneConfig`, `adjustConfig`. Missing one produces an export,
+   or a shared link, that differs from what the user sees. This is why the still and
+   separation exports share `renderExportFrame` rather than each dispatching to the
+   mode renderers themselves, and why the share payload is checked field by field.
+5. **`ProcessedRasterResult.luminance` and `.histogram` are live module buffers, not
+   copies.** Read them before the next frame, or copy them to hold on.
 6. **Quantization depth must track real output depth.** Dithering at 256 levels is
    invisible by construction; dithering a photo at charset depth turns flat areas
    into texture.
 7. **Cell aspect is applied at the source, not at paint time** — `1.0` for pixel,
    `0.6015` for ASCII.
 8. **Media grading has exactly one home** (`mediaViewConfig`). A second `adjustConfig`
-   field on the media context will shadow it with neutral defaults.
+   field on the media context will shadow it with neutral defaults. Levels is the
+   documented exception and lives in `toneConfig` for every mode; see §4.
+9. **A separation's plates partition the opaque cells exactly.** Every opaque cell in
+   exactly one plate, no plate empty, no transparent cell included. Anything else and
+   the plates no longer reassemble into the image, which is the only thing they are
+   for.
 
 ---
 
@@ -526,7 +693,15 @@ Things that will silently break rendering if violated.
   so it is not inert, just weak.
 - `three` is imported eagerly (~566 kB, ~142 kB gzipped) for all users including
   those who never open model mode.
-- `App.tsx` is ~2500 lines and owns all orchestration.
-- Halftone geometry (dot/diamond/square screens, CMYK separation, SVG dot output) was
-  removed with the dead output modes. Recoverable from git history:
+- `App.tsx` is ~3000 lines and owns all orchestration.
+- **`content` colour cannot be separated** without quantizing first — it is
+  continuous, so it blows past the 64-plate cap. Quantize Levels or an indexed
+  palette is the workaround; automatic k-means clustering down to N inks would be the
+  fix.
+- Halftone *geometry* (dot/diamond/square screens, SVG dot output) was removed with
+  the dead output modes and has not returned; §3.4 covers ink separation but not
+  screening. Recoverable from git history:
   `git show <sha>:src/engine/halftoneRenderer.ts`.
+- The share link has no route for locally-uploaded media or models. They exist only
+  in browser memory, and `ShareModal` says so rather than producing a link that
+  cannot work.
