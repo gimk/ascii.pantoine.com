@@ -70,6 +70,8 @@ import { ModelViewControls } from './components/ModelViewControls';
 import { MediaFileControls } from './components/MediaFileControls';
 import { MediaViewControls } from './components/MediaViewControls';
 import { ImageAdjustControls } from './components/ImageAdjustControls';
+import { CollapsibleSection } from './components/CollapsibleSection';
+import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
 import { ExportModal } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { generateRandomAnimation } from './engine/randomizer';
@@ -91,6 +93,7 @@ import {
   Image as ImageIcon,
   Type,
   Grid,
+  Settings,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
@@ -2516,6 +2519,7 @@ export const App: React.FC = () => {
             {/* ---------------------------------------------------------- */}
             {panel === 'render' && (
               <>
+                {/* 1. Output Mode Command Selector (ASCII vs PIXEL) */}
                 <div className="render-mode-selector-wrapper">
                   <div className="render-mode-grid">
                     {OUTPUT_MODES.map((mode) => {
@@ -2548,6 +2552,22 @@ export const App: React.FC = () => {
                   </div>
                 </div>
 
+                {/* 2. Top-level Resolution & DPI (placed directly under Mode selector) */}
+                <OptimizeControls
+                  cols={cols}
+                  rows={rows}
+                  onChangeResolution={handleManualResolutionChange}
+                  autoRes={autoRes}
+                  onToggleAutoRes={handleToggleAutoRes}
+                  appMode={appMode}
+                  mediaElement={mediaElementRef.current}
+                  mediaConfig={mediaConfig}
+                  isPixelMode={currentRasterMode === 'pixel'}
+                  dpi={mediaViewConfig.dpi ?? 72}
+                  onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
+                />
+
+                {/* 3. Mode-specific controls */}
                 {appMode === 'media' && (
                   <MediaViewControls
                     config={mediaViewConfig}
@@ -2570,16 +2590,38 @@ export const App: React.FC = () => {
                   />
                 )}
 
-                {/* Media renders these inside MediaViewControls, where they sit
-                    alongside the palette and levels blocks. */}
+                {/* Synth / Model render and tonal controls */}
                 {appMode !== 'media' && (
                   <div className="tab-content">
+                    <CollapsibleSection
+                      title="RENDER SETTINGS"
+                      icon={<Settings size={12} />}
+                      persistKey={`${appMode}-render-settings`}
+                      defaultOpen={true}
+                    >
+                      <DitherAlgorithmPicker
+                        value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
+                        onChange={(algo) => {
+                          setRenderSettingsByMode((prev) => ({
+                            ...prev,
+                            [appMode]: {
+                              ...prev[appMode],
+                              ditherAlgorithm: algo,
+                            },
+                          }));
+                        }}
+                      />
+                    </CollapsibleSection>
+
                     <ImageAdjustControls
                       config={currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG}
                       onChangeConfig={handleChangeAdjustConfig}
                       persistKeyPrefix={`${appMode}-image-adjust`}
                       paletteSlot={
-                        <div style={{ marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                        <div>
+                          <div className="tonal-subheading">
+                            <span>Color &amp; Tonal Palette</span>
+                          </div>
                           <PaletteControls
                             currentTheme={theme}
                             onChangeTheme={handleSelectTheme}
@@ -2595,6 +2637,7 @@ export const App: React.FC = () => {
                                 tonalMapping: t,
                               })
                             }
+                            isPixelMode={currentRasterMode === 'pixel'}
                           />
                         </div>
                       }
@@ -2602,25 +2645,12 @@ export const App: React.FC = () => {
                   </div>
                 )}
 
+                {/* 4. Character Set Bar (in ASCII Mode) */}
                 <CharsetThemeBar
                   currentCharset={density}
                   onChangeCharset={setDensity}
                   appMode={appMode}
                   isPixelMode={currentRasterMode === 'pixel'}
-                />
-
-                <OptimizeControls
-                  cols={cols}
-                  rows={rows}
-                  onChangeResolution={handleManualResolutionChange}
-                  autoRes={autoRes}
-                  onToggleAutoRes={handleToggleAutoRes}
-                  appMode={appMode}
-                  mediaElement={mediaElementRef.current}
-                  mediaConfig={mediaConfig}
-                  isPixelMode={currentRasterMode === 'pixel'}
-                  dpi={mediaViewConfig.dpi ?? 72}
-                  onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
                 />
               </>
             )}

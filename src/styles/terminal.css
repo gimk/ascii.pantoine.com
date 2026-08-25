@@ -1170,7 +1170,8 @@ html, body, #root {
 }
 
 /* Sub-group Headings for Tonal & Effect Controls */
-.tonal-subheading {
+.tonal-subheading,
+.section-subheading {
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.8px;
@@ -1185,7 +1186,8 @@ html, body, #root {
   font-family: var(--font-mono);
 }
 
-.tonal-subheading:first-child {
+.tonal-subheading:first-child,
+.section-subheading:first-child {
   margin-top: 0;
 }
 
@@ -1251,17 +1253,15 @@ html, body, #root {
   background: var(--bg-control-hover);
 }
 
-/* Curve & Levels Quick Preset Toolbar */
-.curve-preset-bar,
-.levels-preset-bar {
+/* Curve Quick Preset Toolbar */
+.curve-preset-bar {
   display: flex;
   gap: 4px;
   margin-bottom: 8px;
   flex-wrap: wrap;
 }
 
-.curve-preset-btn,
-.levels-preset-btn {
+.curve-preset-btn {
   font-family: var(--font-mono);
   font-size: 8.5px;
   font-weight: 700;
@@ -1275,8 +1275,7 @@ html, body, #root {
   transition: all 0.12s ease;
 }
 
-.curve-preset-btn:hover,
-.levels-preset-btn:hover {
+.curve-preset-btn:hover {
   border-color: var(--text-muted);
   color: var(--text-primary);
   background: var(--bg-control-hover);

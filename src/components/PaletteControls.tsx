@@ -19,6 +19,7 @@ interface PaletteControlsProps {
   /** Tonal half of the unified colour selector; lives in the adjust config. */
   tonalMapping?: TonalMappingType;
   onChangeTonalMapping?: (t: TonalMappingType) => void;
+  isPixelMode?: boolean;
 }
 
 const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
@@ -64,6 +65,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   appMode = 'synth',
   tonalMapping = '1color',
   onChangeTonalMapping,
+  isPixelMode = false,
 }) => {
   const isRgbDisabled = appMode === 'synth';
   const rawPaletteMode: PaletteMode = mediaColorConfig?.paletteMode || 'phosphor';
@@ -106,7 +108,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   };
 
   return (
-    <div style={{ marginBottom: '14px' }}>
+    <div style={{ marginBottom: '10px' }}>
       <div className="control-row">
         <span className="control-label">Color Mode</span>
         <select
@@ -137,38 +139,40 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
         </select>
       </div>
 
-      {/* 1. Single Color Mode (Phosphor Themes + Custom Color) */}
-      {paletteMode === 'phosphor' && (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', marginBottom: '8px' }}>
-            {THEMES.map((th) => (
-              <button
-                key={th.id}
-                type="button"
-                className={`theme-btn ${currentTheme === th.id && !customThemeColor ? 'active' : ''}`}
-                onClick={() => {
-                  if (onChangeCustomColor) onChangeCustomColor('');
-                  onChangeTheme(th.id);
-                }}
-                title={th.name}
-              >
-                <div
-                  style={{
-                    width: '14px',
-                    height: '14px',
-                    borderRadius: '50%',
-                    background: th.color,
-                    boxShadow: currentTheme === th.id && !customThemeColor ? `0 0 6px ${th.color}` : 'none',
+      {/* 1. Single Color Mode (Phosphor Themes in ASCII only; Custom Tint in Pixel) */}
+      {paletteMode === 'phosphor' && tonalMapping === '1color' && (
+        <div style={{ marginTop: '8px' }}>
+          {!isPixelMode && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', marginBottom: '8px' }}>
+              {THEMES.map((th) => (
+                <button
+                  key={th.id}
+                  type="button"
+                  className={`theme-btn ${currentTheme === th.id && !customThemeColor ? 'active' : ''}`}
+                  onClick={() => {
+                    if (onChangeCustomColor) onChangeCustomColor('');
+                    onChangeTheme(th.id);
                   }}
-                />
-                <span>{th.id.slice(0, 4).toUpperCase()}</span>
-              </button>
-            ))}
-          </div>
+                  title={th.name}
+                >
+                  <div
+                    style={{
+                      width: '14px',
+                      height: '14px',
+                      borderRadius: '50%',
+                      background: th.color,
+                      boxShadow: currentTheme === th.id && !customThemeColor ? `0 0 6px ${th.color}` : 'none',
+                    }}
+                  />
+                  <span>{th.id.slice(0, 4).toUpperCase()}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Custom Hex Color input */}
           <div className="control-row">
-            <span className="control-label">Custom Tint</span>
+            <span className="control-label">{isPixelMode ? 'Foreground Tint' : 'Custom Tint'}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <div
                 style={{

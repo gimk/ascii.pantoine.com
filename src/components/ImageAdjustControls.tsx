@@ -661,7 +661,6 @@ interface ImageAdjustControlsProps {
   config: ImageAdjustConfig;
   onChangeConfig: (next: ImageAdjustConfig) => void;
   paletteSlot?: React.ReactNode;
-  levelsSlot?: React.ReactNode;
   showAlphaCutoff?: boolean;
   resetDefaults?: ImageAdjustConfig;
   persistKeyPrefix?: string;
@@ -671,7 +670,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
   config,
   onChangeConfig,
   paletteSlot,
-  levelsSlot,
   resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG,
   showAlphaCutoff = true,
   persistKeyPrefix = 'MediaViewControls',
@@ -964,16 +962,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         </div>
         <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
 
-        {/* Levels 3-Point Multi-Stop Gradient Slider (host-provided) */}
-        {levelsSlot && (
-          <>
-            <div className="tonal-subheading">
-              <span>Levels &amp; Gamma</span>
-            </div>
-            {levelsSlot}
-          </>
-        )}
-
         {/* Tonal Balance: Highlights, Midtones, Shadows */}
         <div className="tonal-subheading">
           <span>Tonal Balance</span>
@@ -1056,27 +1044,32 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
 
         {/* Alpha Threshold */}
         {showAlphaCutoff && (
-          <div className="control-row">
-            <span className="control-label">Alpha Cutoff</span>
-            <div className="control-input-wrapper">
-              <input
-                type="range"
-                className="range-slider"
-                min={0}
-                max={255}
-                step={5}
-                value={config.alphaThreshold}
-                onChange={(e) => update('alphaThreshold', parseInt(e.target.value, 10))}
-              />
-              <span className="numeral-badge">
-                {config.alphaThreshold}
-              </span>
+          <>
+            <div className="tonal-subheading">
+              <span>Alpha Cutoff</span>
             </div>
-          </div>
+            <div className="control-row">
+              <span className="control-label">Threshold</span>
+              <div className="control-input-wrapper">
+                <input
+                  type="range"
+                  className="range-slider"
+                  min={0}
+                  max={255}
+                  step={5}
+                  value={config.alphaThreshold}
+                  onChange={(e) => update('alphaThreshold', parseInt(e.target.value, 10))}
+                />
+                <span className="numeral-badge">
+                  {config.alphaThreshold}
+                </span>
+              </div>
+            </div>
+          </>
         )}
 
         <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={resetTonal} title="Reset curve, levels, highlights, midtones, shadows and background">
+          <button className="btn btn-sm" onClick={resetTonal} title="Reset curve, highlights, midtones, and shadows">
             RESET TONAL
           </button>
         </div>
