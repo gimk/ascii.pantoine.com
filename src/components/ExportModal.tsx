@@ -166,10 +166,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   /*
    * Colour Separation States.
    *
-   * Shares the still export's format and scale, because a plate is the same
-   * render at the same size with everything but one ink masked out -- a second
-   * set of size controls would only invite the two to disagree.
+   * Own format, scale and quality rather than borrowing the still export's.
+   * Every other media tab owns its own (gifScale, videoScale), and sharing
+   * meant choosing the plate file type on a different tab -- and the choices
+   * genuinely differ: a separation is usually wanted as SVG for layered import
+   * where the still is usually a PNG.
    */
+  const [sepFormat, setSepFormat] = useState<'png' | 'jpg' | 'svg'>('svg');
+  const [sepScale, setSepScale] = useState<number>(2.0);
+  const [sepQuality, setSepQuality] = useState<number>(0.95);
   const [sepStyle, setSepStyle] = useState<SeparationStyle>('color');
   const [sepLayeredSvg, setSepLayeredSvg] = useState<boolean>(true);
   const [sepResult, setSepResult] = useState<SeparationResult | null>(null);
@@ -305,11 +310,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       const res = await exportColorSeparation({
         name,
-        format: imageFormat,
-        quality: imageQuality,
-        scale: imageScale,
+        format: sepFormat,
+        quality: sepQuality,
+        scale: sepScale,
         style: sepStyle,
-        layeredSvg: imageFormat === 'svg' && sepLayeredSvg,
+        layeredSvg: sepFormat === 'svg' && sepLayeredSvg,
         time: currentTime,
         currentAsciiFrame,
         type,
@@ -348,7 +353,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       setIsSeparating(false);
     }
   }, [
-    name, imageFormat, imageQuality, imageScale, sepStyle, sepLayeredSvg,
+    name, sepFormat, sepQuality, sepScale, sepStyle, sepLayeredSvg,
     currentTime, currentAsciiFrame, type, params, customCode, customPrepare,
     density, cols, rows, theme, customThemeColor, gradientConfig, crtConfig,
     appMode, modelConfig, modelViewConfig, geometry, mediaConfig,
@@ -421,7 +426,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       return null;
     });
     setSepError(null);
-  }, [isOpen, imageFormat, imageScale, imageQuality, sepStyle, sepLayeredSvg, cols, rows, rasterMode, appMode]);
+  }, [isOpen, sepFormat, sepScale, sepQuality, sepStyle, sepLayeredSvg, cols, rows, rasterMode, appMode]);
 
   if (!isOpen) return null;
 
@@ -434,10 +439,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const stillExportW = Math.round(cols * stillCellW);
   const stillExportH = Math.round(rows * stillCellH);
 
-  // A plate is the still export with everything but one ink masked out, so it
-  // is the same size by construction.
-  const sepExportW = stillExportW;
-  const sepExportH = stillExportH;
+  // Same cell geometry as the still export, at this tab's own scale.
+  const sepCellW = isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_WIDTH * sepScale;
+  const sepCellH = isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_HEIGHT * sepScale;
+  const sepExportW = Math.round(cols * sepCellW);
+  const sepExportH = Math.round(rows * sepCellH);
 
   const gifCellW = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_WIDTH * gifScale;
   const gifCellH = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_HEIGHT * gifScale;
@@ -481,7 +487,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     switch (activeTab) {
       case 'image': return imageFormat === 'jpg' ? '.jpg' : imageFormat === 'svg' ? '.svg' : '.png';
       // A layered SVG is one file; everything else is an archive of plates.
-      case 'separation': return imageFormat === 'svg' && sepLayeredSvg ? '-plates.svg' : '-plates.zip';
+      case 'separation': return sepFormat === 'svg' && sepLayeredSvg ? '-plates.svg' : '-plates.zip';
 
       case 'prompt': return '-ai-prompt.txt';
       case 'astro': return '.astro';
@@ -726,7 +732,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         // and there is no text form to copy.
         return {
           text: '',
-          mimeType: imageFormat === 'svg' && sepLayeredSvg ? 'image/svg+xml' : 'application/zip',
+          mimeType: sepFormat === 'svg' && sepLayeredSvg ? 'image/svg+xml' : 'application/zip',
         };
       case 'gif':
         return {
@@ -893,7 +899,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 title="One file per colour, for editing each ink separately"
               >
                 <Layers size={11} />
-                Colour Plates (.zip)
+                Colour Plates (.svg / .png)
               </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
@@ -1198,18 +1204,82 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <Info size={13} style={{ flexShrink: 0, marginTop: '1px', color: 'var(--accent)' }} />
                 <span>
                   Splits the render into one file per colour, so each ink can be edited on its own.
-                  Format and resolution come from the <strong style={{ color: 'var(--text-primary)' }}>Still Image</strong> tab.
+                  Plates arrive as a <strong style={{ color: 'var(--text-primary)' }}>.zip</strong>,
+                  except layered SVG which is a single file.
                 </span>
               </div>
 
               <div className="gif-config-grid">
+                {/* Format */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Plate Format</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { id: 'svg', label: 'SVG (Vector)' },
+                      { id: 'png', label: 'PNG (Raster)' },
+                      { id: 'jpg', label: 'JPG (Photo)' },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        disabled={isSeparating}
+                        className={`btn ${sepFormat === f.id ? 'btn-primary' : ''}`}
+                        onClick={() => setSepFormat(f.id as 'png' | 'jpg' | 'svg')}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Resolution scale */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Resolution Scale ({sepExportW}×{sepExportH}px per plate)</span>
+                  <div className="gif-btn-group">
+                    {[
+                      { val: 1.0, label: '1x' },
+                      { val: 1.5, label: '1.5x' },
+                      { val: 2.0, label: '2x (HD)' },
+                      { val: 3.0, label: '3x' },
+                      { val: 4.0, label: '4x (4K)' },
+                    ].map((s) => (
+                      <button
+                        key={s.val}
+                        disabled={isSeparating}
+                        className={`btn ${sepScale === s.val ? 'btn-primary' : ''}`}
+                        onClick={() => setSepScale(s.val)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quality (JPG only) */}
+                {sepFormat === 'jpg' && (
+                  <div className="gif-config-item">
+                    <span className="gif-config-label">JPG Quality ({Math.round(sepQuality * 100)}%)</span>
+                    <div className="gif-btn-group">
+                      {[0.8, 0.9, 0.95, 1.0].map((q) => (
+                        <button
+                          key={q}
+                          disabled={isSeparating}
+                          className={`btn ${sepQuality === q ? 'btn-primary' : ''}`}
+                          onClick={() => setSepQuality(q)}
+                        >
+                          {Math.round(q * 100)}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Plate style */}
                 <div className="gif-config-item">
                   <span className="gif-config-label">Plate Style</span>
                   <div className="gif-btn-group">
                     <button
-                      disabled={isSeparating || imageFormat === 'jpg'}
-                      className={`btn ${sepStyle === 'color' && imageFormat !== 'jpg' ? 'btn-primary' : ''}`}
+                      disabled={isSeparating || sepFormat === 'jpg'}
+                      className={`btn ${sepStyle === 'color' && sepFormat !== 'jpg' ? 'btn-primary' : ''}`}
                       onClick={() => setSepStyle('color')}
                       title="Each plate in its own colour on transparency. Stack them to rebuild the image."
                     >
@@ -1217,14 +1287,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     </button>
                     <button
                       disabled={isSeparating}
-                      className={`btn ${sepStyle === 'ink' || imageFormat === 'jpg' ? 'btn-primary' : ''}`}
+                      className={`btn ${sepStyle === 'ink' || sepFormat === 'jpg' ? 'btn-primary' : ''}`}
                       onClick={() => setSepStyle('ink')}
                       title="Coverage mask, black on white. What a screen-printing press wants."
                     >
                       Ink Plate (Black on White)
                     </button>
                   </div>
-                  {imageFormat === 'jpg' && (
+                  {sepFormat === 'jpg' && (
                     <span style={{ fontSize: '9.5px', color: 'var(--accent)', marginTop: '4px', display: 'block' }}>
                       JPG has no transparency, so plates are forced to ink. Use PNG or SVG to stack them.
                     </span>
@@ -1232,7 +1302,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
 
                 {/* Layered SVG */}
-                {imageFormat === 'svg' && (
+                {sepFormat === 'svg' && (
                   <div className="gif-config-item">
                     <span className="gif-config-label">SVG Layout</span>
                     <div className="gif-btn-group">
@@ -1331,7 +1401,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   >
                     {sepResult.analysis.plates.length} PLATES •{' '}
                     {sepResult.blob ? (sepResult.blob.size / 1024).toFixed(1) : 0} KB •{' '}
-                    {imageFormat === 'svg' && sepLayeredSvg ? 'LAYERED SVG' : 'ZIP ARCHIVE'}
+                    {sepFormat === 'svg' && sepLayeredSvg ? 'LAYERED SVG' : 'ZIP ARCHIVE'}
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
