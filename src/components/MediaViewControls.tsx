@@ -10,6 +10,8 @@ import {
   RasterOutputMode,
 } from '../types/ascii';
 import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
+import { DEFAULT_MEDIA_COLOR_CONFIG } from '../types/ascii';
+import { DEFAULT_PHOSPHOR_TINT } from '../engine/palettes';
 import { PaletteControls } from './PaletteControls';
 import { ImageAdjustControls } from './ImageAdjustControls';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
@@ -56,6 +58,22 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
       algorithm: DEFAULT_MEDIA_VIEW_CONFIG.algorithm,
     });
   };
+  /*
+   * The colour state the adjust config cannot reach. Clearing the tint too,
+   * because with the phosphor presets gone customThemeColor is what actually
+   * decides the monochrome colour.
+   */
+  const resetPalette = () => {
+    onChangeMediaColorConfig?.({
+      ...(mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG),
+      paletteMode: DEFAULT_MEDIA_COLOR_CONFIG.paletteMode,
+      mode: DEFAULT_MEDIA_COLOR_CONFIG.mode,
+      activePaletteId: DEFAULT_MEDIA_COLOR_CONFIG.activePaletteId,
+      paletteMatch: DEFAULT_MEDIA_COLOR_CONFIG.paletteMatch,
+    });
+    onChangeCustomColor?.(DEFAULT_PHOSPHOR_TINT);
+  };
+
 
   /*
    * Applying a preset writes its complete field set in one update, so no
@@ -133,6 +151,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         resetDefaults={DEFAULT_MEDIA_VIEW_CONFIG}
         showAlphaCutoff={config.background === 'transparent'}
         showInvert
+        onResetPalette={resetPalette}
         paletteSlot={
           onChangeTheme ? (
             <div>

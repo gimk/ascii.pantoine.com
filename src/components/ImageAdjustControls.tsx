@@ -622,6 +622,15 @@ interface ImageAdjustControlsProps {
    * there would be two near-identical toggles. Media has none of its own.
    */
   showInvert?: boolean;
+  /**
+   * Reset the half of the colour state this component does not own: the
+   * palette mode and the tint both live in MediaColorConfig, held by the host.
+   *
+   * Without it RESET COLORS could only clear tonalMapping, which the Color Mode
+   * selector ignores while a palette or content mode is active -- so the reset
+   * revealed the multi-tone stops without moving the selector that governs them.
+   */
+  onResetPalette?: () => void;
   resetDefaults?: ImageAdjustConfig;
   persistKeyPrefix?: string;
 }
@@ -633,6 +642,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
   resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG,
   showAlphaCutoff = true,
   showInvert = false,
+  onResetPalette,
   persistKeyPrefix = 'MediaViewControls',
 }) => {
   const update = <K extends keyof ImageAdjustConfig>(key: K, val: ImageAdjustConfig[K]) => {
@@ -680,6 +690,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       midtoneColor: resetDefaults.midtoneColor,
       shadowColor: resetDefaults.shadowColor,
     });
+    onResetPalette?.();
   };
 
   return (

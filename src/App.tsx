@@ -27,7 +27,7 @@ import {
   RasterOutputMode,
   UiThemeSettings,
 } from './types/ascii';
-import { resolvePhosphorTint } from './engine/palettes';
+import { resolvePhosphorTint, DEFAULT_PHOSPHOR_TINT } from './engine/palettes';
 import { ShaderPreset, toAdjustFields } from './engine/shaderPresets';
 import { ShaderPresetControls } from './components/ShaderPresetControls';
 import {
@@ -1551,6 +1551,24 @@ export const App: React.FC = () => {
     }
   }, [appMode, handleSelectCustomColor]);
 
+  /**
+   * Reset the colour state that lives outside adjustConfig.
+   *
+   * The Color Mode selector reads paletteMode first and only falls back to
+   * tonalMapping, so a reset that touches only the adjust config cannot move
+   * it off a palette or off content colour.
+   */
+  const handleResetPalette = useCallback(() => {
+    handleSelectMediaColorConfig({
+      ...(mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG),
+      paletteMode: DEFAULT_MEDIA_COLOR_CONFIG.paletteMode,
+      mode: DEFAULT_MEDIA_COLOR_CONFIG.mode,
+      activePaletteId: DEFAULT_MEDIA_COLOR_CONFIG.activePaletteId,
+      paletteMatch: DEFAULT_MEDIA_COLOR_CONFIG.paletteMatch,
+    });
+    handleSelectCustomColor(DEFAULT_PHOSPHOR_TINT);
+  }, [mediaColorConfig, handleSelectMediaColorConfig, handleSelectCustomColor]);
+
   const handleChangeMediaViewConfig = useCallback((newViewConfig: MediaViewConfig) => {
     if (newViewConfig.rasterMode !== mediaViewConfig.rasterMode) {
       const el = mediaElementRef.current;
@@ -2774,6 +2792,7 @@ export const App: React.FC = () => {
                       config={currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG}
                       onChangeConfig={handleChangeAdjustConfig}
                       persistKeyPrefix={`${appMode}-image-adjust`}
+                      onResetPalette={handleResetPalette}
                       paletteSlot={
                         <div>
                           {/* No subheading: the COLORS panel title already says this. */}
