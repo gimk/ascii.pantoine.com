@@ -370,29 +370,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         persistKey="MediaViewControls-render-settings"
         defaultOpen={true}
       >
-        {/* Output Mode Switcher: ASCII vs PIXEL */}
-        <div className="control-row">
-          <span className="control-label">Output Mode</span>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              type="button"
-              className={`chip-btn ${(!config.rasterMode || config.rasterMode === 'ascii') ? 'active' : ''}`}
-              onClick={() => update('rasterMode', 'ascii')}
-              style={{ fontSize: '9px', padding: '3px 8px' }}
-            >
-              ASCII (TEXT)
-            </button>
-            <button
-              type="button"
-              className={`chip-btn ${config.rasterMode === 'pixel' ? 'active' : ''}`}
-              onClick={() => update('rasterMode', 'pixel')}
-              style={{ fontSize: '9px', padding: '3px 8px' }}
-            >
-              PIXEL (DITHER)
-            </button>
-          </div>
-        </div>
-
         {/* Resampling */}
         <div className="control-row">
           <span className="control-label">Resampling</span>

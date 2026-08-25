@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { NumberInput } from './controlPrimitives';
 import {
@@ -6,7 +6,7 @@ import {
   DEFAULT_IMAGE_ADJUST_CONFIG,
 } from '../types/ascii';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
-import { Sliders, Sparkles } from 'lucide-react';
+import { Sliders, Sparkles, Minus, Plus } from 'lucide-react';
 
 interface ColorPickerInputProps {
   label: string;
@@ -79,6 +79,175 @@ const ColorPickerInput: React.FC<ColorPickerInputProps> = ({ label, value = '#ff
   );
 };
 
+// ---------------------------------------------------------------------------
+// High-Accuracy Quantize Levels Control
+// ---------------------------------------------------------------------------
+interface QuantizeLevelsControlProps {
+  value?: number; // 0 (auto) or 2..256
+  onChange: (val: number) => void;
+}
+
+const QUANTIZE_PRESETS: { label: string; value: number; title: string }[] = [
+  { label: 'AUTO', value: 0, title: 'Auto (Natural depth from charset or palette)' },
+  { label: '2 (1b)', value: 2, title: '2 Levels — 1-bit Monochrome' },
+  { label: '4 (2b)', value: 4, title: '4 Levels — 2-bit (Game Boy / CGA)' },
+  { label: '8 (3b)', value: 8, title: '8 Levels — 3-bit Color' },
+  { label: '16 (4b)', value: 16, title: '16 Levels — 4-bit (C64 / PICO-8)' },
+  { label: '32', value: 32, title: '32 Levels — 5-bit Depth' },
+  { label: '64', value: 64, title: '64 Levels — 6-bit Posterization' },
+  { label: '128', value: 128, title: '128 Levels — 7-bit Semi-continuous' },
+  { label: '256', value: 256, title: '256 Levels — 8-bit Continuous Tone' },
+];
+
+export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
+  value = 0,
+  onChange,
+}) => {
+  const normalizedVal = value ?? 0;
+
+  // Logarithmic slider warp mapping:
+  // pos 0 -> 0 (Auto)
+  // pos 1..100 -> exponential 2^1..2^8 (2 to 256)
+  const sliderPos = useMemo(() => {
+    if (normalizedVal <= 0) return 0;
+    const clamped = Math.max(2, Math.min(256, normalizedVal));
+    const exp = Math.log2(clamped); // 1 to 8
+    const t = (exp - 1) / 7; // 0 to 1
+    return Math.round(1 + t * 99);
+  }, [normalizedVal]);
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const pos = parseInt(e.target.value, 10);
+    if (pos === 0) {
+      onChange(0);
+      return;
+    }
+    const t = (pos - 1) / 99; // 0 to 1
+    const exp = 1 + t * 7; // 1 to 8
+    const rawVal = Math.round(Math.pow(2, exp));
+    onChange(Math.max(2, Math.min(256, rawVal)));
+  };
+
+  const handleStep = (delta: number) => {
+    if (normalizedVal === 0) {
+      if (delta > 0) onChange(2);
+      return;
+    }
+    const next = normalizedVal + delta;
+    if (next < 2) {
+      onChange(0); // Underflow to Auto
+    } else {
+      onChange(Math.min(256, next));
+    }
+  };
+
+  const getReadoutBadge = () => {
+    if (normalizedVal === 0) {
+      return 'AUTO (NATURAL)';
+    }
+    if (normalizedVal === 2) return '2 LEVELS (1-BIT)';
+    if (normalizedVal === 4) return '4 LEVELS (2-BIT)';
+    if (normalizedVal === 8) return '8 LEVELS (3-BIT)';
+    if (normalizedVal === 16) return '16 LEVELS (4-BIT)';
+    if (normalizedVal === 32) return '32 LEVELS (5-BIT)';
+    if (normalizedVal === 64) return '64 LEVELS (6-BIT)';
+    if (normalizedVal === 128) return '128 LEVELS (7-BIT)';
+    if (normalizedVal === 256) return '256 LEVELS (8-BIT)';
+    return `${normalizedVal} LEVELS`;
+  };
+
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      <div className="control-row" style={{ marginBottom: '4px' }}>
+        <span
+          className="control-label"
+          title="Quantization depth fed to the dither pass. 0 = auto (charset ramp or palette length)."
+        >
+          Quantize Levels
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span
+            style={{
+              fontSize: '8.5px',
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 800,
+              letterSpacing: '0.4px',
+              padding: '2px 6px',
+              borderRadius: '2px',
+              background: normalizedVal === 0 ? 'var(--accent-glow)' : 'var(--bg-control)',
+              border: `1px solid ${normalizedVal === 0 ? 'var(--accent)' : 'var(--border-color)'}`,
+              color: normalizedVal === 0 ? 'var(--accent)' : 'var(--text-primary)',
+            }}
+          >
+            {getReadoutBadge()}
+          </span>
+        </div>
+      </div>
+
+      {/* Quick Bit-Depth Preset Chips */}
+      <div className="quantize-chip-row">
+        {QUANTIZE_PRESETS.map((p) => {
+          const isSelected = normalizedVal === p.value;
+          return (
+            <button
+              key={p.value}
+              type="button"
+              className={`quantize-chip ${isSelected ? 'active' : ''}`}
+              onClick={() => onChange(p.value)}
+              title={p.title}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Stepper + Warp Slider + Numeric Direct Entry */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <button
+          type="button"
+          className="slider-nudge-btn"
+          onClick={() => handleStep(-1)}
+          title="Decrease levels by 1"
+        >
+          <Minus size={10} />
+        </button>
+
+        <input
+          type="range"
+          className="range-slider"
+          min={0}
+          max={100}
+          step={1}
+          value={sliderPos}
+          onChange={handleSliderChange}
+          title={`Quantize level: ${normalizedVal === 0 ? 'Auto' : normalizedVal}`}
+        />
+
+        <button
+          type="button"
+          className="slider-nudge-btn"
+          onClick={() => handleStep(1)}
+          title="Increase levels by 1"
+        >
+          <Plus size={10} />
+        </button>
+
+        <NumberInput
+          value={normalizedVal}
+          min={0}
+          max={256}
+          step={1}
+          onChange={(val) => onChange(val === 1 ? 2 : val)}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Tone Curve Spline Graph with Preset Bar
+// ---------------------------------------------------------------------------
 interface ToneCurveGraphProps {
   config: ImageAdjustConfig;
   onChangeConfig: (newConfig: ImageAdjustConfig) => void;
@@ -90,6 +259,64 @@ const DEFAULT_CURVE_POINTS: [number, number][] = [
   [0.5, 0.5],
   [0.75, 0.75],
   [1, 1],
+];
+
+const CURVE_PRESETS: { name: string; points: [number, number][]; title: string }[] = [
+  {
+    name: 'LINEAR',
+    title: '1:1 Neutral Linear Transfer',
+    points: [
+      [0, 0],
+      [0.25, 0.25],
+      [0.5, 0.5],
+      [0.75, 0.75],
+      [1, 1],
+    ],
+  },
+  {
+    name: 'S-CURVE',
+    title: 'S-Curve Contrast Boost',
+    points: [
+      [0, 0],
+      [0.25, 0.12],
+      [0.5, 0.5],
+      [0.75, 0.88],
+      [1, 1],
+    ],
+  },
+  {
+    name: 'LIFT',
+    title: 'Lift Shadow Tones',
+    points: [
+      [0, 0.16],
+      [0.25, 0.42],
+      [0.5, 0.65],
+      [0.75, 0.85],
+      [1, 1],
+    ],
+  },
+  {
+    name: 'CONTRAST',
+    title: 'High Contrast Punch',
+    points: [
+      [0, 0],
+      [0.2, 0.04],
+      [0.5, 0.5],
+      [0.8, 0.96],
+      [1, 1],
+    ],
+  },
+  {
+    name: 'INVERT',
+    title: 'Invert Curve Spline',
+    points: [
+      [0, 1],
+      [0.25, 0.75],
+      [0.5, 0.5],
+      [0.75, 0.25],
+      [1, 0],
+    ],
+  },
 ];
 
 const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig }) => {
@@ -135,7 +362,6 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
   };
 
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    // If clicking on graph background (not on an existing point), add a new point
     if (activePointIdx !== null) return;
     const { normX, normY } = getSvgNormalizedCoords(e);
     if (sortedPoints.length >= 12) return;
@@ -168,13 +394,10 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
     let clampedX = normX;
 
     if (activePointIdx === 0) {
-      // First point (can move X up to second point - 0.01, and Y freely 0..1)
       clampedX = Math.max(0, Math.min(sortedPoints[1][0] - 0.01, normX));
     } else if (activePointIdx === n - 1) {
-      // Last point (can move X down to previous point + 0.01, and Y freely 0..1)
       clampedX = Math.max(sortedPoints[n - 2][0] + 0.01, Math.min(1, normX));
     } else {
-      // Intermediate points (can move X freely between neighbors, and Y freely 0..1)
       const minX = sortedPoints[activePointIdx - 1][0] + 0.01;
       const maxX = sortedPoints[activePointIdx + 1][0] - 0.01;
       clampedX = Math.max(minX, Math.min(maxX, normX));
@@ -197,11 +420,17 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
   const handlePointDoubleClick = (idx: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Cannot delete first or last endpoint
     if (idx === 0 || idx === sortedPoints.length - 1) return;
     const newPoints = sortedPoints.filter((_, i) => i !== idx);
     onChangeConfig({ ...config, curvePoints: newPoints });
     setActivePointIdx(null);
+  };
+
+  const handleApplyPreset = (points: [number, number][]) => {
+    onChangeConfig({
+      ...config,
+      curvePoints: points.map((p) => [...p] as [number, number]),
+    });
   };
 
   const handleReset = () => {
@@ -211,7 +440,12 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
     });
   };
 
-  const activeOrHoveredPoint = activePointIdx !== null ? sortedPoints[activePointIdx] : hoveredPointIdx !== null ? sortedPoints[hoveredPointIdx] : null;
+  const activeOrHoveredPoint =
+    activePointIdx !== null
+      ? sortedPoints[activePointIdx]
+      : hoveredPointIdx !== null
+      ? sortedPoints[hoveredPointIdx]
+      : null;
 
   return (
     <div
@@ -233,12 +467,12 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
           fontSize: '9.5px',
           fontWeight: 700,
           color: 'var(--text-muted)',
-          marginBottom: '8px',
+          marginBottom: '6px',
           fontFamily: 'var(--font-mono)',
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>TONE CURVE (X/Y SPLINE)</span>
+          <span>TONE CURVE (SPLINE)</span>
           {activeOrHoveredPoint && (
             <span style={{ color: 'var(--accent)', fontSize: '9px', fontWeight: 600 }}>
               IN: {Math.round(activeOrHoveredPoint[0] * 255)} • OUT: {Math.round(activeOrHoveredPoint[1] * 255)}
@@ -248,7 +482,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ fontSize: '8.5px', color: 'var(--text-dim)' }}>
-            {sortedPoints.length} PTS (CLICK TO ADD)
+            {sortedPoints.length} PTS
           </span>
           <button
             className="btn btn-sm"
@@ -259,6 +493,21 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
             RESET
           </button>
         </div>
+      </div>
+
+      {/* Quick Curve Presets Toolbar */}
+      <div className="curve-preset-bar">
+        {CURVE_PRESETS.map((cp) => (
+          <button
+            key={cp.name}
+            type="button"
+            className="curve-preset-btn"
+            onClick={() => handleApplyPreset(cp.points)}
+            title={cp.title}
+          >
+            {cp.name}
+          </button>
+        ))}
       </div>
 
       {/* SQUARED 1:1 Aspect Ratio Graph */}
@@ -411,24 +660,10 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
 interface ImageAdjustControlsProps {
   config: ImageAdjustConfig;
   onChangeConfig: (next: ImageAdjustConfig) => void;
-  /**
-   * Optional extras rendered inside TONAL CONTROLS by callers that own state
-   * outside `ImageAdjustConfig` (media's palette block and levels slider).
-   * Modes without them simply leave the slots empty.
-   */
   paletteSlot?: React.ReactNode;
   levelsSlot?: React.ReactNode;
-  /**
-   * Alpha cutoff only matters where a transparent background is selectable,
-   * which is a media-only concept; other modes show it unconditionally.
-   */
   showAlphaCutoff?: boolean;
-  /**
-   * Values the RESET buttons restore. Defaults to the shared neutral config;
-   * media overrides it so RESET keeps its own tuned defaults (e.g. sharpen).
-   */
   resetDefaults?: ImageAdjustConfig;
-  /** Distinguishes the persisted collapse state per host sidebar. */
   persistKeyPrefix?: string;
 }
 
@@ -486,6 +721,11 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         persistKey={`${persistKeyPrefix}-effect-controls`}
         defaultOpen={false}
       >
+        {/* SHARPENING */}
+        <div className="tonal-subheading">
+          <span>Sharpening &amp; Edge Definition</span>
+        </div>
+
         {/* Sharpen Strength */}
         <div className="control-row">
           <span className="control-label">Sharpen Strength</span>
@@ -497,7 +737,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={300}
               step={5}
               value={config.sharpenStrength}
-              onChange={(e) => update('sharpenStrength', parseInt(e.target.value))}
+              onChange={(e) => update('sharpenStrength', parseInt(e.target.value, 10))}
             />
             <NumberInput
               value={config.sharpenStrength}
@@ -520,7 +760,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={10}
               step={1}
               value={config.sharpenRadius}
-              onChange={(e) => update('sharpenRadius', parseInt(e.target.value))}
+              onChange={(e) => update('sharpenRadius', parseInt(e.target.value, 10))}
             />
             <NumberInput
               value={config.sharpenRadius}
@@ -530,6 +770,11 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               onChange={(val) => update('sharpenRadius', val)}
             />
           </div>
+        </div>
+
+        {/* TEXTURE & GRAIN */}
+        <div className="tonal-subheading">
+          <span>Texture &amp; Noise</span>
         </div>
 
         {/* Noise */}
@@ -543,7 +788,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={100}
               step={1}
               value={config.noise}
-              onChange={(e) => update('noise', parseInt(e.target.value))}
+              onChange={(e) => update('noise', parseInt(e.target.value, 10))}
             />
             <NumberInput
               value={config.noise}
@@ -566,7 +811,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={100}
               step={1}
               value={config.denoise || 0}
-              onChange={(e) => update('denoise', parseInt(e.target.value))}
+              onChange={(e) => update('denoise', parseInt(e.target.value, 10))}
             />
             <NumberInput
               value={config.denoise || 0}
@@ -576,6 +821,11 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               onChange={(val) => update('denoise', val)}
             />
           </div>
+        </div>
+
+        {/* OPTICAL FILTERS */}
+        <div className="tonal-subheading">
+          <span>Optical Filters</span>
         </div>
 
         {/* Blur */}
@@ -589,7 +839,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={20}
               step={1}
               value={config.blur}
-              onChange={(e) => update('blur', parseInt(e.target.value))}
+              onChange={(e) => update('blur', parseInt(e.target.value, 10))}
             />
             <NumberInput
               value={config.blur}
@@ -599,6 +849,11 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               onChange={(val) => update('blur', val)}
             />
           </div>
+        </div>
+
+        {/* EXPOSURE & CONTRAST */}
+        <div className="tonal-subheading">
+          <span>Exposure &amp; Contrast</span>
         </div>
 
         {/* Brightness */}
@@ -612,7 +867,9 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={100}
               step={1}
               value={config.brightness}
-              onChange={(e) => update('brightness', parseInt(e.target.value))}
+              onChange={(e) => update('brightness', parseInt(e.target.value, 10))}
+              onDoubleClick={() => update('brightness', 0)}
+              title="Double-click to reset to 0"
             />
             <NumberInput
               value={config.brightness}
@@ -635,7 +892,9 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={100}
               step={1}
               value={config.contrast}
-              onChange={(e) => update('contrast', parseInt(e.target.value))}
+              onChange={(e) => update('contrast', parseInt(e.target.value, 10))}
+              onDoubleClick={() => update('contrast', 0)}
+              title="Double-click to reset to 0"
             />
             <NumberInput
               value={config.contrast}
@@ -646,6 +905,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
             />
           </div>
         </div>
+
         <div className="collapsible-actions">
           <button className="btn btn-sm" onClick={resetEffects} title="Reset sharpen, blur, noise, denoise, brightness and contrast">
             RESET EFFECTS
@@ -658,70 +918,66 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         title="TONAL CONTROLS"
         icon={<Sparkles size={12} />}
         persistKey={`${persistKeyPrefix}-tonal-controls`}
-        defaultOpen={false}
+        defaultOpen={true}
       >
         {/* Color Palettes & Themes (host-provided) */}
         {paletteSlot}
 
-        {/* Colour stops for the duotone / tritone ramps. The mode itself is
-            chosen in the unified Color Mode list rendered by paletteSlot. */}
+        {/* Colour stops for duotone / tritone ramps */}
         {config.tonalMapping !== '1color' && (
-          <ColorPickerInput
-            label="Highlights"
-            value={config.highlightColor || '#FFFFFF'}
-            onChange={(c) => update('highlightColor', c)}
-          />
-        )}
-
-        {config.tonalMapping === '3color' && (
-          <ColorPickerInput
-            label="Midtones"
-            value={config.midtoneColor || '#3B82F6'}
-            onChange={(c) => update('midtoneColor', c)}
-          />
-        )}
-
-        {config.tonalMapping !== '1color' && (
-          <ColorPickerInput
-            label="Shadows"
-            value={config.shadowColor || '#000000'}
-            onChange={(c) => update('shadowColor', c)}
-          />
-        )}
-
-        {/* Quantize depth. The charset length / palette size is only the
-            default: four tones out of a sixteen-colour palette, or four glyphs
-            out of a ten-character ramp, are both real looks. Values above the
-            natural depth saturate. */}
-        <div className="control-row">
-          <span className="control-label" title="Tones the dither pass resolves. 0 = auto: the charset length, or the palette size.">
-            Quantize Levels
-          </span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              className="range-slider"
-              min={0}
-              max={64}
-              step={1}
-              value={Math.min(64, config.colorLevels ?? 0)}
-              onChange={(e) => update('colorLevels', parseInt(e.target.value))}
+          <div style={{ marginBottom: '10px' }}>
+            <div className="tonal-subheading">
+              <span>Multi-Tone Stops</span>
+            </div>
+            <ColorPickerInput
+              label="Highlights"
+              value={config.highlightColor || '#FFFFFF'}
+              onChange={(c) => update('highlightColor', c)}
             />
-            <NumberInput
-              value={config.colorLevels ?? 0}
-              min={0}
-              max={256}
-              step={1}
-              onChange={(val) => update('colorLevels', val)}
+            {config.tonalMapping === '3color' && (
+              <ColorPickerInput
+                label="Midtones"
+                value={config.midtoneColor || '#3B82F6'}
+                onChange={(c) => update('midtoneColor', c)}
+              />
+            )}
+            <ColorPickerInput
+              label="Shadows"
+              value={config.shadowColor || '#000000'}
+              onChange={(c) => update('shadowColor', c)}
             />
           </div>
+        )}
+
+        {/* Quantize depth with High-Accuracy Control */}
+        <div className="tonal-subheading">
+          <span>Quantization &amp; Dither Depth</span>
         </div>
+        <QuantizeLevelsControl
+          value={config.colorLevels}
+          onChange={(val) => update('colorLevels', val)}
+        />
 
         {/* Real-time Interactive Tonal Transfer Curve Graph */}
+        <div className="tonal-subheading">
+          <span>Tonal Transfer Curve</span>
+        </div>
         <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
 
         {/* Levels 3-Point Multi-Stop Gradient Slider (host-provided) */}
-        {levelsSlot}
+        {levelsSlot && (
+          <>
+            <div className="tonal-subheading">
+              <span>Levels &amp; Gamma</span>
+            </div>
+            {levelsSlot}
+          </>
+        )}
+
+        {/* Tonal Balance: Highlights, Midtones, Shadows */}
+        <div className="tonal-subheading">
+          <span>Tonal Balance</span>
+        </div>
 
         {/* Highlights */}
         <div className="control-row">
@@ -734,7 +990,9 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={100}
               step={1}
               value={config.highlights}
-              onChange={(e) => update('highlights', parseInt(e.target.value))}
+              onChange={(e) => update('highlights', parseInt(e.target.value, 10))}
+              onDoubleClick={() => update('highlights', 0)}
+              title="Double-click to reset to 0"
             />
             <NumberInput
               value={config.highlights}
@@ -757,7 +1015,9 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={100}
               step={1}
               value={config.midtones}
-              onChange={(e) => update('midtones', parseInt(e.target.value))}
+              onChange={(e) => update('midtones', parseInt(e.target.value, 10))}
+              onDoubleClick={() => update('midtones', 0)}
+              title="Double-click to reset to 0"
             />
             <NumberInput
               value={config.midtones}
@@ -780,7 +1040,9 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               max={100}
               step={1}
               value={config.shadows}
-              onChange={(e) => update('shadows', parseInt(e.target.value))}
+              onChange={(e) => update('shadows', parseInt(e.target.value, 10))}
+              onDoubleClick={() => update('shadows', 0)}
+              title="Double-click to reset to 0"
             />
             <NumberInput
               value={config.shadows}
@@ -804,7 +1066,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
                 max={255}
                 step={5}
                 value={config.alphaThreshold}
-                onChange={(e) => update('alphaThreshold', parseInt(e.target.value))}
+                onChange={(e) => update('alphaThreshold', parseInt(e.target.value, 10))}
               />
               <span className="numeral-badge">
                 {config.alphaThreshold}
@@ -812,6 +1074,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
             </div>
           </div>
         )}
+
         <div className="collapsible-actions">
           <button className="btn btn-sm" onClick={resetTonal} title="Reset curve, levels, highlights, midtones, shadows and background">
             RESET TONAL
@@ -821,3 +1084,4 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
     </>
   );
 };
+

@@ -89,6 +89,8 @@ import {
   Redo2,
   Box,
   Image as ImageIcon,
+  Type,
+  Grid,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
@@ -128,6 +130,36 @@ const SOURCES: {
     description: 'WebGL Mesh',
     icon: Box,
     title: '3D Model to 2D ASCII Visualizer [3]',
+  },
+];
+
+/**
+ * The output rasterization modes (ASCII monospace text vs 1:1 Pixel dither).
+ * Sits permanently at the top of the RENDER panel as a high hierarchy selector.
+ */
+const OUTPUT_MODES: {
+  id: RasterOutputMode;
+  name: string;
+  badge: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  title: string;
+}[] = [
+  {
+    id: 'ascii',
+    name: 'ASCII',
+    badge: 'TEXT',
+    description: 'Monospace Density Ramp',
+    icon: Type,
+    title: 'Monospace ASCII character density rasterization',
+  },
+  {
+    id: 'pixel',
+    name: 'PIXEL',
+    badge: 'DITHER',
+    description: '1:1 Square Pixel Grid',
+    icon: Grid,
+    title: 'Direct square hardware dither rasterization',
   },
 ];
 
@@ -1492,6 +1524,40 @@ export const App: React.FC = () => {
     }, 400);
   }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution]);
 
+  const currentRasterMode: RasterOutputMode =
+    (appMode === 'media'
+      ? mediaViewConfig.rasterMode || currentRenderSettings.rasterMode
+      : currentRenderSettings.rasterMode) || 'ascii';
+
+  const handleSelectRasterMode = useCallback(
+    (newMode: RasterOutputMode) => {
+      setRenderSettingsByMode((prev) => ({
+        ...prev,
+        [appMode]: {
+          ...prev[appMode],
+          rasterMode: newMode,
+        },
+      }));
+      if (appMode === 'media') {
+        if (mediaViewConfig.rasterMode !== newMode) {
+          const el = mediaElementRef.current;
+          let w = 256;
+          let h = 256;
+          if (el instanceof HTMLImageElement) {
+            w = el.naturalWidth || el.width || 256;
+            h = el.naturalHeight || el.height || 256;
+          } else if (el instanceof HTMLVideoElement) {
+            w = el.videoWidth || el.width || 256;
+            h = el.videoHeight || el.height || 256;
+          }
+          autoSetMediaResolution(w, h, newMode);
+        }
+        setMediaViewConfig((prev) => ({ ...prev, rasterMode: newMode }));
+      }
+    },
+    [appMode, mediaViewConfig.rasterMode, autoSetMediaResolution]
+  );
+
   const handleMediaFileUpload = useCallback((file: File) => {
     const isVid = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.webm') || file.name.endsWith('.mov');
     const objectUrl = URL.createObjectURL(file);
@@ -2450,6 +2516,38 @@ export const App: React.FC = () => {
             {/* ---------------------------------------------------------- */}
             {panel === 'render' && (
               <>
+                <div className="render-mode-selector-wrapper">
+                  <div className="render-mode-grid">
+                    {OUTPUT_MODES.map((mode) => {
+                      const Icon = mode.icon;
+                      const isActive = currentRasterMode === mode.id;
+                      return (
+                        <button
+                          key={mode.id}
+                          className={`source-card ${isActive ? 'active' : ''}`}
+                          onClick={() => handleSelectRasterMode(mode.id)}
+                          title={mode.title}
+                        >
+                          <div className="source-card-header">
+                            <div className="source-card-icon-wrap">
+                              <Icon size={14} />
+                            </div>
+                            <span className="source-card-badge">{mode.badge}</span>
+                          </div>
+                          <div className="source-card-body">
+                            <span className="source-card-name">{mode.name}</span>
+                            <span className="source-card-desc">{mode.description}</span>
+                          </div>
+                          <div className="source-card-footer">
+                            <span className="source-card-dot" />
+                            <span className="source-card-status">{isActive ? 'ACTIVE' : 'READY'}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {appMode === 'media' && (
                   <MediaViewControls
                     config={mediaViewConfig}
@@ -2508,7 +2606,7 @@ export const App: React.FC = () => {
                   currentCharset={density}
                   onChangeCharset={setDensity}
                   appMode={appMode}
-                  isPixelMode={appMode === 'media' && mediaViewConfig.rasterMode === 'pixel'}
+                  isPixelMode={currentRasterMode === 'pixel'}
                 />
 
                 <OptimizeControls
@@ -2520,7 +2618,7 @@ export const App: React.FC = () => {
                   appMode={appMode}
                   mediaElement={mediaElementRef.current}
                   mediaConfig={mediaConfig}
-                  isPixelMode={appMode === 'media' && mediaViewConfig.rasterMode === 'pixel'}
+                  isPixelMode={currentRasterMode === 'pixel'}
                   dpi={mediaViewConfig.dpi ?? 72}
                   onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
                 />
