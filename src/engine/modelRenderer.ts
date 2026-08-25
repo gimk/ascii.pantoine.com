@@ -255,7 +255,15 @@ class HeadlessModelRenderer {
 
   constructor() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000000);
+    /*
+     * No scene background. The raster pipeline reads the alpha channel of the
+     * frame we hand it and marks every cell at or below the alpha threshold as
+     * transparent, so the area around the model has to actually come back
+     * transparent. An opaque clear made every cell alpha 255, which left the
+     * Alpha Cutoff slider inert and, in pixel mode, painted a solid plate of
+     * cells behind the model both on screen and in exports.
+     */
+    this.scene.background = null;
 
     // Cameras
     this.perspCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
@@ -310,12 +318,16 @@ class HeadlessModelRenderer {
       this.renderer = new THREE.WebGLRenderer({
         canvas: this.canvas,
         antialias: false,
-        alpha: false,
+        alpha: true,
+        // readPixels hands back the raw drawing buffer, so unpremultiplied RGB
+        // is what the luminance pass expects -- otherwise a partially
+        // transparent cell would read as darker than it is.
+        premultipliedAlpha: false,
         preserveDrawingBuffer: true,
         powerPreference: 'high-performance',
       });
       this.renderer.setSize(100, 50, false);
-      this.renderer.setClearColor(0x000000, 1.0);
+      this.renderer.setClearColor(0x000000, 0);
     } catch (e) {
       console.warn('WebGL init error in HeadlessModelRenderer:', e);
     }

@@ -2991,6 +2991,17 @@ export const App: React.FC = () => {
                       onChangeToneConfig={handleChangeToneConfig}
                       histogram={histogramSnapshot?.bins ?? null}
                       histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                      /*
+                       * Neither mode on this mount has soft alpha to cut, so
+                       * the threshold has nothing to grade against. Synth
+                       * hands the pipeline a luminance buffer, which skips the
+                       * alpha branch outright; model frames come off an opaque
+                       * unantialiased WebGL pass, so every cell is either 0 or
+                       * 255 and any threshold in between cuts identically.
+                       * Media is the one source with real partial alpha and
+                       * keeps the control -- see MediaViewControls.
+                       */
+                      showAlphaCutoff={false}
                       paletteSlot={
                         <div>
                           {/* No subheading: the COLORS panel title already says this. */}
