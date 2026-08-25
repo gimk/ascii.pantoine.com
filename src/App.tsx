@@ -84,6 +84,7 @@ import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
   decodeShareFromUrl,
+  ShareView,
   updateUrlMode,
 } from './engine/share';
 
@@ -678,6 +679,8 @@ export const App: React.FC = () => {
     initialUrlData.mode === 'fullscreen' ? 'fullscreen' : 'editor'
   );
   const [isShareOpen, setIsShareOpen] = useState<boolean>(false);
+  /** Viewfinder framing sampled when SHARE is pressed; see the button below. */
+  const [shareView, setShareView] = useState<ShareView | null>(null);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
 
   // Playback state
@@ -2556,7 +2559,17 @@ export const App: React.FC = () => {
 
           <button
             className="btn btn-sm btn-header-share"
-            onClick={() => setIsShareOpen(true)}
+            onClick={() => {
+              /*
+               * Framing is read here, not held in currentFullState. The camera
+               * lives inside the viewport and changes on every wheel notch and
+               * drag; threading it up as reactive state would re-encode the
+               * share payload throughout a pan. Sampled at the moment the user
+               * asks to share, which is also exactly the view they mean.
+               */
+              setShareView(viewportRef.current?.getViewFraming() ?? null);
+              setIsShareOpen(true);
+            }}
             title="Share Fullscreen Viewfinder link"
           >
             <Share2 size={13} className="header-btn-icon" />
@@ -2622,6 +2635,7 @@ export const App: React.FC = () => {
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
           showMediaPlaceholder={appMode === 'media' && !mediaConfig.fileData}
+          initialView={sharedState?.view ?? null}
 
           isLoading={appMode === 'model' && isModelLoading}
           loadingFileName={modelLoadingFileName}
@@ -3065,7 +3079,7 @@ export const App: React.FC = () => {
       <ShareModal
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
-        state={currentFullState}
+        state={shareView ? { ...currentFullState, view: shareView } : currentFullState}
         onOpenExport={() => {
           setExportInitialTab('image');
           setIsExportOpen(true);

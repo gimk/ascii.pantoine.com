@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Copy,
@@ -32,8 +32,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 }) => {
   const [copied, setCopied] = useState<boolean>(false);
   const [shareAutoRes, setShareAutoRes] = useState<boolean>(state.autoRes ?? false);
-
-  if (!isOpen) return null;
+  const [shareUrl, setShareUrl] = useState<string>('');
 
   const isSynthMode = !state.appMode || state.appMode === 'synth';
   const isMediaMode = state.appMode === 'media';
@@ -61,15 +60,39 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const isShareable = isSynthMode || isShareableModel || isRemoteMedia;
 
-  const shareUrl = isShareable
-    ? encodeShareUrl(
-        {
-          ...state,
-          autoRes: isMediaMode ? false : shareAutoRes,
-        },
-        'fullscreen'
-      )
-    : '';
+  /*
+   * Built in an effect rather than inline in the render body. Encoding is
+   * async now -- the payload is deflated -- and it was being redone on every
+   * render regardless, including while typing elsewhere in the modal.
+   */
+  useEffect(() => {
+    if (!isOpen || !isShareable) {
+      setShareUrl('');
+      return;
+    }
+    let live = true;
+    encodeShareUrl({ ...state, autoRes: isMediaMode ? false : shareAutoRes }, 'fullscreen')
+      .then((url) => {
+        if (live) setShareUrl(url);
+      })
+      .catch(() => {
+        if (live) setShareUrl('');
+      });
+    return () => {
+      live = false;
+    };
+  }, [isOpen, isShareable, state, isMediaMode, shareAutoRes]);
+
+  if (!isOpen) return null;
+
+  /*
+   * IE's 2,083-character limit is long gone, but chat clients, mail readers
+   * and link previewers still truncate somewhere well short of what browsers
+   * accept. 8,000 is the point past which a link stops reliably surviving
+   * being pasted somewhere.
+   */
+  const URL_LENGTH_WARN = 8000;
+  const urlTooLong = shareUrl.length > URL_LENGTH_WARN;
 
   const handleCopy = () => {
     if (!shareUrl) return;
@@ -319,9 +342,32 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
               {/* Share URL Box */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--accent)' }}>
-                  FULLSCREEN VIEWFINDER LINK:
-                </span>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
+                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--accent)' }}>
+                    FULLSCREEN VIEWFINDER LINK:
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '9.5px',
+                      fontFamily: 'var(--font-mono)',
+                      color: urlTooLong ? 'var(--accent)' : 'var(--text-dim)',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={
+                      urlTooLong
+                        ? 'Some chat clients and mail readers truncate links this long'
+                        : 'Link length. Compressed, so it stays short as settings grow.'
+                    }
+                  >
+                    {shareUrl ? `${shareUrl.length.toLocaleString()} CHARS` : 'ENCODING…'}
+                  </span>
+                </div>
+                {urlTooLong && (
+                  <span style={{ fontSize: '9.5px', color: 'var(--accent)', lineHeight: 1.4 }}>
+                    This link is long enough that some chat clients and mail readers may truncate it.
+                    Copy and paste it as text rather than letting an app auto-link it.
+                  </span>
+                )}
                 <div
                   style={{
                     display: 'flex',
