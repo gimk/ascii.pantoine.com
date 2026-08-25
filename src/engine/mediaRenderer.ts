@@ -92,24 +92,16 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols: 0, rows: 0, rasterMode };
   }
 
-  // Placeholder when no media loaded
+  /*
+   * Nothing loaded: emit a blank grid, not a banner drawn into the cells.
+   * Baked-in text was indistinguishable from real media downstream -- it
+   * scaled with the viewfinder zoom and, in pixel mode, every glyph became an
+   * opaque cell, so the message was unreadable. The viewport paints a
+   * fixed-size DOM prompt over the empty grid instead.
+   */
   if (!mediaElement) {
-    const bannerMsg = ' [ NO MEDIA LOADED ] ';
-    const subMsg = ' DRAG & DROP / PASTE / OPEN FILE ';
-    const lines: string[] = [];
-    for (let r = 0; r < rows; r++) {
-      let line = '';
-      if (r === Math.floor(rows / 2) - 1) {
-        const pad = Math.max(0, Math.floor((cols - subMsg.length) / 2));
-        line = ' '.repeat(pad) + subMsg + ' '.repeat(Math.max(0, cols - pad - subMsg.length));
-      } else if (r === Math.floor(rows / 2) + 1) {
-        const pad = Math.max(0, Math.floor((cols - bannerMsg.length) / 2));
-        line = ' '.repeat(pad) + bannerMsg + ' '.repeat(Math.max(0, cols - pad - bannerMsg.length));
-      } else {
-        line = ' '.repeat(cols);
-      }
-      lines.push(line.slice(0, cols));
-    }
+    const blankRow = ' '.repeat(cols);
+    const lines = new Array(rows).fill(blankRow);
     return { text: lines.join('\n'), colors: null, luminance: null, bgColor, isColored: false, cols, rows, rasterMode };
   }
 

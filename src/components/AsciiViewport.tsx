@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings } from 'lucide-react';
+import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings, ImagePlus } from 'lucide-react';
 import {
   PhosphorTheme,
   PhosphorGradient,
@@ -95,6 +95,12 @@ interface AsciiViewportProps {
     height: number
   ) => void;
   onWheelZoom?: (deltaZoom: number) => void;
+  /**
+   * Media mode with no source loaded. Drawn as a fixed-size DOM prompt rather
+   * than into the raster grid, so it stays legible at any zoom and in pixel
+   * mode.
+   */
+  showMediaPlaceholder?: boolean;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -132,6 +138,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   loadingStatusText,
   onOrbitRotate,
   onWheelZoom,
+  showMediaPlaceholder = false,
 }, ref) => {
   const isTimelineDisabled = appMode === 'media' && mediaType === 'image';
   const containerRef = useRef<HTMLDivElement>(null);
@@ -606,8 +613,17 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     };
   }, [autoRes, getOptimalResolution, onAutoResolutionChange, autoFit]);
 
+  /*
+   * Pointer maths must measure whichever surface is actually on screen. The
+   * <pre> stays mounted but display:none in canvas mode (coloured ASCII and
+   * all of pixel mode), so reading it there yields a zero-size rect and every
+   * handler bails out early -- which silently killed model orbit dragging.
+   */
+  const getSurfaceElement = (): HTMLElement | null =>
+    (isColoredView ? canvasRef.current : preRef.current) || containerRef.current;
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    const targetElement = preRef.current || containerRef.current;
+    const targetElement = getSurfaceElement();
     if (!targetElement) return;
     const rect = targetElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -626,7 +642,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const targetElement = preRef.current || containerRef.current;
+    const targetElement = getSurfaceElement();
     if (!targetElement) return;
     const rect = targetElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -749,6 +765,21 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             } as React.CSSProperties) : {}),
           }}
         />
+
+        {/* No-Media Prompt: fixed size, outside the zoomed raster surface */}
+        {showMediaPlaceholder && !isLoading && (
+          <div
+            className="media-placeholder-modal"
+            /* Purely informational, so it must not swallow drops or clicks. */
+            style={{ pointerEvents: 'none' }}
+          >
+            <ImagePlus size={22} strokeWidth={1.5} />
+            <span className="media-placeholder-title">ADD MEDIA TO START</span>
+            <span className="media-placeholder-hint">
+              DRAG &amp; DROP &middot; PASTE &middot; OPEN FILE
+            </span>
+          </div>
+        )}
 
         {/* ASCII Loading Spinner Overlay */}
         {isLoading && (

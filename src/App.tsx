@@ -2364,6 +2364,7 @@ export const App: React.FC = () => {
           isSyncEligible={isSingleColorAscii}
           appMode={appMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
+          showMediaPlaceholder={appMode === 'media' && !mediaConfig.fileData}
 
           isLoading={appMode === 'model' && isModelLoading}
           loadingFileName={modelLoadingFileName}

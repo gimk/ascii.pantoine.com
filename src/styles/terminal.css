@@ -2380,3 +2380,41 @@ select:disabled {
     transform: translateX(250%);
   }
 }
+
+/* ==========================================================================
+   No-Media Prompt (Media Mode)
+   Sits above the raster surface as plain DOM, so it is immune to the
+   viewfinder zoom and to the pixel-mode cell quantisation.
+   ========================================================================== */
+.media-placeholder-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 18px 26px;
+  background: rgba(3, 8, 5, 0.94);
+  border: 1.5px solid var(--accent);
+  border-radius: 3px;
+  box-shadow: 0 0 25px var(--accent-glow), inset 0 0 12px rgba(0, 0, 0, 0.85);
+  color: var(--accent);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.media-placeholder-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 8px var(--accent-glow);
+}
+
+.media-placeholder-hint {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
