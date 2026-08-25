@@ -22,6 +22,15 @@ export interface PixelRasterSvgOptions {
   fgColor: string;
   width?: number;
   height?: number;
+  /**
+   * Emit a bare `<g id="...">` rather than a whole SVG document, for callers
+   * assembling several rasters into one file as layers. The background rect is
+   * skipped in this mode -- a layer that paints its own opaque ground would
+   * hide every layer beneath it.
+   */
+  groupId?: string;
+  /** Human-readable layer name; defaults to groupId. */
+  groupLabel?: string;
 }
 
 /**
@@ -80,8 +89,24 @@ export function drawPixelRasterToCanvas(renderCtx: PixelRasterContext): void {
   ctx.restore();
 }
 
+/** Attribute-safe XML. Plate labels are hex colours today, but ids are cheap to break. */
+function escapeXmlAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 /**
  * Same raster as drawPixelRasterToCanvas, emitted as resolution-independent SVG.
+ *
+ * With `groupId` set it emits a bare `<g>` instead of a whole document, so the
+ * colour-separation export can stack one group per ink inside a single root --
+ * which is what Illustrator and Figma read as layers. The alternative was
+ * string-surgery on a finished document, which breaks the moment this function
+ * changes.
  */
 export function exportPixelRasterToSvg(opts: PixelRasterSvgOptions): string {
   const {
@@ -93,16 +118,26 @@ export function exportPixelRasterToSvg(opts: PixelRasterSvgOptions): string {
     fgColor,
     width = cols * MONOSPACE_CELL_WIDTH,
     height = rows * MONOSPACE_CELL_HEIGHT,
+    groupId,
+    groupLabel,
   } = opts;
 
   const cellWidth = width / cols;
   const cellHeight = height / rows;
+  const asGroup = Boolean(groupId);
 
   const elements: string[] = [];
-  elements.push(`<?xml version="1.0" encoding="UTF-8"?>`);
-  elements.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width.toFixed(2)} ${height.toFixed(2)}" width="${width}" height="${height}">`);
-  if (bgColor && bgColor !== 'transparent' && bgColor !== 'none') {
-    elements.push(`  <rect width="100%" height="100%" fill="${bgColor}"/>`);
+  if (asGroup) {
+    // inkscape:label is what Illustrator, Inkscape and Figma surface as the
+    // layer name; id alone shows up as "Group 1".
+    const label = escapeXmlAttr(groupLabel || groupId!);
+    elements.push(`  <g id="${escapeXmlAttr(groupId!)}" inkscape:label="${label}" data-plate="${label}">`);
+  } else {
+    elements.push(`<?xml version="1.0" encoding="UTF-8"?>`);
+    elements.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width.toFixed(2)} ${height.toFixed(2)}" width="${width}" height="${height}">`);
+    if (bgColor && bgColor !== 'transparent' && bgColor !== 'none') {
+      elements.push(`  <rect width="100%" height="100%" fill="${bgColor}"/>`);
+    }
   }
 
   for (let y = 0; y < rows; y++) {
@@ -125,6 +160,6 @@ export function exportPixelRasterToSvg(opts: PixelRasterSvgOptions): string {
     }
   }
 
-  elements.push(`</svg>`);
+  elements.push(asGroup ? `  </g>` : `</svg>`);
   return elements.join('\n');
 }

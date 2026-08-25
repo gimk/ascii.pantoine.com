@@ -15,6 +15,7 @@ import {
   FileCode,
   FileText,
   Camera,
+  Layers,
   Info,
 } from 'lucide-react';
 import {
@@ -29,6 +30,12 @@ import {
 import { exportAnimatedGif } from '../engine/gif';
 import { exportVideoAnimation, getSupportedVideoMimeType } from '../engine/video';
 import { exportAsciiImage } from '../engine/imageExporter';
+import {
+  exportColorSeparation,
+  SeparationResult,
+  SeparationStyle,
+  MAX_PLATES,
+} from '../engine/separationExporter';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
 import * as THREE from 'three';
 import {
@@ -86,6 +93,7 @@ interface ExportModalProps {
 
 export type ExportTab =
   | 'image'
+  | 'separation'
   | 'gif'
   | 'video'
   | 'html_embed'
@@ -99,7 +107,7 @@ export type ExportTab =
 export type ExportCategory = 'media' | 'code' | 'data';
 
 const getCategoryForTab = (tab: ExportTab): ExportCategory => {
-  if (tab === 'image' || tab === 'gif' || tab === 'video') return 'media';
+  if (tab === 'image' || tab === 'separation' || tab === 'gif' || tab === 'video') return 'media';
   if (tab === 'astro' || tab === 'html' || tab === 'prompt' || tab === 'html_embed' || tab === 'markdown') return 'code';
   return 'data';
 };
@@ -154,6 +162,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [isCapturingImage, setIsCapturingImage] = useState<boolean>(false);
   const [imageCopied, setImageCopied] = useState<boolean>(false);
+
+  /*
+   * Colour Separation States.
+   *
+   * Shares the still export's format and scale, because a plate is the same
+   * render at the same size with everything but one ink masked out -- a second
+   * set of size controls would only invite the two to disagree.
+   */
+  const [sepStyle, setSepStyle] = useState<SeparationStyle>('color');
+  const [sepLayeredSvg, setSepLayeredSvg] = useState<boolean>(true);
+  const [sepResult, setSepResult] = useState<SeparationResult | null>(null);
+  const [isSeparating, setIsSeparating] = useState<boolean>(false);
+  const [sepError, setSepError] = useState<string | null>(null);
 
   // GIF Recording States
   const [gifDuration, setGifDuration] = useState<number>(2.0);
@@ -272,6 +293,69 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     imageUrl,
   ]);
 
+  /*
+   * Separation is generated on demand, not on every option change like the
+   * still preview. It renders the frame and then paints one file per ink, so
+   * on a sixteen-colour palette that is sixteen canvases and a ZIP -- not
+   * something to run on every keystroke in the filename field.
+   */
+  const handleGenerateSeparation = useCallback(async () => {
+    setIsSeparating(true);
+    setSepError(null);
+    try {
+      const res = await exportColorSeparation({
+        name,
+        format: imageFormat,
+        quality: imageQuality,
+        scale: imageScale,
+        style: sepStyle,
+        layeredSvg: imageFormat === 'svg' && sepLayeredSvg,
+        time: currentTime,
+        currentAsciiFrame,
+        type,
+        params,
+        customCode,
+        customPrepare,
+        density,
+        cols,
+        rows,
+        theme,
+        customThemeColor,
+        gradientConfig,
+        crtConfig,
+        appMode,
+        modelConfig,
+        modelViewConfig,
+        geometry,
+        mediaConfig,
+        mediaViewConfig,
+        mediaColorConfig,
+        mediaElement,
+        rasterMode,
+        ditherAlgorithm,
+        toneConfig,
+        adjustConfig,
+      });
+      setSepResult((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        prev?.plates.forEach((p) => URL.revokeObjectURL(p.url));
+        return res;
+      });
+    } catch (err: any) {
+      console.error('Colour Separation Error:', err);
+      setSepError(err?.message || 'Separation failed');
+    } finally {
+      setIsSeparating(false);
+    }
+  }, [
+    name, imageFormat, imageQuality, imageScale, sepStyle, sepLayeredSvg,
+    currentTime, currentAsciiFrame, type, params, customCode, customPrepare,
+    density, cols, rows, theme, customThemeColor, gradientConfig, crtConfig,
+    appMode, modelConfig, modelViewConfig, geometry, mediaConfig,
+    mediaViewConfig, mediaColorConfig, mediaElement, rasterMode,
+    ditherAlgorithm, toneConfig, adjustConfig,
+  ]);
+
   const isTabDisabled = useCallback(
     (tab: ExportTab): boolean => {
       if (tab === 'astro' || tab === 'html' || tab === 'prompt') {
@@ -323,6 +407,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
   }, [isOpen, activeTab, imageFormat, imageQuality, imageScale, imageTransparentBg, imageIncludeCrt]);
 
+  /*
+   * Drop a generated separation as soon as anything that shaped it changes.
+   * Not regenerated automatically -- that is the expensive part -- but a stale
+   * archive must never stay downloadable behind controls that no longer
+   * describe it.
+   */
+  useEffect(() => {
+    setSepResult((prev) => {
+      if (!prev) return prev;
+      if (prev.url) URL.revokeObjectURL(prev.url);
+      prev.plates.forEach((p) => URL.revokeObjectURL(p.url));
+      return null;
+    });
+    setSepError(null);
+  }, [isOpen, imageFormat, imageScale, imageQuality, sepStyle, sepLayeredSvg, cols, rows, rasterMode, appMode]);
+
   if (!isOpen) return null;
 
   const effectiveRasterMode: RasterOutputMode =
@@ -333,6 +433,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const stillCellH = isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_HEIGHT * imageScale;
   const stillExportW = Math.round(cols * stillCellW);
   const stillExportH = Math.round(rows * stillCellH);
+
+  // A plate is the still export with everything but one ink masked out, so it
+  // is the same size by construction.
+  const sepExportW = stillExportW;
+  const sepExportH = stillExportH;
 
   const gifCellW = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_WIDTH * gifScale;
   const gifCellH = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_HEIGHT * gifScale;
@@ -375,6 +480,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const getExtension = (): string => {
     switch (activeTab) {
       case 'image': return imageFormat === 'jpg' ? '.jpg' : imageFormat === 'svg' ? '.svg' : '.png';
+      // A layered SVG is one file; everything else is an archive of plates.
+      case 'separation': return imageFormat === 'svg' && sepLayeredSvg ? '-plates.svg' : '-plates.zip';
 
       case 'prompt': return '-ai-prompt.txt';
       case 'astro': return '.astro';
@@ -393,7 +500,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleSelectCategory = (cat: ExportCategory) => {
     setActiveCategory(cat);
     if (cat === 'media') {
-      if (activeTab !== 'image' && activeTab !== 'gif' && activeTab !== 'video') setActiveTab('image');
+      if (activeTab !== 'image' && activeTab !== 'separation' && activeTab !== 'gif' && activeTab !== 'video') {
+        setActiveTab('image');
+      }
     } else if (cat === 'code') {
       if (appMode !== 'synth') {
         if (activeTab !== 'html_embed' && activeTab !== 'markdown') setActiveTab('html_embed');
@@ -612,6 +721,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           }),
           mimeType: 'text/plain',
         };
+      case 'separation':
+        // Binary like image/gif/video: the blob is built by its own handler,
+        // and there is no text form to copy.
+        return {
+          text: '',
+          mimeType: imageFormat === 'svg' && sepLayeredSvg ? 'image/svg+xml' : 'application/zip',
+        };
       case 'gif':
         return {
           text: '',
@@ -662,7 +778,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
       return;
     }
-    if (activeTab === 'gif' || activeTab === 'video') return;
+    // The binary tabs have no text form; copying would silently clear the
+    // clipboard rather than do nothing.
+    if (activeTab === 'gif' || activeTab === 'video' || activeTab === 'separation') return;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
@@ -672,6 +790,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     if (activeTab === 'image') {
       if (!imageBlob) return;
       const url = URL.createObjectURL(imageBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = effectiveFileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    if (activeTab === 'separation') {
+      if (!sepResult?.blob) return;
+      const url = URL.createObjectURL(sepResult.blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = effectiveFileName;
@@ -758,6 +886,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               >
                 <Camera size={11} />
                 Still Image (.png / .jpg)
+              </button>
+              <button
+                className={`export-subtab-btn ${activeTab === 'separation' ? 'active' : ''}`}
+                onClick={() => handleSelectSubTab('separation')}
+                title="One file per colour, for editing each ink separately"
+              >
+                <Layers size={11} />
+                Colour Plates (.zip)
               </button>
               <button
                 className={`export-subtab-btn ${activeTab === 'gif' ? 'active' : ''}`}
@@ -1043,6 +1179,198 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               )}
             </div>
+          ) : activeTab === 'separation' ? (
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  padding: '9px 11px',
+                  marginBottom: '10px',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '3px',
+                  fontSize: '10.5px',
+                  color: 'var(--text-muted)',
+                  lineHeight: 1.5,
+                }}
+              >
+                <Info size={13} style={{ flexShrink: 0, marginTop: '1px', color: 'var(--accent)' }} />
+                <span>
+                  Splits the render into one file per colour, so each ink can be edited on its own.
+                  Format and resolution come from the <strong style={{ color: 'var(--text-primary)' }}>Still Image</strong> tab.
+                </span>
+              </div>
+
+              <div className="gif-config-grid">
+                {/* Plate style */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">Plate Style</span>
+                  <div className="gif-btn-group">
+                    <button
+                      disabled={isSeparating || imageFormat === 'jpg'}
+                      className={`btn ${sepStyle === 'color' && imageFormat !== 'jpg' ? 'btn-primary' : ''}`}
+                      onClick={() => setSepStyle('color')}
+                      title="Each plate in its own colour on transparency. Stack them to rebuild the image."
+                    >
+                      Colour on Transparent
+                    </button>
+                    <button
+                      disabled={isSeparating}
+                      className={`btn ${sepStyle === 'ink' || imageFormat === 'jpg' ? 'btn-primary' : ''}`}
+                      onClick={() => setSepStyle('ink')}
+                      title="Coverage mask, black on white. What a screen-printing press wants."
+                    >
+                      Ink Plate (Black on White)
+                    </button>
+                  </div>
+                  {imageFormat === 'jpg' && (
+                    <span style={{ fontSize: '9.5px', color: 'var(--accent)', marginTop: '4px', display: 'block' }}>
+                      JPG has no transparency, so plates are forced to ink. Use PNG or SVG to stack them.
+                    </span>
+                  )}
+                </div>
+
+                {/* Layered SVG */}
+                {imageFormat === 'svg' && (
+                  <div className="gif-config-item">
+                    <span className="gif-config-label">SVG Layout</span>
+                    <div className="gif-btn-group">
+                      <button
+                        disabled={isSeparating}
+                        className={`btn ${sepLayeredSvg ? 'btn-primary' : ''}`}
+                        onClick={() => setSepLayeredSvg(true)}
+                        title="One SVG with a named layer per ink — what Illustrator and Figma read on import"
+                      >
+                        One File, Layered
+                      </button>
+                      <button
+                        disabled={isSeparating}
+                        className={`btn ${!sepLayeredSvg ? 'btn-primary' : ''}`}
+                        onClick={() => setSepLayeredSvg(false)}
+                        title="A separate SVG file per ink, in a ZIP"
+                      >
+                        One File Per Ink
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Output summary */}
+                <div className="gif-config-item">
+                  <span className="gif-config-label">
+                    Output ({sepExportW}×{sepExportH}px per plate)
+                  </span>
+                  <div className="gif-btn-group">
+                    <button
+                      disabled={isSeparating}
+                      className="btn btn-primary"
+                      onClick={handleGenerateSeparation}
+                      style={{ minWidth: '150px', justifyContent: 'center' }}
+                    >
+                      {isSeparating ? <Loader2 size={11} className="dice-spin" /> : <Layers size={11} />}
+                      {isSeparating ? 'SEPARATING…' : sepResult ? 'REGENERATE PLATES' : 'GENERATE PLATES'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {sepError && (
+                <div className="gif-progress-box">
+                  <div style={{ fontSize: '11px', color: 'var(--accent)' }}>{sepError}</div>
+                </div>
+              )}
+
+              {/*
+                Refusals explain themselves and point at the control that fixes
+                it. A separation that cannot run is nearly always a colour-mode
+                choice, not a failure.
+              */}
+              {sepResult?.analysis.refusal && (
+                <div className="gif-progress-box">
+                  <div style={{ fontSize: '11px', color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                    {sepResult.analysis.refusal === 'mono' && (
+                      <>
+                        <strong style={{ color: 'var(--accent)' }}>NOTHING TO SEPARATE.</strong>{' '}
+                        This render is monochrome — a single tint applied over the whole raster, so
+                        there is only one ink. Pick a palette, Duotone, Tritone or Content colour in
+                        the <strong>COLORS</strong> panel first.
+                      </>
+                    )}
+                    {sepResult.analysis.refusal === 'too-many' && (
+                      <>
+                        <strong style={{ color: 'var(--accent)' }}>
+                          {sepResult.analysis.distinctColors} DISTINCT COLOURS.
+                        </strong>{' '}
+                        That is past the {MAX_PLATES}-plate limit and would not be editable by hand
+                        anyway. Choose an indexed palette, or set <strong>Quantize Levels</strong> in
+                        TONAL CONTROLS to reduce the render to a countable set of inks.
+                      </>
+                    )}
+                    {sepResult.analysis.refusal === 'empty' && (
+                      <>
+                        <strong style={{ color: 'var(--accent)' }}>FRAME IS EMPTY.</strong>{' '}
+                        Every cell is transparent, so there is nothing to split.
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Plate list */}
+              {sepResult && !sepResult.analysis.refusal && (
+                <div className="gif-preview-card" style={{ textAlign: 'left' }}>
+                  <div
+                    style={{
+                      fontSize: '10.5px',
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      marginBottom: '8px',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
+                    {sepResult.analysis.plates.length} PLATES •{' '}
+                    {sepResult.blob ? (sepResult.blob.size / 1024).toFixed(1) : 0} KB •{' '}
+                    {imageFormat === 'svg' && sepLayeredSvg ? 'LAYERED SVG' : 'ZIP ARCHIVE'}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {sepResult.analysis.plates.map((plate, i) => (
+                      <div
+                        key={plate.hex + i}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          fontSize: '10px',
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        <span style={{ color: 'var(--text-dim)', minWidth: '20px' }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        <span
+                          style={{
+                            width: '14px',
+                            height: '14px',
+                            flexShrink: 0,
+                            background: plate.hex,
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '2px',
+                          }}
+                        />
+                        <span style={{ color: 'var(--text-primary)', minWidth: '64px' }}>{plate.hex}</span>
+                        <span>{plate.cellCount.toLocaleString()} cells</span>
+                        <span style={{ color: 'var(--text-dim)' }}>
+                          {((plate.cellCount / sepResult.analysis.opaqueCells) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           ) : activeTab === 'gif' ? (
             <div>
               {/* GIF Configuration */}
@@ -1312,6 +1640,33 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 className="btn btn-primary"
                 onClick={handleDownload}
                 disabled={!imageBlob || isCapturingImage}
+              >
+                <Download size={12} />
+                DOWNLOAD {effectiveFileName}
+              </button>
+            </>
+          ) : activeTab === 'separation' ? (
+            <>
+              <button
+                className="btn"
+                onClick={handleGenerateSeparation}
+                disabled={isSeparating}
+                title="Re-render the frame and rebuild every plate"
+              >
+                <RotateCcw size={12} />
+                {sepResult ? 'REGENERATE' : 'GENERATE'}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleDownload}
+                disabled={!sepResult?.blob || isSeparating}
+                title={
+                  sepResult?.analysis.refusal
+                    ? 'This render has nothing to separate'
+                    : !sepResult
+                    ? 'Generate the plates first'
+                    : undefined
+                }
               >
                 <Download size={12} />
                 DOWNLOAD {effectiveFileName}

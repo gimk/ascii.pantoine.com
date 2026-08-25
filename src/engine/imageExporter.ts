@@ -119,16 +119,29 @@ function getThemeColors(
   return THEME_COLORS[theme] || THEME_COLORS.green;
 }
 
+export interface ExportFrame {
+  text: string;
+  luminance: Float32Array | null;
+  colors: Uint8ClampedArray | null;
+  /** Background actually used: the theme's, or the frame's own once it is coloured. */
+  bgColor: string;
+  /** Foreground for the monochrome paths, where `colors` is null. */
+  fgColor: string;
+  rasterMode: RasterOutputMode;
+}
+
 /**
- * Renders a single crisp high-resolution still image (PNG, JPG or Vector SVG) of the current viewport.
+ * Renders one frame at export resolution, through the same mode renderer the
+ * viewport uses.
+ *
+ * Extracted so the still export and the colour-separation export cannot drift
+ * apart. pipeline.md invariant 4 is that every export path must forward
+ * rasterMode, ditherAlgorithm, toneConfig and adjustConfig, and that missing
+ * one silently produces an export different from what is on screen -- a second
+ * hand-copied dispatch is exactly how that happens again.
  */
-export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageExportResult> {
+export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
   const {
-    name = 'raster-art',
-    format = 'png',
-    quality = 0.95,
-    scale = 2.0,
-    transparentBg = false,
     cols,
     rows,
     params,
@@ -139,21 +152,13 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     theme,
     customThemeColor,
     gradientConfig,
-    crtConfig,
     time = 0,
     currentAsciiFrame,
   } = opts;
 
   const rasterMode: RasterOutputMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
-  const isPixel = rasterMode === 'pixel';
-  const showScanlines = !isPixel && (opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true));
-  const showCrtGlow = !isPixel && (opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false));
-  const showVignette = !isPixel && (opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false));
-  const showPhosphorBloom = !isPixel && (opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false));
+  const { bg, text: fgColor } = getThemeColors(theme, customThemeColor, gradientConfig);
 
-  const { bg, text } = getThemeColors(theme, customThemeColor, gradientConfig);
-
-  // Generate frameText, colors & luminance buffers
   let frameText = currentAsciiFrame || '';
   let frameLuminance: Float32Array | null = null;
   let frameColors: Uint8ClampedArray | null = null;
@@ -233,6 +238,50 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     frameColors = res.colors;
     if (res.isColored) effectiveBg = res.bgColor;
   }
+
+  return {
+    text: frameText,
+    luminance: frameLuminance,
+    colors: frameColors,
+    bgColor: effectiveBg,
+    fgColor,
+    rasterMode,
+  };
+}
+
+/**
+ * Renders a single crisp high-resolution still image (PNG, JPG or Vector SVG) of the current viewport.
+ */
+export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageExportResult> {
+  const {
+    name = 'raster-art',
+    format = 'png',
+    quality = 0.95,
+    scale = 2.0,
+    transparentBg = false,
+    cols,
+    rows,
+    gradientConfig,
+    crtConfig,
+  } = opts;
+
+  // Everything the frame itself needs -- source configs, density, time, the
+  // custom-preset code -- is read by renderExportFrame, not here.
+  const rasterMode: RasterOutputMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
+  const isPixel = rasterMode === 'pixel';
+  const showScanlines = !isPixel && (opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true));
+  const showCrtGlow = !isPixel && (opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false));
+  const showVignette = !isPixel && (opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false));
+  const showPhosphorBloom = !isPixel && (opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false));
+
+  const {
+    text: frameText,
+    luminance: frameLuminance,
+    colors: frameColors,
+    bgColor: effectiveBg,
+    fgColor: text,
+  } = renderExportFrame(opts);
+
 
   // If Vector SVG export is requested
   if (format === 'svg') {
