@@ -8,7 +8,7 @@ import {
   ToneMappingConfig,
 } from '../types/ascii';
 import { MONOSPACE_CELL_ASPECT } from './renderer';
-import { processRasterFrame, toPipelineAdjustments, createToneCurveLUT, evaluateMonotoneCubicSpline } from './rasterEngine';
+import { processRasterFrame, toPipelineAdjustments, createToneCurveLUT, evaluateMonotoneCubicSpline, EMPTY_HISTOGRAM } from './rasterEngine';
 
 export { createToneCurveLUT, evaluateMonotoneCubicSpline };
 
@@ -36,6 +36,9 @@ export interface AsciiMediaFrameResult {
   cols: number;
   rows: number;
   rasterMode?: RasterOutputMode;
+  /** See ProcessedRasterResult: 256 bins of pre-levels luminance, live buffer. */
+  histogram: Uint32Array;
+  histogramOpaque: number;
 }
 
 export function resolveMediaBackgroundColor(colorConfig?: MediaColorConfig, viewConfigBackground?: string): string {
@@ -89,7 +92,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   const bgColor = resolveMediaBackgroundColor(colorConfig, viewConfig.background);
 
   if (cols <= 0 || rows <= 0) {
-    return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols: 0, rows: 0, rasterMode };
+    return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols: 0, rows: 0, rasterMode, histogram: EMPTY_HISTOGRAM, histogramOpaque: 0 };
   }
 
   /*
@@ -102,12 +105,12 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
   if (!mediaElement) {
     const blankRow = ' '.repeat(cols);
     const lines = new Array(rows).fill(blankRow);
-    return { text: lines.join('\n'), colors: null, luminance: null, bgColor, isColored: false, cols, rows, rasterMode };
+    return { text: lines.join('\n'), colors: null, luminance: null, bgColor, isColored: false, cols, rows, rasterMode, histogram: EMPTY_HISTOGRAM, histogramOpaque: 0 };
   }
 
   const { ctx } = getOffscreenCanvas(cols, rows);
   if (!ctx) {
-    return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols, rows, rasterMode };
+    return { text: '', colors: null, luminance: null, bgColor, isColored: false, cols, rows, rasterMode, histogram: EMPTY_HISTOGRAM, histogramOpaque: 0 };
   }
 
   // 1. Clear background

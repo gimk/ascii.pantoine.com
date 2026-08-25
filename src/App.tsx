@@ -24,6 +24,7 @@ import {
   DEFAULT_TONE_MAPPING_CONFIG,
   DEFAULT_IMAGE_ADJUST_CONFIG,
   ImageAdjustConfig,
+  ToneMappingConfig,
   RasterOutputMode,
   UiThemeSettings,
 } from './types/ascii';
@@ -692,6 +693,51 @@ export const App: React.FC = () => {
    * switching source silently threw away which panel you were on.
    */
   const [panel, setPanel] = useState<'content' | 'render'>('content');
+
+  /* ======================================================================
+     Luminance histogram, for the Levels control.
+
+     processRasterFrame hands its histogram back on every frame, as a live
+     module buffer it overwrites next time round. Two consequences shape this:
+     it has to be copied to be held, and it must not be promoted to state per
+     frame -- a synth loop runs at 60fps and would re-render the whole sidebar
+     that often to redraw 256 bars.
+
+     So: sampled only while the Render panel is open, throttled, and copied on
+     the way out.
+     ====================================================================== */
+  const [histogramSnapshot, setHistogramSnapshot] =
+    useState<{ bins: Uint32Array; opaque: number } | null>(null);
+  const wantsHistogramRef = useRef<boolean>(false);
+  const lastHistogramPushRef = useRef<number>(0);
+
+  const captureHistogram = useCallback(
+    (res: { histogram: Uint32Array; histogramOpaque: number }) => {
+      if (!wantsHistogramRef.current) return;
+      const now = performance.now();
+      if (now - lastHistogramPushRef.current < 200) return;
+      lastHistogramPushRef.current = now;
+      setHistogramSnapshot({
+        bins: new Uint32Array(res.histogram),
+        opaque: res.histogramOpaque,
+      });
+    },
+    []
+  );
+
+  const isRenderPanelOpen = panel === 'render';
+  useEffect(() => {
+    wantsHistogramRef.current = isRenderPanelOpen;
+    if (!isRenderPanelOpen) return;
+    /*
+     * A static image renders once and then sits there, so opening the panel
+     * would otherwise show an empty histogram until something else happened to
+     * invalidate the frame. Force one pass; the throttle guard is reset so it
+     * is not swallowed.
+     */
+    lastHistogramPushRef.current = 0;
+    triggerMediaRender();
+  }, [isRenderPanelOpen, triggerMediaRender]);
 
   /*
    * Landing a media file is the moment the render controls become the
@@ -1545,6 +1591,18 @@ export const App: React.FC = () => {
     }));
   }, [appMode]);
 
+  /*
+   * Levels lives in toneConfig, this record's other grading store. Nothing
+   * wrote it before the Levels control existed, so it had no setter.
+   */
+  const handleChangeToneConfig = useCallback((next: ToneMappingConfig) => {
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      [appMode]: { ...prev[appMode], toneConfig: next },
+    }));
+    triggerMediaRender();
+  }, [appMode, triggerMediaRender]);
+
   /**
    * Apply a shader preset in synth / model.
    *
@@ -1936,6 +1994,7 @@ export const App: React.FC = () => {
         algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
         toneConfig: curSettings.toneConfig,
       });
+      captureHistogram(result);
       viewportRef.current?.setFrame(
         result.text,
         0,
@@ -2073,6 +2132,7 @@ export const App: React.FC = () => {
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
+        captureHistogram(res);
         frameText = res.text;
         frameColors = res.colors;
       } else if (appMode === 'media') {
@@ -2088,6 +2148,7 @@ export const App: React.FC = () => {
           algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
           toneConfig: activeSettings.toneConfig,
         });
+        captureHistogram(result);
         frameText = result.text;
         frameColors = result.colors;
         frameBgColor = result.bgColor;
@@ -2110,6 +2171,7 @@ export const App: React.FC = () => {
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
+        captureHistogram(res);
         frameText = res.text;
         frameColors = res.colors;
         frameBgColor = res.bgColor;
@@ -2851,6 +2913,10 @@ export const App: React.FC = () => {
                     mediaColorConfig={mediaColorConfig}
                     onChangeMediaColorConfig={handleSelectMediaColorConfig}
                     appMode={appMode}
+                    toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                    onChangeToneConfig={handleChangeToneConfig}
+                    histogram={histogramSnapshot?.bins ?? null}
+                    histogramOpaque={histogramSnapshot?.opaque ?? 0}
                   />
                 )}
 
@@ -2906,6 +2972,10 @@ export const App: React.FC = () => {
                       onChangeConfig={handleChangeAdjustConfig}
                       persistKeyPrefix={`${appMode}-image-adjust`}
                       onResetPalette={handleResetPalette}
+                      toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                      onChangeToneConfig={handleChangeToneConfig}
+                      histogram={histogramSnapshot?.bins ?? null}
+                      histogramOpaque={histogramSnapshot?.opaque ?? 0}
                       paletteSlot={
                         <div>
                           {/* No subheading: the COLORS panel title already says this. */}
