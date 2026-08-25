@@ -449,11 +449,43 @@ html, body, #root {
 }
 
 /*
- * Raster extents. The border is the edge; the very large spread shadow tints
- * the void beyond it. Both are deliberately near-threshold -- this is a
- * wayfinding hint for a panned view, not a frame around the artwork.
+ * Dotted backdrop, so the void reads as canvas rather than as part of the
+ * picture. Inset past the container on every side because the element is
+ * translated by up to one tile to follow the pan; the overhang keeps an edge
+ * from swinging into view. Neutral grey at low alpha works on both the dark
+ * and paper themes without needing a per-theme token.
  */
-.viewport-bounds {
+.viewport-dots {
+  position: absolute;
+  inset: -32px;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle at center,
+    rgba(128, 128, 128, 0.18) 0.9px,
+    transparent 1.2px
+  );
+  background-size: 22px 22px;
+}
+
+/*
+ * Everything that is part of the picture, so a zoom step can be eased as one
+ * composited layer. Sits above the dotted backdrop and below the CRT overlays;
+ * its children keep their own z-order within it.
+ */
+.viewport-camera {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
+/*
+ * The raster's ground plane: opaque, so the dots stop at the edge of the
+ * artwork instead of showing through the gaps between glyphs.
+ */
+.viewport-content-ground {
   position: absolute;
   top: 0;
   left: 0;
@@ -461,8 +493,23 @@ html, body, #root {
   pointer-events: none;
   z-index: 1;
   box-sizing: content-box;
+  background: var(--bg-primary);
+}
+
+/*
+ * Raster extents: a hairline at the edge, near-threshold, a wayfinding hint
+ * for a panned view rather than a frame around the artwork.
+ *
+ * This used to also tint the void with a 4000px spread box-shadow. That
+ * inflates the element's visual overflow to tens of thousands of pixels a
+ * side, which is merely wasteful on a static layer and untenable on a
+ * promoted one -- the zoom tween would have had the compositor allocate a
+ * layer that size. The dotted backdrop separates content from void perfectly
+ * well on its own, so the shadow is gone rather than reinstated some cheaper
+ * way.
+ */
+.viewport-content-ground.with-bounds {
   outline: 1px solid rgba(128, 128, 128, 0.16);
-  box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.16);
 }
 
 .ascii-bloom-pre {

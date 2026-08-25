@@ -2285,33 +2285,64 @@ export const App: React.FC = () => {
     ]
   );
 
-  const handleToggleAutoRes = useCallback(() => {
-    setRenderSettingsByMode((prev) => {
-      const mode = appModeRef.current;
-      const nextAutoRes = !prev[mode].autoRes;
-      if (nextAutoRes) {
-        const optimal = viewportRef.current?.getOptimalResolution();
-        if (optimal) {
-          return {
-            ...prev,
-            [mode]: {
-              ...prev[mode],
-              autoRes: true,
-              cols: optimal.cols,
-              rows: optimal.rows,
-            },
-          };
-        }
-      }
-      return {
-        ...prev,
-        [mode]: {
-          ...prev[mode],
-          autoRes: nextAutoRes,
-        },
-      };
-    });
+  /** Natural pixel size of the loaded media, or null when there is none. */
+  const getMediaSourceSize = useCallback((): { w: number; h: number } | null => {
+    const el = mediaElementRef.current;
+    let w = 0;
+    let h = 0;
+    if (el instanceof HTMLImageElement) {
+      w = el.naturalWidth || el.width;
+      h = el.naturalHeight || el.height;
+    } else if (el instanceof HTMLVideoElement) {
+      w = el.videoWidth || el.width;
+      h = el.videoHeight || el.height;
+    } else if (el instanceof HTMLCanvasElement) {
+      w = el.width;
+      h = el.height;
+    }
+    return w > 0 && h > 0 ? { w, h } : null;
   }, []);
+
+  /**
+   * Keep the DPI readout honest when something else sets the grid.
+   *
+   * In media pixel mode DPI is not an independent setting -- it is the grid
+   * expressed against the source, `cols = srcWidth * dpi / 100`. Auto-res
+   * writes cols/rows straight from the viewfinder size, so without this the
+   * panel keeps reporting whatever DPI was last dialled in by hand, describing
+   * a resolution nothing is using.
+   */
+  const syncMediaDpiToGrid = useCallback((nextCols: number) => {
+    if (appModeRef.current !== 'media' || nextCols <= 0) return;
+    const size = getMediaSourceSize();
+    if (!size) return;
+    setMediaViewConfig((prev) => {
+      const isPixel = (prev.rasterMode || renderSettingsRef.current.rasterMode) === 'pixel';
+      if (!isPixel) return prev;
+      // Same 10-300 range the DPI slider clamps to.
+      const nextDpi = Math.max(10, Math.min(300, Math.round((nextCols / size.w) * 100)));
+      return prev.dpi === nextDpi ? prev : { ...prev, dpi: nextDpi };
+    });
+  }, [getMediaSourceSize]);
+
+  const handleToggleAutoRes = useCallback(() => {
+    const mode = appModeRef.current;
+    const turningOn = !renderSettingsRef.current.autoRes;
+    // Resolved before the updater rather than inside it: the updater can be
+    // replayed, and this both reads the DOM and drives a second setState.
+    const optimal = turningOn ? viewportRef.current?.getOptimalResolution() : null;
+
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      [mode]: {
+        ...prev[mode],
+        autoRes: turningOn,
+        ...(optimal ? { cols: optimal.cols, rows: optimal.rows } : {}),
+      },
+    }));
+
+    if (optimal) syncMediaDpiToGrid(optimal.cols);
+  }, [syncMediaDpiToGrid]);
 
   const handleManualResolutionChange = useCallback((c: number, r: number) => {
     setRenderSettingsByMode((prev) => {
@@ -2375,7 +2406,10 @@ export const App: React.FC = () => {
         },
       };
     });
-  }, []);
+    // Auto-res keeps re-sizing the grid as the viewfinder changes, so the DPI
+    // has to follow it there too, not only on the initial toggle.
+    syncMediaDpiToGrid(c);
+  }, [syncMediaDpiToGrid]);
 
   return (
     <div className={`app-container ${viewMode === 'fullscreen' ? 'app-fullscreen' : ''}`}>

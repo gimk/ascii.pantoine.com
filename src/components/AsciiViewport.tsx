@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings, ImagePlus } from 'lucide-react';
 import {
   PhosphorTheme,
@@ -43,6 +43,36 @@ const MAX_BACKING_DIM = 16384;
 const ZOOM_PRESETS = [1, 2, 4, 8, 16] as const;
 
 /**
+ * Zoom is geometric: one notch multiplies, it does not add. ~18% per notch
+ * crosses the useful range in a comfortable number of turns while still being
+ * fine enough to frame a shot; shift takes a bigger bite.
+ */
+const ZOOM_STEP_RATIO = 1.18;
+const ZOOM_STEP_RATIO_COARSE = 1.6;
+
+/**
+ * How fast the camera falls back to identity after a zoom step: the fraction
+ * of the remaining distance still left after one 60fps frame.
+ *
+ * Exponential decay rather than a keyframed ease, because it has no beginning.
+ * A step arriving mid-flight simply moves the target and the same decay keeps
+ * running, where a fresh ease per step would restart from zero velocity and
+ * turn a burst of notches into a stagger. 0.62 settles in roughly 110ms.
+ */
+const ZOOM_DECAY_PER_FRAME = 0.62;
+
+/** Below this much residual (in log scale) the camera snaps home. */
+const ZOOM_DECAY_EPSILON = 0.0015;
+
+/**
+ * Ceiling on how far the camera may sit from identity. A jump straight
+ * from 1600% to Fit is a factor of thirty; animating that literally is a
+ * swooping flight across the image rather than a zoom, so a big jump starts
+ * closer and simply covers less ground.
+ */
+const ZOOM_TWEEN_MAX_FACTOR = 4;
+
+/**
  * The viewfinder camera: where the raster sits on screen and how big it is.
  *
  * `tx`/`ty` are the raster's top-left corner in CSS pixels within the
@@ -57,6 +87,12 @@ export interface ViewTransform {
 
 /** Keep at least this much of the raster on screen, so it can never be lost. */
 const PAN_KEEP_VISIBLE_PX = 80;
+
+/** Spacing of the backdrop dot grid, in CSS pixels. */
+const DOT_TILE_PX = 22;
+
+/** Modulo that returns a non-negative result, unlike JS `%` on negatives. */
+const mod = (n: number, m: number): number => ((n % m) + m) % m;
 
 
 export interface AsciiViewportHandle {
@@ -389,64 +425,209 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const recenter = useCallback(() => {
     setView((prev) => ({ ...prev, ...centerFor(prev.scale) }));
   }, [centerFor]);
+  /* ======================================================================
+     Zoom easing.
 
-  /*
-   * Zoom bounds for the manual steppers. autoFit already fits up to 5x, so the
-   * old 3x button ceiling could not even step back to a scale the Fit button
-   * had just set. Pixel mode in particular wants deep zoom: at 1 device pixel
-   * per cell a 256-wide dither is thumbnail-sized until well past 300%.
-   * The step scales with the current zoom so crossing the range stays a few
-   * clicks instead of eighty.
-   */
-  /*
-   * Two different notions of a zoom step, because the two output modes scale
-   * differently:
-   *
-   *  - ASCII scales through a CSS transform, so any fractional zoom is exact.
-   *    Steps are a true 1% (25% with shift held for crossing the range).
-   *  - Pixel mode snaps its backing store to whole device pixels per cell (see
-   *    drawCanvas), so a fractional zoom means resampling cols*9 into a
-   *    cols*8.5 box and losing the hard cell edges the mode exists for. Its
-   *    steps are therefore whole cell scales, adjusted for devicePixelRatio so
-   *    one click is one more screen pixel per cell.
-   */
-  const stepZoom = useCallback((z: number, dir: 1 | -1, coarse = false) => {
-    const isPixel = latestRasterModeRef.current === 'pixel';
-    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
-    /** One device pixel per cell: the point below which the ladder runs out. */
-    const rungFloor = 1 / dpr;
+     The new scale is committed and drawn straight away; what softens the jump
+     is the camera, carrying the transform that maps the new rendering back
+     onto the old one and relaxing continuously to identity. So a step
+     rasterizes once and the frames in between are the compositor scaling a
+     bitmap -- fractionally soft in flight, which nothing perceives during
+     motion, where redrawing per frame would mean re-running the glyph loop or
+     reallocating the backing store sixty times a second.
 
-    if (isPixel && z >= rungFloor - 1e-9) {
-      /*
-       * Rungs are counted in single device pixels per cell; a coarse step just
-       * crosses several of them at once. Quantising the *current* rung to a
-       * multiple of the step instead put 100% on a 1x display at rung 0, so
-       * one coarse click jumped straight to 400% and the click back landed
-       * below the floor and fell through to the linear creep below -- zoom in
-       * by 300 points, zoom out by 25.
-       */
-      const cellsPerClick = coarse ? 4 : 1;
-      const currentRung = Math.max(1, Math.round(z * dpr));
-      const nextRung = currentRung + dir * cellsPerClick;
-      if (nextRung >= 1) {
-        return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number((nextRung / dpr).toFixed(2))));
+     Crucially this is one long-lived decay, not an animation per step. Giving
+     each notch its own ease meant every one restarted from zero velocity, so a
+     quick burst of them -- which is how anyone actually uses a wheel or a
+     trackpad -- came out as a stagger of accelerations. A step now only nudges
+     the residual transform; the decay carrying it back to identity never
+     restarts, so a burst reads as one continuous movement.
+     ====================================================================== */
+
+  const cameraRef = useRef<HTMLDivElement>(null);
+  const prevViewRef = useRef<ViewTransform>(view);
+  /**
+   * How far the camera currently sits from identity, as a scale about a fixed
+   * point. Any composition of scales-about-points is itself a scale about some
+   * point, so this shape survives steps taken at different cursor positions.
+   */
+  const residualRef = useRef<{ s: number; px: number; py: number } | null>(null);
+  const decayRafRef = useRef<number | null>(null);
+  const decayLastTsRef = useRef<number>(0);
+
+  const applyCameraResidual = useCallback(() => {
+    const el = cameraRef.current;
+    if (!el) return;
+    const r = residualRef.current;
+    if (!r) {
+      el.style.transform = '';
+      el.style.transformOrigin = '';
+      el.style.willChange = '';
+      return;
+    }
+    el.style.transformOrigin = `${r.px}px ${r.py}px`;
+    el.style.transform = `scale(${r.s})`;
+  }, []);
+
+  const runDecay = useCallback(() => {
+    if (decayRafRef.current !== null) return;
+    decayLastTsRef.current = 0;
+
+    const tick = (ts: number) => {
+      const last = decayLastTsRef.current || ts;
+      // Clamped so a backgrounded tab returning does not jump the decay.
+      const dt = Math.min(64, ts - last);
+      decayLastTsRef.current = ts;
+
+      const r = residualRef.current;
+      if (!r) {
+        decayRafRef.current = null;
+        applyCameraResidual();
+        return;
       }
-      // Stepping down from the floor itself: land exactly on it before the
-      // linear range below takes over, so no rung is skipped on the way out.
-      if (z > rungFloor + 1e-9) {
-        return Number(rungFloor.toFixed(2));
-      }
+
       /*
-       * Already at one device pixel per cell and still going down. The backing
-       * store cannot shrink further and the browser downsamples the blit
-       * instead, so the ladder has no rung left. Falling through to linear
-       * steps is what lets a grid larger than the viewport be zoomed out to
-       * fit -- clamping here pinned the minimum to 100% on a 1x display.
+       * Decay in log space: zoom is geometric, so a residual of 2x and one of
+       * 0.5x are the same distance from home and must come back at the same
+       * rate. Raising the per-frame factor by dt/frame keeps the rate the same
+       * on any refresh rate.
        */
+      const logS = Math.log(r.s) * Math.pow(ZOOM_DECAY_PER_FRAME, dt / 16.6667);
+
+      if (Math.abs(logS) < ZOOM_DECAY_EPSILON) {
+        residualRef.current = null;
+        decayRafRef.current = null;
+        applyCameraResidual();
+        return;
+      }
+
+      const s = Math.exp(logS);
+      // Hold the fixed point and rebuild the scale around it, so relaxing the
+      // magnitude never slides the image sideways.
+      residualRef.current = { s, px: r.px, py: r.py };
+      applyCameraResidual();
+      decayRafRef.current = requestAnimationFrame(tick);
+    };
+
+    decayRafRef.current = requestAnimationFrame(tick);
+  }, [applyCameraResidual]);
+
+  useLayoutEffect(() => {
+    const prev = prevViewRef.current;
+    prevViewRef.current = view;
+
+    const el = cameraRef.current;
+    if (!el || prev.scale === view.scale) return;
+    if (typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
     }
 
-    const next = z + dir * (coarse ? 0.25 : 0.01);
-    return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number(next.toFixed(2))));
+    /*
+     * The fixed point of this step: the one screen position showing the same
+     * part of the image before and after. Derived from the two states rather
+     * than taken from the cursor, so it stays correct when a clamp has pulled
+     * the pan somewhere the cursor was not.
+     */
+    const ds = view.scale - prev.scale;
+    const qx = (prev.tx * view.scale - view.tx * prev.scale) / ds;
+    const qy = (prev.ty * view.scale - view.ty * prev.scale) / ds;
+    const k = prev.scale / view.scale;
+    if (!Number.isFinite(qx) || !Number.isFinite(qy) || !(k > 0)) return;
+
+    /*
+     * Compose this step onto whatever the camera is already showing, as affine
+     * maps x -> a*x + b. The step has to be applied *under* the existing
+     * residual: the residual describes the old rendering, and the step maps
+     * the new rendering onto that old one.
+     */
+    const cur = residualRef.current;
+    let s: number;
+    let px: number;
+    let py: number;
+    if (cur) {
+      s = cur.s * k;
+      const bx = (1 - cur.s) * cur.px;
+      const by = (1 - cur.s) * cur.py;
+      const tx = cur.s * ((1 - k) * qx) + bx;
+      const ty = cur.s * ((1 - k) * qy) + by;
+      // s === 1 means the two steps cancelled exactly; there is nothing left
+      // to show and the fixed point would be a division by zero.
+      if (Math.abs(1 - s) < 1e-9) {
+        residualRef.current = null;
+        applyCameraResidual();
+        return;
+      }
+      px = tx / (1 - s);
+      py = ty / (1 - s);
+    } else {
+      s = k;
+      px = qx;
+      py = qy;
+    }
+
+    // Cap the distance so a jump straight from 1600% to Fit eases rather than
+    // flying in from far outside the frame.
+    const maxLog = Math.log(ZOOM_TWEEN_MAX_FACTOR);
+    const logS = Math.max(-maxLog, Math.min(maxLog, Math.log(s)));
+    if (Math.abs(logS) < ZOOM_DECAY_EPSILON) {
+      residualRef.current = null;
+      applyCameraResidual();
+      return;
+    }
+
+    residualRef.current = { s: Math.exp(logS), px, py };
+    /*
+     * Promote for the duration. Without this the layer holds live text -- the
+     * uncoloured ASCII path is a <pre> scaled by CSS -- and the browser
+     * re-rasterizes every glyph at every intermediate scale, which is ruinous
+     * past 100% where the text is large. Promoted, it rasterizes once and the
+     * compositor scales the texture.
+     */
+    el.style.willChange = 'transform';
+    applyCameraResidual();
+    runDecay();
+  }, [view, applyCameraResidual, runDecay]);
+
+  useEffect(() => () => {
+    if (decayRafRef.current !== null) cancelAnimationFrame(decayRafRef.current);
+  }, []);
+
+  /**
+   * One notch of zoom.
+   *
+   * Geometric, always: a step is a fixed *ratio*, so it feels the same at 40%
+   * as at 1600%. The previous version mixed two incompatible rules -- whole
+   * device pixels per cell above one pixel per cell, and a flat additive 1%
+   * below it -- which on a 1x display meant 1% per notch under 100% and
+   * +100% per notch over it. Eighty notches to cross the bottom of the range,
+   * one to cross the top.
+   *
+   * Pixel mode still has to land on whole device pixels per cell or its cells
+   * come out alternating widths, so there the geometric target is snapped to
+   * the nearest rung. Where rungs are further apart than the step (the low
+   * end, where rungs are 1x, 2x, 3x...), snapping alone would round straight
+   * back onto the current rung and the notch would do nothing, so it takes the
+   * next rung instead. Below one device pixel per cell the mode is being
+   * downsampled anyway, there is no rung to hold, and the geometric value
+   * stands unmodified.
+   */
+  const stepZoom = useCallback((z: number, dir: 1 | -1, coarse = false) => {
+    const ratio = coarse ? ZOOM_STEP_RATIO_COARSE : ZOOM_STEP_RATIO;
+    const target = dir > 0 ? z * ratio : z / ratio;
+    const clamp = (v: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number(v.toFixed(3))));
+
+    if (latestRasterModeRef.current === 'pixel') {
+      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      const targetRungs = target * dpr;
+      if (targetRungs >= 1) {
+        let rung = Math.round(targetRungs);
+        if (Math.abs(rung / dpr - z) < 1e-6) rung = Math.round(z * dpr) + dir;
+        if (rung >= 1) return clamp(rung / dpr);
+      }
+    }
+
+    return clamp(target);
   }, []);
 
   const autoFit = useCallback(() => {
@@ -1101,20 +1282,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   /**
-   * Keyboard and menu zoom steps.
+   * Keyboard zoom. One notch, about the middle of the viewport.
    *
-   * Pixel mode rides the whole-cell ladder stepZoom maintains; everything else
-   * moves multiplicatively, because stepZoom's 1% fine step would need a
-   * hundred presses to double and is meant for the on-screen steppers.
+   * This used to keep its own multiplier for the non-pixel case, because
+   * stepZoom's fine step was an additive 1% back then and would have needed a
+   * hundred presses to double. stepZoom is geometric in every mode now, so
+   * there is nothing left to special-case.
    */
   const nudgeZoom = useCallback(
     (dir: 1 | -1) => {
-      const cur = viewRef.current.scale;
-      const next =
-        latestRasterModeRef.current === 'pixel'
-          ? stepZoom(cur, dir)
-          : cur * (dir > 0 ? 1.25 : 1 / 1.25);
-      zoomAboutCenter(next);
+      zoomAboutCenter(stepZoom(viewRef.current.scale, dir));
     },
     [stepZoom, zoomAboutCenter]
   );
@@ -1307,15 +1484,47 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         {showVignette && <div className="crt-vignette-overlay" />}
 
         {/*
-          Content bounds and the void outside them. One element does both: the
-          hairline is its border, and a very large spread box-shadow tints
-          everything beyond it. Deliberately faint -- it should tell you where
-          the raster ends when you are panned off it, and be invisible
-          otherwise.
+          Dotted backdrop. Translated by the pan modulo one tile rather than
+          re-drawn at a new background-position, so it rides the compositor
+          with the rest of the pan instead of repainting every frame. The
+          spacing is screen-fixed on purpose: a grid that scaled with the zoom
+          would be a moire generator at 64x.
         */}
-        {showViewportBounds && contentBounds && (
+        <div
+          className="viewport-dots"
+          aria-hidden="true"
+          style={{
+            transform: `translate3d(${mod(view.tx, DOT_TILE_PX)}px, ${mod(view.ty, DOT_TILE_PX)}px, 0)`,
+          }}
+        />
+
+        {/*
+          The camera. Holds everything that is part of the picture, and exists
+          so a zoom step can be animated: the new scale is committed and drawn
+          immediately, then this element is given the inverse transform and
+          animated back to identity. That tweens on the compositor from a
+          bitmap already on screen, so a step costs exactly one rasterization
+          instead of one per frame -- which matters, because scale is baked
+          into the canvas backing store and cannot be transitioned in CSS.
+
+          The dotted backdrop stays outside it: a backdrop that scaled with the
+          picture would not read as a backdrop.
+        */}
+        <div className="viewport-camera" ref={cameraRef}>
+        {/*
+          The raster's own ground. Opaque, and drawn whether or not the bounds
+          decoration is on: the ASCII text path is transparent between glyphs,
+          so without it the dots would show straight through the artwork and
+          the toggle would decide whether the picture is legible.
+
+          With bounds enabled it also carries the hairline edge and a very
+          large spread shadow that tints the void beyond. Both deliberately
+          faint -- they say where the raster ends when you are panned off it,
+          and disappear otherwise.
+        */}
+        {contentBounds && !showMediaPlaceholder && (
           <div
-            className="viewport-bounds"
+            className={`viewport-content-ground ${showViewportBounds ? 'with-bounds' : ''}`}
             aria-hidden="true"
             style={{
               transform: `translate3d(${view.tx}px, ${view.ty}px, 0)`,
@@ -1389,6 +1598,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               } as React.CSSProperties) : {}),
             }}
           />
+        </div>
         </div>
 
         {/* No-Media Prompt: fixed size, outside the zoomed raster surface */}
