@@ -322,6 +322,18 @@ export type ColorMode = 'fixed' | 'content';
 export type ColorSamplingMethod = 'average' | 'center' | 'weighted';
 export type ColorBgPreset = 'dark' | 'white' | 'custom';
 
+/**
+ * How an indexed palette is matched to the source.
+ *
+ * 'auto' samples the source and picks: chromatic sources get hue matching,
+ * luminance-driven ones (3D shading, synth fields, greyscale) get the ramp.
+ * The other two settle it explicitly, because the two looks are a real choice
+ * rather than a detection problem -- 'hue' keeps the source's own colours and
+ * so only ever reaches the palette entries near them, while 'ramp' discards
+ * hue and spreads luminance across every entry.
+ */
+export type PaletteMatchMode = 'auto' | 'hue' | 'ramp';
+
 export interface MediaColorConfig {
   mode: ColorMode;
   sampling: ColorSamplingMethod;
@@ -330,6 +342,12 @@ export interface MediaColorConfig {
   saturation: number; // 0 to 400, default 200
   paletteMode?: PaletteMode;
   activePaletteId?: string;
+  paletteMatch?: PaletteMatchMode;
+  /**
+   * Resolved monochrome tint. Derived from the theme / custom colour at render
+   * time rather than stored, so it cannot drift from the sidebar value.
+   */
+  monoTint?: string;
   customPalette?: string[];
   multiTone?: MultiToneConfig;
 }
@@ -342,6 +360,7 @@ export const DEFAULT_MEDIA_COLOR_CONFIG: MediaColorConfig = {
   saturation: 200,
   paletteMode: 'phosphor',
   activePaletteId: 'gameboy-classic',
+  paletteMatch: 'auto',
 };
 
 /**
@@ -414,7 +433,16 @@ export const DEFAULT_IMAGE_ADJUST_CONFIG: ImageAdjustConfig = {
   blur: 0,
   brightness: 0,
   contrast: 0,
-  tonalMapping: '1color',
+  /*
+   * Duotone by default: two flat colours at a threshold reads as a deliberate
+   * look, where a mono tint just reads as "the picture, but green". Stops are
+   * set explicitly because the engine would otherwise fall back to plain
+   * white-on-black.
+   */
+  tonalMapping: '2color',
+  highlightColor: '#00ff66',
+  midtoneColor: '#00a848',
+  shadowColor: '#0a0a0a',
   highlights: 0,
   midtones: 0,
   shadows: 0,

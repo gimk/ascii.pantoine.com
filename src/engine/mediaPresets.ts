@@ -35,10 +35,11 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   contrast: 0,
 
   // 3. Tonal Controls (all sliders start at center)
-  tonalMapping: '1color',
-  highlightColor: '#FFFFFF',
-  midtoneColor: '#3B82F6',
-  shadowColor: '#000000',
+  // Duotone by default, matching DEFAULT_IMAGE_ADJUST_CONFIG.
+  tonalMapping: '2color',
+  highlightColor: '#00ff66',
+  midtoneColor: '#00a848',
+  shadowColor: '#0a0a0a',
   curvePoints: [
     [0, 0],
     [0.25, 0.25],

@@ -27,6 +27,9 @@ import {
   RasterOutputMode,
   UiThemeSettings,
 } from './types/ascii';
+import { resolvePhosphorTint } from './engine/palettes';
+import { ShaderPreset, toAdjustFields } from './engine/shaderPresets';
+import { ShaderPresetControls } from './components/ShaderPresetControls';
 import {
   DEFAULT_WAVE_PARAMS,
   compileCustomCode,
@@ -99,6 +102,9 @@ import {
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
 const LOCAL_STORAGE_UI_THEME_KEY = 'ascii_studio_ui_theme_settings';
+
+/** DPI a freshly loaded media source starts at: 1:1 with the source pixels. */
+const MEDIA_DEFAULT_DPI = 100;
 
 /**
  * The three content sources. Kept as data so the picker, its badge and the
@@ -1008,6 +1014,20 @@ export const App: React.FC = () => {
   const currentPaletteMode =
     (appMode === 'media' ? mediaColorConfig?.paletteMode : currentRenderSettings.mediaColorConfig?.paletteMode) || 'phosphor';
 
+  /*
+   * The colour config the renderers actually receive, with the monochrome tint
+   * resolved in. Derived rather than stored: the tint lives in theme /
+   * customThemeColor, and duplicating it into the config would let the two
+   * drift apart.
+   */
+  const renderColorConfig = useMemo(
+    () => ({
+      ...(mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG),
+      monoTint: resolvePhosphorTint(theme, customThemeColor),
+    }),
+    [mediaColorConfig, theme, customThemeColor]
+  );
+
   const isSingleColorAscii =
     currentRasterMode === 'ascii' &&
     currentTonalMapping === '1color' &&
@@ -1430,13 +1450,48 @@ export const App: React.FC = () => {
   }, [modelConfig, modelViewConfig, pushModelHistorySnapshot]);
 
   // Media Handlers
-  const autoSetMediaResolution = useCallback((w: number, h: number, rasterModeOverride?: RasterOutputMode) => {
+  /**
+   * Size the media grid to a freshly loaded (or freshly re-rastered) source.
+   *
+   * `resetDpi` is only for the upload paths: callers that are mid-way through
+   * their own setMediaViewConfig would have the DPI write batched away by the
+   * update that follows, so they opt out rather than silently losing it.
+   */
+  const autoSetMediaResolution = useCallback((
+    w: number,
+    h: number,
+    rasterModeOverride?: RasterOutputMode,
+    resetDpi = false
+  ) => {
     if (w <= 0 || h <= 0) return;
     const srcAspect = w / h;
-    const isPixel = (rasterModeOverride || mediaViewConfig.rasterMode) === 'pixel';
+    // Media keeps its raster mode in two places and mediaViewConfig.rasterMode is
+    // often undefined, so fall back the same way currentRasterMode does. Reading
+    // only the first source silently took the ASCII branch and sized the grid at
+    // roughly a sixth of the source.
+    const isPixel =
+      (rasterModeOverride ||
+        mediaViewConfig.rasterMode ||
+        renderSettingsByMode.media.rasterMode) === 'pixel';
     const cellAspect = isPixel ? 1.0 : 0.55;
-    const targetCols = isPixel ? Math.min(640, w) : Math.max(20, Math.round(w * (1 / 6)));
-    const targetRows = Math.max(10, Math.round((targetCols * cellAspect) / srcAspect));
+
+    let targetCols: number;
+    let targetRows: number;
+    if (isPixel) {
+      /*
+       * Derive from the default DPI using the same mapping the DPI panel uses
+       * (cols = source px * dpi / 100), so the grid and the DPI readout agree
+       * the moment media lands instead of the readout describing a resolution
+       * nothing actually set.
+       */
+      const scale = MEDIA_DEFAULT_DPI / 100;
+      targetCols = Math.max(10, Math.min(2048, Math.round(w * scale)));
+      targetRows = Math.max(10, Math.round(h * scale));
+    } else {
+      targetCols = Math.max(20, Math.round(w * (1 / 6)));
+      targetRows = Math.max(10, Math.round((targetCols * cellAspect) / srcAspect));
+    }
+
     setRenderSettingsByMode((prev) => ({
       ...prev,
       media: {
@@ -1447,10 +1502,14 @@ export const App: React.FC = () => {
       },
     }));
 
+    if (resetDpi) {
+      setMediaViewConfig((prev) => (prev.dpi === MEDIA_DEFAULT_DPI ? prev : { ...prev, dpi: MEDIA_DEFAULT_DPI }));
+    }
+
     setTimeout(() => {
       viewportRef.current?.autoFit();
     }, 60);
-  }, [mediaViewConfig.rasterMode]);
+  }, [mediaViewConfig.rasterMode, renderSettingsByMode.media.rasterMode]);
 
   const handleChangeMediaConfig = useCallback((newConfig: MediaConfig) => {
     setMediaConfig(newConfig);
@@ -1466,6 +1525,31 @@ export const App: React.FC = () => {
       [appMode]: { ...prev[appMode], adjustConfig: next },
     }));
   }, [appMode]);
+
+  /**
+   * Apply a shader preset in synth / model.
+   *
+   * These modes split what the media panel keeps together: the dither algorithm
+   * lives on the render settings while everything else lives in adjustConfig,
+   * and there is no resampling filter to set. Written as one state update so
+   * the preset lands atomically rather than as two renders.
+   */
+  const applyShaderPresetToMode = useCallback((preset: ShaderPreset) => {
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      [appMode]: {
+        ...prev[appMode],
+        ditherAlgorithm: preset.config.algorithm,
+        adjustConfig: {
+          ...(prev[appMode].adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG),
+          ...toAdjustFields(preset),
+        },
+      },
+    }));
+    if (preset.tint) {
+      handleSelectCustomColor(preset.tint);
+    }
+  }, [appMode, handleSelectCustomColor]);
 
   const handleChangeMediaViewConfig = useCallback((newViewConfig: MediaViewConfig) => {
     if (newViewConfig.rasterMode !== mediaViewConfig.rasterMode) {
@@ -1551,7 +1635,7 @@ export const App: React.FC = () => {
       const onVideoReady = () => {
         if (!hasSetResolution && (vid.videoWidth || vid.videoHeight)) {
           hasSetResolution = true;
-          autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+          autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080, undefined, true);
         }
       };
 
@@ -1575,7 +1659,7 @@ export const App: React.FC = () => {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         mediaElementRef.current = img;
-        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height, undefined, true);
         triggerMediaRender();
       };
       img.src = objectUrl;
@@ -1607,7 +1691,7 @@ export const App: React.FC = () => {
       const onVideoReady = () => {
         if (!hasSetResolution && (vid.videoWidth || vid.videoHeight)) {
           hasSetResolution = true;
-          autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080);
+          autoSetMediaResolution(vid.videoWidth || 1920, vid.videoHeight || 1080, undefined, true);
         }
       };
 
@@ -1641,7 +1725,7 @@ export const App: React.FC = () => {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         mediaElementRef.current = img;
-        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        autoSetMediaResolution(img.naturalWidth || img.width, img.naturalHeight || img.height, undefined, true);
         triggerMediaRender();
       };
       img.src = url;
@@ -1810,7 +1894,7 @@ export const App: React.FC = () => {
         mediaConfig,
         viewConfig: mediaViewConfig,
         density: curSettings.density,
-        colorConfig: mediaColorConfig,
+        colorConfig: renderColorConfig,
         rasterMode: mediaViewConfig.rasterMode || curSettings.rasterMode || 'ascii',
         algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
         toneConfig: curSettings.toneConfig,
@@ -1946,7 +2030,7 @@ export const App: React.FC = () => {
           geometry: currentGeometryRef.current,
           modelConfig,
           viewConfig: modelViewConfig,
-          colorConfig: mediaColorConfig,
+          colorConfig: renderColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
           toneConfig: activeSettings.toneConfig,
@@ -1962,7 +2046,7 @@ export const App: React.FC = () => {
           mediaConfig,
           viewConfig: mediaViewConfig,
           density: activeSettings.density,
-          colorConfig: mediaColorConfig,
+          colorConfig: renderColorConfig,
           rasterMode: mediaViewConfig.rasterMode || activeSettings.rasterMode || 'ascii',
           algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
           toneConfig: activeSettings.toneConfig,
@@ -1983,7 +2067,7 @@ export const App: React.FC = () => {
           customContext: customContextRef.current,
           interactiveInfluence: true,
           luminanceBoost: particleConfig.luminanceBoost,
-          colorConfig: mediaColorConfig,
+          colorConfig: renderColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
           toneConfig: activeSettings.toneConfig,
@@ -2018,7 +2102,7 @@ export const App: React.FC = () => {
     modelViewConfig,
     mediaConfig,
     mediaViewConfig,
-    mediaColorConfig,
+    renderColorConfig,
     mediaRenderTrigger,
     waveParams,
     presetType,
@@ -2226,7 +2310,7 @@ export const App: React.FC = () => {
           h = el.videoHeight || el.height || 256;
         }
         if (!renderSettingsByMode.media.cols || renderSettingsByMode.media.cols === 100) {
-          autoSetMediaResolution(w, h);
+          autoSetMediaResolution(w, h, undefined, true);
         }
       }
 
@@ -2628,6 +2712,7 @@ export const App: React.FC = () => {
                   <MediaViewControls
                     config={mediaViewConfig}
                     onChangeConfig={handleChangeMediaViewConfig}
+                    rasterMode={currentRasterMode}
                     currentTheme={theme}
                     onChangeTheme={handleSelectTheme}
                     customThemeColor={customThemeColor}
@@ -2649,6 +2734,22 @@ export const App: React.FC = () => {
                 {/* Synth / Model render and tonal controls */}
                 {appMode !== 'media' && (
                   <div className="tab-content">
+                    {/*
+                      Shader presets first: pick the look, then refine it in the
+                      panels below. `current` is assembled from the two places
+                      synth and model keep these fields; resampling is absent
+                      here on purpose, and the matcher skips what a panel lacks.
+                    */}
+                    {currentRasterMode === 'pixel' && (
+                      <ShaderPresetControls
+                        current={{
+                          algorithm: currentRenderSettings.ditherAlgorithm || 'floyd-steinberg',
+                          ...(currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG),
+                        }}
+                        onApply={applyShaderPresetToMode}
+                      />
+                    )}
+
                     <CollapsibleSection
                       title="RENDER SETTINGS"
                       icon={<Settings size={12} />}

@@ -214,6 +214,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       ditherAlgorithm: algorithm,
       toneConfig: toneConfig || viewConfig.toneConfig,
       colorConfig,
+      monoTint: colorConfig?.monoTint,
       // viewConfig IS the media ImageAdjustConfig — it is where the media UI writes.
       ...toPipelineAdjustments(viewConfig),
     }

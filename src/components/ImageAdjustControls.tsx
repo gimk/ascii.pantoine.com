@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { NumberInput, PrecisionSlider } from './controlPrimitives';
+import { NumberInput, PrecisionSlider, DeferredColorInput } from './controlPrimitives';
 import {
   ImageAdjustConfig,
   DEFAULT_IMAGE_ADJUST_CONFIG,
@@ -14,70 +14,22 @@ interface ColorPickerInputProps {
   onChange: (val: string) => void;
 }
 
-const ColorPickerInput: React.FC<ColorPickerInputProps> = ({ label, value = '#ffffff', onChange }) => {
-  const [hex, setHex] = useState(value);
-
-  React.useEffect(() => {
-    setHex(value);
-  }, [value]);
-
-  const handleHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let val = e.target.value;
-    setHex(val);
-    if (!val.startsWith('#')) val = '#' + val;
-    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-      onChange(val);
-    }
-  };
-
-  return (
-    <div className="control-row">
-      <span className="control-label">{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <div
-          style={{
-            width: '24px',
-            height: '22px',
-            borderRadius: '2px',
-            border: '1px solid var(--border-color)',
-            background: value || '#ffffff',
-            position: 'relative',
-            overflow: 'hidden',
-            cursor: 'pointer',
-          }}
-        >
-          <input
-            type="color"
-            value={value || '#ffffff'}
-            onChange={(e) => onChange(e.target.value)}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              opacity: 0,
-              cursor: 'pointer',
-            }}
-          />
-        </div>
-        <input
-          type="text"
-          className="text-input"
-          value={hex}
-          onChange={handleHexChange}
-          style={{
-            width: '82px',
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            textTransform: 'uppercase',
-            textAlign: 'center',
-          }}
-        />
-      </div>
-    </div>
-  );
-};
+/**
+ * Labelled row wrapper around DeferredColorInput. The picker no longer emits a
+ * value per mouse move, so dragging a tone stop does not re-rasterize the
+ * frame on every frame of the drag.
+ */
+const ColorPickerInput: React.FC<ColorPickerInputProps> = ({ label, value = '#ffffff', onChange }) => (
+  <div className="control-row">
+    <span className="control-label">{label}</span>
+    <DeferredColorInput
+      value={value}
+      fallback="#ffffff"
+      hexFieldWidth="82px"
+      onChange={onChange}
+    />
+  </div>
+);
 
 // ---------------------------------------------------------------------------
 // High-Accuracy Quantize Levels Control
@@ -662,6 +614,14 @@ interface ImageAdjustControlsProps {
   onChangeConfig: (next: ImageAdjustConfig) => void;
   paletteSlot?: React.ReactNode;
   showAlphaCutoff?: boolean;
+  /**
+   * Show the luminance invert toggle.
+   *
+   * Off by default: synth and model each already carry their own "Invert
+   * Characters" control over a different backing field, so surfacing this one
+   * there would be two near-identical toggles. Media has none of its own.
+   */
+  showInvert?: boolean;
   resetDefaults?: ImageAdjustConfig;
   persistKeyPrefix?: string;
 }
@@ -672,6 +632,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
   paletteSlot,
   resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG,
   showAlphaCutoff = true,
+  showInvert = false,
   persistKeyPrefix = 'MediaViewControls',
 }) => {
   const update = <K extends keyof ImageAdjustConfig>(key: K, val: ImageAdjustConfig[K]) => {
@@ -691,6 +652,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       blur: resetDefaults.blur,
       brightness: resetDefaults.brightness,
       contrast: resetDefaults.contrast,
+      ...(showInvert ? { invert: resetDefaults.invert } : {}),
     });
   };
 
@@ -719,6 +681,24 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         persistKey={`${persistKeyPrefix}-effect-controls`}
         defaultOpen={false}
       >
+        {/*
+          Invert sits with the other per-pixel operations rather than in the
+          render settings, which are about how the raster is produced rather
+          than how it is graded.
+        */}
+        {showInvert && (
+          <div className="control-row">
+            <span className="control-label">Invert Luminance</span>
+            <button
+              className={`btn btn-sm ${config.invert ? 'btn-primary' : ''}`}
+              onClick={() => update('invert', !config.invert)}
+              title="Swap highlights and shadows"
+            >
+              {config.invert ? 'INVERTED [ON]' : 'NORMAL [OFF]'}
+            </button>
+          </div>
+        )}
+
         {/* SHARPENING */}
         <div className="tonal-subheading">
           <span>Sharpening &amp; Edge Definition</span>
@@ -840,7 +820,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         </div>
 
         <div className="collapsible-actions">
-          <button className="btn btn-sm" onClick={resetEffects} title="Reset sharpen, blur, noise, denoise, brightness and contrast">
+          <button className="btn btn-sm" onClick={resetEffects} title="Reset invert, sharpen, blur, noise, denoise, brightness and contrast">
             RESET EFFECTS
           </button>
         </div>

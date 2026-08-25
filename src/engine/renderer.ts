@@ -240,6 +240,7 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
       ditherAlgorithm: algorithm,
       toneConfig,
       colorConfig: ctx.colorConfig,
+      monoTint: ctx.colorConfig?.monoTint,
       ...toPipelineAdjustments(adjustConfig),
     }
   );

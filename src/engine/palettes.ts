@@ -1,4 +1,4 @@
-import { ColorPalette } from '../types/ascii';
+import { ColorPalette, PhosphorTheme } from '../types/ascii';
 
 export const BUILTIN_PALETTES: ColorPalette[] = [
   // --- Retro Hardware & Computing ---
@@ -292,3 +292,38 @@ export class PaletteQuantizer {
   }
 }
 
+
+/**
+ * Hex for each legacy phosphor theme.
+ *
+ * The six presets are no longer offered in the sidebar -- the monochrome tint
+ * is a plain colour now -- but the `theme` field still arrives from persisted
+ * state and older share links, so it has to resolve to something. This is the
+ * single source of truth for that mapping; the viewport and the sidebar both
+ * read it rather than keeping their own copies.
+ */
+export const PHOSPHOR_THEME_HEX: Record<PhosphorTheme, string> = {
+  green: '#00ff66',
+  amber: '#ffb000',
+  cyan: '#00f0ff',
+  monochrome: '#f0f0f0',
+  blood: '#ff3344',
+  paper: '#151515',
+  matrix: '#00ff66',
+};
+
+/**
+ * Default monochrome tint.
+ *
+ * White, not the signature green: monochrome is the neutral starting point a
+ * tint is chosen from, and a green default reads as a look already applied.
+ * The legacy theme hexes above still resolve for state saved before the tint
+ * became a plain colour.
+ */
+export const DEFAULT_PHOSPHOR_TINT = '#ffffff';
+
+/** The tint actually in force, custom colour winning over the legacy theme. */
+export function resolvePhosphorTint(theme?: PhosphorTheme, customThemeColor?: string): string {
+  if (customThemeColor) return customThemeColor;
+  return (theme && PHOSPHOR_THEME_HEX[theme]) || DEFAULT_PHOSPHOR_TINT;
+}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 /** Decimal places implied by a step, so 0.1 shows one and 5 shows none. */
 const decimalsForStep = (step: number): number => {
@@ -178,6 +178,136 @@ export const PrecisionSlider: React.FC<{
         disabled={disabled}
         onChange={onChange}
       />
+    </div>
+  );
+};
+
+/**
+ * Colour swatch + hex field that commits only when the user is done picking.
+ *
+ * A native colour input fires `input` on every mouse move inside the picker.
+ * Forwarding those straight up re-renders and re-rasterizes the whole frame
+ * dozens of times a second, which is what made dragging in the picker crawl.
+ *
+ * So the live value is held locally -- the swatch tracks the cursor with no
+ * render cost -- and is pushed to the parent only on `change`, which the
+ * browser fires when the picker is dismissed or the value is committed. Blur
+ * and unmount also flush, so a value can never be picked and then lost.
+ */
+export const DeferredColorInput: React.FC<{
+  value: string;
+  fallback?: string;
+  title?: string;
+  disabled?: boolean;
+  /** Hex text field alongside the swatch. */
+  showHexField?: boolean;
+  hexFieldWidth?: string;
+  onChange: (val: string) => void;
+}> = ({
+  value,
+  fallback = '#ffffff',
+  title,
+  disabled = false,
+  showHexField = true,
+  hexFieldWidth = '80px',
+  onChange,
+}) => {
+  const resolved = value || fallback;
+  const [draft, setDraft] = useState<string>(resolved);
+  const [hexText, setHexText] = useState<string>(value);
+  const isPickingRef = useRef<boolean>(false);
+  const colorInputRef = useRef<HTMLInputElement>(null);
+
+  // Keep the latest callback in a ref: the commit listener is attached once,
+  // and must not go stale nor be torn down and rebuilt on every parent render.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (!isPickingRef.current) {
+      setDraft(resolved);
+      setHexText(value);
+    }
+  }, [resolved, value]);
+
+  useEffect(() => {
+    const el = colorInputRef.current;
+    if (!el) return;
+
+    const flush = () => {
+      if (!isPickingRef.current) return;
+      isPickingRef.current = false;
+      onChangeRef.current(el.value);
+    };
+
+    // React's onChange maps to the `input` event for colour inputs, so the
+    // commit-time event has to be subscribed to directly.
+    el.addEventListener('change', flush);
+    el.addEventListener('blur', flush);
+    return () => {
+      el.removeEventListener('change', flush);
+      el.removeEventListener('blur', flush);
+      // Picked but never committed, e.g. the panel closed mid-pick.
+      flush();
+    };
+  }, []);
+
+  const handleHexChange = (raw: string) => {
+    setHexText(raw);
+    const withHash = raw.startsWith('#') ? raw : '#' + raw;
+    if (/^#[0-9A-Fa-f]{6}$/.test(withHash)) {
+      onChange(withHash);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div
+        style={{
+          width: '24px',
+          height: '22px',
+          borderRadius: '2px',
+          border: '1px solid var(--border-color)',
+          background: draft,
+          position: 'relative',
+          overflow: 'hidden',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.45 : 1,
+        }}
+      >
+        <input
+          ref={colorInputRef}
+          type="color"
+          value={draft}
+          disabled={disabled}
+          title={title}
+          onChange={(e) => {
+            // Local only: this fires continuously while the picker is open.
+            isPickingRef.current = true;
+            setDraft(e.target.value);
+          }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            opacity: 0,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        />
+      </div>
+      {showHexField && (
+        <input
+          type="text"
+          className="text-input"
+          value={hexText}
+          placeholder={fallback}
+          disabled={disabled}
+          onChange={(e) => handleHexChange(e.target.value)}
+          style={{ width: hexFieldWidth, fontSize: '10px' }}
+        />
+      )}
     </div>
   );
 };

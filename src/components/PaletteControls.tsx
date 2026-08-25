@@ -1,12 +1,20 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   PhosphorTheme,
   PaletteMode,
   MediaColorConfig,
   AppMode,
   TonalMappingType,
+  PaletteMatchMode,
 } from '../types/ascii';
-import { BUILTIN_PALETTES } from '../engine/palettes';
+import {
+  BUILTIN_PALETTES,
+  PaletteQuantizer,
+  resolvePhosphorTint,
+  DEFAULT_PHOSPHOR_TINT,
+} from '../engine/palettes';
+import { DeferredColorInput } from './controlPrimitives';
+import { paletteIsMonochrome } from '../engine/rasterEngine';
 
 interface PaletteControlsProps {
   currentTheme: PhosphorTheme;
@@ -22,15 +30,6 @@ interface PaletteControlsProps {
   isPixelMode?: boolean;
 }
 
-const THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
-  { id: 'green', name: 'Matrix Green', color: '#00ff66' },
-  { id: 'amber', name: 'Amber CRT', color: '#ffb000' },
-  { id: 'cyan', name: 'Cyber Cyan', color: '#00f0ff' },
-  { id: 'monochrome', name: 'Mono White', color: '#f0f0f0' },
-  { id: 'blood', name: 'Crimson Red', color: '#ff3344' },
-  { id: 'paper', name: 'Paper Print', color: '#151515' },
-];
-
 const CATEGORY_LABELS: Record<string, string> = {
   retro: 'Hardware Palettes',
   print: 'Print & Riso Palettes',
@@ -45,6 +44,27 @@ const FALLBACK_COLOR_CONFIG: MediaColorConfig = {
   customBg: '#0a0a0a',
   saturation: 200,
 };
+
+const PALETTE_MATCH_OPTIONS: { id: PaletteMatchMode; label: string; title: string }[] = [
+  {
+    id: 'auto',
+    label: 'AUTO',
+    title:
+      'Sample the source: colour images get hue matching, luminance-driven sources get the full ramp.',
+  },
+  {
+    id: 'hue',
+    label: 'HUE',
+    title:
+      "Match each cell to the nearest palette colour. Keeps the source's own hues, so an image with a narrow hue range only reaches the palette entries near it.",
+  },
+  {
+    id: 'ramp',
+    label: 'RAMP',
+    title:
+      'Ignore hue and spread luminance across every palette entry, darkest to lightest. Uses the whole palette whatever the source looks like.',
+  },
+];
 
 /**
  * The single colour-output selector.
@@ -72,6 +92,28 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   const paletteMode: PaletteMode = rawPaletteMode === 'content' && isRgbDisabled ? 'phosphor' : rawPaletteMode;
   const activePaletteId = mediaColorConfig?.activePaletteId || 'gameboy-classic';
   const activePalette = BUILTIN_PALETTES.find((p) => p.id === activePaletteId);
+  const paletteMatch: PaletteMatchMode = mediaColorConfig?.paletteMatch || 'auto';
+  /*
+   * The resolved tint. customThemeColor is the source of truth now that the
+   * presets are gone; currentTheme survives only as the fallback for state
+   * saved before that change (and for share links).
+   */
+  const tintColor = resolvePhosphorTint(currentTheme, customThemeColor);
+  /*
+   * A single-hue palette carries no colour to match against, so the engine
+   * forces the ramp for it. Reuse the engine's own test rather than a second
+   * heuristic here, so the buttons cannot offer a silent no-op.
+   */
+  const isMonoPalette = useMemo(
+    () => (activePalette ? paletteIsMonochrome(new PaletteQuantizer(activePalette)) : false),
+    [activePalette]
+  );
+  const canHueMatch = appMode !== 'synth' && !isMonoPalette;
+  const paletteMatchHint = isMonoPalette
+    ? 'This palette is a single-hue ramp, so there is no colour to match against.'
+    : appMode === 'synth'
+      ? 'Synth output is luminance-only, so the palette can only be driven as a tone ramp.'
+      : 'How the palette is matched to the source.';
 
   // One value covering both backing fields.
   const choice =
@@ -117,16 +159,20 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
           value={choice}
           onChange={(e) => handleChoice(e.target.value)}
         >
+          {/*
+            Monochrome is a single tint over the source's own luminance, not a
+            mapping onto colour stops, so it belongs with the sources rather
+            than beside duotone and tritone. Unlike Content Color it needs no
+            per-cell RGB, so it is offered in synth too.
+          */}
+          <optgroup label="Source">
+            <option value="1color">Monochrome</option>
+            {!isRgbDisabled && <option value="content">Content Color (True RGB)</option>}
+          </optgroup>
           <optgroup label="Tonal Mapping">
-            <option value="1color">1 Color (Mono Tint)</option>
             <option value="2color">2 Colors (Duotone)</option>
             <option value="3color">3 Colors (Tritone)</option>
           </optgroup>
-          {!isRgbDisabled && (
-            <optgroup label="Source">
-              <option value="content">Content Color (True RGB)</option>
-            </optgroup>
-          )}
           {Object.entries(groupedPalettes).map(([cat, pals]) => (
             <optgroup key={cat} label={CATEGORY_LABELS[cat] || cat}>
               {pals.map((pal) => (
@@ -139,88 +185,38 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
         </select>
       </div>
 
-      {/* 1. Single Color Mode (Phosphor Themes in ASCII only; Custom Tint in Pixel) */}
+      {/*
+        1. Monochrome tint. The six hardcoded phosphor presets are gone: they
+        were a parallel colour vocabulary that behaved unlike every other
+        colour control in the sidebar. The tint is now just a colour, picked
+        the same way the duotone and tritone stops are.
+      */}
       {paletteMode === 'phosphor' && tonalMapping === '1color' && (
         <div style={{ marginTop: '8px' }}>
-          {!isPixelMode && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', marginBottom: '8px' }}>
-              {THEMES.map((th) => (
-                <button
-                  key={th.id}
-                  type="button"
-                  className={`theme-btn ${currentTheme === th.id && !customThemeColor ? 'active' : ''}`}
-                  onClick={() => {
-                    if (onChangeCustomColor) onChangeCustomColor('');
-                    onChangeTheme(th.id);
-                  }}
-                  title={th.name}
-                >
-                  <div
-                    style={{
-                      width: '14px',
-                      height: '14px',
-                      borderRadius: '50%',
-                      background: th.color,
-                      boxShadow: currentTheme === th.id && !customThemeColor ? `0 0 6px ${th.color}` : 'none',
-                    }}
-                  />
-                  <span>{th.id.slice(0, 4).toUpperCase()}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Custom Hex Color input */}
           <div className="control-row">
-            <span className="control-label">{isPixelMode ? 'Foreground Tint' : 'Custom Tint'}</span>
+            <span className="control-label">{isPixelMode ? 'Foreground Tint' : 'Tint'}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <div
-                style={{
-                  width: '22px',
-                  height: '22px',
-                  borderRadius: '2px',
-                  border: '1px solid var(--border-color)',
-                  background: customThemeColor || THEMES.find((t) => t.id === currentTheme)?.color || '#00ff66',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <input
-                  type="color"
-                  value={customThemeColor || THEMES.find((t) => t.id === currentTheme)?.color || '#00ff66'}
-                  onChange={(e) => {
-                    if (onChangeCustomColor) onChangeCustomColor(e.target.value);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    opacity: 0,
-                    cursor: 'pointer',
-                  }}
-                  title="Pick custom phosphor tint"
-                />
-              </div>
-              <input
-                type="text"
-                className="text-input"
-                value={customThemeColor}
-                placeholder="#00ff66"
-                onChange={(e) => {
-                  if (onChangeCustomColor) onChangeCustomColor(e.target.value);
-                }}
-                style={{ width: '80px', fontSize: '10px' }}
+              <DeferredColorInput
+                value={tintColor}
+                fallback={DEFAULT_PHOSPHOR_TINT}
+                title="Pick the monochrome tint"
+                onChange={(c) => onChangeCustomColor?.(c)}
               />
-              {customThemeColor && (
+              {/*
+                No CLEAR: with the presets gone an empty custom colour falls
+                back to a theme the sidebar no longer exposes, so clearing
+                would look like a no-op. RESET restores the default tint
+                explicitly instead.
+              */}
+              {tintColor.toLowerCase() !== DEFAULT_PHOSPHOR_TINT.toLowerCase() && (
                 <button
                   type="button"
                   className="chip-btn"
-                  onClick={() => onChangeCustomColor && onChangeCustomColor('')}
+                  onClick={() => onChangeCustomColor?.(DEFAULT_PHOSPHOR_TINT)}
                   style={{ fontSize: '8.5px', padding: '2px 5px' }}
+                  title={`Reset to ${DEFAULT_PHOSPHOR_TINT}`}
                 >
-                  CLEAR
+                  RESET
                 </button>
               )}
             </div>
@@ -249,6 +245,42 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
           <span style={{ fontSize: '8.5px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
             {activePalette.category} • {activePalette.colors.length} colors
           </span>
+        </div>
+      )}
+
+      {/* 2b. How that palette is matched to the source. */}
+      {paletteMode === 'indexed' && activePalette && onChangeMediaColorConfig && (
+        <div className="control-row" style={{ marginTop: '6px' }}>
+          <span className="control-label" title={paletteMatchHint}>
+            Palette Match
+          </span>
+          <div style={{ display: 'flex', gap: '3px' }}>
+            {PALETTE_MATCH_OPTIONS.map((opt) => {
+              const isDisabled = opt.id !== 'ramp' && !canHueMatch;
+              return (
+                <button
+                  key={opt.id}
+                  className={`btn btn-sm ${paletteMatch === opt.id ? 'btn-primary' : ''}`}
+                  style={{
+                    padding: '2px 7px',
+                    fontSize: '9.5px',
+                    opacity: isDisabled ? 0.4 : 1,
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  }}
+                  disabled={isDisabled}
+                  title={isDisabled ? paletteMatchHint : opt.title}
+                  onClick={() =>
+                    onChangeMediaColorConfig({
+                      ...(mediaColorConfig || FALLBACK_COLOR_CONFIG),
+                      paletteMatch: opt.id,
+                    })
+                  }
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

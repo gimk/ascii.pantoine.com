@@ -554,6 +554,7 @@ class HeadlessModelRenderer {
         ditherAlgorithm: ctx.algorithm || viewConfig.algorithm || 'none',
         toneConfig: ctx.toneConfig || viewConfig.toneConfig,
         colorConfig: ctx.colorConfig,
+        monoTint: ctx.colorConfig?.monoTint,
         contrast: viewConfig.contrast,
         brightness: viewConfig.brightness,
         invert: viewConfig.invert,

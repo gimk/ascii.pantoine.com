@@ -7,11 +7,14 @@ import {
   MediaColorConfig,
   AppMode,
   ResamplingMode,
+  RasterOutputMode,
 } from '../types/ascii';
 import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
 import { PaletteControls } from './PaletteControls';
 import { ImageAdjustControls } from './ImageAdjustControls';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
+import { ShaderPresetControls } from './ShaderPresetControls';
+import { ShaderPreset } from '../engine/shaderPresets';
 import { Settings } from 'lucide-react';
 
 interface MediaViewControlsProps {
@@ -24,6 +27,11 @@ interface MediaViewControlsProps {
   mediaColorConfig?: MediaColorConfig;
   onChangeMediaColorConfig?: (cfg: MediaColorConfig) => void;
   appMode?: AppMode;
+  /**
+   * Resolved raster mode. Passed in rather than read off config: media stores
+   * it in two places and config.rasterMode is frequently undefined.
+   */
+  rasterMode?: RasterOutputMode;
 }
 
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
@@ -36,54 +44,28 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   mediaColorConfig,
   onChangeMediaColorConfig,
   appMode = 'media',
+  rasterMode,
 }) => {
-  const isPixelMode = config.rasterMode === 'pixel';
+  const isPixelMode = (rasterMode || config.rasterMode) === 'pixel';
 
+  /* Invert lives in the effect controls now, so RESET EFFECTS owns it. */
   const resetRenderSettings = () => {
     onChangeConfig({
       ...config,
       resampling: DEFAULT_MEDIA_VIEW_CONFIG.resampling,
       algorithm: DEFAULT_MEDIA_VIEW_CONFIG.algorithm,
-      invert: DEFAULT_MEDIA_VIEW_CONFIG.invert,
     });
   };
 
-  const applyStylePreset = (preset: 'retro_mac' | 'cyberpunk' | 'newspaper') => {
-    if (preset === 'retro_mac') {
-      onChangeConfig({
-        ...config,
-        algorithm: 'atkinson',
-        colorLevels: 2,
-        sharpenStrength: 120,
-        contrast: 30,
-        brightness: 5,
-        tonalMapping: '1color',
-      });
-      if (onChangeTheme) onChangeTheme('monochrome');
-      if (onChangeCustomColor) onChangeCustomColor('');
-    } else if (preset === 'cyberpunk') {
-      onChangeConfig({
-        ...config,
-        algorithm: 'bayer-8x8',
-        colorLevels: 4,
-        sharpenStrength: 100,
-        contrast: 20,
-        tonalMapping: '3color',
-        highlightColor: '#00F0FF',
-        midtoneColor: '#FF0055',
-        shadowColor: '#1A0033',
-      });
-    } else if (preset === 'newspaper') {
-      onChangeConfig({
-        ...config,
-        algorithm: 'halftone-dot',
-        colorLevels: 4,
-        contrast: 35,
-        brightness: 10,
-        tonalMapping: '1color',
-        highlightColor: '#111827',
-        shadowColor: '#111827',
-      });
+  /*
+   * Applying a preset writes its complete field set in one update, so no
+   * setting from the previous look survives. A preset that names a tint also
+   * clears the legacy theme, since customThemeColor is what actually wins.
+   */
+  const applyShaderPreset = (preset: ShaderPreset) => {
+    onChangeConfig({ ...config, ...preset.config });
+    if (preset.tint && onChangeCustomColor) {
+      onChangeCustomColor(preset.tint);
     }
   };
 
@@ -96,6 +78,16 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
 
   return (
     <div className="tab-content">
+      {/*
+        0. SHADER PRESETS -- pick the look, then refine it below.
+        Pixel output only: most of what a preset sets is a dither screen and a
+        set of colour stops, and in ASCII output the glyph ramp carries the tone
+        instead, so the looks mostly collapse into one another.
+      */}
+      {isPixelMode && (
+        <ShaderPresetControls current={config} onApply={applyShaderPreset} />
+      )}
+
       {/* 1. RENDER SETTINGS */}
       <CollapsibleSection
         title="RENDER SETTINGS"
@@ -124,53 +116,13 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           </select>
         </div>
 
-        {/* Quick Actions & Style Toolbar */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', marginTop: '8px' }}>
+        <div className="collapsible-actions">
           <button
-            type="button"
-            className={`chip-btn ${config.invert ? 'active' : ''}`}
-            onClick={() => update('invert', !config.invert)}
-            title="Invert Colors"
-            style={{ fontSize: '9px', padding: '4px 2px' }}
-          >
-            INVERT
-          </button>
-          <button
-            type="button"
-            className="chip-btn"
-            onClick={() => applyStylePreset('retro_mac')}
-            title="Classic Mac 1984 1-Bit Dither"
-            style={{ fontSize: '9px', padding: '4px 2px' }}
-          >
-            MAC
-          </button>
-          <button
-            type="button"
-            className="chip-btn"
-            onClick={() => applyStylePreset('cyberpunk')}
-            title="Cyberpunk 80s Neon Dither"
-            style={{ fontSize: '9px', padding: '4px 2px' }}
-          >
-            CYBER
-          </button>
-          <button
-            type="button"
-            className="chip-btn"
-            onClick={() => applyStylePreset('newspaper')}
-            title="Newspaper Halftone Screen"
-            style={{ fontSize: '9px', padding: '4px 2px' }}
-          >
-            NEWS
-          </button>
-          <div />
-          <button
-            type="button"
-            className="chip-btn"
+            className="btn btn-sm"
             onClick={resetRenderSettings}
-            title="Reset Render Settings"
-            style={{ fontSize: '9px', padding: '4px 2px' }}
+            title="Reset dither algorithm and resampling filter"
           >
-            RESET
+            RESET RENDER
           </button>
         </div>
       </CollapsibleSection>
@@ -180,6 +132,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         onChangeConfig={(next: ImageAdjustConfig) => onChangeConfig({ ...config, ...next })}
         resetDefaults={DEFAULT_MEDIA_VIEW_CONFIG}
         showAlphaCutoff={config.background === 'transparent'}
+        showInvert
         paletteSlot={
           onChangeTheme ? (
             <div>

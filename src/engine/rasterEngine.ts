@@ -17,6 +17,7 @@ import {
 import {
   BUILTIN_PALETTES,
   PaletteQuantizer,
+  DEFAULT_PHOSPHOR_TINT,
 } from './palettes';
 import { applyDitherAlgorithm, DITHER_ALGORITHMS } from './ditherAlgorithms';
 
@@ -58,6 +59,8 @@ export interface UnifiedPipelineOptions {
   midtoneColor?: string;
   shadowColor?: string;
   colorLevels?: number;
+  /** Monochrome tint, baked into pixel output where CSS cannot reach. */
+  monoTint?: string;
 }
 
 /**
@@ -286,7 +289,7 @@ let cachedPaletteIsMonochrome = false;
  * metric: every single-hue ramp scores above 0.95, and the nearest two-hue
  * palette (Riso pink + cornflower) scores 0.86.
  */
-function paletteIsMonochrome(quantizer: PaletteQuantizer): boolean {
+export function paletteIsMonochrome(quantizer: PaletteQuantizer): boolean {
   let sumX = 0;
   let sumY = 0;
   let sumChroma = 0;
@@ -323,21 +326,36 @@ function ensureBufferCapacity(totalCells: number, cols: number, rows: number) {
   }
 }
 
+/**
+ * Hex -> RGB, falling back per-channel only when the channel is genuinely
+ * unparseable.
+ *
+ * The guard has to be an isNaN test, not `|| fallback`: parseInt('00', 16) is
+ * 0, which is falsy, so `||` substituted the fallback channel for every zero
+ * byte. #00ff66 came out as (255, 255, 102) -- a green tint rendered yellow.
+ */
 export function parseHexRgb(hex?: string, fallback = { r: 255, g: 255, b: 255 }): { r: number; g: number; b: number } {
   if (!hex) return fallback;
   const c = hex.replace('#', '').trim();
+
+  const channel = (raw: string, fb: number): number => {
+    const parsed = parseInt(raw, 16);
+    if (Number.isNaN(parsed)) return fb;
+    return Math.max(0, Math.min(255, parsed));
+  };
+
   if (c.length === 3) {
     return {
-      r: parseInt(c[0] + c[0], 16) || fallback.r,
-      g: parseInt(c[1] + c[1], 16) || fallback.g,
-      b: parseInt(c[2] + c[2], 16) || fallback.b,
+      r: channel(c[0] + c[0], fallback.r),
+      g: channel(c[1] + c[1], fallback.g),
+      b: channel(c[2] + c[2], fallback.b),
     };
   }
   if (c.length === 6) {
     return {
-      r: parseInt(c.substring(0, 2), 16) || fallback.r,
-      g: parseInt(c.substring(2, 4), 16) || fallback.g,
-      b: parseInt(c.substring(4, 6), 16) || fallback.b,
+      r: channel(c.substring(0, 2), fallback.r),
+      g: channel(c.substring(2, 4), fallback.g),
+      b: channel(c.substring(4, 6), fallback.b),
     };
   }
   return fallback;
@@ -904,11 +922,18 @@ export function processRasterFrame(
 
     const sortedColors = activeQuantizer.sortedRgbColors;
     const numColors = sortedColors.length;
+    /*
+     * Hue matching needs per-cell RGB to match against. A luminance-only source
+     * (3D shading passes, synth fields) has none, so the ramp is the only thing
+     * available there regardless of what was asked for.
+     */
+    const canHueMatch = data.length === totalCells * 4 && !hasRawLum;
+    const matchMode = colorCfg?.paletteMatch || 'auto';
 
     // Detect whether source has true chromatic variation (color photos, normal vectors)
     // vs luminance-driven / grayscale sources (3D shaded models, synth fields, monochrome media)
     let isChromatic = false;
-    if (data.length === totalCells * 4 && !hasRawLum) {
+    if (canHueMatch) {
       let sampleCount = 0;
       let chromaSum = 0;
       const step = Math.max(4, Math.floor(totalCells / 40) * 4);
@@ -923,6 +948,15 @@ export function processRasterFrame(
       if (sampleCount > 0 && chromaSum / sampleCount > 10) {
         isChromatic = true;
       }
+    }
+
+    // An explicit choice overrides the sampling. 'hue' on a greyscale photo is
+    // a legitimate request -- it collapses onto the palette's neutrals, which
+    // is a different and duller look than the ramp, and that is the point.
+    if (matchMode === 'hue') {
+      isChromatic = canHueMatch;
+    } else if (matchMode === 'ramp') {
+      isChromatic = false;
     }
 
     // A single-hue palette has no colour to match against; tone is all it can
@@ -1056,6 +1090,13 @@ export function processRasterFrame(
   const isPixelMode = effectiveRasterMode === 'pixel';
 
   if (isPixelMode && !colorsOut) {
+    /*
+     * Monochrome in pixel output. There is no <pre> to tint with CSS the way
+     * ASCII output does, so the tint has to be baked into the colour buffer
+     * here -- otherwise the tint control is wired to nothing in pixel mode.
+     * Scaling the tint by luminance keeps it a single-hue ramp.
+     */
+    const tint = parseHexRgb(options.monoTint || DEFAULT_PHOSPHOR_TINT, { r: 255, g: 255, b: 255 });
     for (let i = 0; i < totalCells; i++) {
       const lum = lumBuffer[i];
       if (lum < 0) {
@@ -1063,10 +1104,10 @@ export function processRasterFrame(
         colorsBuffer[i * 3 + 1] = 0;
         colorsBuffer[i * 3 + 2] = 0;
       } else {
-        const byte = Math.max(0, Math.min(255, Math.round(lum * 255)));
-        colorsBuffer[i * 3] = byte;
-        colorsBuffer[i * 3 + 1] = byte;
-        colorsBuffer[i * 3 + 2] = byte;
+        const k = Math.max(0, Math.min(1, lum));
+        colorsBuffer[i * 3] = Math.round(tint.r * k);
+        colorsBuffer[i * 3 + 1] = Math.round(tint.g * k);
+        colorsBuffer[i * 3 + 2] = Math.round(tint.b * k);
       }
     }
     colorsOut = colorsBuffer;

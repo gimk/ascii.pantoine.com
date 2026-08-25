@@ -12,16 +12,7 @@ import {
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
-
-const THEME_HEX: Record<PhosphorTheme, string> = {
-  green: '#00ff66',
-  amber: '#ffb000',
-  cyan: '#00f0ff',
-  monochrome: '#f0f0f0',
-  blood: '#ff3344',
-  paper: '#151515',
-  matrix: '#00ff66',
-};
+import { resolvePhosphorTint } from '../engine/palettes';
 
 const hexToRgb = (hex: string): [number, number, number] => {
   let cleaned = hex.replace('#', '').trim();
@@ -267,15 +258,26 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
    */
   const stepZoom = useCallback((z: number, dir: 1 | -1, coarse = false) => {
     const isPixel = latestRasterModeRef.current === 'pixel';
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    /** One device pixel per cell: the point below which the ladder runs out. */
+    const rungFloor = 1 / dpr;
 
-    if (isPixel) {
-      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    if (isPixel && z >= rungFloor - 1e-9) {
       const cellsPerClick = coarse ? 4 : 1;
       // Land on a whole multiple of the step so a mid-range starting zoom
       // (from a fit, say) snaps onto the ladder instead of carrying an offset.
       const currentRung = Math.round((z * dpr) / cellsPerClick);
       const next = ((currentRung + dir) * cellsPerClick) / dpr;
-      return Math.max(1 / dpr, Math.min(ZOOM_MAX, Number(next.toFixed(2))));
+      if (next >= rungFloor) {
+        return Math.min(ZOOM_MAX, Number(next.toFixed(2)));
+      }
+      /*
+       * Below one device pixel per cell the backing store cannot shrink any
+       * further and the browser downsamples the blit instead, so the cell
+       * ladder has no rung left to step to. Falling through to linear steps
+       * is what lets a grid larger than the viewport be zoomed out to fit --
+       * clamping at rungFloor here pinned the minimum to 100% on a 1x display.
+       */
     }
 
     const next = z + dir * (coarse ? 0.25 : 0.01);
@@ -307,9 +309,15 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      * scale anyway — fitting to 7.4 would just render at 7 and sit off-centre.
      */
     const rawFit = Math.min(scaleX, scaleY);
-    const fitScale = isPixel
-      ? Math.max(1, Math.min(ZOOM_MAX, Math.floor(rawFit)))
-      : Math.max(0.2, Math.min(ZOOM_MAX, rawFit));
+    /*
+     * Whole-number fit only while there is at least one cell-per-pixel rung to
+     * land on. When the grid is larger than the viewport the fit is below 1,
+     * where flooring yields 0 and the old max(1, ..) pinned it to 100% -- so
+     * "fit" could not actually shrink an oversized grid to fit.
+     */
+    const fitScale = isPixel && rawFit >= 1
+      ? Math.min(ZOOM_MAX, Math.floor(rawFit))
+      : Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, rawFit));
     setZoom(Number(fitScale.toFixed(2)));
   }, [cols, rows]);
 
@@ -693,7 +701,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const showVignette = crtConfig ? crtConfig.vignette : false;
   const showPhosphorBloom = crtConfig && !isColoredView ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
 
-  const asciiColor = customThemeColor || (theme ? THEME_HEX[theme] : '#00ff66') || '#00ff66';
+  const asciiColor = resolvePhosphorTint(theme, customThemeColor);
   const [ar, ag, ab] = hexToRgb(asciiColor);
   const asciiGlow = `rgba(${ar}, ${ag}, ${ab}, 0.11)`;
 
