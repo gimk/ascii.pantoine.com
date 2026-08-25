@@ -102,7 +102,7 @@ export const AsciiLoadingSpinner: React.FC<AsciiLoadingSpinnerProps> = ({
 
       <div
         style={{
-          fontSize: '9.5px',
+          fontSize: '10px',
           color: 'var(--text-primary)',
           fontWeight: 600,
           textAlign: 'center',

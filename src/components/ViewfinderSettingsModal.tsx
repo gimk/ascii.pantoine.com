@@ -119,7 +119,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
               <div className="control-row">
                 <span className="control-label" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <span>Sync with ASCII Color</span>
-                  <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
                     {isSyncEligible
                       ? (uiThemeSettings.syncUiWithAscii ? 'Active: UI accent mirrors 1-color ASCII tint' : 'Disabled: Using standalone UI color')
                       : 'Standby: Only active in 1-color ASCII mode'}
@@ -141,7 +141,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
 
               {/* 2. Theme Presets */}
               <div style={{ marginTop: '2px' }}>
-                <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                   {uiThemeSettings.syncUiWithAscii && isSyncEligible
                     ? 'BASE UI THEME (CURRENTLY SYNCED WITH ASCII):'
                     : 'INTERFACE THEME PRESET:'}
@@ -245,7 +245,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                           customUiColor: '',
                         })
                       }
-                      style={{ fontSize: '8.5px', padding: '2px 5px' }}
+                      style={{ fontSize: '10px', padding: '2px 5px' }}
                     >
                       CLEAR
                     </button>
@@ -292,7 +292,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                 <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   CRT Ambient Glow
                   {isContentColorActive && (
-                    <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>(Disabled in Color Mode)</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>(Disabled in Color Mode)</span>
                   )}
                 </span>
                 <button
@@ -310,7 +310,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                 <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   Phosphor Character Bloom
                   {isContentColorActive && (
-                    <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>(Disabled in Color Mode)</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>(Disabled in Color Mode)</span>
                   )}
                 </span>
                 <button
@@ -342,7 +342,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                   style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
                 >
                   <span>Raster Bounds</span>
-                  <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                     Faint edge &amp; dimmed void, for panning
                   </span>
                 </span>
@@ -379,7 +379,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
             {isStaticImage && (
               <div
                 style={{
-                  fontSize: '9.5px',
+                  fontSize: '10px',
                   color: 'var(--text-dim)',
                   marginBottom: '10px',
                   padding: '6px 8px',
@@ -434,7 +434,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
               <div className="control-row" style={{ opacity: isStaticImage ? 0.35 : 1, marginTop: '4px' }}>
                 <span className="control-label">
                   Pause when Tab is Inactive
-                  <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>0% CPU when switched away</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>0% CPU when switched away</div>
                 </span>
                 <button
                   type="button"
@@ -450,7 +450,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
               <div className="control-row" style={{ opacity: isStaticImage ? 0.35 : 1 }}>
                 <span className="control-label">
                   Idle Framerate Throttle
-                  <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>Drops to 12 FPS on idle mouse</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Drops to 12 FPS on idle mouse</div>
                 </span>
                 <button
                   type="button"

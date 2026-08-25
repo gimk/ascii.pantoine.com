@@ -79,8 +79,7 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
         <span>Quantization &amp; Dither Depth</span>
         <button
           type="button"
-          className="btn btn-sm"
-          style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+          className="btn-reset"
           onClick={() => onChange(0)}
           title="Reset Quantization Depth to Auto"
         >
@@ -355,20 +354,19 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span>Tonal Transfer Curve</span>
           {activeOrHoveredPoint && (
-            <span style={{ color: 'var(--accent)', fontSize: '8.5px', fontWeight: 600 }}>
+            <span style={{ color: 'var(--accent)', fontSize: '10px', fontWeight: 600 }}>
               IN: {Math.round(activeOrHoveredPoint[0] * 255)} • OUT: {Math.round(activeOrHoveredPoint[1] * 255)}
             </span>
           )}
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '8.5px', color: 'var(--text-dim)' }}>
+          <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
             {sortedPoints.length} PTS
           </span>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+            className="btn-reset"
             onClick={handleReset}
             title="Reset Tone Curve to Linear 1:1"
           >
@@ -410,7 +408,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
             aspectRatio: '1 / 1',
             margin: '0 auto',
             position: 'relative',
-            background: '#040404',
+            background: 'var(--bg-primary)',
             border: '1px solid var(--border-color)',
             borderRadius: '3px',
             overflow: 'hidden',
@@ -536,7 +534,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
             margin: '4px auto 0',
             display: 'flex',
             justifyContent: 'space-between',
-            fontSize: '8px',
+            fontSize: '10px',
             color: 'var(--text-dim)',
             fontFamily: 'var(--font-mono)',
           }}
@@ -741,7 +739,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
             <span
               style={{
                 color: 'var(--accent)',
-                fontSize: '8px',
+                fontSize: '10px',
                 fontWeight: 700,
                 padding: '1px 4px',
                 background: 'var(--accent-glow)',
@@ -755,8 +753,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
         </span>
         <button
           type="button"
-          className="btn btn-sm"
-          style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+          className="btn-reset"
           onClick={handleReset}
           title="Reset black, midtone and white points to 0 / 50 / 100"
         >
@@ -780,7 +777,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
             width: '100%',
             maxWidth: '260px',
             margin: '0 auto',
-            background: '#040404',
+            background: 'var(--bg-primary)',
             border: '1px solid var(--border-color)',
             borderRadius: '3px',
             overflow: 'hidden',
@@ -819,7 +816,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
                 x={LV_W / 2}
                 y={LV_HIST_H / 2 + 3}
                 textAnchor="middle"
-                fontSize={9}
+                fontSize={10}
                 fill="var(--text-dim)"
                 fontFamily="var(--font-mono)"
               >
@@ -855,7 +852,7 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
         >
           <span
             style={{
-              fontSize: '8.5px',
+              fontSize: '10px',
               color: 'var(--text-dim)',
               fontFamily: 'var(--font-mono)',
               whiteSpace: 'nowrap',
@@ -873,11 +870,11 @@ const LevelsControl: React.FC<LevelsControlProps> = ({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ padding: '1px 8px', fontSize: '8.5px', height: '18px', whiteSpace: 'nowrap' }}
+            style={{ padding: '1px 8px', fontSize: '10px', height: '20px', whiteSpace: 'nowrap' }}
             onClick={handleAuto}
             title="Set the black and white points from the image's own histogram, clipping 0.1% at each end"
           >
-            <BarChart3 size={9} style={{ marginRight: '3px' }} />
+            <BarChart3 size={10} style={{ marginRight: '3px' }} />
             AUTO LEVELS
           </button>
         </div>
@@ -1006,8 +1003,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               <span>N-Tone Ramp Editor</span>
               <button
                 type="button"
-                className="btn btn-sm"
-                style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+                className="btn-reset"
                 onClick={() =>
                   handleUpdateToneStops(
                     resetDefaults.customToneColors
@@ -1069,8 +1065,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
           <span>Tonal Balance</span>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+            className="btn-reset"
             onClick={resetTonalBalance}
             title="Reset highlights, midtones, and shadows to 0"
           >
@@ -1124,8 +1119,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
               <span>Alpha Cutoff</span>
               <button
                 type="button"
-                className="btn btn-sm"
-                style={{ padding: '1px 6px', fontSize: '8.5px', height: '18px' }}
+                className="btn-reset"
                 onClick={() => update('alphaThreshold', DEFAULT_IMAGE_ADJUST_CONFIG.alphaThreshold)}
                 title="Reset alpha cutoff threshold"
               >

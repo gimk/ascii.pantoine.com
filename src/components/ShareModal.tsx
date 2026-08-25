@@ -311,12 +311,12 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
                     Share with Auto Resolution{' '}
                     {isMediaMode && (
-                      <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>
                         [FIXED ASPECT RATIO]
                       </span>
                     )}
                   </span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
                     {isMediaMode
                       ? `Preserves fixed media aspect ratio (${state.cols}x${state.rows}) on recipient’s screen.`
                       : shareAutoRes
@@ -348,7 +348,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   </span>
                   <span
                     style={{
-                      fontSize: '9.5px',
+                      fontSize: '10px',
                       fontFamily: 'var(--font-mono)',
                       color: urlTooLong ? 'var(--accent)' : 'var(--text-dim)',
                       whiteSpace: 'nowrap',
@@ -363,7 +363,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   </span>
                 </div>
                 {urlTooLong && (
-                  <span style={{ fontSize: '9.5px', color: 'var(--accent)', lineHeight: 1.4 }}>
+                  <span style={{ fontSize: '10px', color: 'var(--accent)', lineHeight: 1.4 }}>
                     This link is long enough that some chat clients and mail readers may truncate it.
                     Copy and paste it as text rather than letting an app auto-link it.
                   </span>

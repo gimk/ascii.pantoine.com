@@ -200,7 +200,7 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
 
       {/* 2. Unified TONE COUNT (2–256) with - / manual number field / + */}
       <div className="control-row" style={{ marginTop: '8px', marginBottom: '6px' }}>
-        <span className="control-label" style={{ fontSize: '11px', fontWeight: 800 }}>
+        <span className="control-label">
           Tones Count (2–256)
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -242,7 +242,7 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ padding: '3px 8px', fontSize: '9.5px', height: '22px' }}
+            style={{ padding: '3px 8px', fontSize: '10px', height: '22px' }}
             onClick={handleReverse}
             title="Reverse Ramp (Invert Highlight & Shadow order)"
           >
@@ -252,7 +252,7 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
           <button
             type="button"
             className="btn btn-sm"
-            style={{ padding: '3px 8px', fontSize: '9.5px', height: '22px' }}
+            style={{ padding: '3px 8px', fontSize: '10px', height: '22px' }}
             onClick={handleInterpolate}
             disabled={count <= 2}
             title="Auto-interpolate intermediate colors between first and last stop"

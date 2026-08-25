@@ -17,8 +17,8 @@
   --border-active: #00ff66;
   
   --text-primary: #00ff66;
-  --text-muted: #4e8c61;
-  --text-dim: #254a31;
+  --text-muted: #62a877;
+  --text-dim: #437a54;
   --accent: #00ff66;
   --accent-glow: rgba(0, 255, 102, 0.11);
   
@@ -34,8 +34,8 @@ body.theme-green {
   --border-color: #1a4225;
   --border-active: #00ff66;
   --text-primary: #00ff66;
-  --text-muted: #57a873;
-  --text-dim: #225732;
+  --text-muted: #6ebc8b;
+  --text-dim: #448057;
   --accent: #00ff66;
   --accent-glow: rgba(0, 255, 102, 0.11);
 }
@@ -48,8 +48,8 @@ body.theme-amber {
   --border-color: #4a3713;
   --border-active: #ffb000;
   --text-primary: #ffb000;
-  --text-muted: #b8861d;
-  --text-dim: #5c4109;
+  --text-muted: #d49d28;
+  --text-dim: #8f6515;
   --accent: #ffb000;
   --accent-glow: rgba(255, 176, 0, 0.11);
 }
@@ -62,8 +62,8 @@ body.theme-cyan {
   --border-color: #194b66;
   --border-active: #00f0ff;
   --text-primary: #00f0ff;
-  --text-muted: #4ca3ba;
-  --text-dim: #1f505e;
+  --text-muted: #66bed4;
+  --text-dim: #3a7c8e;
   --accent: #00f0ff;
   --accent-glow: rgba(0, 240, 255, 0.11);
 }
@@ -76,8 +76,8 @@ body.theme-monochrome {
   --border-color: #333333;
   --border-active: #ffffff;
   --text-primary: #f0f0f0;
-  --text-muted: #888888;
-  --text-dim: #444444;
+  --text-muted: #aaaaaa;
+  --text-dim: #707070;
   --accent: #ffffff;
   --accent-glow: rgba(255, 255, 255, 0.08);
 }
@@ -90,8 +90,8 @@ body.theme-blood {
   --border-color: #4f1d24;
   --border-active: #ff3344;
   --text-primary: #ff3344;
-  --text-muted: #b5454f;
-  --text-dim: #591b22;
+  --text-muted: #d65863;
+  --text-dim: #8a2f38;
   --accent: #ff3344;
   --accent-glow: rgba(255, 51, 68, 0.11);
 }
@@ -105,8 +105,8 @@ body.theme-paper {
   --border-color: #b5ae96;
   --border-active: #111111;
   --text-primary: #151515;
-  --text-muted: #555246;
-  --text-dim: #948e7b;
+  --text-muted: #48453a;
+  --text-dim: #706b5c;
   --accent: #151515;
   --accent-glow: rgba(0, 0, 0, 0.04);
 }
@@ -186,7 +186,7 @@ html, body, #root {
 }
 
 .brand-badge {
-  font-size: 9px;
+  font-size: 10px;
   padding: 1px 5px;
   background: var(--accent);
   color: var(--bg-primary);
@@ -289,11 +289,11 @@ html, body, #root {
   }
 
   .brand-version {
-    font-size: 9.5px;
+    font-size: 10px;
   }
 
   .brand-badge {
-    font-size: 8px;
+    font-size: 10px;
     padding: 1px 4px;
   }
 
@@ -1059,14 +1059,14 @@ html, body, #root {
 }
 
 .tab-btn-index {
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 800;
   color: var(--text-dim);
   background: var(--bg-control);
   border: 1px solid var(--border-color);
   border-radius: 2px;
   padding: 0 4px;
-  line-height: 13px;
+  line-height: 14px;
   transition: all 0.15s ease-in-out;
 }
 
@@ -1080,7 +1080,7 @@ html, body, #root {
 }
 
 .tab-btn-subbadge {
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.5px;
   padding: 1px 4px;
@@ -1235,7 +1235,7 @@ html, body, #root {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.5px;
   color: var(--text-muted);
@@ -1302,7 +1302,7 @@ html, body, #root {
 }
 
 .sidebar-workflow-step {
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 800;
   font-family: var(--font-mono);
   color: var(--accent);
@@ -1314,7 +1314,7 @@ html, body, #root {
 }
 
 .sidebar-workflow-label {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 800;
   font-family: var(--font-mono);
   letter-spacing: 0.8px;
@@ -1353,7 +1353,7 @@ html, body, #root {
 }
 
 .source-mode-title {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.8px;
   color: var(--accent);
@@ -1362,7 +1362,7 @@ html, body, #root {
 }
 
 .source-mode-badge {
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.6px;
   padding: 1px 6px;
@@ -1423,7 +1423,7 @@ html, body, #root {
   position: absolute;
   top: 12px;
   right: 12px;
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.6px;
   padding: 2px 5px;
@@ -1451,7 +1451,7 @@ html, body, #root {
 }
 
 .source-card-desc {
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--text-dim);
   line-height: 1.3;
   white-space: nowrap;
@@ -1478,7 +1478,7 @@ html, body, #root {
 }
 
 .source-card-status {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.6px;
   color: var(--text-dim);
@@ -1561,7 +1561,7 @@ html, body, #root {
 /* Sub-group Headings for Tonal & Effect Controls */
 .tonal-subheading,
 .section-subheading {
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.6px;
   color: var(--text-dim);
@@ -1576,13 +1576,34 @@ html, body, #root {
 }
 
 .tonal-subheading .btn,
-.section-subheading .btn {
-  font-size: 8.5px;
-  padding: 1px 6px;
-  height: 18px;
+.section-subheading .btn,
+.btn-reset {
+  font-size: 10px;
+  padding: 1px 7px;
+  height: 20px;
+  min-height: 20px;
   line-height: 1;
   font-weight: 700;
   color: var(--text-muted);
+  border-color: var(--border-color);
+  background-color: var(--bg-control);
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.12s ease;
+}
+
+.tonal-subheading .btn:hover,
+.section-subheading .btn:hover,
+.btn-reset:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background-color: var(--bg-control-hover);
 }
 
 .tonal-subheading:first-child,
@@ -1601,7 +1622,7 @@ html, body, #root {
 
 .quantize-chip {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   padding: 3px 2px;
   background: var(--bg-control);
@@ -1637,9 +1658,14 @@ html, body, #root {
 
 .dither-family-tab {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 3px 2px;
+  height: 24px;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
   background: var(--bg-control);
   border: 1px solid var(--border-color);
   border-radius: 2px;
@@ -1682,7 +1708,7 @@ html, body, #root {
 }
 
 .slider-nudge-btn.active {
-  background: rgba(255, 170, 0, 0.18);
+  background: var(--accent-glow);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -1722,7 +1748,7 @@ html, body, #root {
 
 .curve-preset-btn {
   font-family: var(--font-mono);
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.3px;
   padding: 2px 6px;
@@ -2175,7 +2201,7 @@ select:disabled {
   border-radius: 2px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.4px;
   cursor: pointer;
@@ -2255,7 +2281,7 @@ select:disabled {
   border-radius: 2px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -2452,7 +2478,7 @@ select:disabled {
 }
 
 .ntone-stop-badge {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 800;
   color: var(--accent);
   background: var(--accent-glow);
@@ -2600,7 +2626,7 @@ select:disabled {
 }
 
 .preset-card-desc {
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--text-muted);
   line-height: 1.2;
 }
@@ -2773,7 +2799,7 @@ select:disabled {
   padding: 1px 5px;
   border: 1px solid var(--border-color);
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2809,12 +2835,12 @@ select:disabled {
 
 .shortcut-plus {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .shortcut-gesture {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
   font-style: italic;
   letter-spacing: 0.06em;
 }
@@ -3062,10 +3088,10 @@ select:disabled {
   align-items: center;
   gap: 7px;
   padding: 18px 26px;
-  background: rgba(3, 8, 5, 0.94);
+  background: var(--bg-panel);
   border: 1.5px solid var(--accent);
   border-radius: 3px;
-  box-shadow: 0 0 25px var(--accent-glow), inset 0 0 12px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 0 25px var(--accent-glow), inset 0 0 12px rgba(0, 0, 0, 0.4);
   color: var(--accent);
   text-align: center;
   white-space: nowrap;
@@ -3079,7 +3105,7 @@ select:disabled {
 }
 
 .media-placeholder-hint {
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   color: var(--text-muted);
 }
@@ -3125,7 +3151,7 @@ select:disabled {
 .sep-slot-note {
   display: block;
   margin-top: 4px;
-  font-size: 9.5px;
+  font-size: 10px;
   line-height: 1.45;
   color: var(--accent);
 }

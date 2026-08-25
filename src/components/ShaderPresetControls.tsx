@@ -62,7 +62,7 @@ export const ShaderPresetControls: React.FC<ShaderPresetControlsProps> = ({
             className={`chip-btn ${activePreset?.id === preset.id ? 'active' : ''}`}
             onClick={() => onApply(preset)}
             title={preset.description}
-            style={{ fontSize: '9px', padding: '5px 3px' }}
+            style={{ fontSize: '10px', padding: '5px 3px' }}
           >
             {preset.label}
           </button>
@@ -72,7 +72,7 @@ export const ShaderPresetControls: React.FC<ShaderPresetControlsProps> = ({
       {activePreset && (
         <p
           style={{
-            fontSize: '9.5px',
+            fontSize: '10px',
             color: 'var(--text-dim)',
             margin: '8px 0 0',
             lineHeight: 1.35,

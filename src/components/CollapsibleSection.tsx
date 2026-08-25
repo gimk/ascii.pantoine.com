@@ -120,16 +120,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           {onReset && (
             <button
               type="button"
-              className="btn btn-sm"
-              style={{
-                fontSize: '8.5px',
-                height: '18px',
-                padding: '1px 6px',
-                textTransform: 'uppercase',
-                fontWeight: 700,
-                color: 'var(--text-muted)',
-                borderColor: 'var(--border-color)',
-              }}
+              className="btn-reset"
               onClick={(e) => {
                 e.stopPropagation();
                 onReset();

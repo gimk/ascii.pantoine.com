@@ -10,7 +10,6 @@ import { DitherSwatchIcon } from './DitherSwatchIcon';
 import {
   ChevronLeft,
   ChevronRight,
-  Cpu,
   Dices,
 } from 'lucide-react';
 
@@ -29,12 +28,29 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
   }, [value]);
 
   const currentMeta: DitherAlgorithmMeta = DITHER_ALGORITHMS[currentIdx] || DITHER_ALGORITHMS[0];
-
-  // Default selected family to the current algorithm's family
-  const [selectedFamily, setSelectedFamily] = useState<DitherFamily | 'all'>(
-    currentMeta.family || 'error-diffusion'
-  );
+  const [selectedFamily, setSelectedFamily] = useState<DitherFamily | 'all'>('error-diffusion');
   const [isRolling, setIsRolling] = useState(false);
+
+  // Group algorithms by family for the dropdown
+  const groupedByFamily = useMemo(() => {
+    const map = new Map<DitherFamily, DitherAlgorithmMeta[]>();
+    for (const algo of DITHER_ALGORITHMS) {
+      if (!map.has(algo.family)) {
+        map.set(algo.family, []);
+      }
+      map.get(algo.family)!.push(algo);
+    }
+    return map;
+  }, []);
+
+  // Compute counts per family for the tabs
+  const familyCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: DITHER_ALGORITHMS.length };
+    for (const algo of DITHER_ALGORITHMS) {
+      counts[algo.family] = (counts[algo.family] || 0) + 1;
+    }
+    return counts;
+  }, []);
 
   const handleStep = (direction: -1 | 1) => {
     const total = DITHER_ALGORITHMS.length;
@@ -53,27 +69,6 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
     onChange(chosen.id);
   };
 
-  // Grouped algorithms for dropdown
-  const groupedByFamily = useMemo(() => {
-    const map = new Map<DitherFamily, DitherAlgorithmMeta[]>();
-    for (const algo of DITHER_ALGORITHMS) {
-      if (!map.has(algo.family)) {
-        map.set(algo.family, []);
-      }
-      map.get(algo.family)!.push(algo);
-    }
-    return map;
-  }, []);
-
-  // Family counts
-  const familyCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: DITHER_ALGORITHMS.length };
-    for (const algo of DITHER_ALGORITHMS) {
-      counts[algo.family] = (counts[algo.family] || 0) + 1;
-    }
-    return counts;
-  }, []);
-
   // Show all 44 algorithms when 'all' is selected, or all algorithms within the selected family
   const visibleChips = useMemo(() => {
     if (selectedFamily === 'all') {
@@ -86,18 +81,8 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
     <div className="dither-picker-container" style={{ marginBottom: '10px' }}>
       {/* 1. Main Stepper, Dropdown & Surprise Me Bar */}
       <div className="control-row" style={{ marginBottom: '8px', alignItems: 'center' }}>
-        <span
-          className="control-label"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            flexShrink: 0,
-            fontSize: '11px',
-          }}
-        >
-          <Cpu size={13} style={{ color: 'var(--accent)' }} />
-          <span>Algorithm</span>
+        <span className="control-label" style={{ flexShrink: 0 }}>
+          Algorithm
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
@@ -277,7 +262,7 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
               {algo.badge && (
                 <span
                   style={{
-                    fontSize: '8.5px',
+                    fontSize: '10px',
                     opacity: isSelected ? 1 : 0.8,
                     color: isSelected ? 'var(--accent)' : 'var(--text-dim)',
                     whiteSpace: 'nowrap',
@@ -327,10 +312,10 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
             {currentMeta.badge && (
               <span
                 style={{
-                  fontSize: '9.5px',
+                  fontSize: '10px',
                   fontWeight: 700,
                   color: 'var(--accent)',
-                  border: '1px solid rgba(255, 170, 0, 0.4)',
+                  border: '1px solid var(--accent)',
                   padding: '1px 5px',
                   borderRadius: '2px',
                   whiteSpace: 'nowrap',
@@ -362,7 +347,7 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
               <span
                 key={t}
                 style={{
-                  fontSize: '9px',
+                  fontSize: '10px',
                   color: 'var(--text-dim)',
                   background: 'var(--bg-secondary)',
                   padding: '2px 5px',

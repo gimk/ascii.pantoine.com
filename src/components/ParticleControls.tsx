@@ -35,16 +35,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
         headerRight={
           <button
             type="button"
-            className="btn btn-sm"
-            style={{
-              fontSize: '8.5px',
-              height: '18px',
-              padding: '1px 6px',
-              textTransform: 'uppercase',
-              fontWeight: 700,
-              color: 'var(--text-muted)',
-              borderColor: 'var(--border-color)',
-            }}
+            className="btn-reset"
             onClick={onClearParticles}
             title="Clear all active particles"
           >

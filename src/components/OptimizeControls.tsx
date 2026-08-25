@@ -298,7 +298,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               title="DPI / Resolution"
               icon={<Grid size={12} />}
               badge={
-                <span style={{ fontSize: '9.5px', color: 'var(--accent)' }}>
+                <span style={{ fontSize: '10px', color: 'var(--accent)' }}>
                   {cols}×{rows} px ({dpi ?? 72} DPI)
                 </span>
               }
@@ -353,7 +353,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                       onClick={() => handleDpiChange(p.val)}
                     >
                       <span style={{ fontWeight: 700, fontSize: '10.5px' }}>{p.label}</span>
-                      <span style={{ fontSize: '8.5px', opacity: 0.8 }}>{p.desc}</span>
+                      <span style={{ fontSize: '10px', opacity: 0.8 }}>{p.desc}</span>
                     </button>
                   );
                 })}
@@ -392,7 +392,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               title="Grid Resolution"
               icon={<Grid size={12} />}
               badge={
-                <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                   {cols}×{rows} ({totalCells.toLocaleString()} chars)
                 </span>
               }
@@ -434,7 +434,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   <span style={{ color: 'var(--text-muted)' }}>Framing Fit:</span>
                   <span
                     style={{
-                      color: isRatioMatched ? 'var(--accent)' : '#ffb000',
+                      color: isRatioMatched ? 'var(--accent)' : 'var(--text-muted)',
                       fontFamily: 'var(--font-mono)',
                       fontWeight: 600,
                       display: 'flex',
@@ -475,7 +475,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                       onClick={() => onChangeResolution(preset.cols, preset.rows)}
                     >
                       <span style={{ fontWeight: 700, fontSize: '11px' }}>{preset.label}</span>
-                      <span style={{ fontSize: '8.5px', opacity: 0.8 }}>
+                      <span style={{ fontSize: '10px', opacity: 0.8 }}>
                         {preset.cols}×{preset.rows}
                       </span>
                     </button>
@@ -495,7 +495,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                     title="Fit viewport aspect ratio"
                   >
                     <span style={{ fontWeight: 700, fontSize: '11px' }}>FIT</span>
-                    <span style={{ fontSize: '8.5px', opacity: 0.8 }}>VIEWPORT</span>
+                    <span style={{ fontSize: '10px', opacity: 0.8 }}>VIEWPORT</span>
                   </button>
                 )}
               </div>
@@ -576,7 +576,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
           <CollapsibleSection
             title={isPixelMode ? 'Pixel Resolution' : 'Grid Resolution'}
             icon={<Grid size={12} />}
-            badge={<><span style={{ fontSize: '9.5px', color: isPixelMode ? 'var(--accent)' : 'var(--text-muted)' }}>
+            badge={<><span style={{ fontSize: '10px', color: isPixelMode ? 'var(--accent)' : 'var(--text-muted)' }}>
                 {cols}x{rows} ({totalCells.toLocaleString()} {isPixelMode ? 'px' : 'chars'})
               </span></>}
             persistKey="OptimizeControls-grid-resolution"
@@ -710,19 +710,19 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 style={{
                   marginTop: '10px',
                   padding: '8px 10px',
-                  background: 'rgba(255, 176, 0, 0.1)',
-                  border: '1px solid #ffb000',
+                  background: 'var(--accent-glow)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '3px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '6px',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#ffb000', fontWeight: 700, fontSize: '10.5px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--accent)', fontWeight: 700, fontSize: '10.5px' }}>
                   <AlertTriangle size={12} />
                   <span>High Resolution Warning</span>
                 </div>
-                <p style={{ fontSize: '9.5px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                <p style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
                   {draftCols}x{draftRows} ({(draftCols * draftRows).toLocaleString()} {isPixelMode ? 'pixels' : 'characters'}) exceeds standard {liveColsCeiling}x{liveRowsCeiling}. Rendering high cell counts may reduce framerate on lower-powered devices.
                 </p>
                 <button

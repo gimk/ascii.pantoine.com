@@ -221,7 +221,7 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
           <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
             DROP IMAGE OR VIDEO HERE
           </div>
-          <div style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
             PNG, JPG, WebP, GIF, SVG, MP4, WebM, MOV or click to browse
           </div>
         </div>
@@ -257,7 +257,7 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
               {config.fileName || 'Active Media File'}
             </span>
           </div>
-          <span className="brand-version" style={{ fontSize: '9px', textTransform: 'uppercase', flexShrink: 0 }}>
+          <span className="brand-version" style={{ fontSize: '10px', textTransform: 'uppercase', flexShrink: 0 }}>
             {config.sourceType}
           </span>
         </div>

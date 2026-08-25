@@ -253,9 +253,9 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
             {isFormulaDivergent && (
               <span
                 style={{
-                  fontSize: '9px',
-                  color: '#ffb000',
-                  border: '1px solid rgba(255,176,0,0.4)',
+                  fontSize: '10px',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
                   padding: '1px 4px',
                   borderRadius: '2px',
                   marginLeft: '4px',
@@ -275,8 +275,8 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
             {isFormulaDivergent && (
               <div
                 style={{
-                  background: 'rgba(255, 176, 0, 0.08)',
-                  border: '1px solid rgba(255, 176, 0, 0.35)',
+                  background: 'var(--accent-glow)',
+                  border: '1px solid var(--accent)',
                   borderRadius: '4px',
                   padding: '10px 12px',
                   marginBottom: '12px',
@@ -287,7 +287,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    color: '#ffb000',
+                    color: 'var(--accent)',
                     fontWeight: 700,
                     fontSize: '11px',
                     marginBottom: '3px',
@@ -298,7 +298,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 </div>
                 <p
                   style={{
-                    fontSize: '10px',
+                    fontSize: '10.5px',
                     color: 'var(--text-muted)',
                     lineHeight: 1.35,
                     margin: '0 0 8px 0',
@@ -353,6 +353,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
                 <div className="control-row" style={{ marginTop: '6px' }}>
                   <span className="control-label">Invert Characters</span>
                   <button
+                    type="button"
                     className={`btn btn-sm ${params.invert ? 'btn-primary' : ''}`}
                     disabled={isFormulaDivergent}
                     onClick={() => update('invert', !params.invert)}
@@ -363,7 +364,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </CollapsibleSection>
 
               {/* Primary Radial Wave */}
-              <CollapsibleSection title="Primary Radial Wave" icon={<CircleDot size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(dist)</span></>} persistKey="SynthControls-1-primary-radial-wave">
+              <CollapsibleSection title="Primary Radial Wave" icon={<CircleDot size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(dist)</span></>} persistKey="SynthControls-1-primary-radial-wave">
                 {renderSlider('Amplitude', 'radialAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Frequency', 'radialFreq', 0.01, 0.4, 0.01)}
                 {renderSlider('Wave Speed', 'radialSpeed', -3.0, 3.0, 0.1)}
@@ -372,14 +373,14 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </CollapsibleSection>
 
               {/* Secondary Harmonic Ripple */}
-              <CollapsibleSection title="Secondary Harmonic Ripple" icon={<Waves size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Cell Interference</span></>} persistKey="SynthControls-2-secondary-harmonic-ripple">
+              <CollapsibleSection title="Secondary Harmonic Ripple" icon={<Waves size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Cell Interference</span></>} persistKey="SynthControls-2-secondary-harmonic-ripple">
                 {renderSlider('Harmonic Amplitude', 'radial2Amp', 0.0, 2.0, 0.05)}
                 {renderSlider('Harmonic Frequency', 'radial2Freq', 0.02, 0.6, 0.01)}
                 {renderSlider('Harmonic Speed', 'radial2Speed', -4.0, 4.0, 0.1)}
               </CollapsibleSection>
 
               {/* Directional Waves */}
-              <CollapsibleSection title="Directional Waves (X, Y, Diagonal)" icon={<Move size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span></>} persistKey="SynthControls-3-directional-waves-x-y-diagonal">
+              <CollapsibleSection title="Directional Waves (X, Y, Diagonal)" icon={<Move size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span></>} persistKey="SynthControls-3-directional-waves-x-y-diagonal">
                 {renderSlider('X Amplitude', 'xAmp', 0.0, 1.5, 0.05)}
                 {renderSlider('X Frequency', 'xFreq', 0.01, 0.3, 0.01)}
                 {renderSlider('X Speed', 'xSpeed', -2.0, 2.0, 0.1)}
@@ -394,7 +395,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </CollapsibleSection>
 
               {/* Spiral / Vortex */}
-              <CollapsibleSection title="Angular Spiral Vortex" icon={<RotateCw size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>sin(θ * arms)</span></>} persistKey="SynthControls-4-angular-spiral-vortex">
+              <CollapsibleSection title="Angular Spiral Vortex" icon={<RotateCw size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(θ * arms)</span></>} persistKey="SynthControls-4-angular-spiral-vortex">
                 {renderSlider('Spiral Amplitude', 'spiralAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Arm Count', 'spiralArms', 1, 12, 1, 0)}
                 {renderSlider('Rotation Speed', 'spiralSpeed', -5.0, 5.0, 0.1)}
@@ -402,14 +403,14 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </CollapsibleSection>
 
               {/* Depth / Tunnel Warp */}
-              <CollapsibleSection title="Wormhole Tunnel [1 / dist]" icon={<Eye size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>3D Perspective</span></>} persistKey="SynthControls-5-wormhole-tunnel-1-dist">
+              <CollapsibleSection title="Wormhole Tunnel [1 / dist]" icon={<Eye size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>3D Perspective</span></>} persistKey="SynthControls-5-wormhole-tunnel-1-dist">
                 {renderSlider('Tunnel Amplitude', 'tunnelAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Warp Power', 'tunnelPower', 5, 80, 1, 0)}
                 {renderSlider('Tunnel Speed', 'tunnelSpeed', -4.0, 4.0, 0.1)}
               </CollapsibleSection>
 
               {/* Concentric Rings */}
-              <CollapsibleSection title="Concentric Rings" icon={<Disc size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Harmonic Bands</span></>} persistKey="SynthControls-6-concentric-rings">
+              <CollapsibleSection title="Concentric Rings" icon={<Disc size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Harmonic Bands</span></>} persistKey="SynthControls-6-concentric-rings">
                 {renderSlider('Rings Amplitude', 'ringsAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Base Radius', 'ringsRadius', 5, 80, 1, 0)}
                 {renderSlider('Pulse Speed', 'ringsSpeed', -4.0, 4.0, 0.1)}
@@ -417,7 +418,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </CollapsibleSection>
 
               {/* Dual Interference */}
-              <CollapsibleSection title="Dual Interference Moiré" icon={<Radio size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Dual Emitters</span></>} persistKey="SynthControls-7-dual-interference-moir">
+              <CollapsibleSection title="Dual Interference Moiré" icon={<Radio size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Dual Emitters</span></>} persistKey="SynthControls-7-dual-interference-moir">
                 {renderSlider('Interference Amp', 'dualEmitterAmp', 0.0, 2.0, 0.05)}
                 {renderSlider('Emitter Spacing', 'dualEmitterSpacing', 5, 60, 1, 0)}
                 {renderSlider('Wave Frequency', 'dualEmitterFreq', 0.02, 0.4, 0.01)}
@@ -425,7 +426,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
               </CollapsibleSection>
 
               {/* Starfield & Cosmic Sparkle */}
-              <CollapsibleSection title="Starfield &amp; Cosmic Sparkle" icon={<Sparkles size={12} />} badge={<><span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>Procedural Sky</span></>} persistKey="SynthControls-8-starfield-cosmic-sparkle">
+              <CollapsibleSection title="Starfield &amp; Cosmic Sparkle" icon={<Sparkles size={12} />} badge={<><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Procedural Sky</span></>} persistKey="SynthControls-8-starfield-cosmic-sparkle">
                 {renderSlider('Star Brightness', 'starfieldIntensity', 0.0, 2.0, 0.05)}
                 {renderSlider('Star Quantity', 'starfieldDensity', 0.1, 5.0, 0.1)}
                 {renderSlider('Sparkle Frequency', 'starfieldSpeed', 0.0, 8.0, 0.1)}
@@ -473,8 +474,11 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
             {compileError && (
               <span
                 style={{
-                  fontSize: '9px',
-                  color: '#ff3344',
+                  fontSize: '10px',
+                  color: 'var(--accent)',
+                  border: '1px solid var(--accent)',
+                  padding: '1px 4px',
+                  borderRadius: '2px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '2px',
@@ -518,7 +522,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
             <div style={{ marginTop: '8px' }}>
               <div
                 style={{
-                  fontSize: '9px',
+                  fontSize: '10px',
                   color: 'var(--text-muted)',
                   marginBottom: '4px',
                   textTransform: 'uppercase',
@@ -584,7 +588,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
 
             {/* Optional ctx.prepare frame state */}
             <div style={{ marginTop: '10px' }}>
-              <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', marginBottom: '3px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>
                 Optional Frame State (<code>ctx.prepare</code>):
               </div>
               <textarea

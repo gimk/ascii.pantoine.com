@@ -102,11 +102,11 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
       <CollapsibleSection
         title="Online 3D Library"
         icon={<Globe size={12} />}
-        badge={<span style={{ fontSize: '9px', color: 'var(--accent)', fontWeight: 'bold' }}>KHRONOS &amp; THREE.JS</span>}
+        badge={<span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 'bold' }}>KHRONOS &amp; THREE.JS</span>}
         persistKey="ModelSettingsControls-online-3d-library"
         defaultOpen={true}
       >
-        <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
+        <p style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
           Explore official Khronos glTF benchmark assets &amp; open 3D models. Click any model to render in ASCII.
         </p>
 
@@ -155,7 +155,7 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
               key={cat}
               className={`chip-btn ${selectedCategory === cat ? 'active' : ''}`}
               onClick={() => setSelectedCategory(cat)}
-              style={{ whiteSpace: 'nowrap', fontSize: '9px', padding: '2px 8px' }}
+              style={{ whiteSpace: 'nowrap', fontSize: '10px', padding: '2px 8px' }}
             >
               {cat}
             </button>
@@ -225,7 +225,7 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
                         {model.title}
                       </span>
                     </div>
-                    <span style={{ fontSize: '9px', color: 'var(--text-dim)', lineHeight: 1.2 }}>
+                    <span style={{ fontSize: '10px', color: 'var(--text-dim)', lineHeight: 1.2 }}>
                       by {model.author} ({model.license})
                     </span>
                   </div>
@@ -233,7 +233,7 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                     <span
                       style={{
-                        fontSize: '8.5px',
+                        fontSize: '10px',
                         color: 'var(--text-dim)',
                         background: 'var(--bg-primary)',
                         padding: '1px 4px',
@@ -288,7 +288,7 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
           <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
             {isLoadingFile ? 'PARSING 3D GEOMETRY...' : 'DROP 3D MODEL FILE HERE'}
           </div>
-          <div style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
             Supports .OBJ, .STL, .GLTF, .GLB, .PLY or click to browse
           </div>
         </div>
@@ -310,7 +310,7 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
             <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }} title={config.fileName || 'Default Mesh'}>
               {config.fileName || (config.sourceType === 'url' ? 'Online 3D Model' : 'Built-in 3D Model')}
             </span>
-            <span className="brand-badge" style={{ fontSize: '8px' }}>
+            <span className="brand-badge" style={{ fontSize: '10px' }}>
               {config.sourceType === 'file'
                 ? config.fileType?.toUpperCase()
                 : config.sourceType === 'url'
@@ -319,7 +319,7 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
             </span>
           </div>
           {config.polyStats && (
-            <div style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
               <span>VERTICES: <strong>{config.polyStats.vertices.toLocaleString()}</strong></span>
               <span>FACES: <strong>{config.polyStats.faces.toLocaleString()}</strong></span>
             </div>
