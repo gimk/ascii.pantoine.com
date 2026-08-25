@@ -2255,10 +2255,37 @@ export const App: React.FC = () => {
       modelViewConfig: appMode === 'model' ? modelViewConfig : undefined,
       mediaConfig: appMode === 'media' ? mediaConfig : undefined,
       mediaViewConfig: appMode === 'media' ? mediaViewConfig : undefined,
-      mediaColorConfig: appMode === 'media' ? mediaColorConfig : undefined,
+
+      /*
+       * The render settings, which decodeShareFromUrl has always read back but
+       * this snapshot never sent. A link therefore arrived with the recipient's
+       * defaults for all of them -- no dither algorithm, no grading, no palette.
+       *
+       * Media was the accidental exception: its raster mode, algorithm and whole
+       * adjust config ride along inside mediaViewConfig, which was already here.
+       * The other two modes lost everything. Sourced exactly as the ExportModal
+       * call site does, media fallback included, so a link and an export of the
+       * same state agree.
+       */
+      rasterMode: appMode === 'media'
+        ? (mediaViewConfig.rasterMode || currentRenderSettings.rasterMode)
+        : currentRenderSettings.rasterMode,
+      ditherAlgorithm: appMode === 'media'
+        ? (mediaViewConfig.algorithm || currentRenderSettings.ditherAlgorithm)
+        : currentRenderSettings.ditherAlgorithm,
+      toneConfig: currentRenderSettings.toneConfig,
+      adjustConfig: currentRenderSettings.adjustConfig,
+
+      /*
+       * Not gated on media mode: synth and model both hand this to the engine as
+       * `colorConfig`, so it carries the palette and saturation for every mode.
+       * Gating it dropped the palette from every non-media link.
+       */
+      mediaColorConfig,
     }),
     [
       appMode,
+      currentRenderSettings,
       modelConfig,
       isModelEdited,
       mediaConfig,
