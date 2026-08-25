@@ -19,7 +19,7 @@ import {
   Film,
 } from 'lucide-react';
 
-interface MediaFileControlsProps {
+interface MediaUploadControlsProps {
   config: MediaConfig;
   onChangeConfig: (cfg: MediaConfig) => void;
   mediaElement: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
@@ -27,7 +27,7 @@ interface MediaFileControlsProps {
   onUrlLoad: (url: string) => void;
 }
 
-export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
+export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
   config,
   onChangeConfig,
   mediaElement,
@@ -140,25 +140,6 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
     }
   };
 
-  const rotateBy = (deg: number) => {
-    let newRot = (config.rotation + deg) % 360;
-    if (newRot < 0) newRot += 360;
-    update('rotation', newRot);
-  };
-
-  const resetTransforms = () => {
-    onChangeConfig({
-      ...config,
-      scale: 1.0,
-      offsetX: 0,
-      offsetY: 0,
-      rotation: 0,
-      flipX: false,
-      flipY: false,
-      fit: 'contain',
-    });
-  };
-
   const formatTime = (secs: number) => {
     if (isNaN(secs) || secs < 0) return '0:00';
     const m = Math.floor(secs / 60);
@@ -190,33 +171,33 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
 
   return (
     <div className="tab-content">
-      {/* 0. Large Clipboard Paste Hero Button */}
+      {/* Large Clipboard Paste Hero Button */}
       <div style={{ marginBottom: '14px' }}>
-            <button
-              type="button"
-              className="btn btn-randomize"
-              style={{
-                width: '100%',
-                padding: '11px 14px',
-                fontSize: '11.5px',
-                fontWeight: 800,
-                letterSpacing: '0.07em',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                borderRadius: '4px',
-              }}
-              onClick={handleClipboardPaste}
-              title="Paste image directly from clipboard (or press Cmd+V / Ctrl+V)"
-            >
-              <ClipboardPaste size={16} className="header-btn-icon" />
-              <span>PASTE FROM CLIPBOARD ({isMac ? '⌘V' : 'CTRL+V'})</span>
-            </button>
-          </div>
+        <button
+          type="button"
+          className="btn btn-randomize"
+          style={{
+            width: '100%',
+            padding: '11px 14px',
+            fontSize: '11.5px',
+            fontWeight: 800,
+            letterSpacing: '0.07em',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            borderRadius: '4px',
+          }}
+          onClick={handleClipboardPaste}
+          title="Paste image directly from clipboard (or press Cmd+V / Ctrl+V)"
+        >
+          <ClipboardPaste size={16} className="header-btn-icon" />
+          <span>PASTE FROM CLIPBOARD ({isMac ? '⌘V' : 'CTRL+V'})</span>
+        </button>
+      </div>
 
-          {/* 1. File Upload & Source Dropzone */}
-          <CollapsibleSection title="Import From File / URL" icon={<Upload size={12} />} persistKey="MediaFileControls-import-from-file-url">
+      {/* File Upload & Source Dropzone */}
+      <CollapsibleSection title="Import From File / URL" icon={<Upload size={12} />} persistKey="MediaFileControls-import-from-file-url" defaultOpen={true}>
         <div
           className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
           onDragOver={handleDragOver}
@@ -298,9 +279,9 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
         </form>
       </CollapsibleSection>
 
-      {/* 2. Video Playback & Timeline Controls (if video source) */}
+      {/* Video Playback & Timeline Controls (if video source) */}
       {isVideo && (
-        <CollapsibleSection title="Video Playback" icon={<Film size={12} />} persistKey="MediaFileControls-video-playback">
+        <CollapsibleSection title="Video Playback" icon={<Film size={12} />} persistKey="MediaFileControls-video-playback" defaultOpen={true}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <button className="btn btn-primary btn-sm" onClick={toggleVideoPlayback}>
               {isVideoPlaying ? <Pause size={12} /> : <Play size={12} />}
@@ -354,13 +335,52 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
           </div>
         </CollapsibleSection>
       )}
+    </div>
+  );
+};
 
-      {/* 3. Transform & Framing Controls */}
+interface MediaFramingControlsProps {
+  config: MediaConfig;
+  onChangeConfig: (cfg: MediaConfig) => void;
+}
+
+export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
+  config,
+  onChangeConfig,
+}) => {
+  const update = <K extends keyof MediaConfig>(key: K, val: MediaConfig[K]) => {
+    onChangeConfig({
+      ...config,
+      [key]: val,
+    });
+  };
+
+  const rotateBy = (deg: number) => {
+    let newRot = (config.rotation + deg) % 360;
+    if (newRot < 0) newRot += 360;
+    update('rotation', newRot);
+  };
+
+  const resetTransforms = () => {
+    onChangeConfig({
+      ...config,
+      scale: 1.0,
+      offsetX: 0,
+      offsetY: 0,
+      rotation: 0,
+      flipX: false,
+      flipY: false,
+      fit: 'contain',
+    });
+  };
+
+  return (
+    <div className="tab-content">
       <CollapsibleSection
         title="Transform &amp; Framing"
         icon={<Maximize2 size={12} />}
         persistKey="MediaFileControls-transform-framing"
-        defaultOpen={false}
+        defaultOpen={true}
       >
         {/* Fit Mode */}
         <div className="control-row">
@@ -499,5 +519,14 @@ export const MediaFileControls: React.FC<MediaFileControlsProps> = ({
         </div>
       </CollapsibleSection>
     </div>
+  );
+};
+
+export const MediaFileControls: React.FC<MediaUploadControlsProps> = (props) => {
+  return (
+    <>
+      <MediaUploadControls {...props} />
+      <MediaFramingControls config={props.config} onChangeConfig={props.onChangeConfig} />
+    </>
   );
 };

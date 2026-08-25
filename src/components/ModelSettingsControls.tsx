@@ -18,14 +18,12 @@ import {
   Globe,
   Search,
   Check,
-  Sparkles,
   Loader2,
 } from 'lucide-react';
 import { BufferGeometry } from 'three';
 
-interface ModelSettingsControlsProps {
+export interface ModelImportControlsProps {
   config: ModelConfig;
-  onChangeConfig: (newConfig: ModelConfig) => void;
   onLoadCustomGeometry: (
     geometry: BufferGeometry,
     fileName: string,
@@ -36,12 +34,10 @@ interface ModelSettingsControlsProps {
   onLoadRemoteModel: (model: Khronos3DModel) => Promise<void>;
   onStartLoading?: (fileName: string, statusText?: string) => void;
   onEndLoading?: () => void;
-  section?: 'source' | 'adjust' | 'all';
 }
 
-export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
+export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
   config,
-  onChangeConfig,
   onLoadCustomGeometry,
   onSelectBuiltinGeometry: _onSelectBuiltinGeometry,
   onLoadRemoteModel,
@@ -59,13 +55,6 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
   const displayedOnlineModels = useMemo(() => {
     return searchKhronosModels(searchQuery, selectedCategory);
   }, [searchQuery, selectedCategory]);
-
-  const update = <K extends keyof ModelConfig>(key: K, val: ModelConfig[K]) => {
-    onChangeConfig({
-      ...config,
-      [key]: val,
-    });
-  };
 
   const handleProcessFile = async (file: File) => {
     setIsLoadingFile(true);
@@ -118,245 +107,255 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
         persistKey="ModelSettingsControls-online-3d-library"
         defaultOpen={true}
       >
-            <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
-              Explore official Khronos glTF benchmark assets &amp; open 3D models. Click any model to render in ASCII.
-            </p>
+        <p style={{ fontSize: '9.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
+          Explore official Khronos glTF benchmark assets &amp; open 3D models. Click any model to render in ASCII.
+        </p>
 
-            {/* Search Input */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-              <div style={{ position: 'relative', flex: 1 }}>
-                <input
-                  type="text"
-                  className="number-input"
-                  style={{ width: '100%', textAlign: 'left', padding: '5px 8px 5px 24px', fontSize: '11px' }}
-                  placeholder="Search 3D models (duck, ferrari, robot, helmet)..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <Search
-                  size={12}
-                  style={{
-                    position: 'absolute',
-                    left: '7px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--text-dim)',
-                  }}
-                />
-              </div>
-              {searchQuery && (
-                <button className="btn btn-sm" onClick={() => setSearchQuery('')} title="Clear search">
-                  CLEAR
-                </button>
-              )}
-            </div>
-
-            {/* Category Filters */}
-            <div
-              style={{
-                display: 'flex',
-                gap: '4px',
-                overflowX: 'auto',
-                paddingBottom: '4px',
-                marginBottom: '10px',
-                scrollbarWidth: 'none',
-              }}
-            >
-              {KHRONOS_CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  className={`btn btn-sm ${selectedCategory === cat ? 'btn-primary' : ''}`}
-                  style={{
-                    fontSize: '9px',
-                    padding: '2px 7px',
-                    whiteSpace: 'nowrap',
-                    textTransform: 'uppercase',
-                  }}
-                  onClick={() => setSelectedCategory(cat)}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-
-            {/* Models Grid */}
-            {displayedOnlineModels.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-dim)', fontSize: '10px' }}>
-                No models found matching "{searchQuery}".
-              </div>
-            ) : (
-              <div
-                className="presets-grid"
-                style={{
-                  maxHeight: '260px',
-                  overflowY: 'auto',
-                  paddingRight: '2px',
-                  marginBottom: '4px',
-                }}
-              >
-                {displayedOnlineModels.map((model) => {
-                  const isLoaded =
-                    config.sourceType === 'url' &&
-                    (config.remoteUrl === model.downloadUrl || config.modelId === model.id);
-                  const isLoading = loadingModelId === model.id;
-
-                  return (
-                    <button
-                      key={model.id}
-                      className={`preset-card ${isLoaded ? 'active' : ''}`}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        textAlign: 'left',
-                        minHeight: '62px',
-                        padding: '8px 10px',
-                      }}
-                      disabled={isLoading}
-                      onClick={() => handleLoadRemote(model)}
-                    >
-                      <div style={{ width: '100%' }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            marginBottom: '2px',
-                          }}
-                        >
-                          <div className="preset-card-title" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Box size={11} style={{ flexShrink: 0 }} />
-                            {model.title}
-                          </div>
-                          <span
-                            style={{
-                              fontSize: '8px',
-                              color: 'var(--text-muted)',
-                              backgroundColor: 'var(--bg-panel)',
-                              padding: '1px 4px',
-                              border: '1px solid var(--border-color)',
-                              borderRadius: '2px',
-                            }}
-                          >
-                            {model.triCount} tris
-                          </span>
-                        </div>
-
-                        <div className="preset-card-desc" style={{ fontSize: '9px', color: 'var(--text-dim)' }}>
-                          by {model.author} ({model.license})
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
-                        <span
-                          style={{
-                            fontSize: '8.5px',
-                            fontWeight: 700,
-                            letterSpacing: '0.5px',
-                            color: isLoaded ? 'var(--accent)' : 'var(--text-muted)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                          }}
-                        >
-                          {isLoading ? (
-                            <>
-                              <Loader2 size={9} className="dice-spin" /> FETCHING...
-                            </>
-                          ) : isLoaded ? (
-                            <>
-                              <Check size={9} /> ACTIVE
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles size={9} /> LOAD ASCII
-                            </>
-                          )}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </CollapsibleSection>
-
-          {/* 2. Upload Custom 3D File */}
-          <CollapsibleSection
-            title="Upload Custom 3D File"
-            icon={<Upload size={12} />}
-            persistKey="ModelSettingsControls-upload-custom-3d-file"
-            defaultOpen={false}
-          >
+        {/* Search Input */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
             <input
-              ref={fileInputRef}
-              type="file"
-              accept=".obj,.stl,.gltf,.glb,.ply"
-              style={{ display: 'none' }}
-              onChange={handleFileChange}
+              type="text"
+              className="number-input"
+              style={{ width: '100%', textAlign: 'left', padding: '5px 8px 5px 24px', fontSize: '11px' }}
+              placeholder="Search 3D models (duck, ferrari, robot, helmet)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
-
-            <div
-              className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
+            <Search
+              size={12}
+              style={{
+                position: 'absolute',
+                left: '7px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-dim)',
               }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
+            />
+          </div>
+          {searchQuery && (
+            <button className="btn btn-sm" onClick={() => setSearchQuery('')} title="Clear search">
+              CLEAR
+            </button>
+          )}
+        </div>
+
+        {/* Category Pills */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '4px',
+            overflowX: 'auto',
+            paddingBottom: '4px',
+            marginBottom: '8px',
+            scrollbarWidth: 'none',
+          }}
+        >
+          {KHRONOS_CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              className={`chip-btn ${selectedCategory === cat ? 'active' : ''}`}
+              onClick={() => setSelectedCategory(cat)}
+              style={{ whiteSpace: 'nowrap', fontSize: '9px', padding: '2px 8px' }}
             >
-              <Upload size={18} style={{ color: 'var(--accent)', marginBottom: '4px' }} />
-              <div style={{ fontWeight: 700, fontSize: '10.5px', color: 'var(--text-primary)' }}>
-                {isLoadingFile ? 'PARSING 3D MODEL...' : 'DROP 3D FILE OR CLICK TO BROWSE'}
-              </div>
-              <div style={{ fontSize: '8.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                Supports .OBJ, .STL, .GLTF, .GLB, .PLY
-              </div>
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Error message */}
+        {errorMsg && (
+          <div className="alert-box alert-error" style={{ marginBottom: '8px', padding: '6px 8px', fontSize: '10px' }}>
+            <AlertCircle size={12} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {/* Dense Text-List / Card Grid */}
+        <div
+          style={{
+            maxHeight: '220px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            paddingRight: '2px',
+          }}
+        >
+          {displayedOnlineModels.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-dim)', fontSize: '10px' }}>
+              No models matched "{searchQuery}"
             </div>
+          ) : (
+            displayedOnlineModels.map((model) => {
+              const isSelected =
+                config.sourceType === 'url' &&
+                (config.remoteUrl === model.downloadUrl || config.modelId === model.id);
+              const isItemLoading = loadingModelId === model.id;
 
-            {errorMsg && (
-              <div className="control-error-box" style={{ marginTop: '8px' }}>
-                <AlertCircle size={12} style={{ flexShrink: 0 }} />
-                <span>{errorMsg}</span>
-              </div>
-            )}
+              return (
+                <div
+                  key={model.id}
+                  onClick={() => !isItemLoading && handleLoadRemote(model)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    background: isSelected ? 'rgba(0, 255, 65, 0.08)' : 'var(--bg-control)',
+                    border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'}`,
+                    borderRadius: '3px',
+                    cursor: isItemLoading ? 'wait' : 'pointer',
+                    transition: 'all 0.12s ease-in-out',
+                    gap: '8px',
+                  }}
+                  className="online-model-item"
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: isSelected ? 700 : 500,
+                          color: isSelected ? 'var(--accent)' : 'var(--text-primary)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {model.title}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '9px', color: 'var(--text-dim)', lineHeight: 1.2 }}>
+                      by {model.author} ({model.license})
+                    </span>
+                  </div>
 
-            {/* Current Active Model Info Card */}
-            <div className="model-info-card" style={{ marginTop: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}>
-                  <FileCode size={12} />
-                  {config.sourceType === 'file'
-                    ? config.fileName || 'Custom 3D Model'
-                    : config.sourceType === 'url'
-                    ? config.fileName || 'Online Model'
-                    : 'Torus Knot (Parametric)'}
-                </span>
-                <span className="brand-badge" style={{ fontSize: '8px' }}>
-                  {config.sourceType === 'file'
-                    ? config.fileType?.toUpperCase()
-                    : config.sourceType === 'url'
-                    ? 'ONLINE 3D'
-                    : 'BUILT-IN'}
-                </span>
-              </div>
-              {config.polyStats && (
-                <div style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
-                  <span>VERTICES: <strong>{config.polyStats.vertices.toLocaleString()}</strong></span>
-                  <span>FACES: <strong>{config.polyStats.faces.toLocaleString()}</strong></span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <span
+                      style={{
+                        fontSize: '8.5px',
+                        color: 'var(--text-dim)',
+                        background: 'var(--bg-primary)',
+                        padding: '1px 4px',
+                        borderRadius: '2px',
+                        border: '1px solid var(--border-color)',
+                      }}
+                    >
+                      {model.triCount.toLocaleString()} tris
+                    </span>
+                    {isItemLoading ? (
+                      <Loader2 size={12} className="dice-spin" color="var(--accent)" />
+                    ) : isSelected ? (
+                      <Check size={12} color="var(--accent)" />
+                    ) : null}
+                  </div>
                 </div>
-              )}
-            </div>
-          </CollapsibleSection>
+              );
+            })
+          )}
+        </div>
+      </CollapsibleSection>
 
-          {/* 3. Transformations & Scaling */}
-          <CollapsibleSection
-            title="Transformations &amp; Scale"
-            icon={<Sliders size={12} />}
-            persistKey="ModelSettingsControls-transformations-scale"
-            defaultOpen={false}
-          >
+      {/* 2. Custom 3D File Upload (Dropzone) */}
+      <CollapsibleSection
+        title="Upload Custom 3D File"
+        icon={<Upload size={12} />}
+        persistKey="ModelSettingsControls-upload-custom-3d-file"
+        defaultOpen={false}
+      >
+        <div
+          className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            accept=".obj,.stl,.gltf,.glb,.ply"
+            onChange={handleFileChange}
+          />
+          {isLoadingFile ? (
+            <Loader2 size={24} className="dice-spin" color="var(--accent)" style={{ marginBottom: '8px' }} />
+          ) : (
+            <FileCode size={24} color="var(--accent)" style={{ marginBottom: '8px' }} />
+          )}
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
+            {isLoadingFile ? 'PARSING 3D GEOMETRY...' : 'DROP 3D MODEL FILE HERE'}
+          </div>
+          <div style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
+            Supports .OBJ, .STL, .GLTF, .GLB, .PLY or click to browse
+          </div>
+        </div>
+
+        {/* Current Active Geometry & Polycount Specs */}
+        <div
+          style={{
+            marginTop: '8px',
+            padding: '8px 10px',
+            background: 'var(--bg-control)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '3px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }} title={config.fileName || 'Default Mesh'}>
+              {config.fileName || (config.sourceType === 'url' ? 'Online 3D Model' : 'Built-in 3D Model')}
+            </span>
+            <span className="brand-badge" style={{ fontSize: '8px' }}>
+              {config.sourceType === 'file'
+                ? config.fileType?.toUpperCase()
+                : config.sourceType === 'url'
+                ? 'ONLINE 3D'
+                : 'BUILT-IN'}
+            </span>
+          </div>
+          {config.polyStats && (
+            <div style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
+              <span>VERTICES: <strong>{config.polyStats.vertices.toLocaleString()}</strong></span>
+              <span>FACES: <strong>{config.polyStats.faces.toLocaleString()}</strong></span>
+            </div>
+          )}
+        </div>
+      </CollapsibleSection>
+    </div>
+  );
+};
+
+export interface ModelMeshControlsProps {
+  config: ModelConfig;
+  onChangeConfig: (newConfig: ModelConfig) => void;
+}
+
+export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
+  config,
+  onChangeConfig,
+}) => {
+  const update = <K extends keyof ModelConfig>(key: K, val: ModelConfig[K]) => {
+    onChangeConfig({
+      ...config,
+      [key]: val,
+    });
+  };
+
+  return (
+    <div className="tab-content">
+      {/* 1. Transformations & Scaling */}
+      <CollapsibleSection
+        title="Transformations &amp; Scale"
+        icon={<Sliders size={12} />}
+        persistKey="ModelSettingsControls-transformations-scale"
+        defaultOpen={true}
+      >
         {/* Uniform Scale */}
         <div className="control-row">
           <span className="control-label">Uniform Scale</span>
@@ -556,7 +555,7 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
         </div>
       </CollapsibleSection>
 
-      {/* 4. Geometry Processing & Mesh Options */}
+      {/* 2. Geometry Processing & Mesh Options */}
       <CollapsibleSection
         title="Mesh &amp; Normal Settings"
         icon={<Box size={12} />}
@@ -630,5 +629,16 @@ export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = ({
         </div>
       </CollapsibleSection>
     </div>
+  );
+};
+
+export type ModelSettingsControlsProps = ModelImportControlsProps & ModelMeshControlsProps;
+
+export const ModelSettingsControls: React.FC<ModelSettingsControlsProps> = (props) => {
+  return (
+    <>
+      <ModelImportControls {...props} />
+      <ModelMeshControls config={props.config} onChangeConfig={props.onChangeConfig} />
+    </>
   );
 };

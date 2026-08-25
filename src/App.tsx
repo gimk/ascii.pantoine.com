@@ -66,9 +66,9 @@ import { ParticleControls } from './components/ParticleControls';
 import { OptimizeControls } from './components/OptimizeControls';
 import { CharsetThemeBar } from './components/CharsetThemeBar';
 import { PaletteControls } from './components/PaletteControls';
-import { ModelSettingsControls } from './components/ModelSettingsControls';
+import { ModelImportControls, ModelMeshControls } from './components/ModelSettingsControls';
 import { ModelViewControls } from './components/ModelViewControls';
-import { MediaFileControls } from './components/MediaFileControls';
+import { MediaUploadControls, MediaFramingControls } from './components/MediaFileControls';
 import { MediaViewControls } from './components/MediaViewControls';
 import { ImageAdjustControls } from './components/ImageAdjustControls';
 import { CollapsibleSection } from './components/CollapsibleSection';
@@ -113,20 +113,20 @@ const SOURCES: {
   title: string;
 }[] = [
   {
-    id: 'synth',
-    name: 'SYNTH',
-    badge: 'MATH',
-    description: 'Waves & Particles',
-    icon: Sliders,
-    title: 'Parametric Wave & Particle Synthesizer [1]',
-  },
-  {
     id: 'media',
     name: 'MEDIA',
     badge: '2D',
     description: 'Image & Video',
     icon: ImageIcon,
-    title: '2D Image & Video ASCII Rasterizer [2]',
+    title: '2D Image & Video ASCII Rasterizer [1]',
+  },
+  {
+    id: 'synth',
+    name: 'SYNTH',
+    badge: 'MATH',
+    description: 'Waves & Particles',
+    icon: Sliders,
+    title: 'Parametric Wave & Particle Synthesizer [2]',
   },
   {
     id: 'model',
@@ -211,8 +211,8 @@ export const App: React.FC = () => {
   const initialUrlData = useMemo(() => decodeShareFromUrl(), []);
   const sharedState = initialUrlData.state;
 
-  // App Mode State: 'synth' (Wave Synthesizer) or 'model' (3D Model Visualizer)
-  const [appMode, setAppMode] = useState<AppMode>(sharedState?.appMode || 'synth');
+  // App Mode State: 'media' (2D Image/Video), 'synth' (Wave Synthesizer), or 'model' (3D Model Visualizer)
+  const [appMode, setAppMode] = useState<AppMode>(sharedState?.appMode || 'media');
 
   // Preset & Configuration State for Synth Mode
   const [activePreset, setActivePreset] = useState<Preset>(() => {
@@ -2402,6 +2402,12 @@ export const App: React.FC = () => {
             {/* ---------------------------------------------------------- */}
             {panel === 'content' && (
               <>
+                <div className="sidebar-workflow-title">
+                  <span className="sidebar-workflow-step">01</span>
+                  <span className="sidebar-workflow-label">Content Mode</span>
+                  <div className="sidebar-workflow-line" />
+                </div>
+
                 <div className="source-selector-wrapper">
                   <div className="source-grid">
                     {SOURCES.map((source) => {
@@ -2434,8 +2440,43 @@ export const App: React.FC = () => {
                   </div>
                 </div>
 
+                {appMode === 'media' && (
+                  <>
+                    <div className="sidebar-workflow-title">
+                      <span className="sidebar-workflow-step">02</span>
+                      <span className="sidebar-workflow-label">Media Upload</span>
+                      <div className="sidebar-workflow-line" />
+                    </div>
+
+                    <MediaUploadControls
+                      config={mediaConfig}
+                      onChangeConfig={handleChangeMediaConfig}
+                      mediaElement={mediaElementRef.current}
+                      onFileUpload={handleMediaFileUpload}
+                      onUrlLoad={handleMediaUrlLoad}
+                    />
+
+                    <div className="sidebar-workflow-title">
+                      <span className="sidebar-workflow-step">03</span>
+                      <span className="sidebar-workflow-label">Adapt &amp; Frame</span>
+                      <div className="sidebar-workflow-line" />
+                    </div>
+
+                    <MediaFramingControls
+                      config={mediaConfig}
+                      onChangeConfig={handleChangeMediaConfig}
+                    />
+                  </>
+                )}
+
                 {appMode === 'synth' && (
                   <>
+                    <div className="sidebar-workflow-title">
+                      <span className="sidebar-workflow-step">02</span>
+                      <span className="sidebar-workflow-label">Synth Generator</span>
+                      <div className="sidebar-workflow-line" />
+                    </div>
+
                     <PresetSelector
                       activePresetId={activePreset.id}
                       onSelectPreset={handleSelectPreset}
@@ -2453,6 +2494,13 @@ export const App: React.FC = () => {
                       isFormulaDivergent={presetType === 'custom'}
                       onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
                     />
+
+                    <div className="sidebar-workflow-title">
+                      <span className="sidebar-workflow-step">03</span>
+                      <span className="sidebar-workflow-label">Particle Physics</span>
+                      <div className="sidebar-workflow-line" />
+                    </div>
+
                     <ParticleControls
                       config={particleConfig}
                       onChange={setParticleConfig}
@@ -2463,30 +2511,38 @@ export const App: React.FC = () => {
                   </>
                 )}
 
-                {appMode === 'media' && (
-                  <MediaFileControls
-                    config={mediaConfig}
-                    onChangeConfig={handleChangeMediaConfig}
-                    mediaElement={mediaElementRef.current}
-                    onFileUpload={handleMediaFileUpload}
-                    onUrlLoad={handleMediaUrlLoad}
-                  />
-                )}
-
                 {appMode === 'model' && (
-                  <ModelSettingsControls
-                    config={modelConfig}
-                    onChangeConfig={handleChangeModelConfig}
-                    onLoadCustomGeometry={handleLoadCustomGeometry}
-                    onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
-                    onLoadRemoteModel={handleLoadRemoteModel}
-                    onStartLoading={(fileName, statusText) => {
-                      setIsModelLoading(true);
-                      if (fileName) setModelLoadingFileName(fileName);
-                      if (statusText) setModelLoadingStatusText(statusText);
-                    }}
-                    onEndLoading={() => setIsModelLoading(false)}
-                  />
+                  <>
+                    <div className="sidebar-workflow-title">
+                      <span className="sidebar-workflow-step">02</span>
+                      <span className="sidebar-workflow-label">3D Model Import</span>
+                      <div className="sidebar-workflow-line" />
+                    </div>
+
+                    <ModelImportControls
+                      config={modelConfig}
+                      onLoadCustomGeometry={handleLoadCustomGeometry}
+                      onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                      onLoadRemoteModel={handleLoadRemoteModel}
+                      onStartLoading={(fileName, statusText) => {
+                        setIsModelLoading(true);
+                        if (fileName) setModelLoadingFileName(fileName);
+                        if (statusText) setModelLoadingStatusText(statusText);
+                      }}
+                      onEndLoading={() => setIsModelLoading(false)}
+                    />
+
+                    <div className="sidebar-workflow-title">
+                      <span className="sidebar-workflow-step">03</span>
+                      <span className="sidebar-workflow-label">Transforms &amp; Mesh</span>
+                      <div className="sidebar-workflow-line" />
+                    </div>
+
+                    <ModelMeshControls
+                      config={modelConfig}
+                      onChangeConfig={handleChangeModelConfig}
+                    />
+                  </>
                 )}
               </>
             )}
@@ -2497,7 +2553,13 @@ export const App: React.FC = () => {
             {panel === 'render' && (
               <>
                 {/* 1. Output Mode Command Selector (ASCII vs PIXEL) */}
-                <div className="render-mode-selector-wrapper">
+                <div className="sidebar-workflow-title">
+                  <span className="sidebar-workflow-step">01</span>
+                  <span className="sidebar-workflow-label">Output Mode</span>
+                  <div className="sidebar-workflow-line" />
+                </div>
+
+                <div className="source-selector-wrapper">
                   <div className="render-mode-grid">
                     {OUTPUT_MODES.map((mode) => {
                       const Icon = mode.icon;
@@ -2529,7 +2591,13 @@ export const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 2. Top-level Resolution & DPI (placed directly under Mode selector) */}
+                {/* 2. Top-level Resolution & DPI */}
+                <div className="sidebar-workflow-title">
+                  <span className="sidebar-workflow-step">02</span>
+                  <span className="sidebar-workflow-label">Resolution &amp; Density</span>
+                  <div className="sidebar-workflow-line" />
+                </div>
+
                 <OptimizeControls
                   cols={cols}
                   rows={rows}
@@ -2545,8 +2613,16 @@ export const App: React.FC = () => {
                   onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
                 />
 
-                {/* 3. Mode-specific controls */}
-                {appMode === 'media' && densityRampSection}
+                {/* Charset Density Ramp for ASCII Mode */}
+                {densityRampSection}
+
+                {/* 3. Mode-specific Shading, Color & Optics */}
+                <div className="sidebar-workflow-title">
+                  <span className="sidebar-workflow-step">03</span>
+                  <span className="sidebar-workflow-label">Shading, Color &amp; Optics</span>
+                  <div className="sidebar-workflow-line" />
+                </div>
+
                 {appMode === 'media' && (
                   <MediaViewControls
                     config={mediaViewConfig}
@@ -2570,7 +2646,6 @@ export const App: React.FC = () => {
                 )}
 
                 {/* Synth / Model render and tonal controls */}
-                {appMode !== 'media' && densityRampSection}
                 {appMode !== 'media' && (
                   <div className="tab-content">
                     <CollapsibleSection
@@ -2624,7 +2699,6 @@ export const App: React.FC = () => {
                     />
                   </div>
                 )}
-
               </>
             )}
             {/* Sidebar Credits Line */}

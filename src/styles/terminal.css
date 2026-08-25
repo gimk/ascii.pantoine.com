@@ -977,11 +977,86 @@ html, body, #root {
 }
 
 /*
+ * Sidebar Workflow Navigation & Step Banners
+ */
+.sidebar-workflow-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 4px 14px;
+  user-select: none;
+}
+
+.sidebar-workflow-step {
+  font-size: 8.5px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  padding: 1px 5px;
+  border-radius: 2px;
+  letter-spacing: 0.6px;
+}
+
+.sidebar-workflow-label {
+  font-size: 10px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.sidebar-workflow-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+  opacity: 0.6;
+}
+
+/*
  * Content source picker — tactical command cards with status chips and telemetry.
  * Sits permanently at the top of the CONTENT panel without disclosures.
  */
 .source-selector-wrapper {
-  padding: 14px 14px 4px 14px;
+  padding: 8px 14px 4px 14px;
+}
+
+.source-mode-frame {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 10px 10px 10px 10px;
+  background-color: var(--bg-control);
+}
+
+.source-mode-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  padding: 0 2px;
+}
+
+.source-mode-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.source-mode-badge {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
 }
 
 .source-grid {

@@ -41,30 +41,9 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
         title="Model Parameters"
         icon={<Boxes size={12} />}
         persistKey="ModelViewControls-model-parameters"
-        badge={shadingModes.find((s) => s.mode === config.shadingMode)?.label}
       >
         <div className="collapsible-nest">
-          {/* 1. Shading & Render Mode */}
-          <CollapsibleSection
-            title="ASCII Shading Mode"
-            icon={<Eye size={12} />}
-            persistKey="ModelViewControls-ascii-shading-mode"
-            badge={shadingModes.find((s) => s.mode === config.shadingMode)?.label}
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
-              {shadingModes.map((item) => (
-                <button
-                  key={item.mode}
-                  className={`btn btn-sm ${config.shadingMode === item.mode ? 'btn-primary' : ''}`}
-                  onClick={() => update('shadingMode', item.mode)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </CollapsibleSection>
-
-          {/* 2. Auto-Rotation & Dynamics */}
+          {/* 1. Auto-Rotation & Dynamics */}
           <CollapsibleSection
             title="Rotation &amp; Dynamics"
             icon={<RotateCw size={12} />}
@@ -430,6 +409,27 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
               >
                 {config.isOrthographic ? 'ORTHOGRAPHIC' : 'PERSPECTIVE'}
               </button>
+            </div>
+          </CollapsibleSection>
+
+          {/* 4. Shading Mode (at end of parameters) */}
+          <CollapsibleSection
+            title="Shading Mode"
+            icon={<Eye size={12} />}
+            persistKey="ModelViewControls-shading-mode"
+            badge={shadingModes.find((s) => s.mode === config.shadingMode)?.label}
+            defaultOpen={false}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
+              {shadingModes.map((item) => (
+                <button
+                  key={item.mode}
+                  className={`btn btn-sm ${config.shadingMode === item.mode ? 'btn-primary' : ''}`}
+                  onClick={() => update('shadingMode', item.mode)}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
           </CollapsibleSection>
         </div>
