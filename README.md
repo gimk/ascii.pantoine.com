@@ -1,4 +1,4 @@
-# Raster Studio
+# Dither Studio
 
 [![Live Demo](https://img.shields.io/badge/Live_App-ascii.pantoine.com-00FF66?style=for-the-badge&logo=google-chrome&logoColor=black)](https://ascii.pantoine.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -13,7 +13,7 @@
 
 ## ✦ Overview
 
-**Raster Studio** (v2.0) lets you synthesize complex procedural visual fields, rasterize 2D media and 3D meshes into real-time ASCII, Braille, Halftone screen prints, and pixel dithered artworks. Fine-tune your visuals with 40+ professional dithering algorithms, 30+ curated color palettes (Game Boy, CGA, C64, Risograph, CMYK, Cyberpunk), live tone mapping curves, vector SVG exporters, animated GIFs, and HD videos directly from your browser.
+**Dither Studio** (v2.1) lets you synthesize complex procedural visual fields, rasterize 2D media and 3D meshes into real-time ASCII, Braille, Halftone screen prints, and pixel dithered artworks. Fine-tune your visuals with 40+ professional dithering algorithms, 30+ curated color palettes (Game Boy, CGA, C64, Risograph, CMYK, Cyberpunk), live tone mapping curves, vector SVG exporters, animated GIFs, and HD videos directly from your browser.
 
 ---
 
@@ -45,6 +45,12 @@
 - **Perceptual Matching**: Accurate sRGB to CIELAB CIE76 $\Delta E^*$ color distance quantization.
 - **Tone Mapping**: 1-bit to 4-bit bit depth posterizer, RGB channel mixer, and monotone cubic spline curve adjustments.
 
+### 📊 Levels & Tonal Grading (`TONAL CONTROLS`)
+- **Live Histogram**: A real 256-bin histogram read straight off the render, sampled after the tone curve so the reading matches what the levels stage actually receives.
+- **Draggable Levels**: Black point, midtone gamma, and white point handles, exactly as you would expect from Photoshop's Levels dialog.
+- **Auto Levels**: One-click contrast stretch that finds the true black and white points by percentile clipping (0.1% each end), so a single stray specular pixel cannot pin the white point. Idempotent — pressing it twice does not keep pushing the image toward pure black and white.
+- **Quantize Levels**: Posterize the render to a countable set of tones, which is also what makes a clean colour separation possible.
+
 ### 🎛️ 8-Channel Parametric Wave Synthesizer (`SYNTH`)
 - **Harmonic Radial Waves**: Primary & secondary radial oscillators with frequency, amplitude, and phase controls.
 - **Directional Orthogonal Swells**: $X$, $Y$, and diagonal ($X+Y$) plane waves.
@@ -59,7 +65,7 @@
 - **Interactive Bursts**: Click or drag directly on the canvas to spawn responsive particle bursts.
 
 ### 📦 Media & Vector Exporters (`EXPORT`)
-- **Vector SVG (`.svg`)**: Resolution-independent vector SVG exports for halftones, braille, and ASCII.
+- **Vector SVG (`.svg`)**: Resolution-independent vector SVG exports for halftones, braille, and ASCII. Cells are merged into as few rectangles as possible and emitted as one `<path>` per colour, so a full-resolution render imports into Figma or Illustrator as a handful of nodes rather than hundreds of thousands.
 - **High-DPI PNG & JPG (`.png` / `.jpg`)**: Ultra crisp multi-scale still renders.
 - **Colour Separation (`.zip` / layered `.svg`)**: One file per ink, ready to edit independently in Illustrator or Figma, or to hand to a screen-printing press.
 - **Animated GIF Exporter (`.gif`)**: Client-side animated GIF rendering via `gifenc` with custom duration and scale.
@@ -67,7 +73,9 @@
 
 
 ### 🔗 Shareable URLs & Fullscreen Viewfinder (`SHARE`)
-- **Instant URL Sharing**: Compress and encode your entire animation state (formula, wave parameters, particle physics, themes, gradients, grid settings) into a single shareable link.
+- **Instant URL Sharing**: Compress and encode your entire render state — modality, dither algorithm, palette, tone curve, levels, image adjustments, wave parameters, particle physics, themes, gradients and grid settings — into a single shareable link.
+- **Deflate-Compressed Links**: Payloads are `deflate-raw` compressed and base64url encoded, so chat clients do not percent-escape half the URL. Links from older versions still open.
+- **Shared Framing**: A link carries the zoom level and the content-space point at the centre of the viewfinder, rather than raw pixel offsets, so the recipient sees the same framing on a different screen size.
 - **Fullscreen Viewfinder**: Minimalist presentation/zen mode featuring floating HUD controls, real-time FPS readout, and dynamic resolution scaling.
 
 ### ⚡ Dynamic Auto-Resolution & Grid Engine (`OPTIMIZE`)

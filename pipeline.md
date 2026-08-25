@@ -438,13 +438,36 @@ the viewport.
 - **CRT Effects in Pixel Mode**: CRT effects (scanlines, CRT glow, vignette, phosphor bloom) are
   strictly bypassed/disabled in Pixel mode across all export engines (PNG, JPG, SVG, GIF, MP4/WebM),
   ensuring raw dithered pixels remain crisp and unblurred.
-- **SVG** — ASCII emits `<text>` runs; pixel emits square `<rect>` cells via
-  `exportPixelRasterToSvg`.
+- **SVG** — ASCII emits `<text>` runs; pixel goes through `exportPixelRasterToSvg`
+  (see below).
 - **PNG/JPG** — ASCII draws text to a canvas; pixel goes through
   `drawPixelRasterToCanvas` with square cell dimensions. JPG forces an opaque background.
 
 `pixelRasterRenderer.ts` skips a cell only on `lum < 0`. A brightness threshold there
 would punch holes through the shadows, the same class of bug as step 5.
+
+**SVG geometry — why it is paths and not rects.** `exportPixelRasterToSvg` used to
+emit one `<rect>` per cell. On a $500 \times 400$ grid that is 200,000 elements and an
+18 MB file, but the byte count was the lesser problem: 200,000 vector *nodes* is what
+made Figma fall over on import. Three compactions, in order of how much they buy:
+
+1. **Merge cells into rectangles** (`mergeCellRects`). Two-pass greedy mesh — horizontal
+   runs within a row, then vertical merging wherever the run directly above shares the
+   same fill, start and width. Not minimal (that problem is NP-hard in general) but it
+   collapses what actually occurs: flat grounds, palette regions, dither runs.
+2. **One `<path>` per fill**, not per rectangle. Node count then equals the number of
+   distinct colours, so a separation plate — one colour by definition — is *one node*.
+3. **Integer cell units** with `transform="scale(sx sy)"` on the wrapping group, plus
+   `h`/`v` over `l` and relative `m` between subpaths (`z` returns the point to the
+   subpath start). `M3 4h5v1h-5z`, not `x="18.05" y="40.00" width="30.08"`.
+
+The group carries `shape-rendering="crispEdges"` to suppress hairline seams between
+abutting subpaths at fractional zoom.
+
+The fill key is the merge key, so it must carry everything that makes two cells
+non-mergeable. With a colour buffer that is the RGB triple. Without one, tone lives in
+per-cell opacity, **quantized to 2 dp** — left continuous, every distinct float would
+be its own group and nothing would merge at all.
 
 ### 3.3 Animation ([`gif.ts`](src/engine/gif.ts), [`video.ts`](src/engine/video.ts))
 
@@ -705,3 +728,12 @@ Things that will silently break rendering if violated.
 - The share link has no route for locally-uploaded media or models. They exist only
   in browser memory, and `ShareModal` says so rather than producing a link that
   cannot work.
+- SVG rectangle merging degrades to roughly one rectangle per cell on a true
+  checkerboard, where no two neighbours share a fill. Node count still collapses to
+  one path per colour, so editors cope, but the file stays large (~2.3 MB at
+  $500 \times 400$). Real images do not hit this; a heavy high-frequency dither
+  approaches it. A proper fix would be per-colour marching-squares outlining rather
+  than a rectangle mesh.
+- Whether `shape-rendering="crispEdges"` fully removes the seams between abutting
+  subpaths **in Figma specifically** has not been confirmed by import. The geometry
+  is verified exact (cells reconstruct cell-for-cell); the rendering is not.

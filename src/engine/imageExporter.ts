@@ -479,16 +479,16 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
             if (format === 'png') {
               finalBlob = injectPngMetadata(arrayBuffer, {
                 Title: name,
-                Author: 'Raster Studio',
-                Software: 'Raster Studio (https://ascii.pantoine.com)',
+                Author: 'Dither Studio',
+                Software: 'Dither Studio (https://ascii.pantoine.com)',
                 Source: 'https://ascii.pantoine.com',
-                Comment: `Generated with Raster Studio (https://ascii.pantoine.com) - ${cols}x${rows} (${rasterMode})`,
-                Description: `Raster visual rendered via Raster Studio: ${name} (${opts.appMode || 'synth'})`,
+                Comment: `Generated with Dither Studio (https://ascii.pantoine.com) - ${cols}x${rows} (${rasterMode})`,
+                Description: `Raster visual rendered via Dither Studio: ${name} (${opts.appMode || 'synth'})`,
               });
             } else {
               finalBlob = injectJpegComment(
                 arrayBuffer,
-                `Raster Studio (https://ascii.pantoine.com) - ${name} (${opts.appMode || 'synth'})`
+                `Dither Studio (https://ascii.pantoine.com) - ${name} (${opts.appMode || 'synth'})`
               );
             }
 

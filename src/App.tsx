@@ -2511,10 +2511,10 @@ export const App: React.FC = () => {
           <span className="brand-logo" style={{ color: 'var(--accent)' }}>▓▒░</span>
           <div className="brand-text-block">
             <div className="brand-main">
-              <span className="brand-full">RASTER STUDIO</span>
+              <span className="brand-full">DITHER STUDIO</span>
             </div>
           </div>
-          <span className="brand-version">v2.0</span>
+          <span className="brand-version">v2.1</span>
         </div>
 
 

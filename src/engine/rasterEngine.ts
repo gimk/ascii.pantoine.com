@@ -1,5 +1,5 @@
 /**
- * ASCII Studio / Raster Studio — Unified 2D Raster Engine (`rasterEngine.ts`)
+ * Dither Studio — Unified 2D Raster Engine (`rasterEngine.ts`)
  *
  * Consolidates all image post-processing, tone curves, convolution filters,
  * 3D color-space error diffusion, 40+ dithering algorithms, and output modality
