@@ -1479,7 +1479,7 @@ export function applyDitherAlgorithm(
     const sinA = Math.sin(rad);
 
     const dim = Math.min(cols, rows);
-    const targetLines = Math.max(12, Math.round(45 * frequency));
+    const targetLines = Math.max(12, Math.round(40 * frequency));
     const spacing = Math.max(2.0, dim / targetLines);
     const waveFreq = (2 * Math.PI) / (spacing * 3.0);
     const phaseOffset = seed * 0.5;
