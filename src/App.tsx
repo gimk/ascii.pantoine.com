@@ -1757,9 +1757,69 @@ export const App: React.FC = () => {
       />
     );
 
+  /**
+   * Drop the grading a new source must not inherit, and hand back the view
+   * config to record alongside it.
+   *
+   * Levels, the tone curve and the brightness/contrast family are all fitted to
+   * one image's histogram: a black point at 40 and a white point at 190 rescue
+   * a washed-out photo and crush the next one to a silhouette. Auto Levels
+   * makes that worse, not better — it reads the histogram it is given, so its
+   * numbers are the most image-specific values in the whole config.
+   *
+   * The look choices are deliberately left alone. Algorithm, output mode,
+   * resolution, tone ramp, palette and charset say how you want *any* image
+   * rendered, and carrying them across is the reason for setting them.
+   *
+   * Levels live in renderSettingsByMode.media.toneConfig rather than in the
+   * view config, so they are reset separately below. That bucket is addressed
+   * as 'media' literally rather than through appMode: a clipboard paste flips
+   * the mode in this same tick, and appMode still reads as whichever mode is
+   * being left.
+   */
+  const resetGradingForNewSource = useCallback((): MediaViewConfig => {
+    const graded: MediaViewConfig = {
+      ...mediaViewConfig,
+      // Tonal — fitted to the previous image's histogram.
+      curvePoints: DEFAULT_MEDIA_VIEW_CONFIG.curvePoints?.map((pt) => [...pt] as [number, number]),
+      highlights: DEFAULT_MEDIA_VIEW_CONFIG.highlights,
+      midtones: DEFAULT_MEDIA_VIEW_CONFIG.midtones,
+      shadows: DEFAULT_MEDIA_VIEW_CONFIG.shadows,
+      alphaThreshold: DEFAULT_MEDIA_VIEW_CONFIG.alphaThreshold,
+      colorLevels: DEFAULT_MEDIA_VIEW_CONFIG.colorLevels ?? 0,
+      // Effects — the +60 contrast that saved a flat photo flattens a contrasty one.
+      brightness: DEFAULT_MEDIA_VIEW_CONFIG.brightness,
+      contrast: DEFAULT_MEDIA_VIEW_CONFIG.contrast,
+      sharpenStrength: DEFAULT_MEDIA_VIEW_CONFIG.sharpenStrength,
+      sharpenRadius: DEFAULT_MEDIA_VIEW_CONFIG.sharpenRadius,
+      noise: DEFAULT_MEDIA_VIEW_CONFIG.noise,
+      denoise: DEFAULT_MEDIA_VIEW_CONFIG.denoise,
+      blur: DEFAULT_MEDIA_VIEW_CONFIG.blur,
+      invert: DEFAULT_MEDIA_VIEW_CONFIG.invert,
+    };
+
+    setMediaViewConfig(graded);
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      media: {
+        ...prev.media,
+        toneConfig: {
+          ...(prev.media.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG),
+          levelsBlack: DEFAULT_TONE_MAPPING_CONFIG.levelsBlack,
+          levelsMidtones: DEFAULT_TONE_MAPPING_CONFIG.levelsMidtones,
+          levelsWhite: DEFAULT_TONE_MAPPING_CONFIG.levelsWhite,
+        },
+      },
+    }));
+
+    return graded;
+  }, [mediaViewConfig]);
+
   const handleMediaFileUpload = useCallback((file: File) => {
     const isVid = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.webm') || file.name.endsWith('.mov');
     const objectUrl = URL.createObjectURL(file);
+    /* A different source, so the previous image's grading no longer applies. */
+    const freshView = resetGradingForNewSource();
 
     if (isVid) {
       const vid = document.createElement('video');
@@ -1792,7 +1852,7 @@ export const App: React.FC = () => {
         fileData: objectUrl,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
+      pushMediaHistorySnapshot(newConfig, freshView);
     } else {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -1811,12 +1871,21 @@ export const App: React.FC = () => {
         fileData: objectUrl,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
+      pushMediaHistorySnapshot(newConfig, freshView);
     }
-  }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
+  }, [mediaConfig, resetGradingForNewSource, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
-  const handleMediaUrlLoad = useCallback((url: string) => {
+  /**
+   * @param preserveGrading Skip the new-source grading reset.
+   *
+   * Set only by the shared-link loader below. A share link carries levels and
+   * the rest of the grading on purpose, and it arrives as a remote URL, so
+   * rehydrating one would otherwise erase exactly what was shared.
+   */
+  const handleMediaUrlLoad = useCallback((url: string, preserveGrading = false) => {
     const isVid = url.match(/\.(mp4|webm|mov|ogg)($|\?)/i);
+    /* Same reasoning as the file path: a remote URL is a new source too. */
+    const freshView = preserveGrading ? mediaViewConfig : resetGradingForNewSource();
     if (isVid) {
       const vid = document.createElement('video');
       vid.src = url;
@@ -1858,7 +1927,7 @@ export const App: React.FC = () => {
         remoteUrl: url,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
+      pushMediaHistorySnapshot(newConfig, freshView);
     } else {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -1887,16 +1956,17 @@ export const App: React.FC = () => {
         remoteUrl: url,
       };
       setMediaConfig(newConfig);
-      pushMediaHistorySnapshot(newConfig, mediaViewConfig);
+      pushMediaHistorySnapshot(newConfig, freshView);
     }
-  }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
+  }, [mediaConfig, mediaViewConfig, resetGradingForNewSource, pushMediaHistorySnapshot, autoSetMediaResolution, triggerMediaRender]);
 
   // Initial loader for shared remote media URLs
   useEffect(() => {
     if (appMode === 'media' && mediaConfig.sourceType === 'url') {
       const url = mediaConfig.remoteUrl || mediaConfig.fileData;
       if (url && url.startsWith('http')) {
-        handleMediaUrlLoad(url);
+        /* Shared state, not a new source -- keep the grading the link carries. */
+        handleMediaUrlLoad(url, true);
       }
     }
   }, []);
