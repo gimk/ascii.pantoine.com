@@ -1712,6 +1712,49 @@ export const App: React.FC = () => {
     }, 400);
   }, [mediaConfig, mediaViewConfig, pushMediaHistorySnapshot, autoSetMediaResolution]);
 
+  /*
+   * ASCII output starts in MONO colour.
+   *
+   * N-TONE is the right default for pixel output, where every cell is a solid
+   * block and the ramp reads as a gradient. Over glyphs it reads as mud, and
+   * per-cell colour is the most expensive part of an ASCII frame -- most of a
+   * coloured paint is fillStyle churn (pipeline.md 4.6). So entering ASCII
+   * output seeds MONO, which is exactly what the MONO tab in PaletteControls
+   * writes: '1color' tonal mapping over the phosphor tint, no palette.
+   *
+   * Once per mode per session, not on every switch, because this is a default
+   * rather than a rule: a colour chosen afterwards -- or restored from
+   * localStorage -- has to survive a trip through pixel mode and back.
+   */
+  const asciiMonoSeededRef = useRef<Set<AppMode>>(new Set<AppMode>());
+
+  const applyMonoColorMode = useCallback(() => {
+    const mode = appModeRef.current;
+    // Media keeps its tonal mapping in mediaViewConfig; synth and model read it
+    // off adjustConfig. Write both so the two never disagree for a mode.
+    if (mode === 'media') {
+      setMediaViewConfig((prev) =>
+        prev.tonalMapping === '1color' ? prev : { ...prev, tonalMapping: '1color' }
+      );
+    }
+    setRenderSettingsByMode((prev) => {
+      const cur = prev[mode];
+      const baseColor = cur.mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG;
+      return {
+        ...prev,
+        [mode]: {
+          ...cur,
+          adjustConfig: {
+            ...(cur.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG),
+            tonalMapping: '1color',
+          },
+          mediaColorConfig: { ...baseColor, paletteMode: 'phosphor', mode: 'fixed' },
+        },
+      };
+    });
+    triggerMediaRender();
+  }, [triggerMediaRender]);
+
   const handleSelectRasterMode = useCallback(
     (newMode: RasterOutputMode) => {
       setRenderSettingsByMode((prev) => ({
@@ -1721,6 +1764,10 @@ export const App: React.FC = () => {
           rasterMode: newMode,
         },
       }));
+      if (newMode === 'ascii' && !asciiMonoSeededRef.current.has(appMode)) {
+        asciiMonoSeededRef.current.add(appMode);
+        applyMonoColorMode();
+      }
       if (appMode === 'media') {
         if (mediaViewConfig.rasterMode !== newMode) {
           const el = mediaElementRef.current;
@@ -1738,7 +1785,7 @@ export const App: React.FC = () => {
         setMediaViewConfig((prev) => ({ ...prev, rasterMode: newMode }));
       }
     },
-    [appMode, mediaViewConfig.rasterMode, autoSetMediaResolution]
+    [appMode, mediaViewConfig.rasterMode, autoSetMediaResolution, applyMonoColorMode]
   );
 
   /*
