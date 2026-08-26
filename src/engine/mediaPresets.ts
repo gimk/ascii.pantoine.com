@@ -66,6 +66,14 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   highlightColor: '#00ff66',
   midtoneColor: '#00a848',
   shadowColor: '#0a0a0a',
+  /*
+   * Seeded to match the triple above, the same way DEFAULT_IMAGE_ADJUST_CONFIG
+   * does. 'ntone' with the array left out is a valid config the engine now
+   * resolves from the triple anyway, but the ramp editor writes this key on the
+   * first edit, so seeding it keeps a fresh media session and an edited one
+   * structurally identical rather than differing by one absent field.
+   */
+  customToneColors: ['#0a0a0a', '#00a848', '#00ff66'],
   curvePoints: [
     [0, 0],
     [0.25, 0.25],

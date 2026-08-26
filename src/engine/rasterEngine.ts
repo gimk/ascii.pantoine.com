@@ -153,6 +153,39 @@ export function toneBandShares(weights: number[] | undefined, numStops: number):
 }
 
 /**
+ * The colour stops actually driving a tonal render.
+ *
+ * `customToneColors` is the modern representation and wins when present, but it
+ * is optional on every config type, so a config carrying only the legacy
+ * shadow/midtone/highlight triple has to resolve to the same thing. This used
+ * to be inlined at each of the three places the ramp is read — quantize depth,
+ * the band-width warp, and the colouring pass — and only the third one had the
+ * legacy fallback. A config with `tonalMapping: 'ntone'` and no
+ * `customToneColors` therefore quantized to full 8-bit (no visible dither) and
+ * then coloured through three hard bands, which reads as a bare threshold.
+ * All three now go through here so the depth and the ramp can never disagree.
+ */
+export function resolveRampStops(options: {
+  tonalMapping?: TonalMappingType;
+  customToneColors?: string[];
+  shadowColor?: string;
+  midtoneColor?: string;
+  highlightColor?: string;
+}): string[] {
+  if (options.customToneColors && options.customToneColors.length >= 2) {
+    return options.customToneColors;
+  }
+  if (options.tonalMapping === '2color') {
+    return [options.shadowColor || '#000000', options.highlightColor || '#FFFFFF'];
+  }
+  return [
+    options.shadowColor || '#000000',
+    options.midtoneColor || '#3B82F6',
+    options.highlightColor || '#FFFFFF',
+  ];
+}
+
+/**
  * Build a 256-entry LUT that redistributes the luminance range across the ramp
  * stops according to per-stop weights.
  *
@@ -1016,17 +1049,20 @@ export function processRasterFrame(
   const tonal = options.tonalMapping || '1color';
   const isPixelOut = (options.rasterMode || 'ascii') === 'pixel';
 
+  /*
+   * The one ramp every tonal read shares — depth here, the band warp below, and
+   * the colouring in step 4. Resolved even in '1color', where it is unused, so
+   * there is no second code path to keep in step.
+   */
+  const rampStops = resolveRampStops(options);
+
   let autoLevels: number;
   if (!isPixelOut) {
     autoLevels = densityLength;
   } else if (activePalette) {
     autoLevels = activePalette.colors.length;
-  } else if (tonal === '2color') {
-    autoLevels = 2;
-  } else if (tonal === '3color') {
-    autoLevels = 3;
-  } else if (tonal === 'ntone' && options.customToneColors && options.customToneColors.length >= 2) {
-    autoLevels = options.customToneColors.length;
+  } else if (tonal !== '1color') {
+    autoLevels = rampStops.length;
   } else {
     autoLevels = 256;
   }
@@ -1072,13 +1108,7 @@ export function processRasterFrame(
    * never buckets at all.
    */
   if (!activePalette && tonal && tonal !== '1color') {
-    const rampLength =
-      tonal === 'ntone' && options.customToneColors && options.customToneColors.length >= 2
-        ? options.customToneColors.length
-        : tonal === '2color'
-        ? 2
-        : 3;
-    const lut = buildToneBandLut(options.toneStopWeights, rampLength);
+    const lut = buildToneBandLut(options.toneStopWeights, rampStops.length);
     if (lut) {
       for (let i = 0; i < totalCells; i++) {
         const v = lumBuffer[i];
@@ -1299,23 +1329,10 @@ export function processRasterFrame(
     colorsOut = colorsBuffer;
   } else if (options.tonalMapping && options.tonalMapping !== '1color') {
     // Multi-tone N-color ramp mapping. Supports arbitrary N (2 to 8+) color stops.
-    const tMode = options.tonalMapping;
-    let rawStops: string[];
-
-    if (tMode === 'ntone' && options.customToneColors && options.customToneColors.length >= 2) {
-      rawStops = options.customToneColors;
-    } else if (tMode === '2color') {
-      rawStops = [options.shadowColor || '#000000', options.highlightColor || '#FFFFFF'];
-    } else {
-      rawStops = [
-        options.shadowColor || '#000000',
-        options.midtoneColor || '#3B82F6',
-        options.highlightColor || '#FFFFFF',
-      ];
-    }
-
-    const numStops = rawStops.length;
-    const parsedStops = rawStops.map((hex) => parseHexRgb(hex, { r: 128, g: 128, b: 128 }));
+    // Same `rampStops` the quantize depth above was derived from, so the number
+    // of bands painted here always matches the number of tones resolved there.
+    const numStops = rampStops.length;
+    const parsedStops = rampStops.map((hex) => parseHexRgb(hex, { r: 128, g: 128, b: 128 }));
 
     for (let i = 0; i < totalCells; i++) {
       const lum = lumBuffer[i];

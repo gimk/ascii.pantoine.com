@@ -312,10 +312,15 @@ export const BASIC_MAX_TONE_STOPS = 8;
  * The stops currently driving colour, and the weight each one carries.
  *
  * `paletteColors` wins when given, and callers pass it only while an indexed
- * palette is actually rendering. It has to win: `customToneColors` is never
- * empty — DEFAULT_IMAGE_ADJUST_CONFIG seeds it with three greens — so checking
- * it first meant a selected palette was always shadowed by those greens and the
- * bands never changed when you picked one.
+ * palette is actually rendering. It has to win: both default configs seed
+ * `customToneColors` with three greens, so checking it first meant a selected
+ * palette was always shadowed by those greens and the bands never changed when
+ * you picked one.
+ *
+ * Mirrors `resolveRampStops` in rasterEngine — the engine's copy is what
+ * actually renders, this one is what the editor draws. Keep the fallbacks in
+ * step; they last diverged into a render that quantized and coloured to
+ * different tone counts.
  */
 export const resolveToneStops = (
   config: ImageAdjustConfig,
