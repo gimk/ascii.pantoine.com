@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { DitherAlgorithm, DitherFamily } from '../types/ascii';
+import { DitherAlgorithm, DitherFamily, DitherParams } from '../types/ascii';
 import {
   DITHER_ALGORITHMS,
   DITHER_FAMILY_LABELS,
@@ -7,6 +7,7 @@ import {
   getRandomAlgorithm,
 } from '../engine/ditherAlgorithms';
 import { DitherSwatchIcon } from './DitherSwatchIcon';
+import { DitherParamControls } from './DitherParamControls';
 import {
   ChevronLeft,
   ChevronRight,
@@ -16,6 +17,8 @@ import {
 interface DitherAlgorithmPickerProps {
   value?: DitherAlgorithm;
   onChange: (algo: DitherAlgorithm) => void;
+  params?: DitherParams;
+  onChangeParams?: (params: DitherParams) => void;
   /**
    * Strips everything but the stepper row: arrows, dropdown, randomiser.
    *
@@ -29,6 +32,8 @@ interface DitherAlgorithmPickerProps {
 export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
   value = 'floyd-steinberg',
   onChange,
+  params,
+  onChangeParams,
   compact = false,
 }) => {
   const currentIdx = useMemo(() => {
@@ -252,85 +257,50 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
         })}
       </div>
 
-      {/* 4. Telemetry & Algorithm Inspector Footer */}
-      <div
-        style={{
-          padding: '8px 10px',
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '3px',
-          fontSize: '10.5px',
-          color: 'var(--text-dim)',
-          fontFamily: 'var(--font-mono)',
-          lineHeight: '1.4',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '5px',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
+      {/* 4. Selected Algorithm Inspector & Parameters (Single Unified Block) */}
+      <div className="dither-inspector-card">
+        {/* Title Row: Swatch, Name, Badge, Library Index */}
+        <div className="dither-inspector-title-row">
+          <div className="dither-inspector-title-left">
             <DitherSwatchIcon type={currentMeta.patternType} size={14} active={true} />
-            <strong
-              style={{
-                color: 'var(--text-primary)',
-                fontSize: '11.5px',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
+            <span className="dither-inspector-title">
               {currentMeta.name}
-            </strong>
+            </span>
             {currentMeta.badge && (
-              <span
-                style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: 'var(--accent)',
-                  border: '1px solid var(--accent)',
-                  padding: '1px 5px',
-                  borderRadius: '2px',
-                  whiteSpace: 'nowrap',
-                }}
-              >
+              <span className="dither-inspector-badge">
                 {currentMeta.badge}
               </span>
             )}
           </div>
-          <span
-            style={{
-              fontSize: '10px',
-              color: 'var(--accent)',
-              fontWeight: 800,
-              flexShrink: 0,
-            }}
-          >
-            {currentIdx + 1}/{DITHER_ALGORITHMS.length}
+          <span className="dither-inspector-counter" title="Algorithm index in library">
+            #{String(currentIdx + 1).padStart(2, '0')}/{DITHER_ALGORITHMS.length}
           </span>
         </div>
 
-        <div style={{ color: 'var(--text-secondary)', fontSize: '10px', lineHeight: '1.35' }}>
+        {/* Algorithm Description */}
+        <div className="dither-inspector-desc">
           {currentMeta.description}
         </div>
 
+        {/* Tags */}
         {currentMeta.tags && currentMeta.tags.length > 0 && (
-          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+          <div className="dither-inspector-tags">
             {currentMeta.tags.map((t) => (
-              <span
-                key={t}
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--text-dim)',
-                  background: 'var(--bg-secondary)',
-                  padding: '2px 5px',
-                  borderRadius: '2px',
-                }}
-              >
+              <span key={t} className="dither-inspector-tag">
                 #{t}
               </span>
             ))}
           </div>
+        )}
+
+        {/* Interactive Parameter Tuning Deck inside the same card */}
+        {onChangeParams && (
+          <DitherParamControls
+            algorithm={value}
+            params={params}
+            onChange={onChangeParams}
+            embedded
+          />
         )}
       </div>
       </>

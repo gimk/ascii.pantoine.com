@@ -1618,7 +1618,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       midtones: resetDefaults.midtones,
       shadows: resetDefaults.shadows,
       alphaThreshold: resetDefaults.alphaThreshold,
-      colorLevels: resetDefaults.colorLevels ?? 0,
     });
     if (toneConfig && onChangeToneConfig) {
       onChangeToneConfig({ ...toneConfig, levelsBlack: 0, levelsMidtones: 128, levelsWhite: 255 });
@@ -1633,6 +1632,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       midtoneColor: resetDefaults.midtoneColor,
       shadowColor: resetDefaults.shadowColor,
       customToneColors: resetDefaults.customToneColors ? [...resetDefaults.customToneColors] : ['#0a0a0a', '#00a848', '#00ff66'],
+      colorLevels: resetDefaults.colorLevels ?? 0,
     });
     onResetPalette?.();
   };
@@ -1646,7 +1646,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         badge={colorBadge}
         persistKey={`${persistKeyPrefix}-colors`}
         onReset={resetColors}
-        resetTitle="Reset color mode and the tone ramp stops"
+        resetTitle="Reset color mode, palette and quantization depth"
       >
         {paletteSlot}
         {backgroundSlot}

@@ -7,12 +7,13 @@ import {
   resolveDitherParams,
 } from '../engine/ditherAlgorithms';
 import { PrecisionSlider } from './controlPrimitives';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Sliders } from 'lucide-react';
 
 interface DitherParamControlsProps {
   algorithm: DitherAlgorithm;
   params?: DitherParams;
   onChange: (params: DitherParams) => void;
+  embedded?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
   algorithm,
   params,
   onChange,
+  embedded = false,
 }) => {
   const ids = getDitherParamIds(algorithm);
   if (ids.length === 0) return null;
@@ -64,16 +66,30 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
   };
 
   return (
-    <div className="dither-params">
-      <div className="tonal-subheading">
-        <span>Algorithm Parameters</span>
+    <div className={embedded ? 'dither-param-deck' : 'dither-params'}>
+      <div className={embedded ? 'dither-param-deck-header' : 'tonal-subheading'}>
+        <div className={embedded ? 'dither-param-deck-title' : undefined}>
+          {embedded && <Sliders size={11} />}
+          <span>Algorithm Tuning</span>
+          {embedded && <span className="dither-param-deck-count">({ids.length})</span>}
+        </div>
         {overridden.length > 0 && (
           <button
+            type="button"
             className="btn btn-sm"
             onClick={reset}
             title={`Reset ${overridden.length} changed parameter${overridden.length > 1 ? 's' : ''}`}
+            style={{
+              padding: '1px 6px',
+              height: '18px',
+              fontSize: '9.5px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
           >
             <RotateCcw size={10} />
+            <span>Reset</span>
           </button>
         )}
       </div>
@@ -84,14 +100,22 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
         if (spec.toggle) {
           const on = resolved[id] as boolean;
           return (
-            <div className="control-row" key={id}>
+            <div className="control-row" key={id} style={{ alignItems: 'center' }}>
               <span className="control-label" title={spec.hint}>
                 {spec.label}
               </span>
               <button
+                type="button"
                 className={`btn btn-sm ${on ? 'btn-primary' : ''}`}
                 onClick={() => set(id, !on)}
                 title={spec.hint}
+                style={{
+                  minWidth: '46px',
+                  height: '22px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-mono)',
+                }}
               >
                 {on ? 'ON' : 'OFF'}
               </button>
@@ -103,7 +127,6 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
           <div className="control-row" key={id}>
             <span className="control-label" title={spec.hint}>
               {spec.label}
-              {spec.unit ? ` (${spec.unit})` : ''}
             </span>
             <PrecisionSlider
               value={resolved[id] as number}
@@ -119,3 +142,4 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
     </div>
   );
 };
+

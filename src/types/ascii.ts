@@ -282,11 +282,11 @@ export type DitherAlgorithm =
   | 'peano'
   | 'r-sequence'
   // Modulation & Generative (9)
+  | 'rutt-etra'
   | 'scanline-shift'
   | 'sine-drift'
   | 'glitch-displacement'
   | 'threshold-mod'
-  | 'fm-modulation'
   | 'phase-modulation'
   | 'bytewave'
   | 'concentric-rings'

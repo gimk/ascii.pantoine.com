@@ -84,7 +84,6 @@ import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { DITHER_ALGORITHMS } from './engine/ditherAlgorithms';
-import { DitherParamControls } from './components/DitherParamControls';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
@@ -3287,6 +3286,17 @@ export const App: React.FC = () => {
                         )?.name || 'Floyd-Steinberg'
                       }
                       persistKey={`${appMode}-render-settings`}
+                      onReset={() => {
+                        setRenderSettingsByMode((prev) => ({
+                          ...prev,
+                          [appMode]: {
+                            ...prev[appMode],
+                            ditherAlgorithm: 'floyd-steinberg',
+                            ditherParams: undefined,
+                          },
+                        }));
+                      }}
+                      resetTitle="Reset dither algorithm and parameters"
                     >
                       <DitherAlgorithmPicker
                         value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
@@ -3299,12 +3309,8 @@ export const App: React.FC = () => {
                             },
                           }));
                         }}
-                      />
-
-                      <DitherParamControls
-                        algorithm={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
                         params={currentRenderSettings.ditherParams}
-                        onChange={(next) => {
+                        onChangeParams={(next) => {
                           setRenderSettingsByMode((prev) => ({
                             ...prev,
                             [appMode]: {

@@ -1780,6 +1780,133 @@ html, body, #root {
   border: 1px solid var(--accent);
 }
 
+/* ---------------------------------------------------------------------------
+   Dither Algorithm Inspector & Parameter Tuning Deck (Single Unified Block)
+   --------------------------------------------------------------------------- */
+
+.dither-inspector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  margin-top: 4px;
+}
+
+.dither-inspector-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.dither-inspector-title-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+}
+
+.dither-inspector-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dither-inspector-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  background: var(--accent-glow);
+  padding: 1px 5px;
+  border-radius: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dither-inspector-counter {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 700;
+  flex-shrink: 0;
+  background: var(--bg-control);
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+}
+
+.dither-inspector-desc {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.dither-inspector-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.dither-inspector-tag {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
+/* Interactive Tuning Parameters Subpanel inside the Unified Card */
+.dither-param-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+  margin-top: 3px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+}
+
+.dither-param-deck-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dither-param-deck-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+}
+
+.dither-param-deck-count {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-left: 2px;
+}
+
 .slider-nudge-btn.active {
   background: var(--accent-glow);
   border-color: var(--accent);

@@ -67,15 +67,15 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
   { id: 'r-sequence', name: 'R-Sequence Quasi-Random', family: 'algorithmic', description: 'Low-discrepancy 2D metallic ratio quasi-random sequence', badge: 'Metallic Ratio', tags: ['Quasi-Random', 'Metallic', 'Math'], patternType: 'fractal', highlight: true },
 
   // --- Modulation & Generative (9) ---
-  { id: 'fm-modulation', name: 'Frequency Modulation (FM)', family: 'modulation', description: 'Carrier wave frequency modulation synthesizing topographic contours', badge: 'FM Carrier', tags: ['Topographic', 'Wave', 'Synth'], patternType: 'wave', highlight: true },
-  { id: 'phase-modulation', name: 'Phase Modulation (PM)', family: 'modulation', description: 'Multi-frequency phase distortion and contour interference', badge: 'PM Distortion', tags: ['Phase', 'Interference', 'Harmonic'], patternType: 'wave' },
-  { id: 'bytewave', name: 'ByteWave Bitwise', family: 'modulation', description: 'Low-level arithmetic bitwise boolean raster dither', badge: 'Bitwise Demo', tags: ['Low-Level', 'Boolean', 'Cyber'], patternType: 'glitch', highlight: true },
-  { id: 'concentric-rings', name: 'Concentric Rings', family: 'modulation', description: 'Harmonic radial wave ripples and interference rings', badge: 'Radial Ripple', tags: ['Radar', 'Concentric', 'Wave'], patternType: 'wave', highlight: true },
-  { id: 'cellular-circuit', name: 'Cellular Circuit', family: 'modulation', description: 'Discrete cell trace network dither', badge: 'PCB Circuit', tags: ['Cellular', 'Tech', 'Network'], patternType: 'circuit', highlight: true },
+  { id: 'rutt-etra', name: 'Rutt-Etra / Joy Division', family: 'modulation', description: 'Rutt-Etra & Joy Division Unknown Pleasures scanline relief displacement and oscilloscope wave modulation', badge: 'Rutt-Etra', tags: ['Joy Division', 'Rutt-Etra', 'Scanline', 'Relief', 'Oscilloscope'], patternType: 'lines', highlight: true },
   { id: 'scanline-shift', name: 'Scanline Phase Shift', family: 'modulation', description: 'Vertical stripes offset half a period on alternate rows', badge: 'Interlace CRT', tags: ['Scanline', 'CRT', 'Analog'], patternType: 'lines' },
   { id: 'sine-drift', name: 'Analog Sine Drift', family: 'modulation', description: 'CRT analog sinusoidal drift modulation', badge: 'Analog Sine', tags: ['CRT Drift', 'Wavy', 'Warp'], patternType: 'wave' },
   { id: 'glitch-displacement', name: 'Glitch Pixel Tear', family: 'modulation', description: 'Horizontal raster displacement jitter', badge: 'Cyberpunk Tear', tags: ['Glitch', 'Tear', 'Jitter'], patternType: 'glitch', highlight: true },
   { id: 'threshold-mod', name: 'Dynamic Threshold Mod', family: 'modulation', description: 'Non-linear luminance-dependent thresholding', badge: 'Dynamic Mod', tags: ['Non-Linear', 'Contrast'], patternType: 'wave' },
+  { id: 'phase-modulation', name: 'Phase Modulation (PM)', family: 'modulation', description: 'Multi-frequency phase distortion and contour interference', badge: 'PM Distortion', tags: ['Phase', 'Interference', 'Harmonic'], patternType: 'wave' },
+  { id: 'bytewave', name: 'ByteWave Bitwise', family: 'modulation', description: 'Low-level arithmetic bitwise boolean raster dither', badge: 'Bitwise Demo', tags: ['Low-Level', 'Boolean', 'Cyber'], patternType: 'glitch', highlight: true },
+  { id: 'concentric-rings', name: 'Concentric Rings', family: 'modulation', description: 'Harmonic radial wave ripples and interference rings', badge: 'Radial Ripple', tags: ['Radar', 'Concentric', 'Wave'], patternType: 'wave', highlight: true },
+  { id: 'cellular-circuit', name: 'Cellular Circuit', family: 'modulation', description: 'Discrete cell trace network dither', badge: 'PCB Circuit', tags: ['Cellular', 'Tech', 'Network'], patternType: 'circuit', highlight: true },
 ];
 
 export function getRandomAlgorithm(family?: DitherFamily | 'all', currentId?: DitherAlgorithm): DitherAlgorithmMeta {
@@ -889,23 +889,10 @@ function compileKernel(algorithm: DitherAlgorithm, kernel: DiffusionKernel): Com
  * buffer costs nothing.
  */
 let maskColScratch = new Int32Array(0);
-let phaseScratch = new Float32Array(0);
 
 /** Flat `dy * cols + dx` per tap, for each scan direction. Sized to the widest kernel. */
 const tapOffsetForward = new Int32Array(16);
 const tapOffsetReverse = new Int32Array(16);
-
-/*
- * Frequency modulation carrier, in radians per cell.
- *
- * The shadows advance at FM_BASE_FREQ for a wave every ~52 cells and the
- * highlights at BASE + SPAN for one every ~8, measured along an axis; the
- * diagonal, where the row and column accumulators advance together, halves
- * both. Keeping the fastest case well clear of the two-cell Nyquist limit is
- * what stops the highlights breaking up into grain.
- */
-const FM_BASE_FREQ = 0.12;
-const FM_FREQ_SPAN = 0.66;
 
 const TEXTURE_MASK_SOURCES: Partial<Record<DitherAlgorithm, () => DitherMask>> = {
   'blue-noise': () => toTextureMask(BLUE_NOISE_16X16, 16),
@@ -931,7 +918,7 @@ const CURVE_ALGORITHMS: Partial<Record<DitherAlgorithm, 'hilbert' | 'peano'>> = 
 };
 
 const FREQUENCY_ALGORITHMS = new Set<DitherAlgorithm>([
-  'fm-modulation',
+  'rutt-etra',
   'phase-modulation',
   'concentric-rings',
   'sine-drift',
@@ -1066,6 +1053,9 @@ export function getDitherParamIds(algorithm: DitherAlgorithm): DitherParamId[] {
   if (CURVE_ALGORITHMS[algorithm]) return ['intensity'];
   if (DIFFUSION_KERNELS[algorithm]) return ['intensity', 'serpentine'];
   if (maskFor(algorithm)) return ['intensity', 'scale', 'angle', 'seed'];
+  if (algorithm === 'rutt-etra') {
+    return ['intensity', 'frequency', 'angle', 'seed'];
+  }
   if (FREQUENCY_ALGORITHMS.has(algorithm)) return ['intensity', 'frequency', 'seed'];
   // 'threshold-mod' is a tone curve with no spatial term, so a seed would do
   // nothing; intensity drives its exponent.
@@ -1130,7 +1120,7 @@ export function applyDitherAlgorithm(
     for (let i = 0; i < order.length; i++) {
       const idx = order[i];
       const oldVal = dest[idx];
-      if (oldVal < 0) continue; // transparency sentinel
+      if (oldVal < -0.5) continue; // transparency sentinel
 
       const q = quantize(oldVal);
       dest[idx] = q;
@@ -1144,7 +1134,7 @@ export function applyDitherAlgorithm(
         const target = order[ahead];
         // Never pay error into a cut-out cell; it would be discarded anyway and
         // the tone would go missing from the image.
-        if (dest[target] < 0) continue;
+        if (dest[target] < -0.5) continue;
         dest[target] += err * CURVE_TAPS[t];
       }
     }
@@ -1198,7 +1188,7 @@ export function applyDitherAlgorithm(
         const x = reverse ? cols - 1 - i : i;
         const idx = row + x;
         const oldVal = dest[idx];
-        if (oldVal < 0) continue; // transparency sentinel
+        if (oldVal < -0.5) continue; // transparency sentinel
 
         const q = oldVal <= 0 ? 0 : oldVal >= 1 ? 1 : Math.round(oldVal * steps) / steps;
         dest[idx] = q;
@@ -1225,27 +1215,35 @@ export function applyDitherAlgorithm(
            * the weights themselves blow up rather than merely shifting. At two
            * levels and full intensity that diverged to Infinity within a row.
            */
-          const tone = oldVal > 1 ? 1 : oldVal;
+          const tone = oldVal < 0 ? 0 : oldVal > 1 ? 1 : oldVal;
           const midness = (tone < 0.5 ? tone : 1 - tone) * 2;
           // Capped below 0.5 for stability -- see the note on DIFFUSION_KERNELS.
           const forward = 0.3 + 0.19 * midness;
           const downward = 1 - forward;
 
           const ahead = reverse ? x - 1 : x + 1;
-          if (ahead >= 0 && ahead < cols) dest[row + ahead] += err * forward;
+          if (ahead >= 0 && ahead < cols) {
+            const nidx = row + ahead;
+            if (dest[nidx] >= -0.5) dest[nidx] += err * forward;
+          }
 
           const ny = y + 1;
           if (ny < rows) {
             const back = reverse ? x + 1 : x - 1;
-            if (back >= 0 && back < cols) dest[ny * cols + back] += err * downward * (1 / 3);
-            dest[ny * cols + x] += err * downward * (2 / 3);
+            if (back >= 0 && back < cols) {
+              const nidx = ny * cols + back;
+              if (dest[nidx] >= -0.5) dest[nidx] += err * downward * (1 / 3);
+            }
+            const downIdx = ny * cols + x;
+            if (dest[downIdx] >= -0.5) dest[downIdx] += err * downward * (2 / 3);
           }
           continue;
         }
 
         if (interiorRow && x >= interiorLo && x < interiorHi) {
           for (let t = 0; t < tapCount; t++) {
-            dest[idx + offsets[t]] += err * weight[t];
+            const nidx = idx + offsets[t];
+            if (dest[nidx] >= -0.5) dest[nidx] += err * weight[t];
           }
           continue;
         }
@@ -1255,7 +1253,8 @@ export function applyDitherAlgorithm(
           if (ny >= rows) continue;
           const nx = reverse ? x - dx[t] : x + dx[t];
           if (nx < 0 || nx >= cols) continue;
-          dest[ny * cols + nx] += err * weight[t];
+          const nidx = ny * cols + nx;
+          if (dest[nidx] >= -0.5) dest[nidx] += err * weight[t];
         }
       }
     }
@@ -1468,43 +1467,55 @@ export function applyDitherAlgorithm(
   }
 
   // --- 6. MODULATION & GENERATIVE ---
-  if (algorithm === 'fm-modulation') {
+  if (algorithm === 'rutt-etra') {
     /*
-     * The carrier's phase is accumulated across the grid rather than computed
-     * as position times local frequency.
-     *
-     * Multiplying an absolute coordinate by a per-cell frequency makes the
-     * phase jump by (position times delta-frequency) wherever the tone moves:
-     * at column 200 the old carrier shifted ~3.7 radians for a tone step of
-     * 0.01, more than half a cycle, so each cell's pattern was uncorrelated
-     * with its neighbour's and the whole field read as noise — noise that got
-     * worse the further right it went, because the error scales with the
-     * coordinate.
-     *
-     * Accumulating instead advances the phase by one cell's worth of local
-     * frequency at a time, which stays continuous however the tone moves. Row
-     * and column accumulators are summed so the field is coherent on both
-     * axes; a row accumulator alone would leave every row independent and
-     * streak horizontally.
+     * Rutt-Etra / Joy Division Oscilloscope Scanline Relief:
+     * Discrete horizontal (or angled) scanlines undergo vertical 3D relief displacement
+     * and carrier wave modulation proportional to image luminance and gradients.
      */
-    const base = FM_BASE_FREQ * frequency;
-    const span = FM_FREQ_SPAN * frequency;
-    if (phaseScratch.length < cols) phaseScratch = new Float32Array(cols);
-    const colPhase = phaseScratch;
-    colPhase.fill(0, 0, cols);
+    const angleDeg = params?.angle !== undefined ? params.angle : 0;
+    const rad = angleDeg * (Math.PI / 180);
+    const cosA = Math.cos(rad);
+    const sinA = Math.sin(rad);
+
+    const dim = Math.min(cols, rows);
+    const targetLines = Math.max(12, Math.round(45 * frequency));
+    const spacing = Math.max(2.0, dim / targetLines);
+    const waveFreq = (2 * Math.PI) / (spacing * 3.0);
+    const phaseOffset = seed * 0.5;
+
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      let rowPhase = seed * 0.5;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
-        const v = dest[idx];
-        // Accumulate through transparent cells so the phase does not step
-        // across a cut-out region.
-        const step = base + Math.max(0, v) * span;
-        rowPhase += step;
-        colPhase[x] += step;
-        if (v < 0) continue;
-        dest[idx] = quantize(v + Math.sin(rowPhase + colPhase[x]) * 0.5 * amp);
+        const v = src[idx];
+        if (v < 0) {
+          dest[idx] = -1;
+          continue;
+        }
+        if (v <= 0.02) {
+          dest[idx] = 0;
+          continue;
+        }
+
+        // Projected coordinates along screen angle
+        const proj = x * cosA + y * sinA;
+        const perp = -x * sinA + y * cosA;
+
+        // 3D vertical relief displacement + sinusoidal carrier ripple
+        const dispHeight = spacing * 1.8 * intensity;
+        const wave = Math.sin(proj * waveFreq + v * Math.PI * 2.0 + phaseOffset) * (spacing * 0.45 * intensity);
+        const disp = v * dispHeight + wave * (0.3 + 0.7 * v);
+
+        // Distance from the nearest scanline ribbon
+        const pNorm = (((perp - disp) % spacing) + spacing) % spacing - spacing * 0.5;
+        const thickness = Math.max(0.65, spacing * (0.08 + v * 0.1));
+
+        if (Math.abs(pNorm) <= thickness) {
+          dest[idx] = quantize(1.0);
+        } else {
+          dest[idx] = 0;
+        }
       }
     }
     return;
