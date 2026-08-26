@@ -1770,6 +1770,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
           </span>
+        </div>
+
+        <div className="status-group">
+          <span className="status-tag mode-tag">
+            PRESET: <strong>{presetName}{isEdited ? ' <edited>' : ''}</strong>
+          </span>
 
           {onToggleAutoRes && (
             <button
@@ -1785,12 +1791,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               <span className="btn-label-sm">{autoRes ? 'AUTO RES [ON]' : 'AUTO RES'}</span>
             </button>
           )}
-        </div>
-
-        <div className="status-group">
-          <span className="status-tag mode-tag">
-            PRESET: <strong>{presetName}{isEdited ? ' <edited>' : ''}</strong>
-          </span>
 
           <div className="btn-group zoom-control-group">
             <button

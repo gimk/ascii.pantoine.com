@@ -3260,19 +3260,84 @@ export const App: React.FC = () => {
             )}
             </AccordionProvider>
             )}
-            {/* Sidebar Credits Line */}
-            <div className="sidebar-credits">
-              <span>
-                Made with dedication by{' '}
-                <a
-                  href="https://www.pantoine.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
+
+            {/* Bottom Footer Area */}
+            {uiMode === 'advanced' && panel === 'render' ? (
+              <div className="sidebar-floating-export">
+                <button
+                  type="button"
+                  className="btn basic-export-primary"
+                  onClick={() => {
+                    setExportInitialTab('image');
+                    setIsExportOpen(true);
+                  }}
+                  title="Export as PNG, JPG or SVG"
                 >
-                  Antoine Pouligny
-                </a>
-              </span>
-            </div>
+                  <Download size={15} />
+                  <span>EXPORT IMAGE</span>
+                </button>
+                <div className="basic-export-secondary">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setExportInitialTab('gif');
+                      setIsExportOpen(true);
+                    }}
+                    title="Export an animated GIF"
+                  >
+                    GIF
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setExportInitialTab('video');
+                      setIsExportOpen(true);
+                    }}
+                    title="Export a video file"
+                  >
+                    VIDEO
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setExportInitialTab('separation');
+                      setIsExportOpen(true);
+                    }}
+                    title="Export one image per colour plate"
+                  >
+                    PLATES
+                  </button>
+                </div>
+                <div className="sidebar-credits" style={{ borderTop: 'none', height: 'auto', minHeight: 'unset', padding: '6px 0 0 0', marginTop: '2px' }}>
+                  <span>
+                    Made with dedication by{' '}
+                    <a
+                      href="https://www.pantoine.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Antoine Pouligny
+                    </a>
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="sidebar-credits">
+                <span>
+                  Made with dedication by{' '}
+                  <a
+                    href="https://www.pantoine.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Antoine Pouligny
+                  </a>
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
