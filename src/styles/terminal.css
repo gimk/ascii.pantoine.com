@@ -153,6 +153,8 @@ html, body, #root {
   background-color: var(--bg-panel);
   height: 46px;
   flex-shrink: 0;
+  /* Anchor for the absolutely-centred BASIC/ADVANCED switch. */
+  position: relative;
 }
 
 .brand-title {
@@ -2397,12 +2399,18 @@ select:disabled {
   left: 0;
   width: 100%;
   height: 100%;
-  display: flex;
-  justify-content: space-between;
   pointer-events: none;
 }
 
+/*
+ * Placed rather than distributed: once band widths can differ the ticks are no
+ * longer evenly spaced, so each carries its own `left`. The inline calc in
+ * NToneRampEditor reproduces what `justify-content: space-between` used to do,
+ * which is why an evenly weighted ramp looks exactly as it did before.
+ */
 .ntone-gradient-stop-tick {
+  position: absolute;
+  top: 0;
   width: 2.5px;
   height: 100%;
   background: rgba(255, 255, 255, 0.45);
@@ -2463,6 +2471,18 @@ select:disabled {
   border: 1px solid var(--border-color);
   border-radius: 3px;
   transition: border-color 0.12s ease;
+}
+
+/*
+ * Band width, between the role label and the colour. The card stays one row --
+ * a ramp can run to 256 stops, and a second line each would double a list that
+ * is already the tallest thing in the panel.
+ */
+.ntone-stop-weight {
+  flex: 1 1 auto;
+  min-width: 40px;
+  width: auto;
+  margin: 0 10px;
 }
 
 .ntone-stop-card:hover {
@@ -3182,4 +3202,407 @@ select:disabled {
   color: var(--accent);
   margin-bottom: 8px;
   font-family: var(--font-mono);
+}
+
+/* ==========================================================================
+   BASIC / ADVANCED interface switch
+   ========================================================================== */
+
+/*
+ * Optically centred in the header rather than laid out as a third flex child.
+ * The flanking groups change width -- UNDO/REDO come and go with the view
+ * mode, and .btn-label collapses under 820px -- so a flex-centred switch would
+ * visibly drift. Absolute positioning pins it to the true centre of the bar.
+ */
+.header-mode-switch {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  /* Below the header buttons so it can never swallow their clicks. */
+  z-index: 1;
+}
+
+.ui-mode-switch {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0;
+  padding: 2px;
+  background-color: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.ui-mode-switch-indicator {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  height: calc(100% - 4px);
+  background-color: var(--accent);
+  border-radius: 2px;
+  opacity: 0.16;
+  box-shadow: inset 0 0 0 1px var(--accent);
+  transition: transform 0.16s ease;
+  pointer-events: none;
+}
+
+.ui-mode-switch-btn {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 104px;
+  padding: 3px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  transition: color 0.14s ease;
+}
+
+.ui-mode-switch-btn:hover {
+  color: var(--text-primary);
+}
+
+.ui-mode-switch-btn.active {
+  color: var(--accent);
+}
+
+.ui-mode-switch-icon {
+  flex-shrink: 0;
+}
+
+@media (max-width: 980px) {
+  .ui-mode-switch-btn {
+    min-width: 0;
+    padding: 3px 9px;
+  }
+}
+
+/* Matches the header-actions breakpoint, where button labels also drop. */
+@media (max-width: 820px) {
+  .ui-mode-switch-label {
+    display: none;
+  }
+
+  .ui-mode-switch-btn {
+    padding: 3px 10px;
+  }
+}
+
+/* Nowhere to put it once the header stacks; the sidebar is gone by then too. */
+@media (max-width: 620px) {
+  .header-mode-switch {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   BASIC panel
+   ========================================================================== */
+
+.sidebar-pane-basic {
+  /* Narrower than ADVANCED: one column of controls, no tab chrome. */
+  width: 380px;
+}
+
+@media (max-width: 1100px) {
+  .sidebar-pane-basic {
+    width: 350px;
+  }
+}
+
+@media (max-width: 850px) {
+  .sidebar-pane-basic {
+    width: 320px;
+  }
+}
+
+/*
+ * A flat column of numbered steps. No disclosures anywhere: every control in
+ * BASIC is visible the moment the panel is. Section rhythm comes from
+ * .sidebar-workflow-title, the same numbered header ADVANCED uses, so the two
+ * modes read as one app rather than two.
+ */
+.basic-panel {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+}
+
+.basic-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 14px 12px 14px;
+}
+
+/* Orientation strip: four icon buttons, no label — the icons say it. */
+.basic-framing {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.basic-framing .btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 0;
+}
+
+.basic-paste-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  border-radius: 4px;
+}
+
+/*
+ * Tonal band row: name, colour, weight — on one line.
+ *
+ * The label is fixed-width so the three swatches and three sliders line up in
+ * a column; a ragged left edge here makes the group read as three unrelated
+ * rows rather than one control with three bands.
+ */
+.tone-band-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+/*
+ * Fixed label column so the swatches and sliders line up down the group. A
+ * ragged left edge makes three bands read as three unrelated rows rather than
+ * one control.
+ */
+.tone-band-label {
+  flex: 0 0 62px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The range element itself. `min-width: 0` is load-bearing: form controls carry
+ * an intrinsic minimum width that flex will not shrink past, so without it the
+ * row overflows the panel instead of the track getting shorter.
+ */
+.tone-band-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+/*
+ * Ramp preview: each colour as a segment sized to the share of the tonal range
+ * it actually covers. Segments are flex-grown by that share, so the bar is the
+ * proportion rather than a legend of equal blocks.
+ */
+/*
+ * Stop count, sitting in the Tonal Bands subheading.
+ *
+ * `margin-left: auto` rather than relying on the subheading's space-between:
+ * with three children that would strand the stepper in the middle. An auto
+ * margin absorbs the free space first, so the label stays left and the stepper
+ * and EVEN group together on the right.
+ */
+.tone-band-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.tone-band-count + .btn-reset {
+  margin-left: 6px;
+}
+
+.tone-band-count .slider-nudge-btn {
+  width: 18px;
+  height: 18px;
+}
+
+.tone-band-count .slider-nudge-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  border-color: var(--border-color);
+  color: var(--text-muted);
+  background: var(--bg-control);
+}
+
+.tone-band-count-value {
+  min-width: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.tone-band-preview {
+  display: flex;
+  width: 100%;
+  height: 18px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tone-band-preview-seg {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  flex-basis: 0;
+  /* Matches the slider's travel so the bar reads as a response to the drag. */
+  transition: flex-grow 0.12s ease;
+}
+
+/* Inline explanation plus the action it is explaining. */
+/* Also used from ADVANCED; `.basic-` is only where it was first needed. */
+.basic-note,
+.panel-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background-color: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.basic-note span,
+.panel-note span {
+  flex: 1;
+  min-width: 0;
+}
+
+.basic-note .btn,
+.panel-note .btn {
+  flex-shrink: 0;
+}
+
+/* Disabled bands still read as real values, just not editable ones. */
+.tone-band-row input[type='range']:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Resolution presets — six chips on one row, replacing the DPI slider. */
+.basic-chip-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.basic-chip-row .btn {
+  padding: 5px 0;
+  text-align: center;
+  font-family: var(--font-mono);
+}
+
+/*
+ * Shared inline cluster for the small button groups BASIC leans on (framing,
+ * background, the quantize escape hatch).
+ */
+.btn-group-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.control-static-value {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  letter-spacing: 0.4px;
+}
+
+.basic-output-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.basic-output-toggle .btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+
+.basic-select {
+  width: 165px;
+  height: 24px;
+  padding: 2px 6px;
+  font-size: 11px;
+  text-align: left;
+}
+
+/* --- Export ------------------------------------------------------------- */
+
+/*
+ * Deliberately louder than the header's EXPORT button. In BASIC this is the
+ * end of the walkthrough and the reason the user is here, so it reads as the
+ * terminal step rather than one more icon in a toolbar.
+ */
+.basic-export-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px;
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.basic-export-primary:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.basic-export-primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.basic-export-secondary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.basic-export-secondary .btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }

@@ -28,6 +28,15 @@ interface PaletteControlsProps {
   tonalMapping?: TonalMappingType;
   onChangeTonalMapping?: (t: TonalMappingType) => void;
   isPixelMode?: boolean;
+  /**
+   * Turn the selected palette into an editable N-tone ramp.
+   *
+   * Supplied by the host because the conversion writes to two configs at once
+   * -- palette mode off, ramp stops on -- and only the host holds both. Omit it
+   * and the action does not appear, which is how BASIC keeps its own wording
+   * for the same operation next to the tonal bands.
+   */
+  onEditPaletteAsRamp?: () => void;
 }
 
 const FALLBACK_COLOR_CONFIG: MediaColorConfig = {
@@ -63,6 +72,7 @@ const PALETTE_CATEGORIES: { id: string; label: string }[] = [
   { id: 'retro', label: 'Retro Computing & Hardware' },
   { id: 'print', label: 'Risograph & Screenprint' },
   { id: 'design', label: 'Design & Modern Aesthetics' },
+  { id: 'ramp', label: 'Tone Ramps' },
   { id: 'custom', label: 'Custom Palettes' },
 ];
 
@@ -77,6 +87,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   tonalMapping = '1color',
   onChangeTonalMapping,
   isPixelMode = false,
+  onEditPaletteAsRamp,
 }) => {
   const isRgbDisabled = appMode === 'synth';
   const rawPaletteMode: PaletteMode = mediaColorConfig?.paletteMode || 'phosphor';
@@ -458,6 +469,35 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/*
+           * Hand the selected palette to the N-Tone ramp editor.
+           *
+           * A palette is a preset ramp -- that is why the ramp editor no longer
+           * carries a preset list of its own. What differs is the render path,
+           * not the colours: indexed error-diffuses in palette space against
+           * the palette's real luminances, while a ramp buckets warped
+           * luminance into evenly quantized stops. Indexed is usually the
+           * better picture, so this is a button rather than something that
+           * happens on its own.
+           */}
+          {activePalette && onEditPaletteAsRamp && (
+            <div className="panel-note" style={{ marginTop: '8px' }}>
+              <span>
+                Copy these {activePalette.colors.length} colours into the N-Tone
+                ramp below, where each one gets an editable tonal band. Leaves
+                palette matching behind.
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={onEditPaletteAsRamp}
+                title="Load this palette into the N-Tone Ramp Editor as editable stops"
+              >
+                EDIT IN RAMP EDITOR
+              </button>
             </div>
           )}
         </div>

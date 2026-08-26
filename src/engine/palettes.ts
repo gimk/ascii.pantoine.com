@@ -169,6 +169,101 @@ export const BUILTIN_PALETTES: ColorPalette[] = [
     category: 'design',
     colors: ['#1f003b', '#5c007a', '#a60085', '#e60067', '#ff6b4a', '#ffbe3b'],
   },
+
+  // --- Tone Ramps ---
+  //
+  // Authored as ordered sequences rather than as sets of colours a machine could
+  // display. They were the N-Tone ramp editor's own preset dropdown until that
+  // was folded in here: a palette is a preset ramp, so two libraries meant
+  // making the same choice in two different places.
+  //
+  // Most run dark to light, but `ramp-cyan-magenta` and `ramp-cyberpunk-neon`
+  // deliberately do not -- as ramps they are false colour, mapping tonal bands
+  // to hues that have no ordering of their own. Kept exactly as authored; the
+  // category is labelled "Tone Ramps" rather than promising a direction.
+  //
+  // Selecting one still renders through the indexed path, which matches in
+  // CIELAB. "Edit in Ramp Editor" is what turns it back into an ordered ramp.
+  {
+    id: 'ramp-thermal-heatmap',
+    name: 'Thermal Heatmap',
+    category: 'ramp',
+    colors: ['#000000', '#0022cc', '#ff0000', '#ffff00', '#ffffff'],
+  },
+  {
+    id: 'ramp-magma-glow',
+    name: 'Magma Glow',
+    category: 'ramp',
+    colors: ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'],
+  },
+  {
+    id: 'ramp-sunset-horizon',
+    name: 'Sunset Horizon',
+    category: 'ramp',
+    colors: ['#0d0415', '#481136', '#9c2a3e', '#e06f3b', '#ffd460'],
+  },
+  {
+    id: 'ramp-deep-ocean',
+    name: 'Deep Ocean',
+    category: 'ramp',
+    colors: ['#020b14', '#0a2e4c', '#156187', '#34a5ba', '#a3f0e8'],
+  },
+  {
+    id: 'ramp-vaporwave-dream',
+    name: 'Vaporwave Dream',
+    category: 'ramp',
+    colors: ['#180828', '#501669', '#a22a84', '#e26d9c', '#fce8a6'],
+  },
+  {
+    id: 'ramp-sepia-print',
+    name: 'Sepia Print',
+    category: 'ramp',
+    colors: ['#1b1008', '#422a1d', '#785338', '#b58d67', '#f4e4c1'],
+  },
+  {
+    id: 'ramp-blueprint',
+    name: 'Blueprint Technical',
+    category: 'ramp',
+    colors: ['#00112c', '#003366', '#0066aa', '#33aaff', '#ffffff'],
+  },
+  {
+    id: 'ramp-amber-crt',
+    name: 'Amber CRT',
+    category: 'ramp',
+    colors: ['#080400', '#502500', '#b56500', '#ffb000'],
+  },
+  {
+    id: 'ramp-matrix-terminal',
+    name: 'Matrix Terminal',
+    category: 'ramp',
+    colors: ['#000a00', '#003300', '#00aa33', '#55ff55'],
+  },
+  {
+    id: 'ramp-mono-contrast',
+    name: 'Monochrome High-Contrast',
+    category: 'ramp',
+    colors: ['#000000', '#555555', '#aaaaaa', '#ffffff'],
+  },
+  {
+    id: 'ramp-cyan-magenta',
+    name: 'Cyan & Magenta',
+    category: 'ramp',
+    colors: ['#001122', '#00f0ff', '#ff0055'],
+  },
+  // Suffixed: a palette of the same name already exists above with different
+  // colours, and a duplicate label in the picker is worse than a clumsy one.
+  {
+    id: 'ramp-cyberpunk-neon',
+    name: 'Cyberpunk Neon Ramp',
+    category: 'ramp',
+    colors: ['#050510', '#7b1fa2', '#00f0ff', '#ff007f'],
+  },
+  {
+    id: 'ramp-solarized-dark',
+    name: 'Solarized Dark Ramp',
+    category: 'ramp',
+    colors: ['#002b36', '#073642', '#268bd2', '#859900', '#fdf6e3'],
+  },
 ];
 
 export interface RGB {

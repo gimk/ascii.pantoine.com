@@ -3,6 +3,7 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { AppMode, MediaConfig } from '../types/ascii';
 import { Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Grid } from 'lucide-react';
 import { MONOSPACE_CELL_ASPECT } from '../engine/renderer';
+import { clampGridToBudget } from '../engine/mediaPresets';
 
 interface OptimizeControlsProps {
   cols: number;
@@ -281,9 +282,17 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     }
     if (srcWidth > 0 && srcHeight > 0) {
       const scaleFactor = newDpi / 100;
-      const targetCols = Math.max(10, Math.round(srcWidth * scaleFactor));
-      const targetRows = Math.max(10, Math.round(srcHeight * scaleFactor));
-      onChangeResolution(targetCols, targetRows);
+      /*
+       * Capped: DPI multiplies the source width by a percentage with no bound
+       * of its own, so a large photo at a high setting asks for tens of
+       * millions of cells and the tab stops answering. Typed cols/rows below
+       * are deliberate and stay uncapped.
+       */
+      const grid = clampGridToBudget(
+        Math.max(10, Math.round(srcWidth * scaleFactor)),
+        Math.max(10, Math.round(srcHeight * scaleFactor))
+      );
+      onChangeResolution(grid.cols, grid.rows);
     }
   };
 

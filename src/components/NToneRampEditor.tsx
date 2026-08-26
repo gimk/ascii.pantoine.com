@@ -1,86 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { DeferredColorInput, NumberInput } from './controlPrimitives';
-import { ArrowLeftRight, Wand2, Plus, Minus } from 'lucide-react';
-
-export interface NTonePreset {
-  name: string;
-  category?: string;
-  stops: string[];
-  title: string;
-}
-
-export const N_TONE_PRESETS: NTonePreset[] = [
-  {
-    name: 'Cyberpunk Neon',
-    stops: ['#050510', '#7b1fa2', '#00f0ff', '#ff007f'],
-    title: '4-Tone Cyberpunk Neon Magenta & Cyan',
-  },
-  {
-    name: 'Game Boy Classic',
-    stops: ['#0f380f', '#306230', '#8bac0f', '#9bbc0f'],
-    title: '4-Tone DMG-01 Nintendo Game Boy Olive Green',
-  },
-  {
-    name: 'Amber CRT',
-    stops: ['#080400', '#502500', '#b56500', '#ffb000'],
-    title: '4-Tone Vintage Amber Phosphor CRT Monitor',
-  },
-  {
-    name: 'Matrix Terminal',
-    stops: ['#000a00', '#003300', '#00aa33', '#55ff55'],
-    title: '4-Tone Matrix Phosphor Green',
-  },
-  {
-    name: 'Thermal Heatmap',
-    stops: ['#000000', '#0022cc', '#ff0000', '#ffff00', '#ffffff'],
-    title: '5-Tone FLIR Thermal Infrared Heatmap',
-  },
-  {
-    name: 'Sunset Horizon',
-    stops: ['#0d0415', '#481136', '#9c2a3e', '#e06f3b', '#ffd460'],
-    title: '5-Tone Warm Sunset Crimson & Gold',
-  },
-  {
-    name: 'Deep Ocean',
-    stops: ['#020b14', '#0a2e4c', '#156187', '#34a5ba', '#a3f0e8'],
-    title: '5-Tone Abyssal Navy to Seafoam Aqua',
-  },
-  {
-    name: 'Vaporwave Dream',
-    stops: ['#180828', '#501669', '#a22a84', '#e26d9c', '#fce8a6'],
-    title: '5-Tone Synthwave Violet, Pink and Cream',
-  },
-  {
-    name: 'Magma Glow',
-    stops: ['#000004', '#3b0f70', '#8c2981', '#de4968', '#fe9f6d', '#fcfdbf'],
-    title: '6-Tone Volcanic Magma & Plasma Glow',
-  },
-  {
-    name: 'Sepia Print',
-    stops: ['#1b1008', '#422a1d', '#785338', '#b58d67', '#f4e4c1'],
-    title: '5-Tone Daguerreotype Vintage Sepia Photo',
-  },
-  {
-    name: 'Cyan & Magenta',
-    stops: ['#001122', '#00f0ff', '#ff0055'],
-    title: '3-Tone Synth Duotone Cyan & Magenta',
-  },
-  {
-    name: 'Monochrome High-Contrast',
-    stops: ['#000000', '#555555', '#aaaaaa', '#ffffff'],
-    title: '4-Tone Pure Neutral Grayscale Ramp',
-  },
-  {
-    name: 'Solarized Dark',
-    stops: ['#002b36', '#073642', '#268bd2', '#859900', '#fdf6e3'],
-    title: '5-Tone Solarized Terminal Palette',
-  },
-  {
-    name: 'Blueprint Technical',
-    stops: ['#00112c', '#003366', '#0066aa', '#33aaff', '#ffffff'],
-    title: '5-Tone Architectural Cyanotype Blueprint',
-  },
-];
+import {
+  ArrowLeftRight,
+  Wand2,
+  Plus,
+  Minus,
+  AlignHorizontalDistributeCenter,
+} from 'lucide-react';
+import { toneBandShares, TONE_WEIGHT_NEUTRAL } from '../engine/rasterEngine';
 
 function parseHex(hex: string): { r: number; g: number; b: number } {
   let clean = hex.replace('#', '').trim();
@@ -128,52 +55,159 @@ export function interpolateStops(stops: string[], newCount: number): string[] {
   return result;
 }
 
+/**
+ * Neutral band weight. Weights are relative, so all-equal is an even split.
+ *
+ * Taken from the engine rather than restated: neutral is the value at which
+ * `buildToneBandLut` returns null and the ramp behaves exactly as it did before
+ * weights existed. A UI that disagreed would leave the warp quietly on after a
+ * reset.
+ */
+export const NEUTRAL_STOP_WEIGHT = TONE_WEIGHT_NEUTRAL;
+
+/** Most stops the engine and this editor will carry. */
+export const MAX_TONE_STOPS = 256;
+
+/**
+ * Resample a ramp to a new stop count, keeping colours and weights aligned.
+ *
+ * Shared by both editors on purpose. Colours and weights are matched by array
+ * length -- `resolveToneStops` falls back to neutral the moment they disagree --
+ * so any code path that changes the count and forgets the weights silently
+ * wipes them. One helper means that can only be got wrong once.
+ *
+ * Weights carry over by position and pad with neutral. Any mapping is arguable
+ * once the stops themselves have moved, but truncate-and-pad at least leaves
+ * the shadow end -- the one people actually tune -- where they put it.
+ *
+ * `maxStops` is a layout limit for the caller, not an engine one. The ceiling
+ * is that limit or the current length, whichever is larger, so a ramp that
+ * arrived longer than a panel wants to show shortens one step at a time rather
+ * than collapsing to the cap on the first press.
+ */
+export function resampleRamp(
+  colors: string[],
+  weights: number[],
+  nextCount: number,
+  maxStops: number = MAX_TONE_STOPS
+): { colors: string[]; weights: number[] } {
+  const ceiling = Math.max(maxStops, colors.length);
+  const clamped = Math.max(2, Math.min(ceiling, nextCount));
+  if (clamped === colors.length) return { colors, weights };
+  return {
+    colors: interpolateStops(colors, clamped),
+    weights: Array.from({ length: clamped }, (_, i) => weights[i] ?? NEUTRAL_STOP_WEIGHT),
+  };
+}
+
+/**
+ * Where each stop sits along the tonal range, 0..1.
+ *
+ * Band *centres*, with the ends pinned to 0 and 1 so the bar starts and
+ * finishes on the real end colours. With neutral weights this works out to
+ * exactly `i / (count - 1)` -- the even spacing the gradient has always drawn --
+ * because the natural bands are symmetric. So the preview is unchanged until a
+ * weight is actually moved, and then it moves with it.
+ */
+function stopPositions(shares: number[], count: number): number[] {
+  const bounds: number[] = [];
+  let acc = 0;
+  for (const s of shares) {
+    acc += s;
+    bounds.push(acc);
+  }
+  return shares.map((_, i) => {
+    if (i === 0) return 0;
+    if (i === count - 1) return 1;
+    return (bounds[i - 1] + bounds[i]) / 2;
+  });
+}
+
 export interface NToneRampEditorProps {
   stops?: string[];
-  onChangeStops: (newStops: string[]) => void;
+  /**
+   * Share of the tonal range each stop covers. One per stop; the engine treats
+   * a length mismatch as neutral.
+   */
+  weights?: number[];
+  /**
+   * Colours and weights always travel together -- count, reverse and presets
+   * all change both, and a caller able to update one alone could desynchronise
+   * their lengths.
+   */
+  onChangeRamp: (newStops: string[], newWeights: number[]) => void;
 }
 
 export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
   stops = ['#0a0a0a', '#00a848', '#00ff66'],
-  onChangeStops,
+  weights,
+  onChangeRamp,
 }) => {
   const currentStops = stops && stops.length >= 2 ? stops : ['#000000', '#ffffff'];
   const count = currentStops.length;
-  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const currentWeights =
+    weights && weights.length === count
+      ? weights
+      : currentStops.map(() => NEUTRAL_STOP_WEIGHT);
 
   const handleSetCount = (newCount: number) => {
-    const clamped = Math.max(2, Math.min(256, newCount));
-    if (clamped === count) return;
-    onChangeStops(interpolateStops(currentStops, clamped));
+    const next = resampleRamp(currentStops, currentWeights, newCount);
+    if (next.colors === currentStops) return;
+    onChangeRamp(next.colors, next.weights);
   };
 
   const handleUpdateStop = (index: number, newColor: string) => {
     const updated = [...currentStops];
     updated[index] = newColor;
-    onChangeStops(updated);
+    onChangeRamp(updated, currentWeights);
   };
 
+  const handleSetWeight = (index: number, value: number) => {
+    const updated = [...currentWeights];
+    updated[index] = value;
+    onChangeRamp(currentStops, updated);
+  };
+
+  /* Reversing the ramp reverses its shape too, or the widths stay behind. */
   const handleReverse = () => {
-    onChangeStops([...currentStops].reverse());
+    onChangeRamp([...currentStops].reverse(), [...currentWeights].reverse());
   };
 
   const handleInterpolate = () => {
     if (currentStops.length <= 2) return;
     const first = currentStops[0];
     const last = currentStops[currentStops.length - 1];
-    onChangeStops(interpolateStops([first, last], count));
+    onChangeRamp(interpolateStops([first, last], count), currentWeights);
   };
 
-  const handleApplyPreset = (presetName: string) => {
-    setSelectedPreset(presetName);
-    const p = N_TONE_PRESETS.find((x) => x.name === presetName);
-    if (p) {
-      onChangeStops([...p.stops]);
-    }
+  const isEvenWeighting = currentWeights.every((w) => w === currentWeights[0]);
+
+  const handleEvenWeights = () => {
+    onChangeRamp(currentStops, currentStops.map(() => NEUTRAL_STOP_WEIGHT));
   };
 
-  const gradientCss = `linear-gradient(to right, ${currentStops.join(', ')})`;
+  /*
+   * Positions come from the engine's own share calculation, so the bar shows
+   * the proportions the render will use rather than an even split that would
+   * hide the only thing the weights do.
+   */
+  const positions = stopPositions(toneBandShares(currentWeights, count), count);
+  const pctAt = (i: number) => positions[i] * 100;
+
+  const gradientCss = `linear-gradient(to right, ${currentStops
+    .map((c, i) => `${c} ${pctAt(i).toFixed(2)}%`)
+    .join(', ')})`;
   const isLargeCount = count > 16;
+
+  /*
+   * Ticks are absolutely positioned now that they are not evenly spaced. The
+   * "minus p% of the tick width" term reproduces exactly what
+   * `justify-content: space-between` used to do, so at neutral weights the bar
+   * is pixel-identical to before.
+   */
+  const tickStyle = (p: number): React.CSSProperties => ({
+    left: `calc(${p.toFixed(2)}% - ${((p / 100) * 2.5).toFixed(2)}px)`,
+  });
 
   return (
     <div style={{ marginTop: '8px' }}>
@@ -185,14 +219,15 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
               <div
                 key={idx}
                 className="ntone-gradient-stop-tick"
-                title={`Tone ${idx + 1} (${Math.round((idx / (count - 1)) * 100)}%)`}
+                style={tickStyle(pctAt(idx))}
+                title={`Tone ${idx + 1} (${Math.round(pctAt(idx))}%)`}
               />
             ))
           ) : (
             <>
-              <div className="ntone-gradient-stop-tick" title="0% (Shadow)" />
-              <div className="ntone-gradient-stop-tick" title="50% (Mid)" />
-              <div className="ntone-gradient-stop-tick" title="100% (Highlight)" />
+              <div className="ntone-gradient-stop-tick" style={tickStyle(0)} title="0% (Shadow)" />
+              <div className="ntone-gradient-stop-tick" style={tickStyle(50)} title="50% (Mid)" />
+              <div className="ntone-gradient-stop-tick" style={tickStyle(100)} title="100% (Highlight)" />
             </>
           )}
         </div>
@@ -260,23 +295,30 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
             <Wand2 size={11} style={{ marginRight: '3px' }} />
             BLEND
           </button>
+          {/*
+           * EVEN sits with the other ramp actions rather than appearing beside
+           * the sliders, and only once there is something to undo -- BLEND is
+           * its counterpart for colour, this one for distribution.
+           */}
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ padding: '3px 8px', fontSize: '10px', height: '22px' }}
+            onClick={handleEvenWeights}
+            disabled={isEvenWeighting}
+            title="Give every stop an equal share of the tonal range"
+          >
+            <AlignHorizontalDistributeCenter size={11} style={{ marginRight: '3px' }} />
+            EVEN
+          </button>
         </div>
 
-        <select
-          className="number-input"
-          style={{ width: '150px', textAlign: 'left', padding: '3px 6px', fontSize: '10.5px' }}
-          value={selectedPreset}
-          onChange={(e) => handleApplyPreset(e.target.value)}
-        >
-          <option value="" disabled>
-            Presets...
-          </option>
-          {N_TONE_PRESETS.map((p) => (
-            <option key={p.name} value={p.name} title={p.title}>
-              {p.name} ({p.stops.length}T)
-            </option>
-          ))}
-        </select>
+        {/*
+         * No preset dropdown here any more. Its ramps live in the palette
+         * picker above, under "Tone Ramps", and "Edit in Ramp Editor" loads the
+         * selected one into these stops. A palette is a preset ramp -- two
+         * libraries meant making the same choice in two places.
+         */}
       </div>
 
       {/* 4. Color Stops List (Uniform Alignment, No Trash button) */}
@@ -290,7 +332,12 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
         }}
       >
         {currentStops.map((stopColor, idx) => {
-          const pct = Math.round((idx / (count - 1)) * 100);
+          /*
+           * The badge is where the stop actually sits once the weights are
+           * applied, not its index. With neutral weights the two are the same
+           * number, so nothing appears to change until a slider is moved.
+           */
+          const pct = Math.round(pctAt(idx));
           const isFirst = idx === 0;
           const isLast = idx === count - 1;
           const roleLabel = isFirst ? 'SHADOW' : isLast ? 'HIGHLIGHT' : `TONE ${idx + 1}`;
@@ -301,6 +348,24 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
                 <span className="ntone-stop-badge">{pct}%</span>
                 <span>{roleLabel}</span>
               </div>
+              {/*
+               * Band width, inline on the same card as the colour it widens.
+               * A bare range rather than PrecisionSlider: its number field is
+               * 54px that will not shrink, and the card already carries an 84px
+               * hex field. The weight is relative anyway -- the figure carries
+               * no meaning worth reading, and the bar above shows the result.
+               */}
+              <input
+                type="range"
+                className="range-slider ntone-stop-weight"
+                min={0}
+                max={100}
+                step={1}
+                value={currentWeights[idx]}
+                onChange={(e) => handleSetWeight(idx, parseInt(e.target.value, 10))}
+                onDoubleClick={() => handleSetWeight(idx, NEUTRAL_STOP_WEIGHT)}
+                title={`Share of the tonal range given to ${roleLabel.toLowerCase()}. Double-click to reset.`}
+              />
               <DeferredColorInput
                 value={stopColor}
                 fallback="#ffffff"

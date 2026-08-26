@@ -25,6 +25,15 @@ interface MediaUploadControlsProps {
   mediaElement: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   onFileUpload: (file: File) => void;
   onUrlLoad: (url: string) => void;
+  /**
+   * Just the paste button and the dropzone, with no section chrome.
+   *
+   * Drops the filename readout, the URL loader and the video timeline. The
+   * host section header already names the step, the viewport already carries
+   * transport controls, and the filename is on the viewport too -- repeating
+   * any of it here is the padding BASIC is meant to be free of.
+   */
+  minimal?: boolean;
 }
 
 export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
@@ -33,6 +42,7 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
   mediaElement,
   onFileUpload,
   onUrlLoad,
+  minimal = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -168,6 +178,50 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
       console.warn('Clipboard read failed:', err);
     }
   };
+
+  if (minimal) {
+    return (
+      <>
+        <button
+          type="button"
+          className="btn btn-randomize basic-paste-btn"
+          onClick={handleClipboardPaste}
+          title="Paste image directly from clipboard"
+        >
+          <ClipboardPaste size={15} />
+          <span>PASTE ({isMac ? 'CMD+V' : 'CTRL+V'})</span>
+        </button>
+
+        <div
+          className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ minHeight: '85px', padding: '12px 10px' }}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            accept="image/*,video/mp4,video/webm,video/ogg,video/quicktime,.gif,.svg"
+            onChange={handleFileInputChange}
+          />
+          {config.mediaType === 'video' ? (
+            <Video size={22} color="var(--accent)" style={{ marginBottom: '6px' }} />
+          ) : (
+            <ImageIcon size={22} color="var(--accent)" style={{ marginBottom: '6px' }} />
+          )}
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
+            DROP IMAGE OR VIDEO HERE
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+            or click to browse
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="tab-content">

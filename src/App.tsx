@@ -27,6 +27,7 @@ import {
   ToneMappingConfig,
   RasterOutputMode,
   UiThemeSettings,
+  UiMode,
 } from './types/ascii';
 import { resolvePhosphorTint, DEFAULT_PHOSPHOR_TINT } from './engine/palettes';
 import {
@@ -51,6 +52,7 @@ import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRe
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelFrameData, applyTrackballRotationWithTime } from './engine/modelRenderer';
 import { renderAsciiMediaFrameData } from './engine/mediaRenderer';
+import { choosePreviewDivisor, upscaleFrame } from './engine/framePreview';
 import { CHARSETS, renderSynthFrameData } from './engine/renderer';
 import {
 
@@ -74,6 +76,8 @@ import { MediaUploadControls, MediaFramingControls } from './components/MediaFil
 import { MediaViewControls } from './components/MediaViewControls';
 import { ImageAdjustControls } from './components/ImageAdjustControls';
 import { CollapsibleSection, AccordionProvider } from './components/CollapsibleSection';
+import { BasicPanel } from './components/BasicPanel';
+import { UiModeSwitch } from './components/UiModeSwitch';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
 import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
@@ -110,8 +114,37 @@ const LOCAL_STORAGE_UI_THEME_KEY = 'ascii_studio_ui_theme_settings';
 /** One-time nudge towards the render panel after a first media upload. */
 const LOCAL_STORAGE_RENDER_HINT_KEY = 'ascii_studio_render_hint_seen';
 
+/**
+ * Pick the sidebar layout to open with.
+ *
+ * A first-time visitor gets BASIC -- that is the whole point of it. Someone
+ * who has used the app before does not: their stored settings predate the
+ * switch, and swapping the layout out from under them would read as the app
+ * having lost half its controls. The absence of the key is the only signal
+ * that separates the two, so it is used for exactly that once, after which
+ * the choice is theirs and is stored.
+ */
+const resolveUiMode = (stored: Record<string, unknown> | null): UiMode => {
+  if (!stored) return 'basic';
+  if (stored.uiMode === 'basic' || stored.uiMode === 'advanced') return stored.uiMode;
+  return 'advanced';
+};
+
 /** DPI a freshly loaded media source starts at: 1:1 with the source pixels. */
 const MEDIA_DEFAULT_DPI = 100;
+
+/**
+ * How recently the last static render must have finished for the next change to
+ * count as part of the same gesture, and so be drawn as a cheap preview.
+ *
+ * Generous on purpose: a slow grid renders at a few frames a second, so a
+ * tighter window would classify the middle of a drag as "idle" and go back to
+ * full-resolution passes, which is the stall this exists to avoid.
+ */
+const EDIT_BURST_MS = 500;
+
+/** Quiet period after the last change before the sharp pass runs. */
+const EDIT_SETTLE_MS = 220;
 
 /** Parse a #rgb / #rrggbb accent into channels, falling back to phosphor green. */
 const parseAccentChannels = (hex: string): [number, number, number] => {
@@ -523,6 +556,8 @@ export const App: React.FC = () => {
           customUiColor: parsed.customUiColor || '',
           syncUiWithAscii: parsed.syncUiWithAscii !== undefined ? parsed.syncUiWithAscii : true,
           autoCollapsePanels: parsed.autoCollapsePanels !== undefined ? parsed.autoCollapsePanels : true,
+          lowResPreview: parsed.lowResPreview !== undefined ? parsed.lowResPreview : true,
+          uiMode: resolveUiMode(parsed),
         };
       }
     } catch {}
@@ -531,8 +566,19 @@ export const App: React.FC = () => {
       customUiColor: '',
       syncUiWithAscii: true,
       autoCollapsePanels: true,
+      lowResPreview: true,
+      uiMode: resolveUiMode(null),
     };
   });
+
+  const uiMode: UiMode = uiThemeSettings.uiMode ?? 'advanced';
+
+  /*
+   * Read out as a plain boolean so the render effect can depend on it without
+   * depending on the whole settings object -- otherwise picking an accent
+   * colour would re-raster the image.
+   */
+  const lowResPreview = uiThemeSettings.lowResPreview ?? true;
 
   // Persist interface theme settings in localStorage
   useEffect(() => {
@@ -540,6 +586,23 @@ export const App: React.FC = () => {
       localStorage.setItem(LOCAL_STORAGE_UI_THEME_KEY, JSON.stringify(uiThemeSettings));
     } catch {}
   }, [uiThemeSettings]);
+
+  /*
+   * Reconcile a stored BASIC preference against a shared link that opens on a
+   * source BASIC cannot show.
+   *
+   * The link is the more specific intent -- someone sent a particular synth or
+   * model scene -- so ADVANCED wins here, rather than coercing the source to
+   * media and dropping the thing the link was for. Mount only: once the app is
+   * running, BASIC offers no way to leave media, and handleChangeUiMode
+   * batches its own coercion.
+   */
+  useEffect(() => {
+    if (uiThemeSettings.uiMode === 'basic' && appMode !== 'media') {
+      setUiThemeSettings((prev) => ({ ...prev, uiMode: 'advanced' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persist render settings per mode in localStorage
   useEffect(() => {
@@ -1947,6 +2010,22 @@ export const App: React.FC = () => {
     }
   };
 
+  /*
+   * Cost of the last static-image rasterization, and when it finished.
+   *
+   * A still image has no animation loop to ride, so it re-renders straight off
+   * React state -- which means a slider drag fires one full rasterization per
+   * pointer event, synchronously, with nothing coalescing them. On a large
+   * source that is far more than a frame's worth of work each time, so the
+   * queue never drains and the whole UI stalls until the drag ends.
+   *
+   * These two let the render pace itself against its own measured cost instead
+   * of a fixed rate that would be wrong for both a 200px thumbnail and a 24MP
+   * photo. See the scheduler below.
+   */
+  const lastStaticRenderMsRef = useRef<number>(0);
+  const lastStaticRenderEndRef = useRef<number>(0);
+
   // Animation Frame Loop with FPS Limiter & Power Optimizations
   const timeRef = useRef<number>(0);
   const lastFrameRenderTimeRef = useRef<number>(0);
@@ -1960,30 +2039,103 @@ export const App: React.FC = () => {
     const isStaticImage = appMode === 'media' && mediaConfig.mediaType === 'image';
     const curSettings = renderSettingsRef.current;
 
-    // If static 2D image mode, render once reactively on state changes without continuous RAF polling
+    /*
+     * Static 2D image: no RAF loop, re-rendered reactively from state.
+     *
+     * Scheduled rather than run inline. Every effect re-run cancels the render
+     * the previous one queued, so a burst of slider events collapses to a
+     * single rasterization of the final value -- intermediate states are
+     * dropped rather than queued, which is what the viewer wants anyway.
+     *
+     * The delay before it runs is the last render's own duration, capped. That
+     * keeps the rasterizer to roughly half the wall clock and leaves the rest
+     * for input and paint, so dragging stays responsive whether a frame costs
+     * 2ms or 200ms. A fixed interval cannot do that: tuned for a big photo it
+     * makes small ones feel sluggish, tuned for small ones it still stalls on
+     * big ones.
+     */
     if (isStaticImage) {
-      const result = renderAsciiMediaFrameData({
-        cols,
-        rows,
-        mediaElement: mediaElementRef.current,
-        mediaConfig,
-        viewConfig: mediaViewConfig,
-        density: curSettings.density,
-        colorConfig: renderColorConfig,
-        rasterMode: mediaViewConfig.rasterMode || curSettings.rasterMode || 'ascii',
-        algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
-        toneConfig: curSettings.toneConfig,
-      });
-      captureHistogram(result);
-      viewportRef.current?.setFrame(
-        result.text,
-        0,
-        0,
-        result.colors,
-        result.bgColor,
-        result.rasterMode
-      );
-      return;
+      let cancelled = false;
+      let previewRaf = 0;
+      let finalRaf = 0;
+
+      const renderStaticFrame = (divisor: number) => {
+        if (cancelled) return;
+        const startedAt = performance.now();
+
+        const renderCols = divisor > 1 ? Math.max(16, Math.round(cols / divisor)) : cols;
+        const renderRows = divisor > 1 ? Math.max(16, Math.round(rows / divisor)) : rows;
+
+        const result = renderAsciiMediaFrameData({
+          cols: renderCols,
+          rows: renderRows,
+          mediaElement: mediaElementRef.current,
+          mediaConfig,
+          viewConfig: mediaViewConfig,
+          density: curSettings.density,
+          colorConfig: renderColorConfig,
+          rasterMode: mediaViewConfig.rasterMode || curSettings.rasterMode || 'ascii',
+          algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
+          toneConfig: curSettings.toneConfig,
+        });
+
+        /*
+         * The viewport lays out from its cols/rows props, so a preview has to
+         * come back out at full size -- see framePreview.ts. Only a
+         * full-resolution pass feeds the histogram; a preview's would be
+         * sampled from a quarter of the cells and make the Levels graph twitch
+         * for no benefit.
+         */
+        if (divisor > 1) {
+          const scaled = upscaleFrame(result.text, result.colors, renderCols, renderRows, cols, rows);
+          viewportRef.current?.setFrame(scaled.text, 0, 0, scaled.colors, result.bgColor, result.rasterMode);
+        } else {
+          captureHistogram(result);
+          viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode);
+          lastStaticRenderMsRef.current = performance.now() - startedAt;
+        }
+
+        lastStaticRenderEndRef.current = performance.now();
+      };
+
+      /*
+       * Two passes, and the cheap one is what makes dragging feel live.
+       *
+       * Rasterizing is superlinear in cell count, so on a large grid a single
+       * full pass costs many frames and no amount of throttling makes a drag
+       * feel responsive -- it only makes it stale instead of stuck. So while
+       * changes keep arriving, render a fraction of the grid and expand it:
+       * chunky, but live and roughly divisor^2 cheaper. When the changes stop,
+       * one full-resolution pass replaces it.
+       *
+       * `isEditing` keys off whether the previous render finished recently
+       * enough that another change is plausibly part of the same gesture.
+       * Nothing needs to know about pointers or which control moved.
+       */
+      const sinceLast = performance.now() - lastStaticRenderEndRef.current;
+      const isEditing = sinceLast < EDIT_BURST_MS;
+      const divisor =
+        isEditing && lowResPreview ? choosePreviewDivisor(lastStaticRenderMsRef.current) : 1;
+
+      if (divisor > 1) {
+        previewRaf = requestAnimationFrame(() => renderStaticFrame(divisor));
+        /* And the sharp one, once the gesture has actually stopped. */
+        const settleId = window.setTimeout(() => {
+          finalRaf = requestAnimationFrame(() => renderStaticFrame(1));
+        }, EDIT_SETTLE_MS);
+        return () => {
+          cancelled = true;
+          window.clearTimeout(settleId);
+          if (previewRaf) cancelAnimationFrame(previewRaf);
+          if (finalRaf) cancelAnimationFrame(finalRaf);
+        };
+      }
+
+      previewRaf = requestAnimationFrame(() => renderStaticFrame(1));
+      return () => {
+        cancelled = true;
+        if (previewRaf) cancelAnimationFrame(previewRaf);
+      };
     }
 
     const loop = (timestamp: number) => {
@@ -2187,6 +2339,7 @@ export const App: React.FC = () => {
     presetType,
     particleConfig,
     optimizeConfig,
+    lowResPreview,
     // The RAF loop reads renderSettingsRef, but the static-image branch renders
     // once and must re-run when settings change. Only the active mode's slice
     // matters, so renderSettingsByMode itself is not a dependency.
@@ -2232,6 +2385,8 @@ export const App: React.FC = () => {
           handleRandomize();
         }
       } else if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        /* BASIC has no panels to switch between, so 1/2 do nothing there. */
+        if (uiMode === 'basic') return;
         if (e.key === '1') {
           e.preventDefault();
           setPanel('content');
@@ -2243,7 +2398,7 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, handleRandomize, appMode, mediaConfig.mediaType, setPanel]);
+  }, [handleUndo, handleRedo, handleRandomize, appMode, mediaConfig.mediaType, setPanel, uiMode]);
 
   // Toggle between editor and fullscreen viewfinder
   const handleToggleViewMode = useCallback(() => {
@@ -2462,6 +2617,25 @@ export const App: React.FC = () => {
     [renderSettingsByMode.media.cols, autoSetMediaResolution]
   );
 
+  /*
+   * Flip the sidebar layout.
+   *
+   * BASIC only speaks media, so entering it from SYNTH or MODEL switches the
+   * source. Nothing is lost doing so: render settings are held per mode
+   * (renderSettingsByMode), and the synth params and model config are their
+   * own state, so returning to ADVANCED and picking the source back up finds
+   * it exactly as it was.
+   */
+  const handleChangeUiMode = useCallback(
+    (nextMode: UiMode) => {
+      setUiThemeSettings((prev) => ({ ...prev, uiMode: nextMode }));
+      if (nextMode === 'basic' && appModeRef.current !== 'media') {
+        handleSelectSource('media');
+      }
+    },
+    [handleSelectSource]
+  );
+
   const handleAutoResolutionChange = useCallback((c: number, r: number) => {
     setRenderSettingsByMode((prev) => {
       const mode = appModeRef.current;
@@ -2494,6 +2668,17 @@ export const App: React.FC = () => {
           <span className="brand-version">v2.1</span>
         </div>
 
+        {/*
+         * Absolutely centred rather than a third flex child: the flanking
+         * groups change width as UNDO/REDO appear and as labels collapse on
+         * narrow viewports, which would otherwise drag the switch off centre.
+         * Hidden in fullscreen, where there is no sidebar for it to govern.
+         */}
+        {viewMode === 'editor' && (
+          <div className="header-mode-switch">
+            <UiModeSwitch value={uiMode} onChange={handleChangeUiMode} />
+          </div>
+        )}
 
         {/* Header Tools: Undo, Redo, Export, Share */}
         <div className="header-actions">
@@ -2624,7 +2809,38 @@ export const App: React.FC = () => {
 
         {/* Right Sidebar Control Panel */}
         {viewMode === 'editor' && (
-          <div className="sidebar-pane">
+          <div className={`sidebar-pane ${uiMode === 'basic' ? 'sidebar-pane-basic' : ''}`}>
+            {uiMode === 'basic' ? (
+              /* No AccordionProvider: BASIC has no disclosures to coordinate. */
+              <BasicPanel
+                  mediaConfig={mediaConfig}
+                  onChangeMediaConfig={handleChangeMediaConfig}
+                  mediaElement={mediaElementRef.current}
+                  onFileUpload={handleMediaFileUpload}
+                  onUrlLoad={handleMediaUrlLoad}
+                  viewConfig={mediaViewConfig}
+                  onChangeViewConfig={handleChangeMediaViewConfig}
+                  rasterMode={currentRasterMode}
+                  onChangeRasterMode={handleSelectRasterMode}
+                  cols={cols}
+                  rows={rows}
+                  onChangeResolution={handleManualResolutionChange}
+                  density={density}
+                  onChangeDensity={setDensity}
+                  theme={theme}
+                  onChangeTheme={handleSelectTheme}
+                  customThemeColor={customThemeColor}
+                  onChangeCustomColor={handleSelectCustomColor}
+                  mediaColorConfig={mediaColorConfig ?? DEFAULT_MEDIA_COLOR_CONFIG}
+                  onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                  toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                  onChangeToneConfig={handleChangeToneConfig}
+                  onExport={(tab) => {
+                    setExportInitialTab(tab);
+                    setIsExportOpen(true);
+                  }}
+                />
+            ) : (
             <AccordionProvider autoCollapse={!!uiThemeSettings.autoCollapsePanels}>
               <div className="tab-nav">
               <button
@@ -3006,6 +3222,7 @@ export const App: React.FC = () => {
               </>
             )}
             </AccordionProvider>
+            )}
             {/* Sidebar Credits Line */}
             <div className="sidebar-credits">
               <span>

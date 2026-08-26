@@ -15,6 +15,32 @@ export const DEFAULT_MEDIA_CONFIG: MediaConfig = {
   playbackSpeed: 1.0,
 };
 
+/**
+ * Widest grid a DPI setting is allowed to ask for.
+ *
+ * Matches the ceiling autoSetMediaResolution already applies. The DPI paths
+ * multiply source width by a percentage with no bound of their own, so a 4000px
+ * photo at 200 DPI asks for 8000x6000 -- 48M cells, which is not slow but
+ * unresponsive: one rasterization runs for seconds and the tab stops answering.
+ */
+export const MAX_GRID_COLS = 2048;
+
+/**
+ * Scale a requested grid down to MAX_GRID_COLS, preserving aspect.
+ *
+ * Applied to the DPI controls, where the cell count is implied by a percentage
+ * rather than typed. An explicitly entered cols/rows is left alone -- someone
+ * typing 4000 into a number field means it, and may be setting up an export.
+ */
+export function clampGridToBudget(cols: number, rows: number): { cols: number; rows: number } {
+  if (cols <= MAX_GRID_COLS) return { cols, rows };
+  const scale = MAX_GRID_COLS / cols;
+  return {
+    cols: MAX_GRID_COLS,
+    rows: Math.max(10, Math.round(rows * scale)),
+  };
+}
+
 export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   // 1. Render / Sampling Settings
   resampling: 'preserve-details',

@@ -274,6 +274,74 @@ lumBuffer[i] = srcLumBuffer[i] < 0 ? -1 : clamp(lumBuffer[i], 0, 1)
 > **State:** `lumBuffer` = quantized to `ditherLevels`, or still continuous if the
 > palette owns quantization. Sentinel intact.
 
+#### Tonal band weights
+
+Runs immediately *before* the dither, only when a user ramp is driving colour —
+never for an indexed palette, which owns its own spacing, nor for mono, which
+never buckets.
+
+A ramp's bands were never equal to begin with. Quantization is round-to-nearest,
+so level $i$ claims everything within half a step of it: the two end levels get
+half-width bands and the interior ones full-width. A four-stop ramp is really
+1/6, 1/3, 1/3, 1/6 — shadows and highlights cover half as much of the image as
+the middle two. `naturalBandBoundaries` computes this.
+
+`buildToneBandLut` scales those natural widths by `toneStopWeights`,
+renormalises, and emits a 256-entry piecewise-linear LUT mapping each stop's
+*requested* slice of the input range onto the slice the quantizer actually gives
+it. Three consequences worth keeping in mind:
+
+- **Neutral is an exact identity.** All-equal weights return `null` and the pass
+  is skipped, so every existing ramp renders bit-identically. Scaling the
+  natural widths rather than assigning absolute shares is what avoids a
+  discontinuity at neutral — otherwise a one-step nudge would jump the ramp from
+  its legacy distribution to a flat one.
+- **The warp goes here, not in step 4.** The colour branch buckets with
+  `floor(lum * N)` and this step quantizes to $N$ even levels; the two are
+  aligned, and that alignment is why an $N$-stop ramp reproduces exactly $N$
+  tones. Moving the *bucket* boundaries instead would collide quantized levels
+  into some bands and skip others, leaving dead colours — §2.4's palette failure
+  in reverse.
+- **Bands are floored at 1%.** A zero-width band is not just invisible; it makes
+  the warp non-invertible and hands the dither a flat segment to turn into a
+  hard edge.
+
+**The slider response is a power curve**, `(v / 50) ^ 2.5`, not linear. Weights
+are normalised against each other, which eats most of the upward travel: with a
+linear mapping, raising one stop of four from 50 to 100 lifted its share of the
+*total* only from 25% to 40%, so half the slider bought a band 16.7% → 28.4% of
+the image, while downward reached 1% easily. The control was weak and lopsided.
+A two-piece linear curve fixed the reach but put a visible kink at neutral — the
+same drag worth +7 below 50 and +30 above. The power curve is smooth through
+neutral, still reaches exactly 0 so a band can be suppressed, and spans roughly
+1% → 53% on a four-stop ramp in even steps.
+
+`toneBandShares` exposes the normalised widths so the UI can draw the ramp at
+its true proportions. Measured against a simulated render it tracks within 0.2
+points. Both panels consume it, differently:
+
+- **BASIC** draws hard segments above the band rows — one block per colour,
+  sized to its share.
+- **ADVANCED** keeps its smooth gradient bar and moves the colour *stops* along
+  it instead. Each stop sits at its band's centre, with the ends pinned to 0%
+  and 100%. Because the natural bands are symmetric, that works out to exactly
+  `i / (count - 1)` whenever the weights are neutral — the even spacing the bar
+  has always drawn — so an unweighted ramp looks precisely as it did before
+  weights existed, and only starts moving once a slider does. The tick marks and
+  the per-stop `%` badge come from the same positions.
+
+**Both editors resample through one helper.** `resampleRamp` (in
+`NToneRampEditor`) changes the stop count, interpolating the colours and
+carrying the weights across by position, padded with neutral. Colours and
+weights are matched by *array length* — `resolveToneStops` falls back to neutral
+the instant they disagree — so any path that changes the count and forgets the
+weights wipes them silently. One helper means that can only be got wrong once.
+Its `maxStops` argument is a caller's layout limit, not an engine one.
+
+Neutral itself is defined once, by the engine (`TONE_WEIGHT_NEUTRAL`), and
+re-exported down the chain. A UI that disagreed about which value is neutral
+would leave the warp quietly switched on after a "reset".
+
 ### Step 4 — Colour
 
 Exactly one branch runs, chosen by `paletteMode` (from `MediaColorConfig`) and
@@ -641,6 +709,99 @@ The old hardcoded `gameboy` / `cyberpunk` / `amber` tonal presets were three-sto
 ramps duplicating built-in palettes. They are gone; `LEGACY_TONAL_PRESET_PALETTES`
 migrates persisted settings and shared links onto the equivalent palette.
 
+### The two sidebar layouts
+
+`uiThemeSettings.uiMode` picks between two arrangements of the *same* state. This
+is the invariant that matters: BASIC and ADVANCED read and write identical
+config objects, so switching never converts, resets or drops anything. A
+control BASIC does not show is still live in the render and still set to
+whatever ADVANCED left it at.
+
+- **ADVANCED** ([`App.tsx`](src/App.tsx)) — the Content / Render tab tree
+  documented below. Every source, every control.
+- **BASIC** ([`BasicPanel.tsx`](src/components/BasicPanel.tsx)) — six numbered
+  steps in a flat column: import → output → dither → adjust → colour → export.
+  **No disclosures anywhere.** Every control is visible the moment the panel is;
+  section rhythm comes from `.sidebar-workflow-title`, the same numbered header
+  ADVANCED uses. Media only; entering it from synth or model switches the source,
+  which is lossless because render settings are per-mode and the synth/model
+  configs are separate state.
+
+BASIC reaches its minimum by asking the shared controls for a reduced form,
+not by reimplementing them: `MediaUploadControls minimal` (paste + dropzone,
+no filename / URL / video timeline), `DitherAlgorithmPicker compact` (arrows,
+dropdown, dice — no family filter, swatch grid or description card), preset
+chips instead of the DPI slider, a charset `<select>` instead of
+`CharsetThemeBar`, and two plain clip-point sliders instead of the histogram
+Levels editor. One implementation, two levels of detail.
+
+Two couplings are load-bearing and easy to break:
+
+1. **Output mode sits above the resolution chips.** `handleSelectRasterMode`
+   re-derives the grid via `autoSetMediaResolution`, and `syncMediaDpiToGrid`
+   then re-derives DPI from the column count. With DPI first, setting it and
+   then picking ASCII/PIXEL silently discards the DPI.
+2. **Quantize depth is hidden, not forced.** BASIC omits the control and expects
+   Auto, but a share link serialises `colorLevels` and so does arriving from
+   ADVANCED. `QuantizeDepthNotice` surfaces a non-Auto value with a reset rather
+   than either hiding it silently or overwriting a deliberate setting.
+
+The histogram tap stays gated on `panel === 'render'` alone: BASIC's levels are
+two numeric sliders with no histogram to feed, so waking the per-frame
+histogram pass for it would be pure cost.
+
+#### Tonal bands, and palettes as preset ramps
+
+Both panels give **one control per ramp stop** for its colour and its share of
+the tonal range, in the same place — BASIC as `ToneBandRows`, ADVANCED inside
+the `N-Tone Ramp Editor`'s existing stop cards. Splitting them (stops under
+COLORS, distribution nowhere) meant a ramp you could recolour but not
+redistribute.
+
+The slider is a **band width**, not an opacity and not a luminance push: it
+widens the slice of the luminance range that maps to that stop, so dragging
+shadows up genuinely resolves more of the image to the shadow colour. Stored as
+`adjustConfig.toneStopWeights`, one positive number per stop, relative (only the
+ratios matter). See §2.3.5 for how it is applied.
+
+**A palette is a preset ramp**, so there is one library rather than two. The
+ramp editor's own preset dropdown is gone; its 14 ramps live in
+`BUILTIN_PALETTES` under a `ramp` category, alongside the hardware and print
+palettes. Selecting one and pressing **Edit in Ramp Editor** copies its colours
+into the stops. BASIC has the same operation as `EDIT AS RAMP`, worded for its
+own layout.
+
+The conversion is **always an explicit button**, never a side effect of moving a
+control. In BASIC the bands are shown disabled while a palette is selected; in
+ADVANCED the ramp editor stays live under a note saying the palette is winning,
+because what is set there does apply the moment the palette comes off. That is a
+real divergence between the panels, listed in §6.
+
+That is not fussiness. The two are different render paths and `indexed` is
+usually the better one:
+
+- it error-diffuses in palette space against the palette's *real* luminances,
+  where a ramp buckets evenly — §2.4 is the whole argument
+- on a multi-hue palette with a chromatic source it matches in CIELAB, choosing
+  colours **by hue**, where luminance position plays no part at all
+
+That second case is why band weights and palettes cannot be combined even in
+principle: with hue matching there is no band to widen. The engine already
+refuses to apply weights to any active palette (`!activePalette` guards the
+warp), so the render was never wrong — but sliders that silently do nothing, and
+a drag that silently discards hue matching, were. Hence the explicit conversion
+button in both panels.
+
+`isHueMatched` in BASIC errs toward reporting hue matching whenever the palette
+*could* do it, since source chromaticity is sampled inside the engine and is not
+visible to the UI. Claiming "tone-matched" and then hue-matching would be the
+worse way to be wrong.
+
+Grading rows are declared once in `ADJUST_SLIDERS`
+([`ImageAdjustControls.tsx`](src/components/ImageAdjustControls.tsx)) and rendered
+through `AdjustSlider`. The two layouts group those rows differently, so a single
+declaration is what stops their ranges from drifting apart.
+
 ### Render tab hierarchy & control architecture
 
 The **Render** tab follows a strict vertical workflow across all three input sources:
@@ -670,6 +831,80 @@ The **Render** tab follows a strict vertical workflow across all three input sou
    - Monospace density ramps (active in ASCII mode, dimmed in Pixel mode).
 
 ---
+
+## 4.5 Driving the render
+
+Three sources, two scheduling regimes.
+
+**Synth, model and video** run a `requestAnimationFrame` loop in `App.tsx` with
+an FPS limiter (`optimizeConfig.targetFps`), an idle throttle that drops to 12fps
+after 4s without interaction, and a pause when the tab is hidden.
+
+**A static image has no loop** — it re-renders reactively from React state, which
+is the right shape (nothing to animate) but was unthrottled. The rasterization
+ran *synchronously inside the effect*, so a slider drag fired one full re-raster
+per pointer event with nothing coalescing them. On a large source each costs far
+more than a frame, the queue never drains, and the tab stalls until the drag
+ends.
+
+It is now **preview-then-refine**, because throttling alone does not fix this.
+Rasterizing is superlinear in cell count, so on a large grid a single full pass
+costs many frames — pacing it only makes a drag stale instead of stuck.
+
+- while changes keep arriving, render **a fraction of the grid** and expand the
+  result back to full size (`framePreview.ts`). Roughly `divisor²` cheaper,
+  visibly chunky, but live.
+- `EDIT_SETTLE_MS` (220ms) after the last change, one **full-resolution pass**
+  replaces it.
+- every effect re-run cancels both pending passes, so a burst of slider events
+  collapses rather than queues.
+
+The divisor comes from what the last *full* render actually cost
+(`choosePreviewDivisor`: 4 above 120ms, 3 above 45ms, 2 above 18ms, otherwise
+1). Self-measuring rather than fixed, because the right answer differs by two
+orders of magnitude between a thumbnail and a 24MP photo — and at divisor 1 the
+preview path switches off entirely, so small images never pay for chunkiness
+they do not need. Preview passes deliberately do not update the measured cost,
+so the estimate stays anchored to real full-frame work.
+
+**Why expand instead of handing the viewport a smaller frame.** `AsciiViewport`
+lays out from its `cols`/`rows` props, not from the frame it is given, and those
+values feed culling, hit-testing, auto-fit and the pixel-mode `ImageData`. A
+frame whose dimensions disagreed would mis-index the colour buffer and draw
+garbage. Expanding keeps the contract intact and confines the whole change to
+the render path.
+
+The expansion is a straight copy — no dither, filters or colour matching — and
+reuses each source row across the output rows that map to it (a `copyWithin`
+for the colour buffer, one cached string for the text). That took a
+533×400 → 1600×1200 expansion from 39ms to 14ms; building every row
+independently had made the expansion a real fraction of the pass it replaces.
+
+**Editing state is inferred, not tracked.** If the previous render finished
+within `EDIT_BURST_MS` (500ms), the next change is treated as part of the same
+gesture. Nothing needs to know about pointers or which control moved. The window
+is generous on purpose: a slow grid renders a few times a second, and a tighter
+one would classify mid-drag as idle and go back to full passes — the stall this
+exists to avoid.
+
+**It can be switched off.** Viewfinder Settings -> Performance -> *Draft
+Preview While Editing*. The setting lives on `UiThemeSettings`
+(`lowResPreview`, localStorage, default on) rather than on `OptimizeConfig`,
+because it describes the machine rather than the artwork: `OptimizeConfig` is
+per-mode and rides along inside presets and shared links, and one person's need
+for a coarse preview should not follow their work onto someone else's screen.
+It is the only row in that section that acts on static images, which is why it
+is the one row not dimmed when a static image is loaded. Note the whitelist in
+the `uiThemeSettings` state initializer: a field not named there is silently
+dropped on reload.
+
+**Grid ceiling.** DPI multiplies source width by a percentage and had no bound
+of its own, so a 4000px photo at 200 DPI asked for 8000×6000 — 48M cells, which
+is not slow but unresponsive. Both DPI controls now route through
+`clampGridToBudget` (`MAX_GRID_COLS = 2048`, matching the ceiling
+`autoSetMediaResolution` already applied). Typed cols/rows stay uncapped:
+someone entering 4000 in a number field means it, and may be setting up an
+export.
 
 ## 5. Invariants
 
@@ -718,6 +953,35 @@ Things that will silently break rendering if violated.
 - `three` is imported eagerly (~566 kB, ~142 kB gzipped) for all users including
   those who never open model mode.
 - `App.tsx` is ~3000 lines and owns all orchestration.
+- ADVANCED still groups levels and the tone curve under `TONAL CONTROLS` while
+  brightness/contrast/invert sit under `EFFECT CONTROLS`, which cuts across the
+  engine's own split (§2 steps 2–4: spatial filters, then tone, then colour).
+  BASIC uses the engine's line instead — ADJUST for everything shaping the
+  greyscale, COLOR for what it comes out as. Regrouping ADVANCED to match would
+  churn the `persistKey`s holding each section's collapsed state, so it was left
+  for its own pass.
+- BASIC drops the midtone handle from Levels because the tonal bands already
+  expose Midtones, and two gamma pivots a section apart is confusing. They are
+  not the same control though — levels midtones is a pivot between the clip
+  points, `adjustConfig.midtones` a `pow` on the whole range — so the reduction
+  is a simplification, not an equivalence.
+- Band weights assume `ditherLevels === numStops` (the auto case). An explicit
+  Quantize Levels detunes the proportionality — the warp stays monotone and the
+  sliders still read as more/less, but the shares stop tracking the numbers.
+- BASIC caps the ramp at `BASIC_MAX_TONE_STOPS` (8) where the engine and
+  ADVANCED allow 256. A layout limit, not an engine one: each stop is a full row
+  there. A longer ramp arriving from a preset, a shared link or an ADVANCED
+  session renders in full and steps down one at a time; only `+` stops.
+- ADVANCED shows the ramp editor whenever the mapping is past `1color`, even
+  with an indexed palette selected — the palette wins in the engine and the ramp
+  is skipped. A note says so, but the stops and sliders stay live rather than
+  being disabled, because what is set there does apply the moment the palette
+  comes off. BASIC handles the same situation differently (disabled bands plus
+  an explicit `EDIT AS RAMP`), which is a real divergence between the panels.
+- `resolveToneStops` must be given `paletteColors` to show a palette's colours,
+  because `customToneColors` is never empty — `DEFAULT_IMAGE_ADJUST_CONFIG`
+  seeds it with three greens. Checking the config first is why the bands
+  originally ignored the selected palette entirely.
 - **`content` colour cannot be separated** without quantizing first — it is
   continuous, so it blows past the 64-plate cap. Quantize Levels or an indexed
   palette is the workaround; automatic k-means clustering down to N inks would be the

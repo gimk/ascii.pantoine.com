@@ -16,11 +16,20 @@ import {
 interface DitherAlgorithmPickerProps {
   value?: DitherAlgorithm;
   onChange: (algo: DitherAlgorithm) => void;
+  /**
+   * Strips everything but the stepper row: arrows, dropdown, randomiser.
+   *
+   * The family filter, swatch grid and description card are how you *browse*
+   * 44 algorithms; BASIC assumes you either step through them or roll the
+   * dice, which needs one row rather than half a panel.
+   */
+  compact?: boolean;
 }
 
 export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
   value = 'floyd-steinberg',
   onChange,
+  compact = false,
 }) => {
   const currentIdx = useMemo(() => {
     const idx = DITHER_ALGORITHMS.findIndex((a) => a.id === value);
@@ -158,6 +167,10 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
         </div>
       </div>
 
+      {compact && null}
+
+      {!compact && (
+      <>
       {/* 2. Family Category Grid (Matches Quantize Level Buttons, No Overflow) */}
       <div className="dither-family-grid">
         <button
@@ -360,6 +373,8 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

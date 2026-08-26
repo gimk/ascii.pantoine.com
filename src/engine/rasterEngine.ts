@@ -59,9 +59,167 @@ export interface UnifiedPipelineOptions {
   midtoneColor?: string;
   shadowColor?: string;
   customToneColors?: string[];
+  toneStopWeights?: number[];
   colorLevels?: number;
   /** Monochrome tint, baked into pixel output where CSS cannot reach. */
   monoTint?: string;
+}
+
+/**
+ * A ramp's *natural* band boundaries — the share of the luminance range each
+ * stop already gets with no weighting at all.
+ *
+ * These are not evenly spaced, and that surprises people. Step 3.5 quantizes to
+ * N levels with round-to-nearest, so level i claims everything within half a
+ * step of it: the two end levels get half-width bands and the interior ones get
+ * full-width. A four-stop ramp is really 1/6, 1/3, 1/3, 1/6 — the shadow and
+ * highlight stops cover half as much of the image as the middle two.
+ *
+ * Everything below is expressed relative to these, so a neutral weighting
+ * reproduces exactly what the ramp did before weights existed.
+ */
+function naturalBandBoundaries(numStops: number): Float64Array {
+  const out = new Float64Array(numStops);
+  const step = 1 / (numStops - 1);
+  for (let i = 0; i < numStops; i++) {
+    out[i] = Math.min(1, (i + 0.5) * step);
+  }
+  out[numStops - 1] = 1;
+  return out;
+}
+
+/**
+ * A zero-width band is not merely invisible: it makes the warp non-invertible
+ * and hands the dither a flat segment it will quantize into a hard edge.
+ * Dragging a slider to zero means "as little as possible", not "break the ramp".
+ */
+const MIN_BAND = 0.01;
+
+/** Slider position that means "leave this band alone". */
+export const TONE_WEIGHT_NEUTRAL = 50;
+
+/**
+ * Slider position (0..100, 50 neutral) to a multiplier on the band's natural
+ * width: `(v / 50) ^ 2.5`.
+ *
+ * A linear mapping felt inert, and measurably was. Weights are normalised
+ * against each other, which eats most of the upward travel: raising one stop of
+ * four from 50 to 100 lifts its share of the *total* only from 25% to 40%, so
+ * half the slider bought a band 16.7% -> 28.4% of the image. Downward worked
+ * fine — normalisation helps you there — leaving a control that was both weak
+ * and lopsided.
+ *
+ * A power curve fixes both. It is smooth through neutral, where a two-piece
+ * curve put a visible kink (the same drag was worth +7 below 50 and +30 above),
+ * it still reaches exactly 0 at the bottom so a band can be suppressed, and at
+ * 2.5 a single slider spans roughly 1% to 53% of a four-stop ramp in even
+ * steps. Raising the exponent buys more reach at the cost of a lazier low end.
+ *
+ * Values outside 0..100 are clamped, so a legacy uniform array like [1, 1, 1]
+ * still reads as neutral — any set of equal weights is, whatever the scale.
+ */
+const TONE_WEIGHT_EXPONENT = 2.5;
+
+function toneWeightGain(value: number): number {
+  const v = Math.max(0, Math.min(100, value));
+  return Math.pow(v / TONE_WEIGHT_NEUTRAL, TONE_WEIGHT_EXPONENT);
+}
+
+/**
+ * The share of the tonal range each stop ends up with, normalised to sum to 1.
+ *
+ * Exported so the UI can draw the ramp at its true proportions rather than as
+ * equal blocks -- the whole point of the weights is that the blocks are not
+ * equal, and a preview that hides that is worse than none.
+ */
+export function toneBandShares(weights: number[] | undefined, numStops: number): number[] {
+  const natural = naturalBandBoundaries(numStops);
+  const naturalWidths: number[] = [];
+  for (let i = 0; i < numStops; i++) {
+    naturalWidths.push(natural[i] - (i === 0 ? 0 : natural[i - 1]));
+  }
+
+  if (!weights || weights.length !== numStops) return naturalWidths;
+
+  const gains = weights.map((w) => (Number.isFinite(w) ? toneWeightGain(w) : 1));
+  const total = gains.reduce((a, b) => a + b, 0);
+  if (total <= 0) return naturalWidths;
+
+  const desired = naturalWidths.map((nw, i) =>
+    Math.max(MIN_BAND, nw * (gains[i] / total) * numStops)
+  );
+  const desiredTotal = desired.reduce((a, b) => a + b, 0);
+  return desired.map((d) => d / desiredTotal);
+}
+
+/**
+ * Build a 256-entry LUT that redistributes the luminance range across the ramp
+ * stops according to per-stop weights.
+ *
+ * Returns null when the weights are absent, the wrong length, or neutral — the
+ * caller then skips the pass entirely and the ramp behaves exactly as it always
+ * has. Neutral is all-weights-equal at any value, so [50,50,50] and [1,1,1] are
+ * both no-ops.
+ *
+ * **Why a warp rather than moving the bucket boundaries.** The colour branch
+ * buckets with `floor(lum * N)`, and step 3.5 quantizes to N even levels right
+ * before it. The two are deliberately aligned — that alignment is why an
+ * N-stop ramp reproduces exactly N tones. Moving the *bucket* boundaries breaks
+ * it: quantized levels collide into some bands and skip others, leaving dead
+ * colours (the same failure §2.4 describes for palettes, in reverse). So the
+ * boundaries stay put and the tone is warped to meet them, before the dither
+ * runs, so the dither quantizes already-warped tone and stays consistent.
+ *
+ * The warp is piecewise-linear and strictly monotone: band i's requested slice
+ * of the input range is stretched onto the slice the quantizer actually gives
+ * stop i. Widening a band genuinely dedicates more of the image to that colour.
+ *
+ * Note the proportionality assumes `ditherLevels === numStops`, which is the
+ * auto case. An explicit Quantize Levels detunes it — the warp stays monotone
+ * and the sliders still read as more/less, but the shares stop tracking the
+ * numbers exactly.
+ */
+export function buildToneBandLut(
+  weights: number[] | undefined,
+  numStops: number
+): Float32Array | null {
+  if (!weights || weights.length !== numStops || numStops < 2) return null;
+
+  /* Equality is tested on the raw slider values: any uniform set is neutral. */
+  if (weights.every((w) => w === weights[0])) return null;
+
+  const natural = naturalBandBoundaries(numStops);
+
+  /*
+   * Scaling the natural widths rather than assigning absolute shares is what
+   * keeps a neutral weighting an exact identity — otherwise nudging one slider
+   * by a single step would jump the whole ramp from its legacy distribution to
+   * a flat one.
+   */
+  const shares = toneBandShares(weights, numStops);
+
+  const source = new Float64Array(numStops);
+  let running = 0;
+  for (let i = 0; i < numStops; i++) {
+    running += shares[i];
+    source[i] = running;
+  }
+  source[numStops - 1] = 1;
+
+  const lut = new Float32Array(256);
+  for (let s = 0; s < 256; s++) {
+    const v = s / 255;
+    let band = 0;
+    while (band < numStops - 1 && v >= source[band]) band++;
+    const srcLo = band === 0 ? 0 : source[band - 1];
+    const srcHi = source[band];
+    const dstLo = band === 0 ? 0 : natural[band - 1];
+    const dstHi = natural[band];
+    const span = srcHi - srcLo;
+    const t = span > 1e-9 ? (v - srcLo) / span : 0;
+    lut[s] = Math.min(1, Math.max(0, dstLo + Math.min(1, Math.max(0, t)) * (dstHi - dstLo)));
+  }
+  return lut;
 }
 
 /**
@@ -228,6 +386,7 @@ export function toPipelineAdjustments(
     midtoneColor: adjust.midtoneColor,
     shadowColor: adjust.shadowColor,
     customToneColors: adjust.customToneColors,
+    toneStopWeights: adjust.toneStopWeights,
     colorLevels: adjust.colorLevels,
   };
 }
@@ -895,6 +1054,33 @@ export function processRasterFrame(
   const ditherFamily = DITHER_ALGORITHMS.find((a) => a.id === ditherAlgo)?.family;
   const paletteOwnsQuantization =
     isPixelOut && !!activePalette && !explicitLevels && ditherFamily === 'error-diffusion';
+
+  /*
+   * Per-stop band widths, applied as a monotone warp on the tone *before* it is
+   * quantized — see buildToneBandLut for why the warp goes here rather than
+   * moving the bucket boundaries in step 4.
+   *
+   * Only meaningful when a user ramp is actually driving colour: an indexed
+   * palette has its own quantization and its own spacing, and the mono path
+   * never buckets at all.
+   */
+  if (!activePalette && tonal && tonal !== '1color') {
+    const rampLength =
+      tonal === 'ntone' && options.customToneColors && options.customToneColors.length >= 2
+        ? options.customToneColors.length
+        : tonal === '2color'
+        ? 2
+        : 3;
+    const lut = buildToneBandLut(options.toneStopWeights, rampLength);
+    if (lut) {
+      for (let i = 0; i < totalCells; i++) {
+        const v = lumBuffer[i];
+        if (v < 0) continue; // transparency sentinel
+        const idx = Math.min(255, Math.max(0, Math.round(v * 255)));
+        lumBuffer[i] = lut[idx];
+      }
+    }
+  }
 
   if (!paletteOwnsQuantization && ditherAlgo && ditherAlgo !== 'none') {
     applyDitherAlgorithm(lumBuffer, lumBuffer, cols, rows, ditherAlgo, ditherLevels);

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { NumberInput, PrecisionSlider } from './controlPrimitives';
+import { NumberInput, PrecisionSlider, DeferredColorInput } from './controlPrimitives';
 import {
   ImageAdjustConfig,
   ToneMappingConfig,
@@ -10,8 +10,618 @@ import {
 import { BUILTIN_PALETTES } from '../engine/palettes';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
 import { computeAutoLevels } from '../engine/autoLevels';
-import { NToneRampEditor } from './NToneRampEditor';
+import { toneBandShares } from '../engine/rasterEngine';
+import { NToneRampEditor, NEUTRAL_STOP_WEIGHT, resampleRamp } from './NToneRampEditor';
 import { Sliders, Sparkles, Minus, Plus, Palette, BarChart3 } from 'lucide-react';
+import { BackgroundMode } from '../types/ascii';
+
+// ---------------------------------------------------------------------------
+// Shared grading slider registry
+//
+// Every numeric grading slider is declared once here and rendered through
+// AdjustSlider. The BASIC panel groups these rows differently from ADVANCED,
+// and without a single declaration the two layouts would drift the moment
+// anyone retuned a range -- a blur capped at 8 in one panel and 40 in the
+// other is the kind of divergence nobody notices until it ships.
+// ---------------------------------------------------------------------------
+
+export type AdjustSliderId =
+  | 'highlights'
+  | 'midtones'
+  | 'shadows'
+  | 'sharpenStrength'
+  | 'sharpenRadius'
+  | 'noise'
+  | 'denoise'
+  | 'blur'
+  | 'brightness'
+  | 'contrast';
+
+export interface AdjustSliderSpec {
+  label: string;
+  /** Range the track spans under normal use. */
+  sliderMin: number;
+  sliderMax: number;
+  /** Wider range the number field accepts. Defaults to the track range. */
+  hardMin?: number;
+  hardMax?: number;
+  step: number;
+  /** Snap-back target for a double-click on the track. */
+  resetTo: number;
+}
+
+export const ADJUST_SLIDERS: Record<AdjustSliderId, AdjustSliderSpec> = {
+  highlights: {
+    label: 'Highlights',
+    sliderMin: -100,
+    sliderMax: 100,
+    step: 1,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.highlights,
+  },
+  midtones: {
+    label: 'Midtones',
+    sliderMin: -100,
+    sliderMax: 100,
+    step: 1,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.midtones,
+  },
+  shadows: {
+    label: 'Shadows',
+    sliderMin: -100,
+    sliderMax: 100,
+    step: 1,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.shadows,
+  },
+  sharpenStrength: {
+    label: 'Sharpen Strength',
+    sliderMin: 0,
+    sliderMax: 300,
+    hardMax: 1000,
+    step: 5,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.sharpenStrength,
+  },
+  sharpenRadius: {
+    label: 'Sharpen Radius',
+    sliderMin: 0.1,
+    sliderMax: 4,
+    hardMax: 10,
+    step: 0.1,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.sharpenRadius,
+  },
+  noise: {
+    label: 'Noise / Grain',
+    sliderMin: 0,
+    sliderMax: 100,
+    hardMax: 200,
+    step: 1,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.noise,
+  },
+  denoise: {
+    label: 'Denoise',
+    sliderMin: 0,
+    sliderMax: 8,
+    hardMax: 100,
+    step: 0.1,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.denoise ?? 0,
+  },
+  blur: {
+    label: 'Blur',
+    sliderMin: 0,
+    sliderMax: 8,
+    hardMax: 40,
+    step: 0.1,
+    resetTo: DEFAULT_IMAGE_ADJUST_CONFIG.blur,
+  },
+  brightness: {
+    label: 'Brightness',
+    sliderMin: -25,
+    sliderMax: 25,
+    hardMin: -100,
+    hardMax: 100,
+    step: 0.1,
+    resetTo: 0,
+  },
+  contrast: {
+    label: 'Contrast',
+    sliderMin: -25,
+    sliderMax: 25,
+    hardMin: -100,
+    hardMax: 100,
+    step: 0.1,
+    resetTo: 0,
+  },
+};
+
+/** One labelled grading slider, rendered from its entry in ADJUST_SLIDERS. */
+export const AdjustSlider: React.FC<{
+  id: AdjustSliderId;
+  config: ImageAdjustConfig;
+  onChangeConfig: (next: ImageAdjustConfig) => void;
+  /** Overrides the registry label; the ranges are never overridable. */
+  label?: string;
+}> = ({ id, config, onChangeConfig, label }) => {
+  const spec = ADJUST_SLIDERS[id];
+  return (
+    <div className="control-row">
+      <span className="control-label">{label ?? spec.label}</span>
+      <PrecisionSlider
+        value={config[id] ?? spec.resetTo}
+        sliderMin={spec.sliderMin}
+        sliderMax={spec.sliderMax}
+        hardMin={spec.hardMin}
+        hardMax={spec.hardMax}
+        step={spec.step}
+        resetTo={spec.resetTo}
+        onChange={(val) => onChangeConfig({ ...config, [id]: val })}
+      />
+    </div>
+  );
+};
+
+/**
+ * Tonal Balance: the three luminance push sliders, with their reset.
+ *
+ * Note these are NOT the tone ramp's highlight/midtone/shadow *colours*
+ * (highlightColor & co). The app has both triplets and they are unrelated:
+ * these shift luminance before the dither, those pick what colour the result
+ * is painted in. Keeping them in separate, differently titled groups is the
+ * only thing stopping that from being thoroughly confusing.
+ */
+export const TonalBalanceGroup: React.FC<{
+  config: ImageAdjustConfig;
+  onChangeConfig: (next: ImageAdjustConfig) => void;
+  resetDefaults?: ImageAdjustConfig;
+}> = ({ config, onChangeConfig, resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG }) => (
+  <>
+    <div className="tonal-subheading">
+      <span>Tonal Balance</span>
+      <button
+        type="button"
+        className="btn-reset"
+        onClick={() =>
+          onChangeConfig({
+            ...config,
+            highlights: resetDefaults.highlights ?? 0,
+            midtones: resetDefaults.midtones ?? 0,
+            shadows: resetDefaults.shadows ?? 0,
+          })
+        }
+        title="Reset highlights, midtones, and shadows to 0"
+      >
+        RESET
+      </button>
+    </div>
+    <AdjustSlider id="highlights" config={config} onChangeConfig={onChangeConfig} />
+    <AdjustSlider id="midtones" config={config} onChangeConfig={onChangeConfig} />
+    <AdjustSlider id="shadows" config={config} onChangeConfig={onChangeConfig} />
+  </>
+);
+
+/**
+ * Writes a set of ramp stops back onto the config.
+ *
+ * The engine still reads the legacy shadow/midtone/highlight triple in some
+ * paths, so the ends and middle of the stop array are mirrored onto them on
+ * every edit rather than left to go stale.
+ */
+export const applyToneStops = (
+  config: ImageAdjustConfig,
+  newStops: string[]
+): ImageAdjustConfig => ({
+  ...config,
+  tonalMapping: 'ntone',
+  customToneColors: newStops,
+  shadowColor: newStops[0] || '#000000',
+  midtoneColor:
+    newStops.length > 2 ? newStops[Math.floor(newStops.length / 2)] : '#3b82f6',
+  highlightColor: newStops[newStops.length - 1] || '#ffffff',
+});
+
+/**
+ * The N-tone ramp editor, shown only once the mapping is past single colour.
+ *
+ * Colours and band widths are edited in one place here, the same as in BASIC.
+ * They were split for a while -- stops in this editor, nothing for widths -- and
+ * a ramp you could recolour but not redistribute is only half a ramp.
+ */
+export const ToneRampGroup: React.FC<{
+  config: ImageAdjustConfig;
+  onChangeConfig: (next: ImageAdjustConfig) => void;
+  resetDefaults?: ImageAdjustConfig;
+  /**
+   * An indexed palette is driving colour, so the engine skips this ramp
+   * entirely -- see `paletteOwnsQuantization`. The editor stays usable (what is
+   * set here takes effect the moment the palette comes off) but says so.
+   */
+  paletteActive?: boolean;
+}> = ({
+  config,
+  onChangeConfig,
+  resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG,
+  paletteActive = false,
+}) => {
+  if (!config.tonalMapping || config.tonalMapping === '1color') return null;
+
+  const fallbackStops = resetDefaults.customToneColors
+    ? [...resetDefaults.customToneColors]
+    : ['#0a0a0a', '#00a848', '#00ff66'];
+
+  const { colors, weights } = resolveToneStops(config);
+
+  return (
+    <div style={{ marginTop: '6px' }}>
+      <div className="tonal-subheading">
+        <span>N-Tone Ramp Editor</span>
+        <button
+          type="button"
+          className="btn-reset"
+          /* Colours and distribution both, or RESET leaves half the ramp behind. */
+          onClick={() =>
+            onChangeConfig({
+              ...applyToneStops(config, fallbackStops),
+              toneStopWeights: fallbackStops.map(() => DEFAULT_STOP_WEIGHT),
+            })
+          }
+          title="Reset Ramp to default green tones and an even distribution"
+        >
+          RESET
+        </button>
+      </div>
+      {paletteActive && (
+        <div className="panel-note" style={{ marginBottom: '8px' }}>
+          <span>
+            A preset palette is driving colour. These stops and widths apply once
+            it is turned off.
+          </span>
+        </div>
+      )}
+      <NToneRampEditor
+        stops={colors}
+        weights={weights}
+        onChangeRamp={(stops, nextWeights) =>
+          onChangeConfig({
+            ...applyToneStops(config, stops),
+            toneStopWeights: nextWeights,
+          })
+        }
+      />
+    </div>
+  );
+};
+
+/**
+ * Neutral weight. Weights are relative, so all-equal is an even split.
+ *
+ * An alias, not a second constant: the engine defines neutral and both editors
+ * have to agree with it or a "reset" would leave the warp switched on.
+ */
+export const DEFAULT_STOP_WEIGHT = NEUTRAL_STOP_WEIGHT;
+
+/**
+ * Most stops the BASIC stepper will add.
+ *
+ * The engine and ADVANCED's ramp editor both go to 256; this is a layout
+ * limit, not an engine one. Each stop here is a full row -- label, swatch,
+ * slider -- so past about eight the ramp stops being one control among six and
+ * becomes the whole panel. A ramp that arrives with more (a preset, a shared
+ * link, an ADVANCED session) is shown in full and can still be shortened; only
+ * the + button stops.
+ */
+export const BASIC_MAX_TONE_STOPS = 8;
+
+/**
+ * The stops currently driving colour, and the weight each one carries.
+ *
+ * `paletteColors` wins when given, and callers pass it only while an indexed
+ * palette is actually rendering. It has to win: `customToneColors` is never
+ * empty — DEFAULT_IMAGE_ADJUST_CONFIG seeds it with three greens — so checking
+ * it first meant a selected palette was always shadowed by those greens and the
+ * bands never changed when you picked one.
+ */
+export const resolveToneStops = (
+  config: ImageAdjustConfig,
+  paletteColors?: string[]
+): { colors: string[]; weights: number[] } => {
+  let colors: string[];
+
+  if (paletteColors && paletteColors.length >= 2) {
+    colors = paletteColors;
+  } else if (config.customToneColors && config.customToneColors.length >= 2) {
+    colors = config.customToneColors;
+  } else if (config.tonalMapping === '2color') {
+    colors = [config.shadowColor || '#0a0a0a', config.highlightColor || '#00ff66'];
+  } else {
+    colors = [
+      config.shadowColor || '#0a0a0a',
+      config.midtoneColor || '#00a848',
+      config.highlightColor || '#00ff66',
+    ];
+  }
+
+  const weights =
+    config.toneStopWeights && config.toneStopWeights.length === colors.length
+      ? config.toneStopWeights
+      : colors.map(() => DEFAULT_STOP_WEIGHT);
+
+  return { colors, weights };
+};
+
+/**
+ * One row per ramp stop: its colour, and how much of the tonal range it gets.
+ *
+ * The slider is a **band width**, not an opacity and not a luminance push. It
+ * widens or narrows the slice of the luminance range that maps to that colour,
+ * which is what "more of this colour" actually means for a tone ramp -- drag
+ * shadows up and more of the image resolves to the shadow stop. The engine
+ * implements it as a monotone warp applied before quantization; see
+ * buildToneBandLut in rasterEngine for why it cannot simply move the bucket
+ * boundaries.
+ *
+ * Colour and weight sit on the same line deliberately. Split across two
+ * sections -- stops under COLORS, grading under TONAL CONTROLS, as ADVANCED
+ * still has it -- making a chosen colour actually read means a round trip
+ * between panels.
+ *
+ * Every edit commits the *resolved* stop list, not whatever `customToneColors`
+ * happened to hold. While a palette is showing, those are the palette's own
+ * colours, so a host converting the palette into an editable ramp gets the
+ * colours that were on screen rather than a stale default.
+ */
+export const ToneBandRows: React.FC<{
+  config: ImageAdjustConfig;
+  onChangeConfig: (next: ImageAdjustConfig) => void;
+  /**
+   * Colours of the active built-in palette, when one is driving the render.
+   */
+  paletteColors?: string[];
+  /**
+   * Show the bands but refuse edits.
+   *
+   * Used while an indexed palette is rendering: the stops shown are real, but
+   * neither weight nor colour applies to that path, and converting away from it
+   * costs enough that it should be a deliberate act rather than the side effect
+   * of nudging a slider.
+   */
+  disabled?: boolean;
+}> = ({ config, onChangeConfig, paletteColors, disabled = false }) => {
+  const { colors, weights } = resolveToneStops(config, paletteColors);
+
+  const setStopColor = (index: number, hex: string) => {
+    const next = [...colors];
+    next[index] = hex;
+    onChangeConfig({
+      ...applyToneStops(config, next),
+      /* Weights are positional — one per stop — so they travel with the list. */
+      toneStopWeights: [...weights],
+    });
+  };
+
+  const setStopWeight = (index: number, value: number) => {
+    const next = [...weights];
+    next[index] = value;
+    onChangeConfig({
+      ...applyToneStops(config, [...colors]),
+      toneStopWeights: next,
+    });
+  };
+
+  /*
+   * Change how many colours the ramp has. `resampleRamp` is shared with
+   * ADVANCED's editor -- same interpolation, same weight carry-over -- so a
+   * ramp built in one panel and resized in the other behaves identically. Only
+   * the cap differs, and that is a layout limit passed in by the caller.
+   */
+  const setStopCount = (nextCount: number) => {
+    const next = resampleRamp(colors, weights, nextCount, BASIC_MAX_TONE_STOPS);
+    if (next.colors === colors) return;
+    onChangeConfig({
+      ...applyToneStops(config, next.colors),
+      toneStopWeights: next.weights,
+    });
+  };
+
+  const isEven = weights.every((w) => w === weights[0]);
+
+  /*
+   * Proportions straight from the engine helper, so the bar shows the widths
+   * the render will actually use rather than an even split that would hide the
+   * only thing the weights do.
+   */
+  const shares = toneBandShares(disabled ? undefined : weights, colors.length);
+
+  /* Labelled by role at the ends, by position in between. */
+  const labelFor = (i: number) => {
+    if (i === 0) return 'Shadows';
+    if (i === colors.length - 1) return 'Highlights';
+    if (colors.length === 3) return 'Midtones';
+    return `Tone ${i + 1}`;
+  };
+
+  return (
+    <>
+      <div className="tonal-subheading">
+        <span>Tonal Bands</span>
+        {/*
+          * Count sits with the bands rather than in its own section: how many
+          * colours the ramp has and how wide each one is are one decision. An
+          * indexed palette has no say -- its length is the palette's -- so the
+          * stepper is hidden rather than shown inert.
+          */}
+        {!disabled && (
+          <span className="tone-band-count">
+            <button
+              type="button"
+              className="slider-nudge-btn"
+              disabled={colors.length <= 2}
+              onClick={() => setStopCount(colors.length - 1)}
+              title="One fewer colour"
+            >
+              <Minus size={11} />
+            </button>
+            <span className="tone-band-count-value" title={`${colors.length} colours in the ramp`}>
+              {colors.length}
+            </span>
+            <button
+              type="button"
+              className="slider-nudge-btn"
+              disabled={colors.length >= BASIC_MAX_TONE_STOPS}
+              onClick={() => setStopCount(colors.length + 1)}
+              title={
+                colors.length >= BASIC_MAX_TONE_STOPS
+                  ? `${BASIC_MAX_TONE_STOPS} is the most this panel shows -- use ADVANCED for longer ramps`
+                  : 'One more colour'
+              }
+            >
+              <Plus size={11} />
+            </button>
+          </span>
+        )}
+        {!isEven && !disabled && (
+          <button
+            type="button"
+            className="btn-reset"
+            onClick={() =>
+              onChangeConfig({
+                ...config,
+                toneStopWeights: colors.map(() => DEFAULT_STOP_WEIGHT),
+              })
+            }
+            title="Give every colour an equal share of the tonal range"
+          >
+            EVEN
+          </button>
+        )}
+      </div>
+
+      {/*
+       * Shadow on the left, highlight on the right — the same reading order as
+       * the rows below, and as the ramp itself.
+       */}
+      <div
+        className="tone-band-preview"
+        title={
+          disabled
+            ? 'Colours in this palette'
+            : 'Share of the tonal range each colour covers'
+        }
+      >
+        {colors.map((color, i) => (
+          <span
+            key={i}
+            className="tone-band-preview-seg"
+            style={{ background: color, flexGrow: shares[i] }}
+          />
+        ))}
+      </div>
+
+      {colors.map((color, i) => (
+        <div className="tone-band-row" key={i}>
+          <span className="control-label tone-band-label">{labelFor(i)}</span>
+          <DeferredColorInput
+            value={color}
+            showHexField={false}
+            disabled={disabled}
+            title={`${labelFor(i)} colour`}
+            onChange={(hex) => setStopColor(i, hex)}
+          />
+          {/*
+           * A bare range, not PrecisionSlider: its numeric field is 54px of
+           * fixed width that will not shrink, and beside a label and a swatch
+           * there is not room for it in a 380px panel. The weight is relative
+           * anyway — the number carries no meaning worth reading.
+           */}
+          <input
+            type="range"
+            className="range-slider tone-band-slider"
+            min={0}
+            max={100}
+            step={1}
+            value={weights[i]}
+            disabled={disabled}
+            onChange={(e) => setStopWeight(i, parseInt(e.target.value, 10))}
+            onDoubleClick={() => !disabled && setStopWeight(i, DEFAULT_STOP_WEIGHT)}
+            title={
+              disabled
+                ? 'Band widths apply to tone ramps, not to palette matching'
+                : `Share of the tonal range given to ${labelFor(i).toLowerCase()}. Double-click to reset.`
+            }
+          />
+        </div>
+      ))}
+    </>
+  );
+};
+
+/** The three canvas backdrops the media renderer understands. */
+const BACKGROUND_MODES: { id: BackgroundMode; label: string; title: string }[] = [
+  { id: 'black', label: 'BLACK', title: 'Solid black backdrop' },
+  { id: 'white', label: 'WHITE', title: 'Solid white backdrop — inverts the paper' },
+  { id: 'transparent', label: 'NONE', title: 'Transparent — exports with an alpha channel' },
+];
+
+/**
+ * Backdrop selector.
+ *
+ * The engine has read viewConfig.background since the media renderer landed
+ * (mediaRenderer.ts, resolveMediaBackgroundColor) but nothing ever exposed it,
+ * so it was stuck on the 'black' default. This is that control.
+ */
+export const BackgroundRow: React.FC<{
+  value: BackgroundMode;
+  onChange: (next: BackgroundMode) => void;
+}> = ({ value, onChange }) => (
+  <div className="control-row">
+    <span className="control-label">Background</span>
+    <div className="btn-group-inline">
+      {BACKGROUND_MODES.map((mode) => (
+        <button
+          key={mode.id}
+          type="button"
+          className={`btn btn-sm ${value === mode.id ? 'btn-primary' : ''}`}
+          onClick={() => onChange(mode.id)}
+          title={mode.title}
+        >
+          {mode.label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+/**
+ * Escape hatch for a non-auto quantize depth in a panel that does not show the
+ * quantize control.
+ *
+ * BASIC leaves depth on Auto, where it follows the charset or palette and
+ * needs no decision. But hiding a control is not the same as resetting it: a
+ * shared link serialises colorLevels, and so does flipping over from ADVANCED
+ * mid-session. Either way the image comes out posterised with nothing on
+ * screen to explain why. Rather than silently forcing it back -- which would
+ * throw away a deliberate ADVANCED setting on a mode switch -- surface it only
+ * when it is actually set, with one button to return to Auto.
+ */
+export const QuantizeDepthNotice: React.FC<{
+  value?: number;
+  onReset: () => void;
+}> = ({ value, onReset }) => {
+  if (!value || value <= 0) return null;
+  return (
+    <div className="control-row">
+      <span className="control-label">Depth</span>
+      <div className="btn-group-inline">
+        <span className="control-static-value">{value} LEVELS</span>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={onReset}
+          title="Return quantization depth to Auto, following the charset or palette"
+        >
+          AUTO
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // High-Accuracy Quantize Levels Control
@@ -577,7 +1187,7 @@ const LV_TRACK_H = 12;
 
 type LevelsHandle = 'black' | 'mid' | 'white';
 
-const LevelsControl: React.FC<LevelsControlProps> = ({
+export const LevelsControl: React.FC<LevelsControlProps> = ({
   config,
   onChangeConfig,
   histogram,
@@ -977,15 +1587,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
     }
   };
 
-  const resetTonalBalance = () => {
-    onChangeConfig({
-      ...config,
-      highlights: resetDefaults.highlights ?? 0,
-      midtones: resetDefaults.midtones ?? 0,
-      shadows: resetDefaults.shadows ?? 0,
-    });
-  };
-
   const resetColors = () => {
     onChangeConfig({
       ...config,
@@ -996,21 +1597,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       customToneColors: resetDefaults.customToneColors ? [...resetDefaults.customToneColors] : ['#0a0a0a', '#00a848', '#00ff66'],
     });
     onResetPalette?.();
-  };
-
-  const handleUpdateToneStops = (newStops: string[]) => {
-    const shadow = newStops[0] || '#000000';
-    const highlight = newStops[newStops.length - 1] || '#ffffff';
-    const mid = newStops.length > 2 ? newStops[Math.floor(newStops.length / 2)] : '#3b82f6';
-
-    onChangeConfig({
-      ...config,
-      tonalMapping: 'ntone',
-      customToneColors: newStops,
-      shadowColor: shadow,
-      midtoneColor: mid,
-      highlightColor: highlight,
-    });
   };
 
   return (
@@ -1026,39 +1612,12 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       >
         {paletteSlot}
 
-        {config.tonalMapping && config.tonalMapping !== '1color' && (
-          <div style={{ marginTop: '6px' }}>
-            <div className="tonal-subheading">
-              <span>N-Tone Ramp Editor</span>
-              <button
-                type="button"
-                className="btn-reset"
-                onClick={() =>
-                  handleUpdateToneStops(
-                    resetDefaults.customToneColors
-                      ? [...resetDefaults.customToneColors]
-                      : ['#0a0a0a', '#00a848', '#00ff66']
-                  )
-                }
-                title="Reset Ramp to default green tones"
-              >
-                RESET
-              </button>
-            </div>
-            <NToneRampEditor
-              stops={
-                config.customToneColors && config.customToneColors.length >= 2
-                  ? config.customToneColors
-                  : [
-                      config.shadowColor || '#0a0a0a',
-                      config.midtoneColor || '#00a848',
-                      config.highlightColor || '#00ff66',
-                    ]
-              }
-              onChangeStops={handleUpdateToneStops}
-            />
-          </div>
-        )}
+        <ToneRampGroup
+          config={config}
+          onChangeConfig={onChangeConfig}
+          resetDefaults={resetDefaults}
+          paletteActive={mediaColorConfig?.paletteMode === 'indexed'}
+        />
       </CollapsibleSection>
 
       {/* TONAL CONTROLS */}
@@ -1090,56 +1649,11 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         )}
 
         {/* Tonal Balance: Highlights, Midtones, Shadows */}
-        <div className="tonal-subheading">
-          <span>Tonal Balance</span>
-          <button
-            type="button"
-            className="btn-reset"
-            onClick={resetTonalBalance}
-            title="Reset highlights, midtones, and shadows to 0"
-          >
-            RESET
-          </button>
-        </div>
-
-        {/* Highlights */}
-        <div className="control-row">
-          <span className="control-label">Highlights</span>
-          <PrecisionSlider
-            value={config.highlights}
-            sliderMin={-100}
-            sliderMax={100}
-            step={1}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.highlights}
-            onChange={(val) => update('highlights', val)}
-          />
-        </div>
-
-        {/* Midtones */}
-        <div className="control-row">
-          <span className="control-label">Midtones</span>
-          <PrecisionSlider
-            value={config.midtones}
-            sliderMin={-100}
-            sliderMax={100}
-            step={1}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.midtones}
-            onChange={(val) => update('midtones', val)}
-          />
-        </div>
-
-        {/* Shadows */}
-        <div className="control-row">
-          <span className="control-label">Shadows</span>
-          <PrecisionSlider
-            value={config.shadows}
-            sliderMin={-100}
-            sliderMax={100}
-            step={1}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.shadows}
-            onChange={(val) => update('shadows', val)}
-          />
-        </div>
+        <TonalBalanceGroup
+          config={config}
+          onChangeConfig={onChangeConfig}
+          resetDefaults={resetDefaults}
+        />
 
         {/* Alpha Threshold */}
         {showAlphaCutoff && (
@@ -1197,120 +1711,31 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
           <span>Sharpening &amp; Edge Definition</span>
         </div>
 
-        {/* Sharpen Strength */}
-        <div className="control-row">
-          <span className="control-label">Sharpen Strength</span>
-          <PrecisionSlider
-            value={config.sharpenStrength}
-            sliderMin={0}
-            sliderMax={300}
-            hardMax={1000}
-            step={5}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.sharpenStrength}
-            onChange={(val) => update('sharpenStrength', val)}
-          />
-        </div>
-
-        {/* Sharpen Radius */}
-        <div className="control-row">
-          <span className="control-label">Sharpen Radius</span>
-          <PrecisionSlider
-            value={config.sharpenRadius}
-            sliderMin={0.1}
-            sliderMax={4}
-            hardMax={10}
-            step={0.1}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.sharpenRadius}
-            onChange={(val) => update('sharpenRadius', val)}
-          />
-        </div>
+        <AdjustSlider id="sharpenStrength" config={config} onChangeConfig={onChangeConfig} />
+        <AdjustSlider id="sharpenRadius" config={config} onChangeConfig={onChangeConfig} />
 
         {/* TEXTURE & GRAIN */}
         <div className="tonal-subheading">
           <span>Texture &amp; Noise</span>
         </div>
 
-        {/* Noise */}
-        <div className="control-row">
-          <span className="control-label">Noise / Grain</span>
-          <PrecisionSlider
-            value={config.noise}
-            sliderMin={0}
-            sliderMax={100}
-            hardMax={200}
-            step={1}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.noise}
-            onChange={(val) => update('noise', val)}
-          />
-        </div>
-
-        {/* Denoise */}
-        <div className="control-row">
-          <span className="control-label">Denoise</span>
-          <PrecisionSlider
-            value={config.denoise || 0}
-            sliderMin={0}
-            sliderMax={8}
-            hardMax={100}
-            step={0.1}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.denoise ?? 0}
-            onChange={(val) => update('denoise', val)}
-          />
-        </div>
+        <AdjustSlider id="noise" config={config} onChangeConfig={onChangeConfig} />
+        <AdjustSlider id="denoise" config={config} onChangeConfig={onChangeConfig} />
 
         {/* OPTICAL FILTERS */}
         <div className="tonal-subheading">
           <span>Optical Filters</span>
         </div>
 
-        {/* Blur */}
-        <div className="control-row">
-          <span className="control-label">Blur</span>
-          <PrecisionSlider
-            value={config.blur}
-            sliderMin={0}
-            sliderMax={8}
-            hardMax={40}
-            step={0.1}
-            resetTo={DEFAULT_IMAGE_ADJUST_CONFIG.blur}
-            onChange={(val) => update('blur', val)}
-          />
-        </div>
+        <AdjustSlider id="blur" config={config} onChangeConfig={onChangeConfig} />
 
         {/* EXPOSURE & CONTRAST */}
         <div className="tonal-subheading">
           <span>Exposure &amp; Contrast</span>
         </div>
 
-        {/* Brightness */}
-        <div className="control-row">
-          <span className="control-label">Brightness</span>
-          <PrecisionSlider
-            value={config.brightness}
-            sliderMin={-25}
-            sliderMax={25}
-            hardMin={-100}
-            hardMax={100}
-            step={0.1}
-            resetTo={0}
-            onChange={(val) => update('brightness', val)}
-          />
-        </div>
-
-        {/* Contrast */}
-        <div className="control-row">
-          <span className="control-label">Contrast</span>
-          <PrecisionSlider
-            value={config.contrast}
-            sliderMin={-25}
-            sliderMax={25}
-            hardMin={-100}
-            hardMax={100}
-            step={0.1}
-            resetTo={0}
-            onChange={(val) => update('contrast', val)}
-          />
-        </div>
+        <AdjustSlider id="brightness" config={config} onChangeConfig={onChangeConfig} />
+        <AdjustSlider id="contrast" config={config} onChangeConfig={onChangeConfig} />
       </CollapsibleSection>
     </>
   );

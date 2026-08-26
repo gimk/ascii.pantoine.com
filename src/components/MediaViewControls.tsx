@@ -12,10 +12,15 @@ import {
 } from '../types/ascii';
 import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
 import { DEFAULT_MEDIA_COLOR_CONFIG } from '../types/ascii';
-import { DEFAULT_PHOSPHOR_TINT } from '../engine/palettes';
+import { DEFAULT_PHOSPHOR_TINT, BUILTIN_PALETTES } from '../engine/palettes';
 import { DITHER_ALGORITHMS } from '../engine/ditherAlgorithms';
 import { PaletteControls } from './PaletteControls';
-import { ImageAdjustControls } from './ImageAdjustControls';
+import {
+  ImageAdjustControls,
+  BackgroundRow,
+  applyToneStops,
+  DEFAULT_STOP_WEIGHT,
+} from './ImageAdjustControls';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
 import { Settings } from 'lucide-react';
 
@@ -160,6 +165,43 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
                 tonalMapping={config.tonalMapping}
                 onChangeTonalMapping={(t) => onChangeConfig({ ...config, tonalMapping: t })}
                 isPixelMode={isPixelMode}
+                onEditPaletteAsRamp={
+                  mediaColorConfig?.paletteMode === 'indexed' && onChangeMediaColorConfig
+                    ? () => {
+                        const pal = BUILTIN_PALETTES.find(
+                          (p) => p.id === mediaColorConfig.activePaletteId
+                        );
+                        if (!pal || pal.colors.length < 2) return;
+                        const stops = [...pal.colors];
+                        /*
+                         * Palette off and ramp on, in that order but as two
+                         * writes to two different configs -- the render reads
+                         * both, and leaving indexed set would keep the palette
+                         * winning over the stops just copied out of it.
+                         */
+                        onChangeMediaColorConfig({
+                          ...mediaColorConfig,
+                          paletteMode: 'phosphor',
+                          mode: 'fixed',
+                        });
+                        onChangeConfig({
+                          ...config,
+                          ...applyToneStops(config, stops),
+                          toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
+                          tonalMapping: 'ntone',
+                        });
+                      }
+                    : undefined
+                }
+              />
+              {/*
+               * Backdrop sits with the palette because that is what it is: the
+               * colour behind the raster. Media-only -- `background` lives on
+               * MediaViewConfig, not the shared ImageAdjustConfig.
+               */}
+              <BackgroundRow
+                value={config.background}
+                onChange={(bg) => onChangeConfig({ ...config, background: bg })}
               />
             </div>
           ) : null

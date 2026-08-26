@@ -16,6 +16,7 @@ const DEFAULT_UI_THEME_SETTINGS: UiThemeSettings = {
   customUiColor: '',
   syncUiWithAscii: true,
   autoCollapsePanels: true,
+  lowResPreview: true,
 };
 
 interface ViewfinderSettingsModalProps {
@@ -411,10 +412,37 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                 }}
               >
                 Continuous rendering is paused for static 2D images (rendered once with 0% CPU consumption).
+                The framerate settings below do not apply; Draft Preview does.
               </div>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/*
+                * 0. Draft Preview -- the only row here that acts on static
+                * images, which is why it is not dimmed alongside the rest.
+                */}
+              <div className="control-row">
+                <span className="control-label" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span>Draft Preview While Editing</span>
+                  <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
+                    Static images redraw coarse while you drag a control, then sharpen once you stop.
+                    Turn off for an always-sharp (but slower) response on large grids.
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${(uiThemeSettings.lowResPreview ?? true) ? 'btn-primary' : ''}`}
+                  onClick={() =>
+                    onChangeUiThemeSettings?.({
+                      ...uiThemeSettings,
+                      lowResPreview: !(uiThemeSettings.lowResPreview ?? true),
+                    })
+                  }
+                >
+                  {(uiThemeSettings.lowResPreview ?? true) ? 'ENABLED [ON]' : 'DISABLED [OFF]'}
+                </button>
+              </div>
+
               {/* 1. FPS Presets */}
               <div className="control-row" style={{ opacity: isStaticImage ? 0.35 : 1 }}>
                 <span className="control-label">Target Framerate</span>

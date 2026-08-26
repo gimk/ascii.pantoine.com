@@ -19,6 +19,12 @@
 
 ## ✦ Features
 
+### 🎚️ Two Interfaces, One Studio (`BASIC` / `ADVANCED`)
+- **BASIC**: six numbered steps in one flat panel — import, output, dither, adjust, colour, export. Nothing collapses and nothing hides; each step carries only what that step needs, and export is the loud one at the bottom rather than an icon in the toolbar. Media only.
+- **ADVANCED**: the full two-tab tree with every content source (media, synth, 3D model) and every control — tone curves, quantize depth, mesh transforms, particle physics, resolution optimizer.
+- **Switch freely**: the toggle sits centred in the header. Both modes drive exactly the same state, so nothing is converted or discarded when you flip — anything BASIC hides stays live in the render and is waiting untouched in ADVANCED.
+- **Sensible default**: first-time visitors land in BASIC; anyone with existing settings keeps ADVANCED. The choice is remembered after that.
+
 ### 🌐 Live Online & Zero-Setup
 - **Instant Browser Access**: Available 24/7 at [**ascii.pantoine.com**](https://ascii.pantoine.com) — no installation, account, or local setup required.
 - **Mobile & Touch-Optimized**: Fully responsive brutalist interface with compact touch-friendly controls for phones, tablets, and desktops.

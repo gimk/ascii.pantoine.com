@@ -133,11 +133,39 @@ export type PhosphorTheme =
   | 'paper'
   | 'blood';
 
+/**
+ * Which of the two sidebar layouts is on screen.
+ *
+ * BASIC is a single flat panel covering the media -> dither -> adjust -> colour
+ * -> export path; ADVANCED is the two-tab tree with every source and control.
+ * Both read and write exactly the same state, so this only decides what is
+ * rendered -- never what a setting means.
+ */
+export type UiMode = 'basic' | 'advanced';
+
 export interface UiThemeSettings {
   uiTheme: PhosphorTheme;
   customUiColor: string;
   syncUiWithAscii: boolean;
   autoCollapsePanels?: boolean;
+  /**
+   * Draw static images at a reduced grid while controls are being dragged,
+   * then re-render sharp once they settle.
+   *
+   * Lives here rather than on OptimizeConfig because it describes the machine
+   * the app is running on, not the artwork: OptimizeConfig is per-mode and
+   * travels inside presets and shared links, and one person's need for a
+   * coarse preview should not follow their work onto someone else's screen.
+   *
+   * Undefined means on -- the preview already costs nothing on grids fast
+   * enough not to need it, so opting out is the unusual choice.
+   */
+  lowResPreview?: boolean;
+  /**
+   * Absent on settings blobs written before the switch existed, which is how
+   * an existing user is told apart from a first-time one. See resolveUiMode.
+   */
+  uiMode?: UiMode;
 }
 
 export interface CharsetOption {
@@ -239,7 +267,7 @@ export type DitherAlgorithm =
   | 'concentric-rings'
   | 'cellular-circuit';
 
-export type PaletteCategory = 'retro' | 'print' | 'design' | 'custom';
+export type PaletteCategory = 'retro' | 'print' | 'design' | 'ramp' | 'custom';
 
 export interface ColorPalette {
   id: string;
@@ -413,6 +441,18 @@ export interface ImageAdjustConfig {
   midtoneColor?: string; // e.g. '#3B82F6'
   shadowColor?: string; // e.g. '#000000'
   customToneColors?: string[]; // Array of N hex color stops from shadow (0%) to highlight (100%)
+  /**
+   * Share of the tonal range each stop in `customToneColors` occupies.
+   *
+   * One entry per stop, any positive scale -- they are normalised, so [1,1,1]
+   * and [50,50,50] are the same even split. Absent or the wrong length means an
+   * even split, which is what the ramp did before weights existed.
+   *
+   * This is *not* a per-stop opacity. It widens or narrows the slice of the
+   * luminance range that maps to that colour, which is what "more of this
+   * colour" actually means for a tone ramp. See the warp in rasterEngine.
+   */
+  toneStopWeights?: number[];
   curvePoints?: Array<[number, number]>; // editable [x, y] control points in [0..1]
   highlights: number; // -100 to 100, default 0 (middle)
   midtones: number; // -100 to 100, default 0 (middle)
