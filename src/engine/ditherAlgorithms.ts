@@ -155,6 +155,31 @@ export const BAYER_8X8 = [
   [63, 31, 55, 23, 61, 29, 53, 21],
 ];
 
+/**
+ * Recursive Bayer construction: the parent matrix is scaled by 4 and tiled into
+ * the four quadrants with offsets 0 / 2 / 3 / 1 — the same doubling that takes
+ * the 2×2 to the 4×4 and the 4×4 to the 8×8 above.
+ *
+ * 'bayer-16x16' used to be a registry entry that ran BAYER_8X8, so the
+ * "256-level ultra-smooth" option was byte-identical to the 64-level one.
+ */
+function buildBayerMatrix(source: number[][]): number[][] {
+  const n = source.length;
+  const out: number[][] = Array.from({ length: n * 2 }, () => new Array<number>(n * 2).fill(0));
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const base = source[y][x] * 4;
+      out[y][x] = base;
+      out[y][x + n] = base + 2;
+      out[y + n][x] = base + 3;
+      out[y + n][x + n] = base + 1;
+    }
+  }
+  return out;
+}
+
+export const BAYER_16X16 = buildBayerMatrix(BAYER_8X8);
+
 // Clustered Dot 4x4 (halftone cluster)
 export const CLUSTER_4X4 = [
   [12, 5, 6, 13],
@@ -207,28 +232,93 @@ export const CROSSHATCH_8X8 = [
   [63, 31, 47, 15, 59, 27, 43, 11],
 ];
 
-// Spiral Dot 8x8
-export const SPIRAL_DOT_8X8 = [
-  [41, 42, 43, 44, 45, 46, 47, 48],
-  [40, 17, 18, 19, 20, 21, 22, 49],
-  [39, 16, 5, 6, 7, 8, 23, 50],
-  [38, 15, 4, 1, 2, 9, 24, 51],
-  [37, 14, 3, 0, 3, 10, 25, 52],
-  [36, 13, 12, 11, 4, 11, 26, 53],
-  [35, 34, 33, 32, 31, 30, 27, 54],
-  [63, 62, 61, 60, 59, 58, 57, 55],
-];
+/**
+ * Concentric spiral rank: cells ordered by their radius from the tile centre
+ * with one turn's worth of angular progression folded in, then numbered 0..n-1.
+ *
+ * The hand-written matrix this replaces was not a permutation of 0..63 — 3, 4
+ * and 11 each appeared twice while 28, 29 and 56 were missing — so the tile
+ * repeated some thresholds and skipped others, which showed as seams along
+ * every tile boundary. Ranking the cells keeps it well-formed by construction.
+ */
+function buildSpiralMask(size: number): number[][] {
+  const centre = (size - 1) / 2;
+  const cells: { x: number; y: number; key: number }[] = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - centre;
+      const dy = y - centre;
+      // atan2 normalized to -0.5..0.5, so one full turn advances one ring.
+      const angle = Math.atan2(dy, dx) / (Math.PI * 2);
+      cells.push({ x, y, key: Math.hypot(dx, dy) + angle });
+    }
+  }
+  cells.sort((a, b) => a.key - b.key || a.y - b.y || a.x - b.x);
 
-// Knuth Dot Diffusion 8x8 Matrix
+  const out: number[][] = Array.from({ length: size }, () => new Array<number>(size).fill(0));
+  cells.forEach((cell, rank) => {
+    out[cell.y][cell.x] = rank;
+  });
+  return out;
+}
+
+export const SPIRAL_DOT_8X8 = buildSpiralMask(8);
+
+/**
+ * Concentric cell rank: one ring per tile, numbered outward from the tile's
+ * centre cell.
+ *
+ * 'cellular-circuit' used to threshold on the raw cone `hypot(cx, cy) / 4 −
+ * 0.5` over cx, cy ∈ [−4, 3]. Centring a cone on its range rather than its
+ * mean does not centre it at all — a tile holds far more cells far from the
+ * centre than near it — and the skew was worth +0.094 of tone, a third of the
+ * way up a mid-grey image. Ranking the cells gives the uniform threshold
+ * distribution every other mask here has, and keeps the per-cell ring look
+ * that names the algorithm.
+ */
+function buildRadialCellMask(size: number): number[][] {
+  // Centre on an exact cell rather than between four, so each tile has one
+  // unambiguous innermost dot.
+  const centre = Math.floor(size / 2);
+  const cells: { x: number; y: number; key: number }[] = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      cells.push({ x, y, key: Math.hypot(x - centre, y - centre) });
+    }
+  }
+  cells.sort((a, b) => a.key - b.key || a.y - b.y || a.x - b.x);
+
+  const out: number[][] = Array.from({ length: size }, () => new Array<number>(size).fill(0));
+  cells.forEach((cell, rank) => {
+    out[cell.y][cell.x] = rank;
+  });
+  return out;
+}
+
+export const RADIAL_CELL_8X8 = buildRadialCellMask(8);
+
+/*
+ * Knuth dot diffusion class matrix.
+ *
+ * Three cells were mistranscribed. The top-left quadrant read 64 / 60 / 44
+ * where the quadrant mirror (top-left = 62 − bottom-left) requires 60 / 44 /
+ * 36, and the bottom-right quadrant read 53 / 45 where its own mirror
+ * (bottom-right = 64 − top-right) requires 45 / 37. The result held a 64, which
+ * overflowed the /64 normalization, plus a duplicated 53 and two missing
+ * values. Both mirrors are pinned by the 61 uncorrupted cells, so the repair is
+ * determined rather than guessed.
+ *
+ * Still consumed as a plain ordered mask, not as Knuth's dot diffusion proper.
+ */
 export const KNUTH_DOT_DIFFUSION_8X8 = [
   [34, 48, 40, 32, 29, 15, 23, 31],
   [42, 58, 56, 50, 21, 5, 7, 13],
-  [46, 62, 64, 52, 17, 1, 3, 11],
-  [38, 54, 60, 44, 25, 9, 19, 27],
+  [46, 62, 60, 52, 17, 1, 3, 11],
+  [38, 54, 44, 36, 25, 9, 19, 27],
   [28, 14, 22, 30, 35, 49, 41, 33],
   [20, 4, 6, 12, 43, 59, 57, 51],
   [16, 0, 2, 10, 47, 63, 61, 53],
-  [24, 8, 18, 26, 39, 55, 53, 45],
+  [24, 8, 18, 26, 39, 55, 45, 37],
 ];
 
 // Blue Noise 16x16 Pre-computed Texture
@@ -250,6 +340,154 @@ export const BLUE_NOISE_16X16 = new Float32Array([
   0.2510, 0.7490, 0.1255, 0.6275, 0.2196, 0.7176, 0.0941, 0.5961, 0.2431, 0.7412, 0.1176, 0.6196, 0.2118, 0.7098, 0.0863, 0.5882,
   1.0000, 0.4980, 0.8745, 0.3765, 0.9686, 0.4667, 0.8431, 0.3451, 0.9922, 0.4902, 0.8667, 0.3686, 0.9608, 0.4588, 0.8353, 0.3373,
 ]);
+
+/**
+ * A tiling threshold mask, normalized to offsets in [−0.5, +0.5] with a mean of
+ * zero.
+ *
+ * Every ordered matrix used to be normalized inline against a hardcoded
+ * divisor — `BAYER_4X4[y][x] / 16.0 - 0.5`. A 0..15 matrix over 16 has a mean
+ * of 0.469, not 0.5, so each mask carried a systematic half-step tone bias. The
+ * line screens were worse: DIAGONAL_4X4 holds 0..12 over 16, a bias of −0.125
+ * of a step, visible as a global darkening the moment you picked it.
+ *
+ * Normalizing against the matrix's own range instead of an assumed one makes
+ * every mask mean-zero, and lets a matrix use whatever value spacing suits its
+ * pattern without having to also span exactly 0..n².
+ */
+export interface DitherMask {
+  width: number;
+  height: number;
+  /** Row-major threshold offsets in [−0.5, +0.5]. */
+  offsets: Float32Array;
+}
+
+const maskCache = new WeakMap<number[][], DitherMask>();
+
+export function toDitherMask(matrix: number[][]): DitherMask {
+  const cached = maskCache.get(matrix);
+  if (cached) return cached;
+
+  const height = matrix.length;
+  const width = matrix[0].length;
+
+  let min = Infinity;
+  let max = -Infinity;
+  for (const row of matrix) {
+    for (const value of row) {
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+  }
+
+  /*
+   * span is the value range plus one, and each cell sits half a step inside it,
+   * so the lowest cell lands just above −0.5 and the highest just below +0.5
+   * rather than one of them sitting exactly on the boundary.
+   */
+  const span = max - min + 1;
+  const offsets = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      offsets[y * width + x] = (matrix[y][x] - min + 0.5) / span - 0.5;
+    }
+  }
+
+  const mask: DitherMask = { width, height, offsets };
+  maskCache.set(matrix, mask);
+  return mask;
+}
+
+/**
+ * Every algorithm that is just "add a tiling threshold mask, then quantize".
+ * Two ids still share a matrix — 'halftone-dot' with 'cluster-8x8' — which is a
+ * de-duplication job rather than a normalization one.
+ */
+const ORDERED_MASK_SOURCES: Partial<Record<DitherAlgorithm, number[][]>> = {
+  'bayer-2x2': BAYER_2X2,
+  'bayer-4x4': BAYER_4X4,
+  'bayer-8x8': BAYER_8X8,
+  'bayer-16x16': BAYER_16X16,
+  'cluster-4x4': CLUSTER_4X4,
+  'cluster-8x8': CLUSTER_8X8,
+  'halftone-dot': CLUSTER_8X8,
+  'diagonal-4x4': DIAGONAL_4X4,
+  'diagonal-8x8': DIAGONAL_8X8,
+  'crosshatch-8x8': CROSSHATCH_8X8,
+  'spiral-dot': SPIRAL_DOT_8X8,
+  'dot-diffusion': KNUTH_DOT_DIFFUSION_8X8,
+  'cellular-circuit': RADIAL_CELL_8X8,
+};
+
+interface DiffusionKernel {
+  /** Sum of the weights; each tap receives `weight / divisor` of the error. */
+  divisor: number;
+  /** [dx, dy, weight] triples. dx is mirrored on right-to-left rows. */
+  taps: ReadonlyArray<readonly [number, number, number]>;
+}
+
+/**
+ * The error-diffusion family as data rather than twelve near-identical loops.
+ *
+ * Reading them side by side is also the only way to see how little separates
+ * some of them: 'fan' and 'shiau-fan' carry the same coefficients, and
+ * 'ostromoukhov' is a fixed kernel even though the algorithm it is named for
+ * varies its coefficients per tone. Both are de-duplication work, not
+ * normalization, so they stay as they are here.
+ */
+const DIFFUSION_KERNELS: Partial<Record<DitherAlgorithm, DiffusionKernel>> = {
+  'floyd-steinberg': { divisor: 16, taps: [[1, 0, 7], [-1, 1, 3], [0, 1, 5], [1, 1, 1]] },
+  'false-floyd-steinberg': { divisor: 8, taps: [[1, 0, 3], [0, 1, 3], [1, 1, 2]] },
+  atkinson: { divisor: 8, taps: [[1, 0, 1], [2, 0, 1], [-1, 1, 1], [0, 1, 1], [1, 1, 1], [0, 2, 1]] },
+  'sierra-3': {
+    divisor: 32,
+    taps: [
+      [1, 0, 5], [2, 0, 3],
+      [-2, 1, 2], [-1, 1, 4], [0, 1, 5], [1, 1, 4], [2, 1, 2],
+      [-1, 2, 2], [0, 2, 3], [1, 2, 2],
+    ],
+  },
+  'sierra-2': {
+    divisor: 16,
+    taps: [[1, 0, 4], [2, 0, 3], [-2, 1, 1], [-1, 1, 2], [0, 1, 3], [1, 1, 2], [2, 1, 1]],
+  },
+  'sierra-lite': { divisor: 4, taps: [[1, 0, 2], [-1, 1, 1], [0, 1, 1]] },
+  stucki: {
+    divisor: 42,
+    taps: [
+      [1, 0, 8], [2, 0, 4],
+      [-2, 1, 2], [-1, 1, 4], [0, 1, 8], [1, 1, 4], [2, 1, 2],
+      [-2, 2, 1], [-1, 2, 2], [0, 2, 4], [1, 2, 2], [2, 2, 1],
+    ],
+  },
+  jjn: {
+    divisor: 48,
+    taps: [
+      [1, 0, 7], [2, 0, 5],
+      [-2, 1, 3], [-1, 1, 5], [0, 1, 7], [1, 1, 5], [2, 1, 3],
+      [-2, 2, 1], [-1, 2, 3], [0, 2, 5], [1, 2, 3], [2, 2, 1],
+    ],
+  },
+  burkes: {
+    divisor: 32,
+    taps: [[1, 0, 8], [2, 0, 4], [-2, 1, 2], [-1, 1, 4], [0, 1, 8], [1, 1, 4], [2, 1, 2]],
+  },
+  fan: { divisor: 16, taps: [[1, 0, 7], [-2, 1, 1], [-1, 1, 3], [0, 1, 5]] },
+  'shiau-fan': { divisor: 16, taps: [[1, 0, 7], [-2, 1, 1], [-1, 1, 3], [0, 1, 5]] },
+  ostromoukhov: { divisor: 28, taps: [[1, 0, 13], [-1, 1, 5], [0, 1, 10]] },
+};
+
+/*
+ * Frequency modulation carrier, in radians per cell.
+ *
+ * The shadows advance at FM_BASE_FREQ for a wave every ~52 cells and the
+ * highlights at BASE + SPAN for one every ~8, measured along an axis; the
+ * diagonal, where the row and column accumulators advance together, halves
+ * both. Keeping the fastest case well clear of the two-cell Nyquist limit is
+ * what stops the highlights breaking up into grain.
+ */
+const FM_BASE_FREQ = 0.12;
+const FM_FREQ_SPAN = 0.66;
 
 /**
  * Applies a selected mathematical dithering algorithm to a normalized [0, 1] luminance buffer.
@@ -278,349 +516,81 @@ export function applyDitherAlgorithm(
     return;
   }
 
-  // --- 1. ERROR DIFFUSION SUITE ---
-  if (algorithm === 'floyd-steinberg') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        if (x + 1 < cols) dest[row + x + 1] += (err * 7) / 16;
-        if (y + 1 < rows) {
-          const next = (y + 1) * cols;
-          if (x - 1 >= 0) dest[next + x - 1] += (err * 3) / 16;
-          dest[next + x] += (err * 5) / 16;
-          if (x + 1 < cols) dest[next + x + 1] += (err * 1) / 16;
-        }
-      }
-    }
-  } else if (algorithm === 'false-floyd-steinberg') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        if (x + 1 < cols) dest[row + x + 1] += (err * 3) / 8;
-        if (y + 1 < rows) {
-          const next = (y + 1) * cols;
-          dest[next + x] += (err * 3) / 8;
-          if (x + 1 < cols) dest[next + x + 1] += (err * 2) / 8;
-        }
-      }
-    }
-  } else if (algorithm === 'atkinson') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const f = err / 8;
-        if (x + 1 < cols) dest[row + x + 1] += f;
-        if (x + 2 < cols) dest[row + x + 2] += f;
-        if (y + 1 < rows) {
-          const next = (y + 1) * cols;
-          if (x - 1 >= 0) dest[next + x - 1] += f;
-          dest[next + x] += f;
-          if (x + 1 < cols) dest[next + x + 1] += f;
-        }
-        if (y + 2 < rows) dest[(y + 2) * cols + x] += f;
-      }
-    }
-  } else if (algorithm === 'sierra-3') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const d = err / 32;
-        if (x + 1 < cols) dest[row + x + 1] += d * 5;
-        if (x + 2 < cols) dest[row + x + 2] += d * 3;
-        if (y + 1 < rows) {
-          const n1 = (y + 1) * cols;
-          if (x - 2 >= 0) dest[n1 + x - 2] += d * 2;
-          if (x - 1 >= 0) dest[n1 + x - 1] += d * 4;
-          dest[n1 + x] += d * 5;
-          if (x + 1 < cols) dest[n1 + x + 1] += d * 4;
-          if (x + 2 < cols) dest[n1 + x + 2] += d * 2;
-        }
-        if (y + 2 < rows) {
-          const n2 = (y + 2) * cols;
-          if (x - 1 >= 0) dest[n2 + x - 1] += d * 2;
-          dest[n2 + x] += d * 3;
-          if (x + 1 < cols) dest[n2 + x + 1] += d * 2;
-        }
-      }
-    }
-  } else if (algorithm === 'sierra-2') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const d = err / 16;
-        if (x + 1 < cols) dest[row + x + 1] += d * 4;
-        if (x + 2 < cols) dest[row + x + 2] += d * 3;
-        if (y + 1 < rows) {
-          const n1 = (y + 1) * cols;
-          if (x - 2 >= 0) dest[n1 + x - 2] += d * 1;
-          if (x - 1 >= 0) dest[n1 + x - 1] += d * 2;
-          dest[n1 + x] += d * 3;
-          if (x + 1 < cols) dest[n1 + x + 1] += d * 2;
-          if (x + 2 < cols) dest[n1 + x + 2] += d * 1;
-        }
-      }
-    }
-  } else if (algorithm === 'sierra-lite') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        if (x + 1 < cols) dest[row + x + 1] += (err * 2) / 4;
-        if (y + 1 < rows) {
-          const next = (y + 1) * cols;
-          if (x - 1 >= 0) dest[next + x - 1] += (err * 1) / 4;
-          dest[next + x] += (err * 1) / 4;
-        }
-      }
-    }
-  } else if (algorithm === 'stucki') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const d = err / 42;
-        if (x + 1 < cols) dest[row + x + 1] += d * 8;
-        if (x + 2 < cols) dest[row + x + 2] += d * 4;
-        if (y + 1 < rows) {
-          const n1 = (y + 1) * cols;
-          if (x - 2 >= 0) dest[n1 + x - 2] += d * 2;
-          if (x - 1 >= 0) dest[n1 + x - 1] += d * 4;
-          dest[n1 + x] += d * 8;
-          if (x + 1 < cols) dest[n1 + x + 1] += d * 4;
-          if (x + 2 < cols) dest[n1 + x + 2] += d * 2;
-        }
-        if (y + 2 < rows) {
-          const n2 = (y + 2) * cols;
-          if (x - 2 >= 0) dest[n2 + x - 2] += d * 1;
-          if (x - 1 >= 0) dest[n2 + x - 1] += d * 2;
-          dest[n2 + x] += d * 4;
-          if (x + 1 < cols) dest[n2 + x + 1] += d * 2;
-          if (x + 2 < cols) dest[n2 + x + 2] += d * 1;
-        }
-      }
-    }
-  } else if (algorithm === 'jjn') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const d = err / 48;
-        if (x + 1 < cols) dest[row + x + 1] += d * 7;
-        if (x + 2 < cols) dest[row + x + 2] += d * 5;
-        if (y + 1 < rows) {
-          const n1 = (y + 1) * cols;
-          if (x - 2 >= 0) dest[n1 + x - 2] += d * 3;
-          if (x - 1 >= 0) dest[n1 + x - 1] += d * 5;
-          dest[n1 + x] += d * 7;
-          if (x + 1 < cols) dest[n1 + x + 1] += d * 5;
-          if (x + 2 < cols) dest[n1 + x + 2] += d * 3;
-        }
-        if (y + 2 < rows) {
-          const n2 = (y + 2) * cols;
-          if (x - 2 >= 0) dest[n2 + x - 2] += d * 1;
-          if (x - 1 >= 0) dest[n2 + x - 1] += d * 3;
-          dest[n2 + x] += d * 5;
-          if (x + 1 < cols) dest[n2 + x + 1] += d * 3;
-          if (x + 2 < cols) dest[n2 + x + 2] += d * 1;
-        }
-      }
-    }
-  } else if (algorithm === 'burkes') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const d = err / 32;
-        if (x + 1 < cols) dest[row + x + 1] += d * 8;
-        if (x + 2 < cols) dest[row + x + 2] += d * 4;
-        if (y + 1 < rows) {
-          const n1 = (y + 1) * cols;
-          if (x - 2 >= 0) dest[n1 + x - 2] += d * 2;
-          if (x - 1 >= 0) dest[n1 + x - 1] += d * 4;
-          dest[n1 + x] += d * 8;
-          if (x + 1 < cols) dest[n1 + x + 1] += d * 4;
-          if (x + 2 < cols) dest[n1 + x + 2] += d * 2;
-        }
-      }
-    }
-  } else if (algorithm === 'fan' || algorithm === 'shiau-fan') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const d = err / 16;
-        if (x + 1 < cols) dest[row + x + 1] += d * 7;
-        if (y + 1 < rows) {
-          const n = (y + 1) * cols;
-          if (x - 2 >= 0) dest[n + x - 2] += d * 1;
-          if (x - 1 >= 0) dest[n + x - 1] += d * 3;
-          dest[n + x] += d * 5;
-        }
-      }
-    }
-  } else if (algorithm === 'ostromoukhov') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const oldVal = dest[idx];
-        if (oldVal < 0) continue;
-        const q = Math.max(0, Math.min(1, Math.round(oldVal * (densityLevels - 1)) * quantStep));
-        dest[idx] = q;
-        const err = (oldVal - q) * intScale;
-        const d1 = (err * 13) / 28;
-        const d2 = (err * 10) / 28;
-        const d3 = (err * 5) / 28;
-        if (x + 1 < cols) dest[row + x + 1] += d1;
-        if (y + 1 < rows) {
-          const n = (y + 1) * cols;
-          if (x - 1 >= 0) dest[n + x - 1] += d3;
-          dest[n + x] += d2;
-        }
-      }
-    }
-  }
-
   // Helper for threshold quantization into discrete density steps
   const quantize = (val: number): number => {
     const steps = Math.max(1, densityLevels - 1);
     return Math.max(0, Math.min(1, Math.round(val * steps) / steps));
   };
 
+  // --- 1. ERROR DIFFUSION SUITE ---
+  const kernel = DIFFUSION_KERNELS[algorithm];
+  if (kernel) {
+    const { divisor, taps } = kernel;
+    const tapCount = taps.length;
+
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      /*
+       * Serpentine (boustrophedon) traversal: odd rows run right-to-left with
+       * the kernel mirrored horizontally.
+       *
+       * Scanning every row in the same direction lets the residual error drift
+       * consistently one way, which is what draws the diagonal "worm" trails —
+       * and it draws them identically for every kernel, so Stucki, JJN, Burkes
+       * and the three Sierras all collapsed into the same look regardless of
+       * how their coefficients were distributed. Alternating the direction
+       * cancels the drift and lets each kernel's own distribution show.
+       */
+      const reverse = (y & 1) === 1;
+
+      for (let i = 0; i < cols; i++) {
+        const x = reverse ? cols - 1 - i : i;
+        const idx = row + x;
+        const oldVal = dest[idx];
+        if (oldVal < 0) continue; // transparency sentinel
+
+        const q = quantize(oldVal);
+        dest[idx] = q;
+
+        const err = (oldVal - q) * intScale;
+        if (err === 0) continue;
+        const unit = err / divisor;
+
+        for (let t = 0; t < tapCount; t++) {
+          const tap = taps[t];
+          const ny = y + tap[1];
+          if (ny >= rows) continue;
+          const nx = x + (reverse ? -tap[0] : tap[0]);
+          if (nx < 0 || nx >= cols) continue;
+          dest[ny * cols + nx] += unit * tap[2];
+        }
+      }
+    }
+    return;
+  }
+
   // --- 2. ORDERED & CLUSTERED MATRICES ---
-  if (algorithm === 'bayer-2x2') {
+  const orderedSource = ORDERED_MASK_SOURCES[algorithm];
+  if (orderedSource) {
+    const { width, height, offsets } = toDitherMask(orderedSource);
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
+      const maskRow = (y % height) * width;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const mat = (BAYER_2X2[y % 2][x % 2] / 4.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
+        dest[idx] = quantize(v + offsets[maskRow + (x % width)] * quantStep * intScale);
       }
     }
-  } else if (algorithm === 'bayer-4x4') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (BAYER_4X4[y % 4][x % 4] / 16.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'bayer-8x8' || algorithm === 'bayer-16x16') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (BAYER_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'cluster-4x4') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (CLUSTER_4X4[y % 4][x % 4] / 16.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'cluster-8x8' || algorithm === 'halftone-dot') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (CLUSTER_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'diagonal-4x4') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (DIAGONAL_4X4[y % 4][x % 4] / 16.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'diagonal-8x8') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (DIAGONAL_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'horizontal-lines') {
+    return;
+  }
+
+  /*
+   * The two line screens stay hand-rolled: they are a row or column parity
+   * rather than a tiling matrix, and their ±0.35 swing is already mean-zero.
+   */
+  if (algorithm === 'horizontal-lines') {
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
       const lineShift = (y % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;
@@ -640,28 +610,6 @@ export function applyDitherAlgorithm(
         if (v < 0) continue;
         const lineShift = (x % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;
         dest[idx] = quantize(v + lineShift);
-      }
-    }
-  } else if (algorithm === 'crosshatch-8x8') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (CROSSHATCH_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'spiral-dot') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (SPIRAL_DOT_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
       }
     }
   }
@@ -718,18 +666,7 @@ export function applyDitherAlgorithm(
   }
 
   // --- 4. ALGORITHMIC & SPACE-FILLING ---
-  else if (algorithm === 'dot-diffusion') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const mat = (KNUTH_DOT_DIFFUSION_8X8[y % 8][x % 8] / 64.0 - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + mat);
-      }
-    }
-  } else if (algorithm === 'r-sequence' || algorithm === 'hilbert' || algorithm === 'peano') {
+  else if (algorithm === 'r-sequence' || algorithm === 'hilbert' || algorithm === 'peano') {
     const a1 = 0.7548776662466927;
     const a2 = 0.5698402909980532;
     for (let y = 0; y < rows; y++) {
@@ -746,16 +683,38 @@ export function applyDitherAlgorithm(
 
   // --- 5. MODULATION & GENERATIVE ---
   else if (algorithm === 'fm-modulation') {
+    /*
+     * The carrier's phase is accumulated across the grid rather than computed
+     * as position × local frequency.
+     *
+     * Multiplying an absolute coordinate by a per-cell frequency makes the
+     * phase jump by (position × Δfrequency) wherever the tone moves: at column
+     * 200 the old carrier shifted ~3.7 radians for a tone step of 0.01, more
+     * than half a cycle, so each cell's pattern was uncorrelated with its
+     * neighbour's and the whole field read as noise — noise that got worse the
+     * further right it went, because the error scales with the coordinate.
+     *
+     * Accumulating instead advances the phase by one cell's worth of local
+     * frequency at a time, which stays continuous however the tone moves. Row
+     * and column accumulators are summed so the field is coherent on both
+     * axes; a row accumulator alone would leave every row independent and
+     * streak horizontally.
+     */
+    const colPhase = new Float32Array(cols);
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
+      let rowPhase = 0;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
+        // Accumulate through transparent cells so the phase does not step
+        // across a cut-out region.
+        const step = FM_BASE_FREQ + Math.max(0, v) * FM_FREQ_SPAN;
+        rowPhase += step;
+        colPhase[x] += step;
         if (v < 0) continue;
-        const freq = 0.15 + v * 0.85;
-        const carrier = Math.sin((x * 0.35 + y * 0.18) * freq * Math.PI * 2);
-        const mod = Math.sin(carrier * 3.14 + v * 6.28);
-        dest[idx] = quantize(v + mod * 0.5 * quantStep * intScale);
+        const carrier = Math.sin(rowPhase + colPhase[x]);
+        dest[idx] = quantize(v + carrier * 0.5 * quantStep * intScale);
       }
     }
   } else if (algorithm === 'phase-modulation') {
@@ -795,19 +754,6 @@ export function applyDitherAlgorithm(
         const dist = Math.sqrt(dx * dx + dy * dy);
         const ring = Math.sin(dist * 0.65 + v * 3.14) * 0.5;
         dest[idx] = quantize(v + ring * quantStep * intScale);
-      }
-    }
-  } else if (algorithm === 'cellular-circuit') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      const cy = (y % 8) - 4;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const cx = (x % 8) - 4;
-        const cellDist = Math.sqrt(cx * cx + cy * cy) / 4.0 - 0.5;
-        dest[idx] = quantize(v + cellDist * quantStep * intScale);
       }
     }
   } else if (algorithm === 'scanline-shift') {
