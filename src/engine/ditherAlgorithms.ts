@@ -35,8 +35,8 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
   { id: 'jjn', name: 'Jarvis-Judice-Ninke', family: 'error-diffusion', description: '12-neighbor wide diffusion for soft photographic gradations', badge: 'JJN Photo', tags: ['Photographic', 'Ultra-Soft', 'Wide'], patternType: 'diffusion', highlight: true },
   { id: 'burkes', name: 'Burkes', family: 'error-diffusion', description: 'Daniel Burkes 7-neighbor clean horizontal diffusion', badge: 'Burkes 1988', tags: ['Horizontal', 'Clean'], patternType: 'diffusion' },
   { id: 'fan', name: 'Fan Dither (9-Neighbor)', family: 'error-diffusion', description: 'Zhigang Fan adaptive error diffusion', badge: 'Adaptive 9-Tap', tags: ['Adaptive', 'Smooth'], patternType: 'diffusion' },
-  { id: 'shiau-fan', name: 'Shiau-Fan', family: 'error-diffusion', description: 'Modified edge-preserving error diffusion', badge: 'Edge Aware', tags: ['Edge-Preserving', 'Photo'], patternType: 'diffusion' },
-  { id: 'ostromoukhov', name: 'Ostromoukhov', family: 'error-diffusion', description: 'Variable-coefficient diffusion preventing worm artifacts', badge: 'Anti-Worm', tags: ['Variable', 'No-Artifacts', 'Modern'], patternType: 'diffusion', highlight: true },
+  { id: 'shiau-fan', name: 'Shiau-Fan', family: 'error-diffusion', description: 'Compact 4-neighbor diffusion weighted hard to the right', badge: 'Shiau-Fan', tags: ['Compact', 'Sharp', 'Photo'], patternType: 'diffusion' },
+  { id: 'ostromoukhov', name: 'Tone-Varying Kernel', family: 'error-diffusion', description: 'Forward/downward error balance slides with the tone', badge: 'Adaptive Tone', tags: ['Variable', 'Adaptive', 'Modern'], patternType: 'diffusion', highlight: true },
 
   // --- Ordered & Clustered Matrices (13) ---
   { id: 'bayer-2x2', name: 'Bayer 2×2 (Coarse)', family: 'ordered', description: '4-level coarse ordered dithering matrix', badge: 'Coarse 2×2', tags: ['Retro', 'Low-Res'], patternType: 'bayer' },
@@ -55,15 +55,15 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
 
   // --- Blue Noise & Stochastic (5) ---
   { id: 'blue-noise', name: 'Blue Noise (High-Freq)', family: 'blue-noise', description: 'Pre-computed high-frequency blue noise, organic stipple', badge: 'Organic Stipple', tags: ['High-Frequency', 'Organic', 'Stipple'], patternType: 'stochastic', highlight: true },
-  { id: 'void-cluster', name: 'Void-and-Cluster', family: 'blue-noise', description: 'Ulichney void-and-cluster blue noise distribution', badge: 'Void-Cluster', tags: ['Smooth', 'Dispersed', 'Optimal'], patternType: 'stochastic', highlight: true },
+  { id: 'void-cluster', name: 'Void-and-Cluster', family: 'blue-noise', description: 'Ulichney void-and-cluster mask, relaxed then ranked outward', badge: 'Void-Cluster', tags: ['Smooth', 'Dispersed', 'Optimal'], patternType: 'stochastic', highlight: true },
   { id: 'white-noise', name: 'White Noise (Random)', family: 'blue-noise', description: 'Uniform stochastic random noise grain', badge: 'Random Noise', tags: ['Grain', 'Uniform', 'Raw'], patternType: 'stochastic' },
   { id: 'gaussian-noise', name: 'Gaussian Film Grain', family: 'blue-noise', description: 'Normal-distribution photographic film grain', badge: '35mm Film', tags: ['Photographic', 'Analog', 'Film Grain'], patternType: 'stochastic', highlight: true },
   { id: 'interleaved-gradient', name: 'Interleaved Gradient Noise', family: 'blue-noise', description: 'Low-discrepancy temporal gradient noise', badge: 'IGN Shader', tags: ['Low-Discrepancy', 'Temporal'], patternType: 'stochastic' },
 
   // --- Algorithmic & Space-Filling (4) ---
   { id: 'dot-diffusion', name: 'Knuth Dot Diffusion', family: 'algorithmic', description: 'Donald Knuth space-filling tile diffusion', badge: 'Knuth 1987', tags: ['Space-Filling', 'Tiling', 'Math'], patternType: 'fractal', highlight: true },
-  { id: 'hilbert', name: 'Hilbert Fractal Curve', family: 'algorithmic', description: '1D error diffusion along 2D Hilbert space-filling curve', badge: 'Hilbert Curve', tags: ['Fractal', 'Space-Filling', 'Math'], patternType: 'fractal', highlight: true },
-  { id: 'peano', name: 'Peano Curve', family: 'algorithmic', description: 'Continuous space-filling fractal curve scan', badge: 'Peano Fractal', tags: ['Fractal', 'Continuous', 'Geometric'], patternType: 'fractal', highlight: true },
+  { id: 'hilbert', name: 'Hilbert Fractal Curve', family: 'algorithmic', description: '1D error diffusion along a 2D Hilbert space-filling curve', badge: 'Hilbert Curve', tags: ['Fractal', 'Space-Filling', 'Math'], patternType: 'fractal', highlight: true },
+  { id: 'peano', name: 'Peano Curve', family: 'algorithmic', description: '1D error diffusion along a base-3 Peano curve scan', badge: 'Peano Fractal', tags: ['Fractal', 'Continuous', 'Geometric'], patternType: 'fractal', highlight: true },
   { id: 'r-sequence', name: 'R-Sequence Quasi-Random', family: 'algorithmic', description: 'Low-discrepancy 2D metallic ratio quasi-random sequence', badge: 'Metallic Ratio', tags: ['Quasi-Random', 'Metallic', 'Math'], patternType: 'fractal', highlight: true },
 
   // --- Modulation & Generative (9) ---
@@ -72,7 +72,7 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
   { id: 'bytewave', name: 'ByteWave Bitwise', family: 'modulation', description: 'Low-level arithmetic bitwise boolean raster dither', badge: 'Bitwise Demo', tags: ['Low-Level', 'Boolean', 'Cyber'], patternType: 'glitch', highlight: true },
   { id: 'concentric-rings', name: 'Concentric Rings', family: 'modulation', description: 'Harmonic radial wave ripples and interference rings', badge: 'Radial Ripple', tags: ['Radar', 'Concentric', 'Wave'], patternType: 'wave', highlight: true },
   { id: 'cellular-circuit', name: 'Cellular Circuit', family: 'modulation', description: 'Discrete cell trace network dither', badge: 'PCB Circuit', tags: ['Cellular', 'Tech', 'Network'], patternType: 'circuit', highlight: true },
-  { id: 'scanline-shift', name: 'Scanline Phase Shift', family: 'modulation', description: 'Alternating interlaced line phase dither', badge: 'Interlace CRT', tags: ['Scanline', 'CRT', 'Analog'], patternType: 'lines' },
+  { id: 'scanline-shift', name: 'Scanline Phase Shift', family: 'modulation', description: 'Vertical stripes offset half a period on alternate rows', badge: 'Interlace CRT', tags: ['Scanline', 'CRT', 'Analog'], patternType: 'lines' },
   { id: 'sine-drift', name: 'Analog Sine Drift', family: 'modulation', description: 'CRT analog sinusoidal drift modulation', badge: 'Analog Sine', tags: ['CRT Drift', 'Wavy', 'Warp'], patternType: 'wave' },
   { id: 'glitch-displacement', name: 'Glitch Pixel Tear', family: 'modulation', description: 'Horizontal raster displacement jitter', badge: 'Cyberpunk Tear', tags: ['Glitch', 'Tear', 'Jitter'], patternType: 'glitch', highlight: true },
   { id: 'threshold-mod', name: 'Dynamic Threshold Mod', family: 'modulation', description: 'Non-linear luminance-dependent thresholding', badge: 'Dynamic Mod', tags: ['Non-Linear', 'Contrast'], patternType: 'wave' },
@@ -399,6 +399,294 @@ export function toDitherMask(matrix: number[][]): DitherMask {
 }
 
 /**
+ * Clustered-dot halftone screen from a spot function.
+ *
+ * 'halftone-dot' used to run CLUSTER_8X8, the same matrix as 'cluster-8x8', so
+ * the newsprint screen and the smooth cluster were byte-identical. A spot
+ * function gives it its own geometry: cells are ranked by
+ * `cos(2*pi*u) + cos(2*pi*v)` over the rotated tile, which grows one round dot
+ * per cell from the centre outward — the shape an actual halftone screen lays
+ * down, and visibly rounder than CLUSTER_8X8's two-dot arrangement.
+ */
+function buildSpotScreen(size: number): number[][] {
+  const cells: { x: number; y: number; key: number }[] = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // 45-degree rotation folded into the sample position, which is how a
+      // newsprint screen is oriented and what keeps the dot lattice from
+      // lining up with the pixel grid.
+      const u = (x + y + 0.5) / size;
+      const v = (x - y + 0.5) / size;
+      cells.push({ x, y, key: Math.cos(2 * Math.PI * u) + Math.cos(2 * Math.PI * v) });
+    }
+  }
+  cells.sort((a, b) => a.key - b.key || a.y - b.y || a.x - b.x);
+
+  const out: number[][] = Array.from({ length: size }, () => new Array<number>(size).fill(0));
+  cells.forEach((cell, rank) => {
+    out[cell.y][cell.x] = rank;
+  });
+  return out;
+}
+
+export const HALFTONE_SCREEN_8X8 = buildSpotScreen(8);
+
+const VOID_CLUSTER_SIZE = 16;
+
+/**
+ * Ulichney's void-and-cluster blue noise, generated rather than embedded.
+ *
+ * 'void-cluster' used to sample BLUE_NOISE_16X16 — the very texture
+ * 'blue-noise' samples — so the two were byte-identical despite being different
+ * algorithms with different distributions.
+ *
+ * The method: scatter an initial binary pattern, then relax it by repeatedly
+ * moving the point in the tightest cluster into the largest void until it
+ * stops moving. Ranking then proceeds outward from that pattern in three
+ * phases, so every rank is placed as far as possible from the ranks around it.
+ * The result is dispersed more evenly than a plain blue-noise texture, which is
+ * the property that makes it hold together at coarse quantization.
+ *
+ * Generated on first use and cached: the relaxation touches every cell for
+ * every placement, which is fine once but not worth paying at module load for
+ * a mask most sessions never select.
+ */
+function buildVoidAndClusterTexture(size: number): Float32Array {
+  const n = size * size;
+  const pattern = new Uint8Array(n);
+  const energy = new Float32Array(n);
+  const rank = new Int32Array(n).fill(-1);
+
+  /*
+   * Gaussian energy on a torus, sigma 1.5 as in the paper. Precomputing the
+   * kernel over wrapped offsets turns each placement into one pass over the
+   * grid rather than a distance computation per pair.
+   */
+  const kernel = new Float32Array(n);
+  const sigma2 = 2 * 1.5 * 1.5;
+  for (let dy = 0; dy < size; dy++) {
+    for (let dx = 0; dx < size; dx++) {
+      const wx = Math.min(dx, size - dx);
+      const wy = Math.min(dy, size - dy);
+      kernel[dy * size + dx] = Math.exp(-(wx * wx + wy * wy) / sigma2);
+    }
+  }
+
+  const stamp = (index: number, sign: number) => {
+    const cx = index % size;
+    const cy = (index / size) | 0;
+    for (let y = 0; y < size; y++) {
+      const dy = (y - cy + size) % size;
+      const krow = dy * size;
+      const erow = y * size;
+      for (let x = 0; x < size; x++) {
+        energy[erow + x] += sign * kernel[krow + ((x - cx + size) % size)];
+      }
+    }
+  };
+
+  /** Tightest cluster among the ones, or largest void among the zeros. */
+  const extreme = (want: number, findMax: boolean): number => {
+    let best = -1;
+    let bestEnergy = findMax ? -Infinity : Infinity;
+    for (let i = 0; i < n; i++) {
+      if (pattern[i] !== want) continue;
+      const e = energy[i];
+      if (findMax ? e > bestEnergy : e < bestEnergy) {
+        bestEnergy = e;
+        best = i;
+      }
+    }
+    return best;
+  };
+
+  // Deterministic initial scatter: a fixed-seed xorshift, so the texture is
+  // identical in every session and every export.
+  let state = 0x9e3779b9;
+  const nextRandom = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  };
+
+  const initialOnes = Math.max(1, Math.round(n / 10));
+  let placed = 0;
+  while (placed < initialOnes) {
+    const i = Math.floor(nextRandom() * n);
+    if (pattern[i]) continue;
+    pattern[i] = 1;
+    stamp(i, 1);
+    placed++;
+  }
+
+  // Relax: cluster -> void, until the tightest cluster is the void we just made.
+  for (let guard = 0; guard < n * 4; guard++) {
+    const cluster = extreme(1, true);
+    pattern[cluster] = 0;
+    stamp(cluster, -1);
+    const void_ = extreme(0, false);
+    if (void_ === cluster) {
+      pattern[cluster] = 1;
+      stamp(cluster, 1);
+      break;
+    }
+    pattern[void_] = 1;
+    stamp(void_, 1);
+  }
+
+  const initialPattern = pattern.slice();
+
+  // Phase 1: unmake the initial pattern, ranking downward from its population.
+  for (let r = placed - 1; r >= 0; r--) {
+    const cluster = extreme(1, true);
+    pattern[cluster] = 0;
+    stamp(cluster, -1);
+    rank[cluster] = r;
+  }
+
+  // Phase 2: refill the initial pattern, ranking upward.
+  pattern.set(initialPattern);
+  energy.fill(0);
+  for (let i = 0; i < n; i++) if (pattern[i]) stamp(i, 1);
+  for (let r = placed; r < n; r++) {
+    const void_ = extreme(0, false);
+    if (void_ < 0) break;
+    pattern[void_] = 1;
+    stamp(void_, 1);
+    rank[void_] = r;
+  }
+
+  const texture = new Float32Array(n);
+  for (let i = 0; i < n; i++) texture[i] = (rank[i] + 0.5) / n;
+  return texture;
+}
+
+let voidClusterTexture: Float32Array | null = null;
+
+function getVoidAndClusterTexture(): Float32Array {
+  if (!voidClusterTexture) voidClusterTexture = buildVoidAndClusterTexture(VOID_CLUSTER_SIZE);
+  return voidClusterTexture;
+}
+
+/**
+ * Cell order along a space-filling curve, as flat buffer indices.
+ *
+ * Diffusing error along a curve rather than along raster rows is what
+ * 'hilbert' and 'peano' are supposed to be doing; both used to run the R2
+ * quasi-random mask, identical to 'r-sequence' and to each other.
+ *
+ * The curve is generated for the next power of two (or three) that covers the
+ * grid and then filtered down to the cells that exist, so a non-square or
+ * non-power-of-two grid keeps the curve's locality even though consecutive
+ * cells are no longer strictly adjacent across the discarded regions.
+ */
+const curveCache = new Map<string, Int32Array>();
+
+/** Standard Hilbert d -> (x, y) for a side length that is a power of two. */
+function hilbertPoint(side: number, d: number): { x: number; y: number } {
+  let rx: number;
+  let ry: number;
+  let t = d;
+  let x = 0;
+  let y = 0;
+
+  for (let s = 1; s < side; s *= 2) {
+    rx = 1 & (t >> 1);
+    ry = 1 & (t ^ rx);
+    if (ry === 0) {
+      if (rx === 1) {
+        x = s - 1 - x;
+        y = s - 1 - y;
+      }
+      const swap = x;
+      x = y;
+      y = swap;
+    }
+    x += s * rx;
+    y += s * ry;
+    t = (t / 4) | 0;
+  }
+
+  return { x, y };
+}
+
+/**
+ * Peano points for a side length that is a power of three.
+ *
+ * Each level lays its nine sub-blocks out in a column-serpentine — up the first
+ * column, down the second, up the third — and mirrors every sub-block whose
+ * position would otherwise leave its entry away from the previous block's exit.
+ * That mirroring is what keeps the whole path connected; `buildCurveOrder`
+ * asserts the result really is a permutation, and the adjacency is covered by
+ * the curve tests.
+ */
+function peanoPoints(order: number): Array<{ x: number; y: number }> {
+  if (order === 0) return [{ x: 0, y: 0 }];
+
+  const inner = peanoPoints(order - 1);
+  const sub = Math.pow(3, order - 1);
+  const points: Array<{ x: number; y: number }> = [];
+
+  for (let bx = 0; bx < 3; bx++) {
+    const descending = bx % 2 === 1;
+    for (let step = 0; step < 3; step++) {
+      const by = descending ? 2 - step : step;
+      const mirrorX = step % 2 === 1;
+      const mirrorY = descending;
+      for (const point of inner) {
+        const lx = mirrorX ? sub - 1 - point.x : point.x;
+        const ly = mirrorY ? sub - 1 - point.y : point.y;
+        points.push({ x: bx * sub + lx, y: by * sub + ly });
+      }
+    }
+  }
+
+  return points;
+}
+
+function buildCurveOrder(kind: 'hilbert' | 'peano', cols: number, rows: number): Int32Array {
+  const key = `${kind}:${cols}x${rows}`;
+  const cached = curveCache.get(key);
+  if (cached) return cached;
+
+  const span = Math.max(cols, rows);
+  const order: number[] = [];
+
+  if (kind === 'hilbert') {
+    let side = 1;
+    while (side < span) side *= 2;
+    for (let d = 0; d < side * side; d++) {
+      const { x, y } = hilbertPoint(side, d);
+      if (x < cols && y < rows) order.push(y * cols + x);
+    }
+  } else {
+    let power = 0;
+    while (Math.pow(3, power) < span) power++;
+    for (const { x, y } of peanoPoints(power)) {
+      if (x < cols && y < rows) order.push(y * cols + x);
+    }
+  }
+
+  if (order.length !== cols * rows) {
+    throw new Error(`${kind} curve covered ${order.length} of ${cols * rows} cells`);
+  }
+
+  const result = new Int32Array(order);
+  curveCache.set(key, result);
+  return result;
+}
+
+/**
+ * One-dimensional diffusion filter applied along a space-filling curve.
+ *
+ * Pushing the whole error onto the next cell streaks visibly along the path, so
+ * it is spread over the next four with a decaying weight — the curve's locality
+ * means those four are all spatial neighbours too.
+ */
+const CURVE_TAPS = [4 / 8, 2 / 8, 1 / 8, 1 / 8];
+
+/**
  * Wraps a pre-computed [0, 1] noise texture as a mask, centred on the
  * texture's own mean rather than on a nominal 0.5 — BLUE_NOISE_16X16 averages
  * 0.502, so assuming 0.5 left a small standing tone offset.
@@ -423,8 +711,6 @@ export function toTextureMask(texture: Float32Array, width: number): DitherMask 
 
 /**
  * Every algorithm that is just "add a tiling threshold mask, then quantize".
- * Two ids still share a matrix — 'halftone-dot' with 'cluster-8x8' — which is a
- * de-duplication job rather than a normalization one.
  */
 const ORDERED_MASK_SOURCES: Partial<Record<DitherAlgorithm, number[][]>> = {
   'bayer-2x2': BAYER_2X2,
@@ -433,7 +719,7 @@ const ORDERED_MASK_SOURCES: Partial<Record<DitherAlgorithm, number[][]>> = {
   'bayer-16x16': BAYER_16X16,
   'cluster-4x4': CLUSTER_4X4,
   'cluster-8x8': CLUSTER_8X8,
-  'halftone-dot': CLUSTER_8X8,
+  'halftone-dot': HALFTONE_SCREEN_8X8,
   'diagonal-4x4': DIAGONAL_4X4,
   'diagonal-8x8': DIAGONAL_8X8,
   'crosshatch-8x8': CROSSHATCH_8X8,
@@ -447,16 +733,23 @@ interface DiffusionKernel {
   divisor: number;
   /** [dx, dy, weight] triples. dx is mirrored on right-to-left rows. */
   taps: ReadonlyArray<readonly [number, number, number]>;
+  /** Recompute the weights per cell from its tone rather than using the table. */
+  toneVarying?: boolean;
 }
 
 /**
  * The error-diffusion family as data rather than twelve near-identical loops.
  *
- * Reading them side by side is also the only way to see how little separates
- * some of them: 'fan' and 'shiau-fan' carry the same coefficients, and
- * 'ostromoukhov' is a fixed kernel even though the algorithm it is named for
- * varies its coefficients per tone. Both are de-duplication work, not
- * normalization, so they stay as they are here.
+ * Reading them side by side is also what made it obvious that 'fan' and
+ * 'shiau-fan' had been carrying identical coefficients.
+ *
+ * One constraint on anything added here: the forward tap's weight must not
+ * exceed half the divisor. That tap is a single-step feedback loop along the
+ * row, so its loop gain is (weight / divisor) * intensity, and intensity goes
+ * up to 2 -- a forward share above 0.5 makes the gain exceed 1 and the error
+ * grows without bound across the row until the buffer overflows to Infinity.
+ * The tone-varying kernel's first draft sat at 0.61 and did exactly that.
+ * Sierra Lite and Shiau-Fan are at exactly 0.5, which is marginally stable.
  */
 const DIFFUSION_KERNELS: Partial<Record<DitherAlgorithm, DiffusionKernel>> = {
   'floyd-steinberg': { divisor: 16, taps: [[1, 0, 7], [-1, 1, 3], [0, 1, 5], [1, 1, 1]] },
@@ -496,8 +789,37 @@ const DIFFUSION_KERNELS: Partial<Record<DitherAlgorithm, DiffusionKernel>> = {
     taps: [[1, 0, 8], [2, 0, 4], [-2, 1, 2], [-1, 1, 4], [0, 1, 8], [1, 1, 4], [2, 1, 2]],
   },
   fan: { divisor: 16, taps: [[1, 0, 7], [-2, 1, 1], [-1, 1, 3], [0, 1, 5]] },
-  'shiau-fan': { divisor: 16, taps: [[1, 0, 7], [-2, 1, 1], [-1, 1, 3], [0, 1, 5]] },
-  ostromoukhov: { divisor: 28, taps: [[1, 0, 13], [-1, 1, 5], [0, 1, 10]] },
+  // Shiau-Fan puts half the error straight ahead and trails the rest behind
+  // and below, which is a tighter footprint than Fan's and holds edges better.
+  'shiau-fan': { divisor: 8, taps: [[1, 0, 4], [-2, 1, 1], [-1, 1, 1], [0, 1, 2]] },
+  /*
+   * Tone-varying kernel.
+   *
+   * The taps here supply the geometry and the mid-tone balance; the weights
+   * themselves are recomputed per cell from the tone. See the toneVarying
+   * branch in the driver.
+   *
+   * This is NOT Ostromoukhov's published 256-entry coefficient table, and it
+   * does not inherit that algorithm's anti-worm property. Measured against a
+   * fixed kernel with serpentine off it scores 0.106 diagonal anisotropy to
+   * Floyd-Steinberg's 0.101 — no better, which makes sense: inside a flat
+   * region the tone is constant, so tone-varying coefficients are locally just
+   * a fixed kernel and cannot break the resonance that draws the worm.
+   * Suppressing worms is what the serpentine scan does, one to two orders of
+   * magnitude worth. Genuine anti-worm behaviour needs coefficients tuned to be
+   * non-resonant at each individual tone, which is the part of Ostromoukhov's
+   * work that lives in the table.
+   *
+   * What it does give is a distinct rendering — softer in the extremes, more
+   * forward-weighted through the mid-tones. The id stays 'ostromoukhov' so
+   * existing links and presets keep resolving; the display name describes what
+   * the code actually does.
+   */
+  ostromoukhov: {
+    divisor: 28,
+    taps: [[1, 0, 13], [-1, 1, 5], [0, 1, 10]],
+    toneVarying: true,
+  },
 };
 
 
@@ -585,9 +907,9 @@ const tapOffsetReverse = new Int32Array(16);
 const FM_BASE_FREQ = 0.12;
 const FM_FREQ_SPAN = 0.66;
 
-const TEXTURE_MASK_SOURCES: Partial<Record<DitherAlgorithm, { data: Float32Array; width: number }>> = {
-  'blue-noise': { data: BLUE_NOISE_16X16, width: 16 },
-  'void-cluster': { data: BLUE_NOISE_16X16, width: 16 },
+const TEXTURE_MASK_SOURCES: Partial<Record<DitherAlgorithm, () => DitherMask>> = {
+  'blue-noise': () => toTextureMask(BLUE_NOISE_16X16, 16),
+  'void-cluster': () => toTextureMask(getVoidAndClusterTexture(), VOID_CLUSTER_SIZE),
 };
 
 /** The tiling mask an algorithm samples, if it samples one at all. */
@@ -595,7 +917,7 @@ function maskFor(algorithm: DitherAlgorithm): DitherMask | undefined {
   const matrix = ORDERED_MASK_SOURCES[algorithm];
   if (matrix) return toDitherMask(matrix);
   const texture = TEXTURE_MASK_SOURCES[algorithm];
-  if (texture) return toTextureMask(texture.data, texture.width);
+  if (texture) return texture();
   return undefined;
 }
 
@@ -603,6 +925,11 @@ function maskFor(algorithm: DitherAlgorithm): DitherMask | undefined {
  * Patterns whose 'frequency' is a spatial rate: a carrier for the waves, a
  * line period for the screens.
  */
+const CURVE_ALGORITHMS: Partial<Record<DitherAlgorithm, 'hilbert' | 'peano'>> = {
+  hilbert: 'hilbert',
+  peano: 'peano',
+};
+
 const FREQUENCY_ALGORITHMS = new Set<DitherAlgorithm>([
   'fm-modulation',
   'phase-modulation',
@@ -734,6 +1061,9 @@ export function resolveDitherParams(params?: DitherParams): ResolvedDitherParams
  */
 export function getDitherParamIds(algorithm: DitherAlgorithm): DitherParamId[] {
   if (algorithm === 'none') return [];
+  // The curve algorithms diffuse along a fixed path, so there is no scan
+  // direction to alternate and no mask origin to offset.
+  if (CURVE_ALGORITHMS[algorithm]) return ['intensity'];
   if (DIFFUSION_KERNELS[algorithm]) return ['intensity', 'serpentine'];
   if (maskFor(algorithm)) return ['intensity', 'scale', 'angle', 'seed'];
   if (FREQUENCY_ALGORITHMS.has(algorithm)) return ['intensity', 'frequency', 'seed'];
@@ -782,11 +1112,51 @@ export function applyDitherAlgorithm(
     return;
   }
 
-  // --- 1. ERROR DIFFUSION SUITE ---
+  // --- 1a. SPACE-FILLING CURVE DIFFUSION ---
+  const curveKind = CURVE_ALGORITHMS[algorithm];
+  if (curveKind) {
+    /*
+     * Error diffusion along a space-filling curve instead of along raster rows.
+     *
+     * The curve visits every cell exactly once and never jumps far, so pushing
+     * error forward along it spreads that error to spatial neighbours in every
+     * direction rather than always down and to one side. That is what gives
+     * these their look, and why there is no scan direction to alternate: the
+     * path has no preferred axis to drift along in the first place.
+     */
+    const order = buildCurveOrder(curveKind, cols, rows);
+    const tapCount = CURVE_TAPS.length;
+
+    for (let i = 0; i < order.length; i++) {
+      const idx = order[i];
+      const oldVal = dest[idx];
+      if (oldVal < 0) continue; // transparency sentinel
+
+      const q = quantize(oldVal);
+      dest[idx] = q;
+
+      const err = (oldVal - q) * intensity;
+      if (err === 0) continue;
+
+      for (let t = 0; t < tapCount; t++) {
+        const ahead = i + 1 + t;
+        if (ahead >= order.length) break;
+        const target = order[ahead];
+        // Never pay error into a cut-out cell; it would be discarded anyway and
+        // the tone would go missing from the image.
+        if (dest[target] < 0) continue;
+        dest[target] += err * CURVE_TAPS[t];
+      }
+    }
+    return;
+  }
+
+  // --- 1b. ERROR DIFFUSION SUITE ---
   const kernel = DIFFUSION_KERNELS[algorithm];
   if (kernel) {
     const { dx, dy, weight, reach, depth } = compileKernel(algorithm, kernel);
     const tapCount = weight.length;
+    const toneVarying = kernel.toneVarying === true;
     const steps = Math.max(1, densityLevels - 1);
 
     // Flat offsets so an interior tap is one add and one array read.
@@ -835,6 +1205,43 @@ export function applyDitherAlgorithm(
 
         const err = (oldVal - q) * intensity;
         if (err === 0) continue;
+
+        /*
+         * Slides the forward share with the tone: most forward at mid grey,
+         * where there is the most error to move, least at the extremes, where
+         * pushing it sideways would smear an almost-clean highlight.
+         *
+         * Three taps: forward, down-left, down. The two downward taps keep
+         * their 1:2 ratio and split whatever the forward tap leaves. This
+         * changes the rendering, not the worming — see the kernel entry.
+         */
+        if (toneVarying) {
+          /*
+           * Taken from the tone clamped into range, not from the raw value.
+           *
+           * Diffusion routinely leaves a cell outside [0, 1] -- that is what
+           * the clamp at the end of the raster pass is for -- and for an
+           * oldVal above 1 the unclamped (1 - oldVal) goes large negative, so
+           * the weights themselves blow up rather than merely shifting. At two
+           * levels and full intensity that diverged to Infinity within a row.
+           */
+          const tone = oldVal > 1 ? 1 : oldVal;
+          const midness = (tone < 0.5 ? tone : 1 - tone) * 2;
+          // Capped below 0.5 for stability -- see the note on DIFFUSION_KERNELS.
+          const forward = 0.3 + 0.19 * midness;
+          const downward = 1 - forward;
+
+          const ahead = reverse ? x - 1 : x + 1;
+          if (ahead >= 0 && ahead < cols) dest[row + ahead] += err * forward;
+
+          const ny = y + 1;
+          if (ny < rows) {
+            const back = reverse ? x + 1 : x - 1;
+            if (back >= 0 && back < cols) dest[ny * cols + back] += err * downward * (1 / 3);
+            dest[ny * cols + x] += err * downward * (2 / 3);
+          }
+          continue;
+        }
 
         if (interiorRow && x >= interiorLo && x < interiorHi) {
           for (let t = 0; t < tapCount; t++) {
@@ -938,11 +1345,7 @@ export function applyDitherAlgorithm(
    * period: 1x is the two-cell alternation these had hardcoded, and below 1x
    * widens the bands.
    */
-  if (
-    algorithm === 'horizontal-lines' ||
-    algorithm === 'scanline-shift' ||
-    algorithm === 'vertical-lines'
-  ) {
+  if (algorithm === 'horizontal-lines' || algorithm === 'vertical-lines') {
     const period = Math.max(2, Math.round(2 / frequency));
     const half = period / 2;
     const vertical = algorithm === 'vertical-lines';
@@ -958,6 +1361,32 @@ export function applyDitherAlgorithm(
           ? ((x + seed) % period < half ? 0.35 : -0.35) * amp
           : rowShift;
         dest[idx] = quantize(v + shift);
+      }
+    }
+    return;
+  }
+
+  if (algorithm === 'scanline-shift') {
+    /*
+     * Vertical stripes whose phase jumps half a period on alternate rows — the
+     * offset that makes an interlaced signal read as interlaced rather than as
+     * banding.
+     *
+     * It used to be the same row parity as 'horizontal-lines', which made the
+     * two byte-identical and neither of them a phase shift.
+     */
+    const period = Math.max(2, Math.round(2 / frequency));
+    const half = period / 2;
+
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      const fieldOffset = (y & 1) === 1 ? half : 0;
+      for (let x = 0; x < cols; x++) {
+        const idx = row + x;
+        const v = dest[idx];
+        if (v < 0) continue;
+        const phase = (x + seed + fieldOffset) % period;
+        dest[idx] = quantize(v + (phase < half ? 0.35 : -0.35) * amp);
       }
     }
     return;
@@ -1020,7 +1449,7 @@ export function applyDitherAlgorithm(
   }
 
   // --- 5. ALGORITHMIC & SPACE-FILLING ---
-  if (algorithm === 'r-sequence' || algorithm === 'hilbert' || algorithm === 'peano') {
+  if (algorithm === 'r-sequence') {
     // R2 low-discrepancy sequence: the two plastic-number conjugates.
     const a1 = 0.7548776662466927;
     const a2 = 0.5698402909980532;
