@@ -37,6 +37,7 @@ import {
   MediaColorConfig,
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
   ImageAdjustConfig,
 } from '../types/ascii';
@@ -69,6 +70,7 @@ interface ExportModalProps {
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -130,6 +132,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   mediaColorConfig,
   rasterMode,
   ditherAlgorithm,
+  ditherParams,
   toneConfig,
   adjustConfig,
   mediaElement,
@@ -237,6 +240,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         mediaElement,
         rasterMode,
         ditherAlgorithm,
+        ditherParams,
         toneConfig,
         adjustConfig,
       });
@@ -280,6 +284,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     mediaElement,
     rasterMode,
     ditherAlgorithm,
+    ditherParams,
     toneConfig,
     adjustConfig,
     imageUrl,
@@ -325,6 +330,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         mediaElement,
         rasterMode,
         ditherAlgorithm,
+        ditherParams,
         toneConfig,
         adjustConfig,
       });
@@ -345,7 +351,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     density, cols, rows, theme, customThemeColor, gradientConfig, crtConfig,
     appMode, modelConfig, modelViewConfig, geometry, mediaConfig,
     mediaViewConfig, mediaColorConfig, mediaElement, rasterMode,
-    ditherAlgorithm, toneConfig, adjustConfig,
+    ditherAlgorithm, ditherParams, toneConfig, adjustConfig,
   ]);
 
   useEffect(() => {
@@ -472,6 +478,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           mediaElement,
           rasterMode,
           ditherAlgorithm,
+          ditherParams,
           toneConfig,
           adjustConfig,
         },
@@ -528,6 +535,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           mediaElement,
           rasterMode,
           ditherAlgorithm,
+          ditherParams,
           toneConfig,
           adjustConfig,
         },

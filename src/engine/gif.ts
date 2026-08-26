@@ -14,6 +14,7 @@ import {
   MediaColorConfig,
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
   ImageAdjustConfig,
 } from '../types/ascii';
@@ -52,6 +53,7 @@ export interface GifExportOptions {
   // Live render settings, so exports match what the viewport shows
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -203,6 +205,7 @@ export async function exportAnimatedGif(
         colorConfig: opts.mediaColorConfig,
         rasterMode,
         algorithm: opts.ditherAlgorithm,
+        ditherParams: opts.ditherParams,
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
       });
@@ -217,6 +220,7 @@ export async function exportAnimatedGif(
         colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
         rasterMode,
         algorithm: opts.ditherAlgorithm,
+        ditherParams: opts.ditherParams,
         toneConfig: opts.toneConfig,
       });
     } else {
@@ -234,6 +238,7 @@ export async function exportAnimatedGif(
         colorConfig: opts.mediaColorConfig,
         rasterMode,
         algorithm: opts.ditherAlgorithm,
+        ditherParams: opts.ditherParams,
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
       });

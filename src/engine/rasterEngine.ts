@@ -9,6 +9,7 @@
 import {
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
   MediaColorConfig,
   TonalMappingType,
@@ -35,6 +36,7 @@ export interface UnifiedPipelineOptions {
   rows: number;
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   density: string;
   toneConfig?: ToneMappingConfig;
   colorConfig?: MediaColorConfig;
@@ -1120,7 +1122,7 @@ export function processRasterFrame(
   }
 
   if (!paletteOwnsQuantization && ditherAlgo && ditherAlgo !== 'none') {
-    applyDitherAlgorithm(lumBuffer, lumBuffer, cols, rows, ditherAlgo, ditherLevels);
+    applyDitherAlgorithm(lumBuffer, lumBuffer, cols, rows, ditherAlgo, ditherLevels, options.ditherParams);
   } else if (explicitLevels && !paletteOwnsQuantization) {
     // 'None' means no error distribution, not 'ignore the requested depth' —
     // posterize so the levels control still reads as a depth reduction and the

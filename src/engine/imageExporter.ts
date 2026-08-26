@@ -13,6 +13,7 @@ import {
   MediaColorConfig,
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
   ImageAdjustConfig,
 } from '../types/ascii';
@@ -56,6 +57,7 @@ export interface ImageExportOptions {
   appMode?: AppMode;
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   modelConfig?: ModelConfig;
@@ -175,6 +177,7 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       colorConfig: opts.mediaColorConfig || opts.mediaViewConfig.colorConfig,
       rasterMode,
       algorithm: opts.ditherAlgorithm,
+      ditherParams: opts.ditherParams,
       toneConfig: opts.toneConfig,
     });
     frameText = res.text;
@@ -193,6 +196,7 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       colorConfig: opts.mediaColorConfig,
       rasterMode,
       algorithm: opts.ditherAlgorithm,
+      ditherParams: opts.ditherParams,
       toneConfig: opts.toneConfig,
       adjustConfig: opts.adjustConfig,
     });
@@ -230,6 +234,7 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       colorConfig: opts.mediaColorConfig,
       rasterMode,
       algorithm: opts.ditherAlgorithm,
+      ditherParams: opts.ditherParams,
       toneConfig: opts.toneConfig,
       adjustConfig: opts.adjustConfig,
     });

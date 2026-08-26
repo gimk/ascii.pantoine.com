@@ -1,4 +1,4 @@
-import { DitherAlgorithm, DitherFamily } from '../types/ascii';
+import { DitherAlgorithm, DitherFamily, DitherParams } from '../types/ascii';
 
 export type DitherPatternType =
   | 'diffusion'
@@ -399,6 +399,29 @@ export function toDitherMask(matrix: number[][]): DitherMask {
 }
 
 /**
+ * Wraps a pre-computed [0, 1] noise texture as a mask, centred on the
+ * texture's own mean rather than on a nominal 0.5 — BLUE_NOISE_16X16 averages
+ * 0.502, so assuming 0.5 left a small standing tone offset.
+ */
+const textureMaskCache = new WeakMap<Float32Array, DitherMask>();
+
+export function toTextureMask(texture: Float32Array, width: number): DitherMask {
+  const cached = textureMaskCache.get(texture);
+  if (cached) return cached;
+
+  let sum = 0;
+  for (let i = 0; i < texture.length; i++) sum += texture[i];
+  const mean = sum / texture.length;
+
+  const offsets = new Float32Array(texture.length);
+  for (let i = 0; i < texture.length; i++) offsets[i] = texture[i] - mean;
+
+  const mask: DitherMask = { width, height: texture.length / width, offsets };
+  textureMaskCache.set(texture, mask);
+  return mask;
+}
+
+/**
  * Every algorithm that is just "add a tiling threshold mask, then quantize".
  * Two ids still share a matrix — 'halftone-dot' with 'cluster-8x8' — which is a
  * de-duplication job rather than a normalization one.
@@ -477,6 +500,79 @@ const DIFFUSION_KERNELS: Partial<Record<DitherAlgorithm, DiffusionKernel>> = {
   ostromoukhov: { divisor: 28, taps: [[1, 0, 13], [-1, 1, 5], [0, 1, 10]] },
 };
 
+
+/**
+ * A kernel in the form the hot loop wants: parallel typed arrays instead of an
+ * array of tuples, weights pre-divided by the divisor, and the reach needed to
+ * know when bounds checks can be skipped.
+ *
+ * The tap tuples above are the readable form and stay the source of truth; this
+ * is derived from them once per kernel. Reading `taps[t][2]` per tap per cell
+ * chases a pointer for every one of Stucki's twelve taps, which measured at
+ * three times the cost of the twelve inline adds it replaced.
+ */
+interface CompiledKernel {
+  dx: Int8Array;
+  dy: Int8Array;
+  /**
+   * Weight divided by the kernel divisor, so the inner loop only multiplies.
+   *
+   * Float64 rather than Float32: Ostromoukhov's divisor is 28, and rounding
+   * 13/28 to single precision moved 0.8% of cells versus computing
+   * (err * 13) / 28 in double, because error diffusion carries the difference
+   * into its neighbours instead of dropping it.
+   */
+  weight: Float64Array;
+  /** Widest horizontal reach; a cell this far from either edge needs no x check. */
+  reach: number;
+  /** Deepest row reach; a row this far from the bottom needs no y check. */
+  depth: number;
+}
+
+const compiledKernels = new Map<DitherAlgorithm, CompiledKernel>();
+
+function compileKernel(algorithm: DitherAlgorithm, kernel: DiffusionKernel): CompiledKernel {
+  const cached = compiledKernels.get(algorithm);
+  if (cached) return cached;
+
+  const n = kernel.taps.length;
+  const compiled: CompiledKernel = {
+    dx: new Int8Array(n),
+    dy: new Int8Array(n),
+    weight: new Float64Array(n),
+    reach: 0,
+    depth: 0,
+  };
+
+  for (let t = 0; t < n; t++) {
+    const [dx, dy, weight] = kernel.taps[t];
+    compiled.dx[t] = dx;
+    compiled.dy[t] = dy;
+    compiled.weight[t] = weight / kernel.divisor;
+    compiled.reach = Math.max(compiled.reach, Math.abs(dx));
+    compiled.depth = Math.max(compiled.depth, dy);
+  }
+
+  compiledKernels.set(algorithm, compiled);
+  return compiled;
+}
+
+/*
+ * Scratch buffers, reused across calls.
+ *
+ * rasterEngine calls this once per frame, so a `new Int32Array(cols)` inside is
+ * an allocation on every frame of a video export — which is what the
+ * zero-allocation pipeline in this file's header is there to avoid. Grown on
+ * demand and never shrunk; a resolution change is rare and a stale larger
+ * buffer costs nothing.
+ */
+let maskColScratch = new Int32Array(0);
+let phaseScratch = new Float32Array(0);
+
+/** Flat `dy * cols + dx` per tap, for each scan direction. Sized to the widest kernel. */
+const tapOffsetForward = new Int32Array(16);
+const tapOffsetReverse = new Int32Array(16);
+
 /*
  * Frequency modulation carrier, in radians per cell.
  *
@@ -489,9 +585,170 @@ const DIFFUSION_KERNELS: Partial<Record<DitherAlgorithm, DiffusionKernel>> = {
 const FM_BASE_FREQ = 0.12;
 const FM_FREQ_SPAN = 0.66;
 
+const TEXTURE_MASK_SOURCES: Partial<Record<DitherAlgorithm, { data: Float32Array; width: number }>> = {
+  'blue-noise': { data: BLUE_NOISE_16X16, width: 16 },
+  'void-cluster': { data: BLUE_NOISE_16X16, width: 16 },
+};
+
+/** The tiling mask an algorithm samples, if it samples one at all. */
+function maskFor(algorithm: DitherAlgorithm): DitherMask | undefined {
+  const matrix = ORDERED_MASK_SOURCES[algorithm];
+  if (matrix) return toDitherMask(matrix);
+  const texture = TEXTURE_MASK_SOURCES[algorithm];
+  if (texture) return toTextureMask(texture.data, texture.width);
+  return undefined;
+}
+
 /**
- * Applies a selected mathematical dithering algorithm to a normalized [0, 1] luminance buffer.
- * Output values in destBuffer remain normalized in [0, 1] corresponding to density steps.
+ * Patterns whose 'frequency' is a spatial rate: a carrier for the waves, a
+ * line period for the screens.
+ */
+const FREQUENCY_ALGORITHMS = new Set<DitherAlgorithm>([
+  'fm-modulation',
+  'phase-modulation',
+  'concentric-rings',
+  'sine-drift',
+  'bytewave',
+  'glitch-displacement',
+  'scanline-shift',
+  'horizontal-lines',
+  'vertical-lines',
+]);
+
+export type DitherParamId = keyof DitherParams;
+
+export interface DitherParamSpec {
+  id: DitherParamId;
+  label: string;
+  /** One line of help for the control. */
+  hint: string;
+  min: number;
+  max: number;
+  step: number;
+  /** Value used when the parameter is absent. */
+  fallback: number;
+  /** Render as a switch rather than a slider. */
+  toggle?: boolean;
+  unit?: string;
+}
+
+/*
+ * Defaults are chosen so that a resolved parameter set with nothing supplied
+ * reproduces the hardcoded behaviour these values replaced. That is what lets
+ * the field be optional everywhere without versioning the presets.
+ */
+export const DITHER_PARAM_SPECS: Record<DitherParamId, DitherParamSpec> = {
+  intensity: {
+    id: 'intensity',
+    label: 'Intensity',
+    hint: 'How hard the pattern pushes against the tone. 1.0 is one quantization step.',
+    min: 0,
+    max: 2,
+    step: 0.05,
+    fallback: 1,
+    unit: '×',
+  },
+  scale: {
+    id: 'scale',
+    label: 'Scale',
+    hint: 'Cells per mask sample. Coarsens the pattern without reshaping it.',
+    min: 1,
+    max: 8,
+    step: 1,
+    fallback: 1,
+    unit: '×',
+  },
+  angle: {
+    id: 'angle',
+    label: 'Screen angle',
+    hint: 'Rotates the mask. 45° is the classic halftone screen.',
+    min: 0,
+    max: 90,
+    step: 1,
+    fallback: 0,
+    unit: '°',
+  },
+  frequency: {
+    id: 'frequency',
+    label: 'Frequency',
+    hint: 'Multiplies the carrier rate. Below 1 spreads the pattern out.',
+    min: 0.25,
+    max: 3,
+    step: 0.05,
+    fallback: 1,
+    unit: '×',
+  },
+  seed: {
+    id: 'seed',
+    label: 'Seed',
+    hint: 'Shifts the pattern origin. The same seed always gives the same frame.',
+    min: 0,
+    max: 64,
+    step: 1,
+    fallback: 0,
+  },
+  serpentine: {
+    id: 'serpentine',
+    label: 'Serpentine scan',
+    hint: 'Alternates scan direction each row, cancelling diagonal worm artifacts.',
+    min: 0,
+    max: 1,
+    step: 1,
+    fallback: 1,
+    toggle: true,
+  },
+};
+
+export interface ResolvedDitherParams {
+  intensity: number;
+  scale: number;
+  angle: number;
+  frequency: number;
+  seed: number;
+  serpentine: boolean;
+}
+
+function clampParam(id: DitherParamId, value: number | undefined): number {
+  const spec = DITHER_PARAM_SPECS[id];
+  if (typeof value !== 'number' || !Number.isFinite(value)) return spec.fallback;
+  return Math.max(spec.min, Math.min(spec.max, value));
+}
+
+/** Fills in and clamps every parameter, whether or not the algorithm reads it. */
+export function resolveDitherParams(params?: DitherParams): ResolvedDitherParams {
+  return {
+    intensity: clampParam('intensity', params?.intensity),
+    scale: Math.round(clampParam('scale', params?.scale)),
+    angle: clampParam('angle', params?.angle),
+    frequency: clampParam('frequency', params?.frequency),
+    seed: Math.round(clampParam('seed', params?.seed)),
+    serpentine: params?.serpentine ?? true,
+  };
+}
+
+/**
+ * Which parameters an algorithm actually honours, derived from the shape of its
+ * implementation rather than declared alongside its registry entry — a list
+ * kept by hand next to 44 entries would drift from the code the first time a
+ * branch changed. The picker renders exactly these controls.
+ */
+export function getDitherParamIds(algorithm: DitherAlgorithm): DitherParamId[] {
+  if (algorithm === 'none') return [];
+  if (DIFFUSION_KERNELS[algorithm]) return ['intensity', 'serpentine'];
+  if (maskFor(algorithm)) return ['intensity', 'scale', 'angle', 'seed'];
+  if (FREQUENCY_ALGORITHMS.has(algorithm)) return ['intensity', 'frequency', 'seed'];
+  // 'threshold-mod' is a tone curve with no spatial term, so a seed would do
+  // nothing; intensity drives its exponent.
+  if (algorithm === 'threshold-mod') return ['intensity'];
+  return ['intensity', 'seed'];
+}
+
+/**
+ * Applies a selected mathematical dithering algorithm to a normalized [0, 1]
+ * luminance buffer. Output values in dest remain normalized in [0, 1]
+ * corresponding to density steps.
+ *
+ * Negative source values are the transparency sentinel and are left alone.
  */
 export function applyDitherAlgorithm(
   src: Float32Array,
@@ -500,33 +757,46 @@ export function applyDitherAlgorithm(
   rows: number,
   algorithm: DitherAlgorithm = 'floyd-steinberg',
   densityLevels: number = 10,
-  intensity: number = 1.0
+  params?: DitherParams
 ): void {
   dest.set(src);
   const totalCells = cols * rows;
   const quantStep = 1.0 / Math.max(1, densityLevels - 1);
-  const intScale = Math.max(0, Math.min(2.0, intensity));
+  const { intensity, scale, angle, frequency, seed, serpentine } = resolveDitherParams(params);
 
-  if (algorithm === 'none') {
-    for (let i = 0; i < totalCells; i++) {
-      const v = dest[i];
-      if (v < 0) continue;
-      dest[i] = Math.round(v * (densityLevels - 1)) / (densityLevels - 1);
-    }
-    return;
-  }
-
-  // Helper for threshold quantization into discrete density steps
+  /** Quantizes into discrete density steps. */
   const quantize = (val: number): number => {
     const steps = Math.max(1, densityLevels - 1);
     return Math.max(0, Math.min(1, Math.round(val * steps) / steps));
   };
 
+  /** Mask and carrier amplitude, in tone units. */
+  const amp = quantStep * intensity;
+
+  if (algorithm === 'none') {
+    for (let i = 0; i < totalCells; i++) {
+      const v = dest[i];
+      if (v < 0) continue;
+      dest[i] = quantize(v);
+    }
+    return;
+  }
+
   // --- 1. ERROR DIFFUSION SUITE ---
   const kernel = DIFFUSION_KERNELS[algorithm];
   if (kernel) {
-    const { divisor, taps } = kernel;
-    const tapCount = taps.length;
+    const { dx, dy, weight, reach, depth } = compileKernel(algorithm, kernel);
+    const tapCount = weight.length;
+    const steps = Math.max(1, densityLevels - 1);
+
+    // Flat offsets so an interior tap is one add and one array read.
+    for (let t = 0; t < tapCount; t++) {
+      tapOffsetForward[t] = dy[t] * cols + dx[t];
+      tapOffsetReverse[t] = dy[t] * cols - dx[t];
+    }
+
+    const interiorLo = reach;
+    const interiorHi = cols - reach;
 
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
@@ -540,8 +810,19 @@ export function applyDitherAlgorithm(
        * and the three Sierras all collapsed into the same look regardless of
        * how their coefficients were distributed. Alternating the direction
        * cancels the drift and lets each kernel's own distribution show.
+       *
+       * Switchable because the one-directional worming is also a look, and it
+       * is the look every link shared before this existed was rendered with.
        */
-      const reverse = (y & 1) === 1;
+      const reverse = serpentine && (y & 1) === 1;
+      const offsets = reverse ? tapOffsetReverse : tapOffsetForward;
+
+      /*
+       * Away from the bottom edge and both side margins every tap is in
+       * bounds, so that span drops the three comparisons per tap — twelve taps
+       * on Stucki, on every cell.
+       */
+      const interiorRow = y + depth < rows;
 
       for (let i = 0; i < cols; i++) {
         const x = reverse ? cols - 1 - i : i;
@@ -549,150 +830,227 @@ export function applyDitherAlgorithm(
         const oldVal = dest[idx];
         if (oldVal < 0) continue; // transparency sentinel
 
-        const q = quantize(oldVal);
+        const q = oldVal <= 0 ? 0 : oldVal >= 1 ? 1 : Math.round(oldVal * steps) / steps;
         dest[idx] = q;
 
-        const err = (oldVal - q) * intScale;
+        const err = (oldVal - q) * intensity;
         if (err === 0) continue;
-        const unit = err / divisor;
+
+        if (interiorRow && x >= interiorLo && x < interiorHi) {
+          for (let t = 0; t < tapCount; t++) {
+            dest[idx + offsets[t]] += err * weight[t];
+          }
+          continue;
+        }
 
         for (let t = 0; t < tapCount; t++) {
-          const tap = taps[t];
-          const ny = y + tap[1];
+          const ny = y + dy[t];
           if (ny >= rows) continue;
-          const nx = x + (reverse ? -tap[0] : tap[0]);
+          const nx = reverse ? x - dx[t] : x + dx[t];
           if (nx < 0 || nx >= cols) continue;
-          dest[ny * cols + nx] += unit * tap[2];
+          dest[ny * cols + nx] += err * weight[t];
         }
       }
     }
     return;
   }
 
-  // --- 2. ORDERED & CLUSTERED MATRICES ---
-  const orderedSource = ORDERED_MASK_SOURCES[algorithm];
-  if (orderedSource) {
-    const { width, height, offsets } = toDitherMask(orderedSource);
+  // --- 2. TILING MASKS: ordered matrices, halftone screens, blue noise ---
+  const mask = maskFor(algorithm);
+  if (mask) {
+    const { width, height, offsets } = mask;
+    const inv = 1 / scale;
+
+    if (angle === 0) {
+      /*
+       * Unrotated, the mask column depends only on x and the mask row only on
+       * y, so both fold into lookups built once per frame instead of a floor
+       * and two modulos per cell. This is the path almost every frame takes and
+       * it runs per cell per frame, so it stays separate from the general one.
+       */
+      if (maskColScratch.length < cols) maskColScratch = new Int32Array(cols);
+      const colIndex = maskColScratch;
+      for (let x = 0; x < cols; x++) {
+        const mx = Math.floor(x * inv) + seed;
+        colIndex[x] = ((mx % width) + width) % width;
+      }
+
+      for (let y = 0; y < rows; y++) {
+        const row = y * cols;
+        const my = Math.floor(y * inv);
+        const maskRow = (((my % height) + height) % height) * width;
+        for (let x = 0; x < cols; x++) {
+          const idx = row + x;
+          const v = dest[idx];
+          if (v < 0) continue;
+          dest[idx] = quantize(v + offsets[maskRow + colIndex[x]] * amp);
+        }
+      }
+      return;
+    }
+
+    /*
+     * A rotated tiling mask does not tile seamlessly at angles off a multiple
+     * of 90 degrees, which is exactly how a real halftone screen behaves and
+     * why print separations are screened at 15 / 45 / 75 degrees.
+     *
+     * The bias added after the floor is a whole number of mask periods, so it
+     * cannot change the modulo but does guarantee a non-negative index — which
+     * turns the wrap into one modulo instead of the two a possibly-negative one
+     * needs.
+     *
+     * It has to be added to the integer, not to the coordinate. Biasing the
+     * float first and truncating looks equivalent and is measurably faster, but
+     * sin(30 degrees) is 0.49999999999999994, so x * sin lands just under an
+     * integer; adding a bias in the hundreds costs exactly the low-order bits
+     * that distinguish it, the value rounds up to the integer, and the floor
+     * comes out one too high. Stepping the coordinates incrementally instead of
+     * multiplying drifts the same way. Both were tried, and both moved a couple
+     * of hundred out of 3584 (angle, scale, seed) combinations.
+     */
+    const rad = (angle * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const reachAcross = cols + rows;
+    const biasX = width * (Math.ceil(reachAcross / width) + 1);
+    const biasY = height * (Math.ceil(reachAcross / height) + 1);
+
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      const maskRow = (y % height) * width;
+      const ySin = y * sin;
+      const yCos = y * cos;
+
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        dest[idx] = quantize(v + offsets[maskRow + (x % width)] * quantStep * intScale);
+        const cx = (Math.floor((x * cos - ySin) * inv) + seed + biasX) % width;
+        const cy = (Math.floor((x * sin + yCos) * inv) + biasY) % height;
+        dest[idx] = quantize(v + offsets[cy * width + cx] * amp);
       }
     }
     return;
   }
 
+  // --- 3. LINE SCREENS ---
   /*
-   * The two line screens stay hand-rolled: they are a row or column parity
-   * rather than a tiling matrix, and their ±0.35 swing is already mean-zero.
+   * A row or column parity rather than a tiling matrix. Frequency sets the
+   * period: 1x is the two-cell alternation these had hardcoded, and below 1x
+   * widens the bands.
    */
-  if (algorithm === 'horizontal-lines') {
+  if (
+    algorithm === 'horizontal-lines' ||
+    algorithm === 'scanline-shift' ||
+    algorithm === 'vertical-lines'
+  ) {
+    const period = Math.max(2, Math.round(2 / frequency));
+    const half = period / 2;
+    const vertical = algorithm === 'vertical-lines';
+
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      const lineShift = (y % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;
+      const rowShift = vertical ? 0 : ((y + seed) % period < half ? 0.35 : -0.35) * amp;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        dest[idx] = quantize(v + lineShift);
+        const shift = vertical
+          ? ((x + seed) % period < half ? 0.35 : -0.35) * amp
+          : rowShift;
+        dest[idx] = quantize(v + shift);
       }
     }
-  } else if (algorithm === 'vertical-lines') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const lineShift = (x % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;
-        dest[idx] = quantize(v + lineShift);
-      }
-    }
+    return;
   }
 
-  // --- 3. BLUE NOISE & STOCHASTIC ---
-  else if (algorithm === 'blue-noise' || algorithm === 'void-cluster') {
+  // --- 4. STOCHASTIC HASHES ---
+  if (algorithm === 'white-noise') {
+    /*
+     * A sine-based spatial hash, deterministic in the cell coordinate so a
+     * video renders with a stable grain rather than one that crawls between
+     * frames. Seed offsets the coordinate to pick a different grain.
+     */
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
+      const sy = y + seed * 31;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const bnIdx = (y % 16) * 16 + (x % 16);
-        const noise = (BLUE_NOISE_16X16[bnIdx] - 0.5) * quantStep * intScale;
-        dest[idx] = quantize(v + noise);
+        const sx = x + seed * 17;
+        const hash = ((Math.sin(sx * 12.9898 + sy * 78.233) * 43758.5453) % 1.0 + 1.0) % 1.0 - 0.5;
+        dest[idx] = quantize(v + hash * amp);
       }
     }
-  } else if (algorithm === 'white-noise') {
+    return;
+  }
+
+  if (algorithm === 'gaussian-noise') {
+    // Box-Muller over two independent spatial hashes.
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
+      const sy = y + seed * 31;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        // Deterministic golden-ratio spatial hash for temporal stability
-        const hash = ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1.0 + 1.0) % 1.0 - 0.5;
-        dest[idx] = quantize(v + hash * quantStep * intScale);
-      }
-    }
-  } else if (algorithm === 'gaussian-noise') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        const h1 = Math.max(1e-5, ((Math.sin(x * 37.1 + y * 91.7) * 43758.5453) % 1.0 + 1.0) % 1.0);
-        const h2 = ((Math.cos(x * 41.3 + y * 17.9) * 23421.631) % 1.0 + 1.0) % 1.0;
+        const sx = x + seed * 17;
+        const h1 = Math.max(1e-5, ((Math.sin(sx * 37.1 + sy * 91.7) * 43758.5453) % 1.0 + 1.0) % 1.0);
+        const h2 = ((Math.cos(sx * 41.3 + sy * 17.9) * 23421.631) % 1.0 + 1.0) % 1.0;
         const g = Math.sqrt(-2.0 * Math.log(h1)) * Math.cos(2.0 * Math.PI * h2) * 0.4;
-        dest[idx] = quantize(v + g * quantStep * intScale);
+        dest[idx] = quantize(v + g * amp);
       }
     }
-  } else if (algorithm === 'interleaved-gradient') {
+    return;
+  }
+
+  if (algorithm === 'interleaved-gradient') {
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
+      const sy = y + seed;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const ign = ((52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1)) % 1) - 0.5;
-        dest[idx] = quantize(v + ign * quantStep * intScale);
+        const ign = ((52.9829189 * ((0.06711056 * (x + seed) + 0.00583715 * sy) % 1)) % 1) - 0.5;
+        dest[idx] = quantize(v + ign * amp);
       }
     }
+    return;
   }
 
-  // --- 4. ALGORITHMIC & SPACE-FILLING ---
-  else if (algorithm === 'r-sequence' || algorithm === 'hilbert' || algorithm === 'peano') {
+  // --- 5. ALGORITHMIC & SPACE-FILLING ---
+  if (algorithm === 'r-sequence' || algorithm === 'hilbert' || algorithm === 'peano') {
+    // R2 low-discrepancy sequence: the two plastic-number conjugates.
     const a1 = 0.7548776662466927;
     const a2 = 0.5698402909980532;
+    const phase = seed * 0.381966;
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const seq = ((0.5 + a1 * x + a2 * y) % 1.0) - 0.5;
-        dest[idx] = quantize(v + seq * quantStep * intScale);
+        const seq = ((0.5 + phase + a1 * x + a2 * y) % 1.0) - 0.5;
+        dest[idx] = quantize(v + seq * amp);
       }
     }
+    return;
   }
 
-  // --- 5. MODULATION & GENERATIVE ---
-  else if (algorithm === 'fm-modulation') {
+  // --- 6. MODULATION & GENERATIVE ---
+  if (algorithm === 'fm-modulation') {
     /*
      * The carrier's phase is accumulated across the grid rather than computed
-     * as position × local frequency.
+     * as position times local frequency.
      *
      * Multiplying an absolute coordinate by a per-cell frequency makes the
-     * phase jump by (position × Δfrequency) wherever the tone moves: at column
-     * 200 the old carrier shifted ~3.7 radians for a tone step of 0.01, more
-     * than half a cycle, so each cell's pattern was uncorrelated with its
-     * neighbour's and the whole field read as noise — noise that got worse the
-     * further right it went, because the error scales with the coordinate.
+     * phase jump by (position times delta-frequency) wherever the tone moves:
+     * at column 200 the old carrier shifted ~3.7 radians for a tone step of
+     * 0.01, more than half a cycle, so each cell's pattern was uncorrelated
+     * with its neighbour's and the whole field read as noise — noise that got
+     * worse the further right it went, because the error scales with the
+     * coordinate.
      *
      * Accumulating instead advances the phase by one cell's worth of local
      * frequency at a time, which stays continuous however the tone moves. Row
@@ -700,77 +1058,91 @@ export function applyDitherAlgorithm(
      * axes; a row accumulator alone would leave every row independent and
      * streak horizontally.
      */
-    const colPhase = new Float32Array(cols);
+    const base = FM_BASE_FREQ * frequency;
+    const span = FM_FREQ_SPAN * frequency;
+    if (phaseScratch.length < cols) phaseScratch = new Float32Array(cols);
+    const colPhase = phaseScratch;
+    colPhase.fill(0, 0, cols);
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      let rowPhase = 0;
+      let rowPhase = seed * 0.5;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         // Accumulate through transparent cells so the phase does not step
         // across a cut-out region.
-        const step = FM_BASE_FREQ + Math.max(0, v) * FM_FREQ_SPAN;
+        const step = base + Math.max(0, v) * span;
         rowPhase += step;
         colPhase[x] += step;
         if (v < 0) continue;
-        const carrier = Math.sin(rowPhase + colPhase[x]);
-        dest[idx] = quantize(v + carrier * 0.5 * quantStep * intScale);
+        dest[idx] = quantize(v + Math.sin(rowPhase + colPhase[x]) * 0.5 * amp);
       }
     }
-  } else if (algorithm === 'phase-modulation') {
+    return;
+  }
+
+  if (algorithm === 'phase-modulation') {
+    const rate = 0.25 * frequency;
+    const offset = seed * 0.5;
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const phase = Math.sin(x * 0.25) * Math.cos(y * 0.25) * 3.5;
+        const phase = Math.sin(x * rate + offset) * Math.cos(y * rate) * 3.5;
         const pMod = Math.sin(v * Math.PI * 4.0 + phase);
-        dest[idx] = quantize(v + pMod * 0.45 * quantStep * intScale);
+        dest[idx] = quantize(v + pMod * 0.45 * amp);
       }
     }
-  } else if (algorithm === 'bytewave') {
+    return;
+  }
+
+  if (algorithm === 'bytewave') {
+    // Kept integer so the XOR stays a bitwise pattern rather than a beat.
+    const mx = Math.max(1, Math.round(3 * frequency));
+    const my = Math.max(1, Math.round(5 * frequency));
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
+      const sy = (y + seed) * my;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const byteVal = (((x * 3) ^ (y * 5)) & 255) / 255.0 - 0.5;
-        dest[idx] = quantize(v + byteVal * quantStep * intScale);
+        const byteVal = ((((x + seed) * mx) ^ sy) & 255) / 255.0 - 0.5;
+        dest[idx] = quantize(v + byteVal * amp);
       }
     }
-  } else if (algorithm === 'concentric-rings') {
-    const cx = cols / 2;
-    const cy = rows / 2;
+    return;
+  }
+
+  if (algorithm === 'concentric-rings') {
+    const centreX = cols / 2;
+    const centreY = rows / 2;
+    const rate = 0.65 * frequency;
+    const offset = seed * 0.5;
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      const dy = y - cy;
+      const dy = y - centreY;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
         if (v < 0) continue;
-        const dx = x - cx;
+        const dx = x - centreX;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const ring = Math.sin(dist * 0.65 + v * 3.14) * 0.5;
-        dest[idx] = quantize(v + ring * quantStep * intScale);
+        const ring = Math.sin(dist * rate + v * Math.PI + offset) * 0.5;
+        dest[idx] = quantize(v + ring * amp);
       }
     }
-  } else if (algorithm === 'scanline-shift') {
+    return;
+  }
+
+  if (algorithm === 'sine-drift') {
+    const rate = 0.4 * frequency;
+    const offset = seed * 0.5;
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      const phase = (y % 2 === 0 ? 0.35 : -0.35) * quantStep * intScale;
-      for (let x = 0; x < cols; x++) {
-        const idx = row + x;
-        const v = dest[idx];
-        if (v < 0) continue;
-        dest[idx] = quantize(v + phase);
-      }
-    }
-  } else if (algorithm === 'sine-drift') {
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols;
-      const wave = Math.sin(y * 0.4) * 0.4 * quantStep * intScale;
+      const wave = Math.sin(y * rate + offset) * 0.4 * amp;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
@@ -778,11 +1150,22 @@ export function applyDitherAlgorithm(
         dest[idx] = quantize(v + wave);
       }
     }
-  } else if (algorithm === 'glitch-displacement') {
+    return;
+  }
+
+  if (algorithm === 'glitch-displacement') {
+    /*
+     * Two coprime line periods, so the tears land irregularly rather than on a
+     * visible beat. Frequency shortens both; the floors stop a high frequency
+     * collapsing them onto every row.
+     */
+    const shortPeriod = Math.max(2, Math.round(7 / frequency));
+    const longPeriod = Math.max(3, Math.round(19 / frequency));
     for (let y = 0; y < rows; y++) {
       const row = y * cols;
-      const isGlitchLine = (y % 7 === 0 || y % 19 === 0);
-      const shift = isGlitchLine ? (Math.sin(y * 1.5) * 0.6 * quantStep * intScale) : 0;
+      const sy = y + seed;
+      const isGlitchLine = sy % shortPeriod === 0 || sy % longPeriod === 0;
+      const shift = isGlitchLine ? Math.sin(sy * 1.5) * 0.6 * amp : 0;
       for (let x = 0; x < cols; x++) {
         const idx = row + x;
         const v = dest[idx];
@@ -790,13 +1173,21 @@ export function applyDitherAlgorithm(
         dest[idx] = quantize(v + shift);
       }
     }
-  } else if (algorithm === 'threshold-mod') {
+    return;
+  }
+
+  if (algorithm === 'threshold-mod') {
+    /*
+     * A tone curve, not a spatial pattern — the one entry here with no mask at
+     * all. Intensity drives the exponent, landing on the 1.25 it used to
+     * hardcode at 1.0 and reaching a straight pass-through at 0.
+     */
+    const exponent = 1 + 0.25 * intensity;
     for (let i = 0; i < totalCells; i++) {
       const v = dest[i];
       if (v < 0) continue;
-      const curved = Math.pow(v, 1.25);
-      dest[i] = quantize(curved);
+      dest[i] = quantize(Math.pow(v, exponent));
     }
+    return;
   }
 }
-

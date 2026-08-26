@@ -24,6 +24,7 @@ import {
 } from './ImageAdjustControls';
 import { NToneRampEditor } from './NToneRampEditor';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
+import { DitherParamControls } from './DitherParamControls';
 import { Settings } from 'lucide-react';
 
 interface MediaViewControlsProps {
@@ -121,6 +122,12 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         resetTitle="Reset dither algorithm and resampling filter"
       >
         {/* Dither Algorithm Selector with Rapid Stepper & Category Filter */}
+        <DitherParamControls
+          algorithm={config.algorithm || 'floyd-steinberg'}
+          params={config.ditherParams}
+          onChange={(next) => update('ditherParams', next)}
+        />
+
         <DitherAlgorithmPicker
           value={config.algorithm || 'floyd-steinberg'}
           onChange={(algo) => update('algorithm', algo)}

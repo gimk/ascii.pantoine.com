@@ -4,6 +4,7 @@ import {
   ModelViewConfig,
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
   ImageAdjustConfig,
   MediaColorConfig,
@@ -22,6 +23,7 @@ export interface ModelRenderContext {
   colorConfig?: MediaColorConfig;
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -546,6 +548,7 @@ class HeadlessModelRenderer {
         density,
         rasterMode: ctx.rasterMode || viewConfig.rasterMode || 'ascii',
         ditherAlgorithm: ctx.algorithm || viewConfig.algorithm || 'none',
+        ditherParams: ctx.ditherParams || viewConfig.ditherParams,
         toneConfig: ctx.toneConfig || viewConfig.toneConfig,
         colorConfig: ctx.colorConfig,
         monoTint: ctx.colorConfig?.monoTint,

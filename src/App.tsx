@@ -84,6 +84,7 @@ import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { DITHER_ALGORITHMS } from './engine/ditherAlgorithms';
+import { DitherParamControls } from './components/DitherParamControls';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
@@ -446,6 +447,7 @@ export const App: React.FC = () => {
       density: (isSynthShared && sharedState?.density) || savedSettings.synth?.density || CHARSETS[0].chars,
       rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'pixel',
       ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
+      ditherParams: (isSynthShared && sharedState?.ditherParams) || savedSettings.synth?.ditherParams,
       toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'monochrome',
@@ -471,6 +473,7 @@ export const App: React.FC = () => {
       density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || CHARSETS[0].chars,
       rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'pixel',
       ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
+      ditherParams: (isMediaShared && sharedState?.ditherParams) || savedSettings.media?.ditherParams,
       toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'monochrome',
@@ -497,6 +500,7 @@ export const App: React.FC = () => {
       density: (isModelShared && sharedState?.density) || savedSettings.model?.density || CHARSETS[0].chars,
       rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'pixel',
       ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
+      ditherParams: (isModelShared && sharedState?.ditherParams) || savedSettings.model?.ditherParams,
       toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'monochrome',
@@ -2194,6 +2198,7 @@ export const App: React.FC = () => {
           colorConfig: renderColorConfig,
           rasterMode: mediaViewConfig.rasterMode || curSettings.rasterMode || 'ascii',
           algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
+          ditherParams: mediaViewConfig.ditherParams || curSettings.ditherParams,
           toneConfig: curSettings.toneConfig,
         });
 
@@ -2379,6 +2384,7 @@ export const App: React.FC = () => {
           colorConfig: renderColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
+          ditherParams: activeSettings.ditherParams,
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
@@ -2396,6 +2402,7 @@ export const App: React.FC = () => {
           colorConfig: renderColorConfig,
           rasterMode: mediaViewConfig.rasterMode || activeSettings.rasterMode || 'ascii',
           algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
+          ditherParams: mediaViewConfig.ditherParams || activeSettings.ditherParams,
           toneConfig: activeSettings.toneConfig,
         });
         captureHistogram(result);
@@ -2418,6 +2425,7 @@ export const App: React.FC = () => {
           colorConfig: renderColorConfig,
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
+          ditherParams: activeSettings.ditherParams,
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
@@ -2588,6 +2596,9 @@ export const App: React.FC = () => {
       ditherAlgorithm: appMode === 'media'
         ? (mediaViewConfig.algorithm || currentRenderSettings.ditherAlgorithm)
         : currentRenderSettings.ditherAlgorithm,
+      ditherParams: appMode === 'media'
+        ? (mediaViewConfig.ditherParams || currentRenderSettings.ditherParams)
+        : currentRenderSettings.ditherParams,
       toneConfig: currentRenderSettings.toneConfig,
       adjustConfig: currentRenderSettings.adjustConfig,
 
@@ -3289,6 +3300,20 @@ export const App: React.FC = () => {
                           }));
                         }}
                       />
+
+                      <DitherParamControls
+                        algorithm={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
+                        params={currentRenderSettings.ditherParams}
+                        onChange={(next) => {
+                          setRenderSettingsByMode((prev) => ({
+                            ...prev,
+                            [appMode]: {
+                              ...prev[appMode],
+                              ditherParams: next,
+                            },
+                          }));
+                        }}
+                      />
                     </CollapsibleSection>
 
                     {(() => {
@@ -3494,6 +3519,7 @@ export const App: React.FC = () => {
         mediaElement={mediaElementRef.current}
         rasterMode={appMode === 'media' ? (mediaViewConfig.rasterMode || currentRenderSettings.rasterMode) : currentRenderSettings.rasterMode}
         ditherAlgorithm={appMode === 'media' ? (mediaViewConfig.algorithm || currentRenderSettings.ditherAlgorithm) : currentRenderSettings.ditherAlgorithm}
+        ditherParams={appMode === 'media' ? (mediaViewConfig.ditherParams || currentRenderSettings.ditherParams) : currentRenderSettings.ditherParams}
         toneConfig={currentRenderSettings.toneConfig}
         adjustConfig={currentRenderSettings.adjustConfig}
       />

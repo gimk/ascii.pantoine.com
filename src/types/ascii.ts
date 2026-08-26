@@ -216,6 +216,31 @@ export type RasterOutputMode =
 
 export type DitherFamily = 'error-diffusion' | 'ordered' | 'blue-noise' | 'algorithmic' | 'modulation';
 
+/**
+ * Per-algorithm tuning for the dither pass.
+ *
+ * Every field is optional and every algorithm ignores the ones it has no use
+ * for — `getDitherParamIds` in engine/ditherAlgorithms is the authority on
+ * which apply to which, and drives both the resolver and the controls. An
+ * absent field takes the parameter's own default, so an empty object and an
+ * absent object render identically; that is what keeps links and presets
+ * written before this existed rendering the way they always did.
+ */
+export interface DitherParams {
+  /** Mask amplitude / diffused error scale. 1 = one quantization step. */
+  intensity?: number;
+  /** Cells per mask sample; coarsens a tiling pattern without reshaping it. */
+  scale?: number;
+  /** Mask rotation in degrees. */
+  angle?: number;
+  /** Carrier rate multiplier for the wave and line patterns. */
+  frequency?: number;
+  /** Pattern origin offset. Deterministic — the same seed gives the same frame. */
+  seed?: number;
+  /** Alternate scan direction per row in the error-diffusion family. */
+  serpentine?: boolean;
+}
+
 export type DitherAlgorithm =
   // Error Diffusion (12)
   | 'none'
@@ -508,6 +533,7 @@ export interface MediaViewConfig extends ImageAdjustConfig {
   // Render / sampling settings specific to 2D media sources
   resampling: ResamplingMode;
   algorithm: DitherAlgorithm;
+  ditherParams?: DitherParams;
   rasterMode?: RasterOutputMode;
   dpi?: number; // 10 to 300, default 72
   /*
@@ -593,6 +619,7 @@ export interface ModelViewConfig {
   aspectRatio?: number; // Monospace cell aspect ratio compensation, default 0.50
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
 }
 
@@ -630,6 +657,7 @@ export interface RenderSettings {
   mediaColorConfig?: MediaColorConfig;
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }

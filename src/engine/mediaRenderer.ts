@@ -5,6 +5,7 @@ import {
   DEFAULT_MEDIA_COLOR_CONFIG,
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
 } from '../types/ascii';
 import { MONOSPACE_CELL_ASPECT } from './renderer';
@@ -23,6 +24,7 @@ export interface RenderMediaContext {
   colorConfig?: MediaColorConfig;
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
 }
 
@@ -86,6 +88,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     // (exporters) render exactly what the viewport renders.
     rasterMode = viewConfig.rasterMode ?? 'ascii',
     algorithm = viewConfig.algorithm ?? 'floyd-steinberg',
+    ditherParams,
     toneConfig,
   } = context;
 
@@ -215,6 +218,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       density,
       rasterMode,
       ditherAlgorithm: algorithm,
+      ditherParams: ditherParams || viewConfig.ditherParams,
       toneConfig: toneConfig || viewConfig.toneConfig,
       colorConfig,
       monoTint: colorConfig?.monoTint,

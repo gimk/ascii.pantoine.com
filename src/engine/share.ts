@@ -13,6 +13,7 @@ import {
   MediaColorConfig,
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
   ImageAdjustConfig,
 } from '../types/ascii';
@@ -49,6 +50,7 @@ export interface FullAnimationState {
   density: string;
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   theme: PhosphorTheme;

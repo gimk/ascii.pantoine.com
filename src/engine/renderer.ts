@@ -2,6 +2,7 @@ import {
   RenderContext,
   RasterOutputMode,
   DitherAlgorithm,
+  DitherParams,
   ToneMappingConfig,
   MediaColorConfig,
   ImageAdjustConfig,
@@ -71,6 +72,7 @@ export interface SynthRenderOptions extends RenderContext {
   colorConfig?: MediaColorConfig;
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
+  ditherParams?: DitherParams;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -92,6 +94,7 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
     interactiveInfluence,
     rasterMode = 'ascii',
     algorithm = 'none',
+    ditherParams,
     toneConfig,
     adjustConfig,
   } = ctx;
@@ -229,6 +232,7 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
       density,
       rasterMode,
       ditherAlgorithm: algorithm,
+      ditherParams,
       toneConfig,
       colorConfig: ctx.colorConfig,
       monoTint: ctx.colorConfig?.monoTint,
