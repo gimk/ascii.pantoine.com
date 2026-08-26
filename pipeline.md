@@ -475,6 +475,18 @@ blurred bloom layer.
 `fillText` per cell at `MONOSPACE_CELL_WIDTH × MONOSPACE_CELL_HEIGHT`
 (`6.015 × 10.0`). Spaces are skipped.
 
+> **This is the most expensive stage of a normal frame.** Measured at 7,680 cells
+> it costs ~7.1 ms, against 1–3 ms for the whole raster pipeline and ~0.2 ms for
+> the media readback (§4.6). Holding `fillStyle` constant for the frame drops it
+> to 2.97 ms, so **58% of the cost is style churn**, not glyph rasterization —
+> a `rgb(…)` template string is built and assigned per cell. Coalescing each row
+> into runs of identical colour and drawing each run as one
+> `fillText(line.slice(x, end), …)` measured 3.10 ms, a 43% cut. It works because
+> quantized output holds very few distinct colours: 4–16 for an indexed palette,
+> 2–8 for an n-tone ramp. Only `content` colour is high-cardinality, and it still
+> improves (7.53 → 6.32 ms). A pre-rendered glyph atlas with one `drawImage` per
+> cell was also measured and is *slower* (9.09 ms) — don't.
+
 *Pixel:* rasterizes into a `cols × rows` `ImageData` on an offscreen buffer canvas,
 then blits it up with `imageSmoothingEnabled = false`. The visible canvas is snapped
 to `cols × round(zoom · dpr)` so every cell is a whole number of device pixels.
@@ -905,6 +917,87 @@ is not slow but unresponsive. Both DPI controls now route through
 `autoSetMediaResolution` already applied). Typed cols/rows stay uncapped:
 someone entering 4000 in a number field means it, and may be setting up an
 export.
+
+### 4.6 Where a media frame's time actually goes
+
+Measured in Chromium, `devicePixelRatio` 1, medians over 15–40 iterations after
+a warm-up. Worth reading before optimising anything in this file, because the
+intuitive answer is wrong.
+
+| stage | 40k cells (auto-res) | 2.6M cells (DPI ceiling) |
+|---|---|---|
+| `drawImage` + `getImageData` ([`mediaRenderer.ts`](src/engine/mediaRenderer.ts)) | **~0.2 ms** | ~1 ms |
+| `processRasterFrame` | 3–7 ms | 100–550 ms |
+| viewport paint, coloured ASCII | ~7 ms | — |
+
+**The readback is not the bottleneck. It is a rounding error.** Chromium scales
+a decoded `HTMLImageElement` on a fast path: drawing a 3840×2160 `<img>` down to
+250×160 costs **0.18 ms**, and it stays 0.18 ms with the offset and scale jittered
+every iteration, so it is not a cached-scaled-bitmap artefact. `getImageData` at
+that size is ~0.01 ms.
+
+**The source *type* matters far more than its size.** Identical pixels, identical
+destination:
+
+| source | cost |
+|---|---|
+| `HTMLImageElement`, 3840×2160 | 0.18 ms |
+| `ImageBitmap`, 3840×2160 | 1.18 ms |
+| `HTMLCanvasElement`, 3840×2160 | **14.4 ms** |
+| `HTMLCanvasElement`, 500×320 | 1.83 ms |
+
+A live canvas may have pending draws, so it cannot be cached the way a decoded
+image can, and every `drawImage` re-reads it. Since every load path in `App.tsx`
+— file, paste, drag-drop, remote URL, shared link — builds a `new Image()`, the
+app is always on the 0.18 ms path.
+
+#### Two optimisations that were tried and reverted
+
+Both were designed against a benchmark that used a **canvas** source, and both
+evaporated or inverted once measured against the `<img>` the app actually uses.
+Recorded here so the next person does not rediscover them.
+
+**A downscaled "source proxy."** Build a small canvas once from the original and
+draw every frame from it. Against a canvas source this looks like a 22.6 ms →
+2.8 ms win. In reality it replaces a 0.18 ms `<img>` draw with a 1.83 ms *canvas*
+draw — **~10× slower**, because the proxy is itself the slow source type. The
+size arithmetic was sound (demand taken from `drawW`/`drawH` so fit, scale and
+`fit: 'original'` fall out correctly; one shared scale factor to preserve aspect;
+√2 headroom when rotated) and none of it mattered. There is no version of this
+that helps an `<img>`.
+
+**A framing-keyed RGBA cache.** The dependency analysis is correct and worth
+keeping in mind: the downsampled RGBA depends only on the element, `cols`,
+`rows`, `rasterMode`, `background`, `resampling` and the seven framing fields
+(`fit`, `scale`, `offsetX/Y`, `rotation`, `flipX/Y`) — *not* on `toneConfig`,
+`colorConfig`, the algorithm, or any field of `toPipelineAdjustments`. So a tone
+drag genuinely does re-derive a bit-identical buffer. Caching it was verified
+byte-identical on hit, with every invalidating input correctly detected. It is
+still not worth it:
+
+| grid | saved | share of frame |
+|---|---|---|
+| 250×160 (40k) | −0.6 ms | net negative, within noise |
+| 800×500 (400k) | 0.9 ms | 3.3% |
+| 1600×1000 (1.6M) | 7.7 ms | 7.1% |
+
+At the default grid it pays nothing; at large grids it pays 3–7% of a frame that
+is 100 ms+ and dominated by `processRasterFrame` regardless. That bought roughly
+180 lines of module state and key-building, plus a retained buffer of
+`cols × rows × 4` bytes (6 MB at 1.6M cells) and a staleness surface for any
+future canvas or video source. Reverted.
+
+**What this implies for the real bottlenecks.** The grid, not the source, is what
+costs — so the preview-then-refine machinery in §4.5 is aimed correctly, and
+`processRasterFrame` at high DPI is the workload that would actually justify
+moving rendering into a worker. Every module the pipeline touches
+(`rasterEngine`, `ditherAlgorithms`, `palettes`, `autoLevels`, `math`,
+`separation`) is already free of `document` and `window`, so it would port
+unmodified; measured round-trip overhead for a transferred frame at 40k cells is
+~0 ms of main-thread blocking and ~1.7 ms of added latency, which is a good trade
+against a 100 ms frame and a bad one against a 3 ms frame. The other measured
+cost, the ~7 ms coloured-ASCII paint, is 58% `fillStyle` churn — see the note in
+§3.1.
 
 ## 5. Invariants
 

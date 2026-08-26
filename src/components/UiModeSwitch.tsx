@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, SlidersHorizontal } from 'lucide-react';
+import { Wand, Wrench } from 'lucide-react';
 import { UiMode } from '../types/ascii';
 
 interface UiModeSwitchProps {
@@ -16,13 +16,13 @@ const MODES: {
   {
     id: 'basic',
     label: 'BASIC',
-    icon: Sparkles,
+    icon: Wand,
     title: 'Basic — one panel: import, dither, adjust, colour, export',
   },
   {
     id: 'advanced',
     label: 'ADVANCED',
-    icon: SlidersHorizontal,
+    icon: Wrench,
     title: 'Advanced — every source and control, across the Content and Render tabs',
   },
 ];
