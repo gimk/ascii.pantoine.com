@@ -224,66 +224,26 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
         </button>
       </div>
 
-      {/* 3. Dynamic Algorithm Chips Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '5px',
-          marginBottom: '8px',
-          maxHeight: selectedFamily === 'all' ? '340px' : undefined,
-          overflowY: selectedFamily === 'all' ? 'auto' : undefined,
-          paddingRight: selectedFamily === 'all' ? '2px' : undefined,
-        }}
-      >
+      {/* 3. Scrollable List of Algorithms for the Active Category */}
+      <div className="dither-algo-list">
         {visibleChips.map((algo) => {
           const isSelected = value === algo.id;
           return (
             <button
               key={algo.id}
               type="button"
-              className={`quantize-chip dither-algo-chip ${isSelected ? 'active' : ''}`}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '3px',
-                padding: '5px 4px',
-                minHeight: '44px',
-                fontSize: '10px',
-                textAlign: 'center',
-                overflow: 'hidden',
-              }}
+              className={`dither-algo-row-btn ${isSelected ? 'active' : ''}`}
               onClick={() => onChange(algo.id)}
               title={`${algo.name}: ${algo.description}`}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', maxWidth: '100%' }}>
-                <DitherSwatchIcon type={algo.patternType} size={12} active={isSelected} />
-                <span
-                  style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    fontWeight: 700,
-                    fontSize: '10px',
-                  }}
-                >
-                  {algo.name.split(' ')[0]}
+              <div className="dither-algo-row-left">
+                <DitherSwatchIcon type={algo.patternType} size={13} active={isSelected} />
+                <span className="dither-algo-row-name">
+                  {algo.name}
                 </span>
               </div>
               {algo.badge && (
-                <span
-                  style={{
-                    fontSize: '10px',
-                    opacity: isSelected ? 1 : 0.8,
-                    color: isSelected ? 'var(--accent)' : 'var(--text-dim)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: '100%',
-                  }}
-                >
+                <span className="dither-algo-row-badge">
                   {algo.badge}
                 </span>
               )}

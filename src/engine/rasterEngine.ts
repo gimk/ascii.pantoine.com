@@ -1031,8 +1031,15 @@ export function processRasterFrame(
     autoLevels = 256;
   }
 
+  /*
+   * Quantize depth (colorLevels) is strictly scoped to MONO and RGB modes.
+   * In N-TONE and INDEXED (PALETTES) modes, the quantization depth is owned
+   * intrinsically by the tone stop count or palette color count.
+   */
+  const isMonoOrRgb = paletteMode === 'content' || (paletteMode === 'phosphor' && tonal === '1color');
+
   const explicitLevels =
-    options.colorLevels && options.colorLevels >= 2
+    isMonoOrRgb && options.colorLevels && options.colorLevels >= 2
       ? Math.min(256, Math.round(options.colorLevels))
       : 0;
   const ditherLevels = Math.max(2, explicitLevels || autoLevels);

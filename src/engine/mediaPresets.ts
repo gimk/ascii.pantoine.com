@@ -61,9 +61,7 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   contrast: 0,
 
   // 3. Tonal Controls (all sliders start at center)
-  // Monochrome by default, matching DEFAULT_IMAGE_ADJUST_CONFIG -- see the
-  // note there for why duotone is a poor first impression in ASCII output.
-  tonalMapping: '1color',
+  tonalMapping: 'ntone',
   highlightColor: '#00ff66',
   midtoneColor: '#00a848',
   shadowColor: '#0a0a0a',

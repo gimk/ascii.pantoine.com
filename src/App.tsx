@@ -29,7 +29,7 @@ import {
   UiThemeSettings,
   UiMode,
 } from './types/ascii';
-import { resolvePhosphorTint, DEFAULT_PHOSPHOR_TINT } from './engine/palettes';
+import { resolvePhosphorTint, DEFAULT_PHOSPHOR_TINT, BUILTIN_PALETTES } from './engine/palettes';
 import {
   DEFAULT_WAVE_PARAMS,
   compileCustomCode,
@@ -74,7 +74,8 @@ import { ModelImportControls, ModelMeshControls } from './components/ModelSettin
 import { ModelViewControls } from './components/ModelViewControls';
 import { MediaUploadControls, MediaFramingControls } from './components/MediaFileControls';
 import { MediaViewControls } from './components/MediaViewControls';
-import { ImageAdjustControls } from './components/ImageAdjustControls';
+import { ImageAdjustControls, resolveToneStops, applyToneStops, DEFAULT_STOP_WEIGHT } from './components/ImageAdjustControls';
+import { NToneRampEditor } from './components/NToneRampEditor';
 import { CollapsibleSection, AccordionProvider } from './components/CollapsibleSection';
 import { BasicPanel } from './components/BasicPanel';
 import { UiModeSwitch } from './components/UiModeSwitch';
@@ -447,7 +448,7 @@ export const App: React.FC = () => {
       ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
       toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
-      theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'green',
+      theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'monochrome',
       customThemeColor: (isSynthShared && sharedState?.customThemeColor) || savedSettings.synth?.customThemeColor || '',
       gradientConfig: (isSynthShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.synth?.gradientConfig ?? null),
       crtConfig: (isSynthShared && sharedState?.crtConfig) || savedSettings.synth?.crtConfig || {
@@ -472,7 +473,7 @@ export const App: React.FC = () => {
       ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
       toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
-      theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'green',
+      theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'monochrome',
       customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
       gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
       crtConfig: (isMediaShared && sharedState?.crtConfig) || savedSettings.media?.crtConfig || {
@@ -498,7 +499,7 @@ export const App: React.FC = () => {
       ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
       toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
-      theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'green',
+      theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'monochrome',
       customThemeColor: (isModelShared && sharedState?.customThemeColor) || savedSettings.model?.customThemeColor || '',
       gradientConfig: (isModelShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.model?.gradientConfig ?? null),
       crtConfig: (isModelShared && sharedState?.crtConfig) || savedSettings.model?.crtConfig || {
@@ -3173,50 +3174,86 @@ export const App: React.FC = () => {
                       />
                     </CollapsibleSection>
 
-                    <ImageAdjustControls
-                      config={currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG}
-                      onChangeConfig={handleChangeAdjustConfig}
-                      persistKeyPrefix={`${appMode}-image-adjust`}
-                      onResetPalette={handleResetPalette}
-                      toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
-                      onChangeToneConfig={handleChangeToneConfig}
-                      histogram={histogramSnapshot?.bins ?? null}
-                      histogramOpaque={histogramSnapshot?.opaque ?? 0}
-                      mediaColorConfig={mediaColorConfig}
-                      /*
-                       * Neither mode on this mount has soft alpha to cut, so
-                       * the threshold has nothing to grade against. Synth
-                       * hands the pipeline a luminance buffer, which skips the
-                       * alpha branch outright; model frames come off an opaque
-                       * unantialiased WebGL pass, so every cell is either 0 or
-                       * 255 and any threshold in between cuts identically.
-                       * Media is the one source with real partial alpha and
-                       * keeps the control -- see MediaViewControls.
-                       */
-                      showAlphaCutoff={false}
-                      paletteSlot={
-                        <div>
-                          {/* No subheading: the COLORS panel title already says this. */}
-                          <PaletteControls
-                            currentTheme={theme}
-                            onChangeTheme={handleSelectTheme}
-                            customThemeColor={customThemeColor}
-                            onChangeCustomColor={handleSelectCustomColor}
-                            mediaColorConfig={mediaColorConfig}
-                            onChangeMediaColorConfig={handleSelectMediaColorConfig}
-                            appMode={appMode}
-                            tonalMapping={(currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG).tonalMapping}
-                            onChangeTonalMapping={(t) =>
-                              handleChangeAdjustConfig({
-                                ...(currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG),
-                                tonalMapping: t,
-                              })
-                            }
-                            isPixelMode={currentRasterMode === 'pixel'}
-                          />
-                        </div>
-                      }
-                    />
+                    {(() => {
+                      const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
+                      const { colors: synthModelRampColors, weights: synthModelRampWeights } = resolveToneStops(synthModelAdjustConfig);
+
+                      return (
+                        <ImageAdjustControls
+                          config={synthModelAdjustConfig}
+                          onChangeConfig={handleChangeAdjustConfig}
+                          persistKeyPrefix={`${appMode}-image-adjust`}
+                          onResetPalette={handleResetPalette}
+                          toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                          onChangeToneConfig={handleChangeToneConfig}
+                          histogram={histogramSnapshot?.bins ?? null}
+                          histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                          mediaColorConfig={mediaColorConfig}
+                          showAlphaCutoff={false}
+                          paletteSlot={
+                            <PaletteControls
+                              currentTheme={theme}
+                              onChangeTheme={handleSelectTheme}
+                              customThemeColor={customThemeColor}
+                              onChangeCustomColor={handleSelectCustomColor}
+                              mediaColorConfig={mediaColorConfig}
+                              onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                              appMode={appMode}
+                              tonalMapping={synthModelAdjustConfig.tonalMapping}
+                              onChangeTonalMapping={(t) =>
+                                handleChangeAdjustConfig({
+                                  ...synthModelAdjustConfig,
+                                  tonalMapping: t,
+                                })
+                              }
+                              isPixelMode={currentRasterMode === 'pixel'}
+                              colorLevels={synthModelAdjustConfig.colorLevels}
+                              onChangeColorLevels={(val) =>
+                                handleChangeAdjustConfig({
+                                  ...synthModelAdjustConfig,
+                                  colorLevels: val,
+                                })
+                              }
+                              rampEditorSlot={
+                                <NToneRampEditor
+                                  stops={synthModelRampColors}
+                                  weights={synthModelRampWeights}
+                                  onChangeRamp={(stops, nextWeights) =>
+                                    handleChangeAdjustConfig({
+                                      ...synthModelAdjustConfig,
+                                      ...applyToneStops(synthModelAdjustConfig, stops),
+                                      toneStopWeights: nextWeights,
+                                    })
+                                  }
+                                />
+                              }
+                              onEditPaletteAsRamp={
+                                mediaColorConfig?.paletteMode === 'indexed'
+                                  ? () => {
+                                      const pal = BUILTIN_PALETTES.find(
+                                        (p) => p.id === mediaColorConfig.activePaletteId
+                                      );
+                                      if (!pal || pal.colors.length < 2) return;
+                                      const stops = [...pal.colors];
+                                      handleSelectMediaColorConfig({
+                                        ...mediaColorConfig,
+                                        paletteMode: 'phosphor',
+                                        mode: 'fixed',
+                                      });
+                                      handleChangeAdjustConfig({
+                                        ...synthModelAdjustConfig,
+                                        ...applyToneStops(synthModelAdjustConfig, stops),
+                                        toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
+                                        tonalMapping: 'ntone',
+                                      });
+                                    }
+                                  : undefined
+                              }
+                            />
+                          }
+                        />
+                      );
+                    })()}
                   </div>
                 )}
               </>

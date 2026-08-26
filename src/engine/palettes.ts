@@ -401,19 +401,14 @@ export const PHOSPHOR_THEME_HEX: Record<PhosphorTheme, string> = {
   green: '#00ff66',
   amber: '#ffb000',
   cyan: '#00f0ff',
-  monochrome: '#f0f0f0',
+  monochrome: '#ffffff',
   blood: '#ff3344',
   paper: '#151515',
   matrix: '#00ff66',
 };
 
 /**
- * Default monochrome tint.
- *
- * White, not the signature green: monochrome is the neutral starting point a
- * tint is chosen from, and a green default reads as a look already applied.
- * The legacy theme hexes above still resolve for state saved before the tint
- * became a plain colour.
+ * Default monochrome phosphor tint (#ffffff).
  */
 export const DEFAULT_PHOSPHOR_TINT = '#ffffff';
 

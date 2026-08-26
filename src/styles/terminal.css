@@ -1696,19 +1696,86 @@ html, body, #root {
   box-shadow: 0 0 6px var(--accent-glow);
 }
 
-.dither-algo-chip {
-  transition: all 0.15s ease;
+.dither-algo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  scrollbar-width: thin;
 }
 
-.dither-algo-chip:hover {
-  transform: translateY(-1px);
+.dither-algo-row-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--bg-control);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: all 0.12s ease;
+  text-align: left;
+}
+
+.dither-algo-row-btn:hover {
+  background: var(--bg-control-hover);
+  border-color: var(--border-color);
+}
+
+.dither-algo-row-btn.active {
+  background: var(--bg-panel);
   border-color: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
 }
 
-.dither-matrix-card:hover {
-  border-color: var(--accent) !important;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+.dither-algo-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.dither-algo-row-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dither-algo-row-btn.active .dither-algo-row-name {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.dither-algo-row-badge {
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1px 5px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.dither-algo-row-btn.active .dither-algo-row-badge {
+  color: var(--accent);
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
 }
 
 .slider-nudge-btn.active {
@@ -2305,46 +2372,26 @@ select:disabled {
   box-shadow: 0 0 8px var(--accent-glow), inset 0 0 0 1px var(--accent);
 }
 
-/* Palette Row Button in Retro Palettes */
-.palette-row-btn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 8px;
-  background-color: var(--bg-control);
-  border: 1px solid var(--border-color);
-  border-radius: 2px;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  cursor: pointer;
-  transition: all 0.12s ease;
-  text-align: left;
-}
-
-.palette-row-btn:hover {
-  background-color: var(--bg-control-hover);
-  border-color: var(--text-muted);
-}
-
-.palette-row-btn.active {
-  border-color: var(--accent);
-  background-color: var(--bg-panel);
-  box-shadow: 0 0 8px var(--accent-glow), inset 0 0 0 1px var(--accent-glow);
-}
-
-.palette-row-btn.active .palette-row-title {
-  color: var(--accent);
-}
-
 /* ==========================================================================
-   Color Mode Selector & N-Tone Multi-Color Ramp (Enlarged & Practical)
+   Color Mode Selector & Palette Nuancier & N-Tone Multi-Color Ramp
    ========================================================================== */
+
+.palette-controls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 
 .color-mode-nav {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-bottom: 6px;
 }
 
 .color-mode-nav.three-col {
@@ -2353,44 +2400,263 @@ select:disabled {
 
 .color-mode-tab {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  padding: 8px 4px;
-  background: var(--bg-control);
-  border: 1px solid var(--border-color);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 5px 2px;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 3px;
   color: var(--text-muted);
   text-align: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
   user-select: none;
   white-space: nowrap;
 }
 
 .color-mode-tab:hover {
-  border-color: var(--text-muted);
   color: var(--text-primary);
   background: var(--bg-control-hover);
 }
 
 .color-mode-tab.active {
+  background: var(--bg-panel);
   border-color: var(--accent);
   color: var(--accent);
-  background: var(--bg-panel);
-  box-shadow: 0 0 8px var(--accent-glow), inset 0 0 0 1px var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
 }
 
-/* N-Tone Gradient Bar Preview */
+.palette-subpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Palette Dropdown Button */
+.palette-dropdown-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-family: var(--font-mono);
+}
+
+.palette-dropdown-btn:hover {
+  background: var(--bg-control-hover);
+  border-color: var(--border-color-hover);
+}
+
+.palette-dropdown-btn.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  background: var(--bg-control-hover);
+}
+
+.palette-dropdown-btn-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.palette-dropdown-btn-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.palette-dropdown-btn-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-swatches-bar {
+  display: flex;
+  gap: 2px;
+  flex-wrap: nowrap;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.palette-swatch-cell {
+  width: 8px;
+  height: 14px;
+  border-radius: 1px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.palette-count-badge {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.palette-chevron {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.palette-dropdown-btn.active .palette-chevron {
+  color: var(--accent);
+}
+
+/* Palette Dropdown Popover Menu */
+.palette-dropdown-menu {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--accent);
+  background: var(--bg-panel);
+  border-radius: 3px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px var(--accent-glow);
+  margin: 6px 0 10px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.palette-dropdown-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palette-group-header {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 3px 6px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 2px;
+  margin-bottom: 2px;
+}
+
+.palette-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palette-row-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  background: var(--bg-control);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: all 0.12s ease;
+  text-align: left;
+}
+
+.palette-row-btn:hover {
+  background: var(--bg-control-hover);
+  border-color: var(--border-color);
+}
+
+.palette-row-btn.active {
+  background: var(--bg-primary);
+  border-color: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.palette-row-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.palette-row-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.palette-row-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-row-btn.active .palette-row-title {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.palette-check-icon {
+  color: var(--accent);
+}
+
+.palette-swatch-overflow {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding-left: 2px;
+}
+
+.palette-action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin-top: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.palette-action-text {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* N-Tone Editor */
+.ntone-editor-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .ntone-gradient-preview {
   width: 100%;
-  height: 32px;
-  border-radius: 4px;
+  height: 24px;
+  border-radius: 3px;
   border: 1px solid var(--border-color);
   position: relative;
   overflow: hidden;
-  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.5);
-  margin-bottom: 8px;
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.6);
 }
 
 .ntone-gradient-stops-overlay {
@@ -2402,43 +2668,42 @@ select:disabled {
   pointer-events: none;
 }
 
-/*
- * Placed rather than distributed: once band widths can differ the ticks are no
- * longer evenly spaced, so each carries its own `left`. The inline calc in
- * NToneRampEditor reproduces what `justify-content: space-between` used to do,
- * which is why an evenly weighted ramp looks exactly as it did before.
- */
-.ntone-gradient-stop-tick {
+.ntone-gradient-stop-tick,
+.ntone-gradient-boundary-tick {
   position: absolute;
   top: 0;
-  width: 2.5px;
+  width: 2px;
   height: 100%;
-  background: rgba(255, 255, 255, 0.45);
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+  pointer-events: auto;
 }
 
-/* N-Tone Actions Bar */
-.ntone-toolbar {
+.ntone-count-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ntone-count-controls {
+  display: flex;
+  align-items: center;
   gap: 6px;
-  margin: 8px 0;
-  flex-wrap: wrap;
 }
 
 .ntone-chip-group {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+  gap: 3px;
 }
 
 .ntone-count-chip {
   font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 800;
-  padding: 3px 6px;
+  font-weight: 700;
+  padding: 2px 5px;
   background: var(--bg-control);
   border: 1px solid var(--border-color);
   border-radius: 2px;
@@ -2448,7 +2713,7 @@ select:disabled {
 }
 
 .ntone-count-chip:hover {
-  border-color: var(--text-muted);
+  border-color: var(--border-color-hover);
   color: var(--text-primary);
   background: var(--bg-control-hover);
 }
@@ -2456,57 +2721,118 @@ select:disabled {
 .ntone-count-chip.active {
   border-color: var(--accent);
   color: var(--accent);
-  background: var(--bg-panel);
+  background: var(--bg-primary);
   box-shadow: 0 0 6px var(--accent-glow);
 }
 
-/* Individual Stop Row */
-.ntone-stop-card {
+.ntone-stepper {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  margin-bottom: 5px;
+  gap: 3px;
+}
+
+.ntone-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+.ntone-stops-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.ntone-stop-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 7px;
   background: var(--bg-control);
   border: 1px solid var(--border-color);
   border-radius: 3px;
   transition: border-color 0.12s ease;
 }
 
-/*
- * Band width, between the role label and the colour. The card stays one row --
- * a ramp can run to 256 stops, and a second line each would double a list that
- * is already the tallest thing in the panel.
- */
-.ntone-stop-weight {
-  flex: 1 1 auto;
-  min-width: 40px;
-  width: auto;
-  margin: 0 10px;
-}
-
 .ntone-stop-card:hover {
   border-color: var(--border-color-hover);
 }
 
-.ntone-stop-label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--text-primary);
+.ntone-stop-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
+.ntone-stop-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+}
+
 .ntone-stop-badge {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   color: var(--accent);
-  background: var(--accent-glow);
-  padding: 2px 6px;
+  background: var(--bg-primary);
+  padding: 1px 4px;
   border-radius: 2px;
   border: 1px solid var(--accent);
+}
+
+.ntone-stop-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ntone-stop-pct {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.ntone-stop-weight-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.ntone-weight-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 32px;
+}
+
+.ntone-stop-weight {
+  flex: 1;
+  margin: 0;
+}
+
+.ntone-weight-value {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  min-width: 20px;
+  text-align: right;
+}
+
+.color-backdrop-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
 }
 
 /*

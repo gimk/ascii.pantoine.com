@@ -632,83 +632,78 @@ interface QuantizeLevelsControlProps {
 }
 
 const QUANTIZE_PRESETS: { label: string; value: number; title: string }[] = [
-  { label: 'AUTO', value: 0, title: 'Auto (Natural depth from charset or palette)' },
-  { label: '2 (1b)', value: 2, title: '2 Levels — 1-bit Monochrome' },
-  { label: '4 (2b)', value: 4, title: '4 Levels — 2-bit (Game Boy / CGA)' },
-  { label: '8 (3b)', value: 8, title: '8 Levels — 3-bit Color' },
-  { label: '16 (4b)', value: 16, title: '16 Levels — 4-bit (C64 / PICO-8)' },
+  { label: '2', value: 2, title: '2 Levels — 1-bit Monochrome' },
+  { label: '4', value: 4, title: '4 Levels — 2-bit (Game Boy / CGA)' },
+  { label: '8', value: 8, title: '8 Levels — 3-bit Color' },
+  { label: '16', value: 16, title: '16 Levels — 4-bit (C64 / PICO-8)' },
   { label: '32', value: 32, title: '32 Levels — 5-bit Depth' },
   { label: '64', value: 64, title: '64 Levels — 6-bit Posterization' },
   { label: '128', value: 128, title: '128 Levels — 7-bit Semi-continuous' },
-  { label: '256', value: 256, title: '256 Levels — 8-bit Continuous Tone' },
+  { label: 'MAX', value: 256, title: 'Max (256 Levels — Continuous Tone)' },
 ];
 
 export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
   value = 0,
   onChange,
 }) => {
-  const normalizedVal = value ?? 0;
+  const normalizedVal = !value || value <= 0 || value >= 256 ? 256 : value;
+  const isMax = !value || value <= 0 || value >= 256;
 
   // Logarithmic slider warp mapping:
-  // pos 0 -> 0 (Auto)
-  // pos 1..100 -> exponential 2^1..2^8 (2 to 256)
+  // pos 0..100 -> exponential 2^1..2^8 (2 to 256)
   const sliderPos = useMemo(() => {
-    if (normalizedVal <= 0) return 0;
     const clamped = Math.max(2, Math.min(256, normalizedVal));
     const exp = Math.log2(clamped); // 1 to 8
     const t = (exp - 1) / 7; // 0 to 1
-    return Math.round(1 + t * 99);
+    return Math.round(t * 100);
   }, [normalizedVal]);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const pos = parseInt(e.target.value, 10);
-    if (pos === 0) {
-      onChange(0);
-      return;
-    }
-    const t = (pos - 1) / 99; // 0 to 1
+    const t = pos / 100; // 0 to 1
     const exp = 1 + t * 7; // 1 to 8
     const rawVal = Math.round(Math.pow(2, exp));
-    onChange(Math.max(2, Math.min(256, rawVal)));
+    const nextVal = Math.max(2, Math.min(256, rawVal));
+    onChange(nextVal >= 256 ? 0 : nextVal);
   };
 
   const handleStep = (delta: number) => {
-    if (normalizedVal === 0) {
-      if (delta > 0) onChange(2);
-      return;
-    }
     const next = normalizedVal + delta;
     if (next < 2) {
-      onChange(0); // Underflow to Auto
+      onChange(2);
+    } else if (next >= 256) {
+      onChange(0);
     } else {
-      onChange(Math.min(256, next));
+      onChange(next);
     }
   };
 
   return (
-    <div style={{ marginBottom: '20px' }}>
-      <div className="tonal-subheading">
-        <span>Quantization &amp; Dither Depth</span>
-        <button
-          type="button"
-          className="btn-reset"
-          onClick={() => onChange(0)}
-          title="Reset Quantization Depth to Auto"
-        >
-          RESET
-        </button>
+    <div className="quantize-controls-section" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+      <div className="tonal-subheading" style={{ marginTop: 0 }}>
+        <span>Quantize Depth</span>
+        {!isMax && (
+          <button
+            type="button"
+            className="btn-reset"
+            onClick={() => onChange(0)}
+            title="Reset Quantization Depth to Max"
+          >
+            RESET
+          </button>
+        )}
       </div>
 
       {/* Quick Bit-Depth Preset Chips */}
-      <div className="quantize-chip-row" style={{ marginTop: '4px', marginBottom: '8px' }}>
+      <div className="quantize-chip-row" style={{ marginTop: '4px', marginBottom: '6px' }}>
         {QUANTIZE_PRESETS.map((p) => {
-          const isSelected = normalizedVal === p.value;
+          const isSelected = p.value === 256 ? isMax : normalizedVal === p.value;
           return (
             <button
               key={p.value}
               type="button"
               className={`quantize-chip ${isSelected ? 'active' : ''}`}
-              onClick={() => onChange(p.value)}
+              onClick={() => onChange(p.value === 256 ? 0 : p.value)}
               title={p.title}
             >
               {p.label}
@@ -722,6 +717,7 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
         <button
           type="button"
           className="slider-nudge-btn"
+          disabled={normalizedVal <= 2}
           onClick={() => handleStep(-1)}
           title="Decrease levels by 1"
         >
@@ -736,12 +732,13 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
           step={1}
           value={sliderPos}
           onChange={handleSliderChange}
-          title={`Quantize level: ${normalizedVal === 0 ? 'Auto' : normalizedVal}`}
+          title={`Quantize level: ${isMax ? 'Max (256)' : normalizedVal}`}
         />
 
         <button
           type="button"
           className="slider-nudge-btn"
+          disabled={isMax}
           onClick={() => handleStep(1)}
           title="Increase levels by 1"
         >
@@ -750,10 +747,10 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
 
         <NumberInput
           value={normalizedVal}
-          min={0}
+          min={2}
           max={256}
           step={1}
-          onChange={(val) => onChange(val === 1 ? 2 : val)}
+          onChange={(val) => onChange(val >= 256 ? 0 : Math.max(2, val))}
         />
       </div>
     </div>
@@ -1499,6 +1496,7 @@ interface ImageAdjustControlsProps {
   config: ImageAdjustConfig;
   onChangeConfig: (next: ImageAdjustConfig) => void;
   paletteSlot?: React.ReactNode;
+  backgroundSlot?: React.ReactNode;
   showAlphaCutoff?: boolean;
   showInvert?: boolean;
   onResetPalette?: () => void;
@@ -1515,6 +1513,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
   config,
   onChangeConfig,
   paletteSlot,
+  backgroundSlot,
   resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG,
   showAlphaCutoff = true,
   showInvert = false,
@@ -1547,16 +1546,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
     }
     return '1-COLOR';
   }, [mediaColorConfig?.paletteMode, mediaColorConfig?.activePaletteId, config.tonalMapping, config.customToneColors]);
-
-  const quantBadge = useMemo(() => {
-    if (!config.colorLevels || config.colorLevels <= 0) {
-      return 'AUTO';
-    }
-    if (config.colorLevels === 2) {
-      return '1-BIT (2 LVS)';
-    }
-    return `${config.colorLevels} LEVELS`;
-  }, [config.colorLevels]);
 
   const resetEffects = () => {
     onChangeConfig({
@@ -1611,30 +1600,17 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         resetTitle="Reset color mode and the tone ramp stops"
       >
         {paletteSlot}
-
-        <ToneRampGroup
-          config={config}
-          onChangeConfig={onChangeConfig}
-          resetDefaults={resetDefaults}
-          paletteActive={mediaColorConfig?.paletteMode === 'indexed'}
-        />
+        {backgroundSlot}
       </CollapsibleSection>
 
       {/* TONAL CONTROLS */}
       <CollapsibleSection
         title="TONAL CONTROLS"
         icon={<Sparkles size={12} />}
-        badge={quantBadge}
         persistKey={`${persistKeyPrefix}-tonal-controls`}
         onReset={resetTonal}
-        resetTitle="Reset curve, levels, quantize depth, highlights, midtones and shadows"
+        resetTitle="Reset curve, levels, highlights, midtones and shadows"
       >
-        {/* Quantize depth */}
-        <QuantizeLevelsControl
-          value={config.colorLevels}
-          onChange={(val) => update('colorLevels', val)}
-        />
-
         {/* Real-time Interactive Tonal Transfer Curve Graph */}
         <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
 

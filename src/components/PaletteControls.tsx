@@ -13,9 +13,10 @@ import {
   resolvePhosphorTint,
   DEFAULT_PHOSPHOR_TINT,
 } from '../engine/palettes';
-import { DeferredColorInput } from './controlPrimitives';
+import { DeferredColorInput, PrecisionSlider } from './controlPrimitives';
+import { QuantizeLevelsControl } from './ImageAdjustControls';
 import { paletteIsMonochrome } from '../engine/rasterEngine';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 
 interface PaletteControlsProps {
   currentTheme: PhosphorTheme;
@@ -30,13 +31,17 @@ interface PaletteControlsProps {
   isPixelMode?: boolean;
   /**
    * Turn the selected palette into an editable N-tone ramp.
-   *
-   * Supplied by the host because the conversion writes to two configs at once
-   * -- palette mode off, ramp stops on -- and only the host holds both. Omit it
-   * and the action does not appear, which is how BASIC keeps its own wording
-   * for the same operation next to the tonal bands.
    */
   onEditPaletteAsRamp?: () => void;
+  /**
+   * Optional custom N-Tone ramp editor rendered when N-TONE tab is active.
+   */
+  rampEditorSlot?: React.ReactNode;
+  /**
+   * Quantize depth (colorLevels), rendered in MONO and RGB modes.
+   */
+  colorLevels?: number;
+  onChangeColorLevels?: (val: number) => void;
 }
 
 const FALLBACK_COLOR_CONFIG: MediaColorConfig = {
@@ -84,10 +89,13 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   mediaColorConfig,
   onChangeMediaColorConfig,
   appMode = 'synth',
-  tonalMapping = '1color',
+  tonalMapping = 'ntone',
   onChangeTonalMapping,
   isPixelMode = false,
   onEditPaletteAsRamp,
+  rampEditorSlot,
+  colorLevels = 0,
+  onChangeColorLevels,
 }) => {
   const isRgbDisabled = appMode === 'synth';
   const rawPaletteMode: PaletteMode = mediaColorConfig?.paletteMode || 'phosphor';
@@ -126,21 +134,18 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
       ? 'Synth output is luminance-only, so the palette can only be driven as a tone ramp.'
       : 'How the palette is matched to the source.';
 
-  const primaryMode: 'mono' | 'ntone' | 'indexed' | 'content' =
+  const primaryMode: 'ntone' | 'indexed' | 'mono' | 'content' =
     paletteMode === 'content'
       ? 'content'
       : paletteMode === 'indexed'
       ? 'indexed'
-      : tonalMapping !== '1color'
-      ? 'ntone'
-      : 'mono';
+      : tonalMapping === '1color'
+      ? 'mono'
+      : 'ntone';
 
-  const handleSelectPrimaryMode = (mode: 'mono' | 'ntone' | 'indexed' | 'content') => {
+  const handleSelectPrimaryMode = (mode: 'ntone' | 'indexed' | 'mono' | 'content') => {
     const base = mediaColorConfig || FALLBACK_COLOR_CONFIG;
-    if (mode === 'mono') {
-      onChangeTonalMapping?.('1color');
-      onChangeMediaColorConfig?.({ ...base, paletteMode: 'phosphor', mode: 'fixed' });
-    } else if (mode === 'ntone') {
+    if (mode === 'ntone') {
       onChangeTonalMapping?.('ntone');
       onChangeMediaColorConfig?.({ ...base, paletteMode: 'phosphor', mode: 'fixed' });
     } else if (mode === 'indexed') {
@@ -153,6 +158,9 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
         mode: 'fixed',
         activePaletteId: activePaletteId || 'gameboy-classic',
       });
+    } else if (mode === 'mono') {
+      onChangeTonalMapping?.('1color');
+      onChangeMediaColorConfig?.({ ...base, paletteMode: 'phosphor', mode: 'fixed' });
     } else if (mode === 'content') {
       onChangeTheme?.('monochrome');
       onChangeCustomColor?.('');
@@ -178,17 +186,9 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   }, []);
 
   return (
-    <div style={{ marginBottom: '12px' }}>
-      {/* 1. Large High-Contrast Color Mode Tabs */}
+    <div className="palette-controls-container">
+      {/* 1. Color Mode Segmented Navigation Tabs: N-TONE -> PALETTES -> MONO -> RGB */}
       <div className={`color-mode-nav ${isRgbDisabled ? 'three-col' : ''}`}>
-        <button
-          type="button"
-          className={`color-mode-tab ${primaryMode === 'mono' ? 'active' : ''}`}
-          onClick={() => handleSelectPrimaryMode('mono')}
-          title="Monochrome — Single phosphor tint"
-        >
-          MONO
-        </button>
         <button
           type="button"
           className={`color-mode-tab ${primaryMode === 'ntone' ? 'active' : ''}`}
@@ -205,6 +205,14 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
         >
           PALETTES
         </button>
+        <button
+          type="button"
+          className={`color-mode-tab ${primaryMode === 'mono' ? 'active' : ''}`}
+          onClick={() => handleSelectPrimaryMode('mono')}
+          title="Monochrome — Single phosphor tint"
+        >
+          MONO
+        </button>
         {!isRgbDisabled && (
           <button
             type="button"
@@ -218,142 +226,67 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
       </div>
 
       {/* 2. Mode-Specific Sub-Controls */}
-      {/* MONOCHROME TINT */}
-      {primaryMode === 'mono' && (
-        <div style={{ marginTop: '8px' }}>
-          <div className="control-row">
-            <span className="control-label">
-              {isPixelMode ? 'Foreground Tint' : 'Phosphor Tint'}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <DeferredColorInput
-                value={tintColor}
-                fallback={DEFAULT_PHOSPHOR_TINT}
-                hexFieldWidth="84px"
-                title="Pick the monochrome tint"
-                onChange={(c) => onChangeCustomColor?.(c)}
-              />
-              {tintColor.toLowerCase() !== DEFAULT_PHOSPHOR_TINT.toLowerCase() && (
-                <button
-                  type="button"
-                  className="chip-btn"
-                  onClick={() => onChangeCustomColor?.(DEFAULT_PHOSPHOR_TINT)}
-                  style={{ fontSize: '10px', padding: '3px 6px' }}
-                  title={`Reset to default green (${DEFAULT_PHOSPHOR_TINT})`}
-                >
-                  RESET
-                </button>
-              )}
-            </div>
-          </div>
+      {/* N-TONE RAMP EDITOR */}
+      {primaryMode === 'ntone' && (
+        <div className="palette-subpanel">
+          {rampEditorSlot}
         </div>
       )}
 
       {/* INDEXED PALETTES */}
       {primaryMode === 'indexed' && (
-        <div style={{ marginTop: '8px' }} ref={dropdownRef}>
+        <div className="palette-subpanel" ref={dropdownRef}>
           <div className="control-row" style={{ marginBottom: '6px' }}>
-            <span className="control-label">
-              Preset Palette
-            </span>
+            <span className="control-label">Preset Palette</span>
           </div>
 
           {/* Interactive Nuancier Dropdown Trigger */}
           <button
             type="button"
-            className="palette-row-btn"
+            className={`palette-dropdown-btn ${isDropdownOpen ? 'active' : ''}`}
             onClick={() => setIsDropdownOpen((v) => !v)}
-            title="Click to open full palettes nuancier"
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-              padding: '6px 9px',
-              background: isDropdownOpen ? 'var(--bg-control-hover)' : 'var(--bg-control)',
-              border: `1px solid ${isDropdownOpen ? 'var(--accent)' : 'var(--border-color)'}`,
-              borderRadius: '3px',
-              boxShadow: isDropdownOpen ? '0 0 8px var(--accent-glow)' : 'none',
-              cursor: 'pointer',
-              marginBottom: '8px',
-            }}
+            title="Click to select from full palettes library"
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1, minWidth: 0 }}>
+            <div className="palette-dropdown-btn-left">
               {/* Swatches Ramp */}
-              <div style={{ display: 'flex', gap: '2px', flexWrap: 'nowrap', alignItems: 'center', flexShrink: 0 }}>
+              <div className="palette-swatches-bar">
                 {activePalette.colors.slice(0, 16).map((c, i) => (
                   <div
                     key={i}
+                    className="palette-swatch-cell"
                     style={{
-                      width: activePalette.colors.length > 8 ? '9px' : '13px',
-                      height: '18px',
-                      borderRadius: '1px',
                       background: c,
-                      border: '1px solid rgba(0,0,0,0.4)',
+                      width: activePalette.colors.length > 8 ? '8px' : '12px',
                     }}
                   />
                 ))}
               </div>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  color: 'var(--text-primary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
+              <span className="palette-dropdown-btn-title">
                 {activePalette.name}
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+            <div className="palette-dropdown-btn-right">
+              <span className="palette-count-badge">
                 {activePalette.colors.length}c
               </span>
-              {isDropdownOpen ? <ChevronUp size={13} color="var(--accent)" /> : <ChevronDown size={13} color="var(--text-muted)" />}
+              {isDropdownOpen ? (
+                <ChevronUp size={13} className="palette-chevron" />
+              ) : (
+                <ChevronDown size={13} className="palette-chevron" />
+              )}
             </div>
           </button>
 
           {/* Full Categories & Swatches Nuancier Dropdown Popover */}
           {isDropdownOpen && (
-            <div
-              className="palette-dropdown-menu"
-              style={{
-                maxHeight: '260px',
-                overflowY: 'auto',
-                border: '1px solid var(--accent)',
-                background: 'var(--bg-panel)',
-                borderRadius: '3px',
-                boxShadow: '0 6px 18px rgba(0,0,0,0.65), 0 0 12px var(--accent-glow)',
-                marginBottom: '10px',
-                padding: '5px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-              }}
-            >
+            <div className="palette-dropdown-menu">
               {groupedPalettes.map((grp) => (
-                <div key={grp.category}>
-                  <div
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 800,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      color: 'var(--accent)',
-                      padding: '4px 6px 3px',
-                      background: 'var(--bg-primary)',
-                      borderBottom: '1px solid var(--border-color)',
-                      marginBottom: '3px',
-                      borderRadius: '2px',
-                    }}
-                  >
+                <div key={grp.category} className="palette-dropdown-group">
+                  <div className="palette-group-header">
                     {grp.label}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <div className="palette-group-list">
                     {grp.palettes.map((pal) => {
                       const isSelected = pal.id === activePaletteId;
                       return (
@@ -371,62 +304,31 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
                             });
                             setIsDropdownOpen(false);
                           }}
-                          style={{
-                            width: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: '8px',
-                            padding: '5px 7px',
-                            borderRadius: '2px',
-                            textAlign: 'left',
-                          }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', overflow: 'hidden', flex: 1, minWidth: 0 }}>
-                            {/* Swatches preview */}
-                            <div style={{ display: 'flex', gap: '1.5px', flexShrink: 0, alignItems: 'center' }}>
+                          <div className="palette-row-left">
+                            <div className="palette-swatches-bar">
                               {pal.colors.slice(0, 12).map((c, i) => (
                                 <div
                                   key={i}
-                                  style={{
-                                    width: '8px',
-                                    height: '14px',
-                                    borderRadius: '1px',
-                                    background: c,
-                                    border: '1px solid rgba(0,0,0,0.4)',
-                                  }}
+                                  className="palette-swatch-cell"
+                                  style={{ background: c }}
                                 />
                               ))}
                               {pal.colors.length > 12 && (
-                                <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: 700, paddingLeft: '1px' }}>+</span>
+                                <span className="palette-swatch-overflow">+</span>
                               )}
                             </div>
-                            <span
-                              className="palette-row-title"
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: isSelected ? 700 : 500,
-                                color: isSelected ? 'var(--accent)' : 'var(--text-primary)',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
+                            <span className="palette-row-title">
                               {pal.name}
                             </span>
                           </div>
 
-                          <span
-                            style={{
-                              fontSize: '10px',
-                              fontFamily: 'var(--font-mono)',
-                              color: isSelected ? 'var(--accent)' : 'var(--text-dim)',
-                              fontWeight: 700,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {pal.colors.length}c {isSelected ? '✓' : ''}
-                          </span>
+                          <div className="palette-row-right">
+                            <span className="palette-count-badge">
+                              {pal.colors.length}c
+                            </span>
+                            {isSelected && <Check size={11} className="palette-check-icon" />}
+                          </div>
                         </button>
                       );
                     })}
@@ -442,19 +344,13 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
               <span className="control-label" title={paletteMatchHint}>
                 Palette Match
               </span>
-              <div style={{ display: 'flex', gap: '4px' }}>
+              <div className="btn-group-inline">
                 {PALETTE_MATCH_OPTIONS.map((opt) => {
                   const isDisabled = opt.id !== 'ramp' && !canHueMatch;
                   return (
                     <button
                       key={opt.id}
                       className={`btn btn-sm ${paletteMatch === opt.id ? 'btn-primary' : ''}`}
-                      style={{
-                        padding: '3px 8px',
-                        fontSize: '10px',
-                        opacity: isDisabled ? 0.4 : 1,
-                        cursor: isDisabled ? 'not-allowed' : 'pointer',
-                      }}
                       disabled={isDisabled}
                       title={isDisabled ? paletteMatchHint : opt.title}
                       onClick={() =>
@@ -472,30 +368,19 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
             </div>
           )}
 
-          {/*
-           * Hand the selected palette to the N-Tone ramp editor.
-           *
-           * A palette is a preset ramp -- that is why the ramp editor no longer
-           * carries a preset list of its own. What differs is the render path,
-           * not the colours: indexed error-diffuses in palette space against
-           * the palette's real luminances, while a ramp buckets warped
-           * luminance into evenly quantized stops. Indexed is usually the
-           * better picture, so this is a button rather than something that
-           * happens on its own.
-           */}
+          {/* Hand the selected palette to the N-Tone ramp editor */}
           {activePalette && onEditPaletteAsRamp && (
-            <div className="panel-note" style={{ marginTop: '8px' }}>
-              <span>
-                Copy these {activePalette.colors.length} colours into the N-Tone
-                ramp below, where each one gets an editable tonal band. Leaves
-                palette matching behind.
+            <div className="palette-action-card">
+              <span className="palette-action-text">
+                Copy these {activePalette.colors.length} colors into the N-Tone ramp editor as customizable stops.
               </span>
               <button
                 type="button"
-                className="btn btn-sm"
+                className="btn btn-sm btn-block"
                 onClick={onEditPaletteAsRamp}
                 title="Load this palette into the N-Tone Ramp Editor as editable stops"
               >
+                <Copy size={11} className="header-btn-icon" />
                 EDIT IN RAMP EDITOR
               </button>
             </div>
@@ -503,40 +388,72 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
         </div>
       )}
 
+      {/* MONOCHROME TINT */}
+      {primaryMode === 'mono' && (
+        <div className="palette-subpanel">
+          <div className="control-row">
+            <span className="control-label">
+              {isPixelMode ? 'Foreground Tint' : 'Phosphor Tint'}
+            </span>
+            <div className="btn-group-inline">
+              <DeferredColorInput
+                value={tintColor}
+                fallback={DEFAULT_PHOSPHOR_TINT}
+                hexFieldWidth="78px"
+                title="Pick the monochrome tint"
+                onChange={(c) => onChangeCustomColor?.(c)}
+              />
+              {tintColor.toLowerCase() !== DEFAULT_PHOSPHOR_TINT.toLowerCase() && (
+                <button
+                  type="button"
+                  className="btn-reset"
+                  onClick={() => {
+                    onChangeTheme?.('monochrome');
+                    onChangeCustomColor?.(DEFAULT_PHOSPHOR_TINT);
+                  }}
+                  title={`Reset to default white (${DEFAULT_PHOSPHOR_TINT})`}
+                >
+                  RESET
+                </button>
+              )}
+            </div>
+          </div>
+
+          {onChangeColorLevels && (
+            <QuantizeLevelsControl
+              value={colorLevels}
+              onChange={onChangeColorLevels}
+            />
+          )}
+        </div>
+      )}
+
       {/* TRUE CONTENT RGB */}
       {primaryMode === 'content' && onChangeMediaColorConfig && (
-        <div className="control-row" style={{ marginTop: '8px' }}>
-          <span className="control-label">
-            Content Saturation
-          </span>
-          <div className="control-input-wrapper">
-            <input
-              type="range"
-              min={0}
-              max={400}
+        <div className="palette-subpanel">
+          <div className="control-row">
+            <span className="control-label">Saturation</span>
+            <PrecisionSlider
               value={mediaColorConfig?.saturation ?? 200}
-              onChange={(e) =>
+              sliderMin={0}
+              sliderMax={400}
+              step={1}
+              resetTo={200}
+              onChange={(val) =>
                 onChangeMediaColorConfig({
                   ...(mediaColorConfig || FALLBACK_COLOR_CONFIG),
-                  saturation: parseInt(e.target.value, 10) || 200,
-                })
-              }
-              className="range-slider"
-            />
-            <input
-              type="number"
-              className="number-input"
-              min={0}
-              max={400}
-              value={mediaColorConfig?.saturation ?? 200}
-              onChange={(e) =>
-                onChangeMediaColorConfig({
-                  ...(mediaColorConfig || FALLBACK_COLOR_CONFIG),
-                  saturation: Math.max(0, Math.min(400, parseInt(e.target.value, 10) || 200)),
+                  saturation: Math.max(0, Math.min(400, Math.round(val))),
                 })
               }
             />
           </div>
+
+          {onChangeColorLevels && (
+            <QuantizeLevelsControl
+              value={colorLevels}
+              onChange={onChangeColorLevels}
+            />
+          )}
         </div>
       )}
     </div>

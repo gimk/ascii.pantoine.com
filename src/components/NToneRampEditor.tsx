@@ -100,29 +100,6 @@ export function resampleRamp(
   };
 }
 
-/**
- * Where each stop sits along the tonal range, 0..1.
- *
- * Band *centres*, with the ends pinned to 0 and 1 so the bar starts and
- * finishes on the real end colours. With neutral weights this works out to
- * exactly `i / (count - 1)` -- the even spacing the gradient has always drawn --
- * because the natural bands are symmetric. So the preview is unchanged until a
- * weight is actually moved, and then it moves with it.
- */
-function stopPositions(shares: number[], count: number): number[] {
-  const bounds: number[] = [];
-  let acc = 0;
-  for (const s of shares) {
-    acc += s;
-    bounds.push(acc);
-  }
-  return shares.map((_, i) => {
-    if (i === 0) return 0;
-    if (i === count - 1) return 1;
-    return (bounds[i - 1] + bounds[i]) / 2;
-  });
-}
-
 export interface NToneRampEditorProps {
   stops?: string[];
   /**
@@ -137,6 +114,8 @@ export interface NToneRampEditorProps {
    */
   onChangeRamp: (newStops: string[], newWeights: number[]) => void;
 }
+
+const TONE_COUNT_PRESETS = [2, 3, 4, 8, 16];
 
 export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
   stops = ['#0a0a0a', '#00a848', '#00ff66'],
@@ -187,191 +166,186 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
   };
 
   /*
-   * Positions come from the engine's own share calculation, so the bar shows
-   * the proportions the render will use rather than an even split that would
-   * hide the only thing the weights do.
+   * Band shares and boundaries come from the engine's toneBandShares calculation.
+   *
+   * Boundaries represent the actual transition points where each color band
+   * begins and ends across the luminance spectrum (0..1).
    */
-  const positions = stopPositions(toneBandShares(currentWeights, count), count);
-  const pctAt = (i: number) => positions[i] * 100;
-
-  const gradientCss = `linear-gradient(to right, ${currentStops
-    .map((c, i) => `${c} ${pctAt(i).toFixed(2)}%`)
-    .join(', ')})`;
-  const isLargeCount = count > 16;
+  const shares = toneBandShares(currentWeights, count);
+  const boundaries: number[] = [];
+  let cum = 0;
+  for (let i = 0; i < count - 1; i++) {
+    cum += shares[i];
+    boundaries.push(cum);
+  }
 
   /*
-   * Ticks are absolutely positioned now that they are not evenly spaced. The
-   * "minus p% of the tick width" term reproduces exactly what
-   * `justify-content: space-between` used to do, so at neutral weights the bar
-   * is pixel-identical to before.
+   * Centers of each band, used to position the color stops in the linear gradient.
    */
-  const tickStyle = (p: number): React.CSSProperties => ({
-    left: `calc(${p.toFixed(2)}% - ${((p / 100) * 2.5).toFixed(2)}px)`,
-  });
+  const gradientCss = `linear-gradient(to right, ${currentStops
+    .map((c, i) => {
+      const start = i === 0 ? 0 : boundaries[i - 1] * 100;
+      const end = i === count - 1 ? 100 : boundaries[i] * 100;
+      const center = (start + end) / 2;
+      return `${c} ${center.toFixed(1)}%`;
+    })
+    .join(', ')})`;
+
+  const isLargeCount = count > 12;
 
   return (
-    <div style={{ marginTop: '8px' }}>
-      {/* 1. Live Gradient Preview Bar */}
+    <div className="ntone-editor-container">
+      {/* 1. Live Gradient Preview Bar with Color Band Boundary Lines */}
       <div className="ntone-gradient-preview" style={{ background: gradientCss }} title="Live N-Tone Color Ramp">
         <div className="ntone-gradient-stops-overlay">
-          {count <= 32 ? (
-            currentStops.map((_, idx) => (
-              <div
-                key={idx}
-                className="ntone-gradient-stop-tick"
-                style={tickStyle(pctAt(idx))}
-                title={`Tone ${idx + 1} (${Math.round(pctAt(idx))}%)`}
-              />
-            ))
-          ) : (
-            <>
-              <div className="ntone-gradient-stop-tick" style={tickStyle(0)} title="0% (Shadow)" />
-              <div className="ntone-gradient-stop-tick" style={tickStyle(50)} title="50% (Mid)" />
-              <div className="ntone-gradient-stop-tick" style={tickStyle(100)} title="100% (Highlight)" />
-            </>
-          )}
+          {count <= 32 &&
+            boundaries.map((b, idx) => {
+              const bPct = b * 100;
+              const leftRole = idx === 0 ? 'Shadow' : `Tone ${idx + 1}`;
+              const rightRole = idx === count - 2 ? 'Highlight' : `Tone ${idx + 2}`;
+              return (
+                <div
+                  key={idx}
+                  className="ntone-gradient-boundary-tick"
+                  style={{ left: `calc(${bPct.toFixed(2)}% - 1px)` }}
+                  title={`Boundary between ${leftRole} and ${rightRole}: ${Math.round(bPct)}%`}
+                />
+              );
+            })}
         </div>
       </div>
 
-      {/* 2. Unified TONE COUNT (2–256) with - / manual number field / + */}
-      <div className="control-row" style={{ marginTop: '8px', marginBottom: '6px' }}>
-        <span className="control-label">
-          Tones Count (2–256)
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            type="button"
-            className="slider-nudge-btn"
-            style={{ width: '24px', height: '24px' }}
-            disabled={count <= 2}
-            onClick={() => handleSetCount(count - 1)}
-            title="Decrease tones count by 1"
-          >
-            <Minus size={12} />
-          </button>
+      {/* 2. Tone Count Header with Quick Preset Chips & Stepper */}
+      <div className="ntone-count-row">
+        <span className="control-label" style={{ margin: 0 }}>Tones</span>
+        <div className="ntone-count-controls">
+          <div className="ntone-chip-group">
+            {TONE_COUNT_PRESETS.map((num) => (
+              <button
+                key={num}
+                type="button"
+                className={`ntone-count-chip ${count === num ? 'active' : ''}`}
+                onClick={() => handleSetCount(num)}
+                title={`Set to ${num} tones`}
+              >
+                {num}
+              </button>
+            ))}
+          </div>
 
-          <NumberInput
-            value={count}
-            min={2}
-            max={256}
-            step={1}
-            onChange={handleSetCount}
-          />
-
-          <button
-            type="button"
-            className="slider-nudge-btn"
-            style={{ width: '24px', height: '24px' }}
-            disabled={count >= 256}
-            onClick={() => handleSetCount(count + 1)}
-            title="Increase tones count by 1"
-          >
-            <Plus size={12} />
-          </button>
+          <div className="ntone-stepper">
+            <button
+              type="button"
+              className="slider-nudge-btn"
+              disabled={count <= 2}
+              onClick={() => handleSetCount(count - 1)}
+              title="Decrease tones count"
+            >
+              <Minus size={11} />
+            </button>
+            <NumberInput
+              value={count}
+              min={2}
+              max={256}
+              step={1}
+              onChange={handleSetCount}
+            />
+            <button
+              type="button"
+              className="slider-nudge-btn"
+              disabled={count >= 256}
+              onClick={() => handleSetCount(count + 1)}
+              title="Increase tones count"
+            >
+              <Plus size={11} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 3. Utility Actions & Presets Toolbar */}
-      <div className="ntone-toolbar" style={{ marginBottom: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      {/* 3. Utility Actions Toolbar */}
+      <div className="ntone-toolbar">
+        <div className="btn-group-inline">
           <button
             type="button"
             className="btn btn-sm"
-            style={{ padding: '3px 8px', fontSize: '10px', height: '22px' }}
             onClick={handleReverse}
             title="Reverse Ramp (Invert Highlight & Shadow order)"
           >
-            <ArrowLeftRight size={11} style={{ marginRight: '3px' }} />
+            <ArrowLeftRight size={11} className="header-btn-icon" />
             REV
           </button>
           <button
             type="button"
             className="btn btn-sm"
-            style={{ padding: '3px 8px', fontSize: '10px', height: '22px' }}
             onClick={handleInterpolate}
             disabled={count <= 2}
             title="Auto-interpolate intermediate colors between first and last stop"
           >
-            <Wand2 size={11} style={{ marginRight: '3px' }} />
+            <Wand2 size={11} className="header-btn-icon" />
             BLEND
           </button>
-          {/*
-           * EVEN sits with the other ramp actions rather than appearing beside
-           * the sliders, and only once there is something to undo -- BLEND is
-           * its counterpart for colour, this one for distribution.
-           */}
           <button
             type="button"
             className="btn btn-sm"
-            style={{ padding: '3px 8px', fontSize: '10px', height: '22px' }}
             onClick={handleEvenWeights}
             disabled={isEvenWeighting}
             title="Give every stop an equal share of the tonal range"
           >
-            <AlignHorizontalDistributeCenter size={11} style={{ marginRight: '3px' }} />
+            <AlignHorizontalDistributeCenter size={11} className="header-btn-icon" />
             EVEN
           </button>
         </div>
-
-        {/*
-         * No preset dropdown here any more. Its ramps live in the palette
-         * picker above, under "Tone Ramps", and "Edit in Ramp Editor" loads the
-         * selected one into these stops. A palette is a preset ramp -- two
-         * libraries meant making the same choice in two places.
-         */}
       </div>
 
-      {/* 4. Color Stops List (Uniform Alignment, No Trash button) */}
+      {/* 4. Color Stops List */}
       <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '5px',
-          marginTop: '6px',
-          ...(isLargeCount ? { maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } : {}),
-        }}
+        className="ntone-stops-list"
+        style={isLargeCount ? { maxHeight: '280px', overflowY: 'auto', paddingRight: '2px' } : undefined}
       >
         {currentStops.map((stopColor, idx) => {
-          /*
-           * The badge is where the stop actually sits once the weights are
-           * applied, not its index. With neutral weights the two are the same
-           * number, so nothing appears to change until a slider is moved.
-           */
-          const pct = Math.round(pctAt(idx));
           const isFirst = idx === 0;
           const isLast = idx === count - 1;
           const roleLabel = isFirst ? 'SHADOW' : isLast ? 'HIGHLIGHT' : `TONE ${idx + 1}`;
+          const startPct = Math.round((isFirst ? 0 : boundaries[idx - 1]) * 100);
+          const endPct = Math.round((isLast ? 1 : boundaries[idx]) * 100);
+          const sharePct = Math.round(shares[idx] * 100);
 
           return (
             <div key={idx} className="ntone-stop-card">
-              <div className="ntone-stop-label">
-                <span className="ntone-stop-badge">{pct}%</span>
-                <span>{roleLabel}</span>
+              <div className="ntone-stop-header">
+                <div className="ntone-stop-info">
+                  <span className="ntone-stop-badge">{idx + 1}</span>
+                  <span className="ntone-stop-label">{roleLabel}</span>
+                  <span className="ntone-stop-pct" title={`Luminance range: ${startPct}% to ${endPct}% (${sharePct}% share)`}>
+                    {startPct}%–{endPct}%
+                  </span>
+                </div>
+                <DeferredColorInput
+                  value={stopColor}
+                  fallback="#ffffff"
+                  hexFieldWidth="74px"
+                  onChange={(c) => handleUpdateStop(idx, c)}
+                />
               </div>
-              {/*
-               * Band width, inline on the same card as the colour it widens.
-               * A bare range rather than PrecisionSlider: its number field is
-               * 54px that will not shrink, and the card already carries an 84px
-               * hex field. The weight is relative anyway -- the figure carries
-               * no meaning worth reading, and the bar above shows the result.
-               */}
-              <input
-                type="range"
-                className="range-slider ntone-stop-weight"
-                min={0}
-                max={100}
-                step={1}
-                value={currentWeights[idx]}
-                onChange={(e) => handleSetWeight(idx, parseInt(e.target.value, 10))}
-                onDoubleClick={() => handleSetWeight(idx, NEUTRAL_STOP_WEIGHT)}
-                title={`Share of the tonal range given to ${roleLabel.toLowerCase()}. Double-click to reset.`}
-              />
-              <DeferredColorInput
-                value={stopColor}
-                fallback="#ffffff"
-                hexFieldWidth="84px"
-                onChange={(c) => handleUpdateStop(idx, c)}
-              />
+
+              {count <= 32 && (
+                <div className="ntone-stop-weight-row">
+                  <span className="ntone-weight-label">Width</span>
+                  <input
+                    type="range"
+                    className="range-slider ntone-stop-weight"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={currentWeights[idx]}
+                    onChange={(e) => handleSetWeight(idx, parseInt(e.target.value, 10))}
+                    onDoubleClick={() => handleSetWeight(idx, NEUTRAL_STOP_WEIGHT)}
+                    title={`Band width for ${roleLabel.toLowerCase()} (${sharePct}% share). Double-click to reset.`}
+                  />
+                  <span className="ntone-weight-value">{currentWeights[idx]}</span>
+                </div>
+              )}
             </div>
           );
         })}

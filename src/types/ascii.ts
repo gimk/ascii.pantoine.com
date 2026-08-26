@@ -492,7 +492,7 @@ export const DEFAULT_IMAGE_ADJUST_CONFIG: ImageAdjustConfig = {
    * glyph reads. The duotone stops below stay set, ready for the moment
    * someone chooses that look deliberately.
    */
-  tonalMapping: '1color',
+  tonalMapping: 'ntone',
   highlightColor: '#00ff66',
   midtoneColor: '#00a848',
   shadowColor: '#0a0a0a',
