@@ -260,6 +260,16 @@ ordered, blue-noise, algorithmic, modulation). With `none` plus an explicit leve
 count, a plain posterize runs instead — "none" means no *error distribution*, not
 "ignore the requested depth".
 
+**Parameters.** `options.ditherParams` tunes the selected algorithm — intensity,
+mask scale and screen angle, carrier frequency, pattern seed, and serpentine scan
+for the diffusion family. It is sparse: an absent field takes that parameter's
+default, so an omitted object renders exactly as the hardcoded behaviour did, which
+is what keeps links and presets written before it existed rendering unchanged.
+Which parameters a given algorithm honours comes from `getDitherParamIds`, derived
+from the shape of the implementation rather than declared beside the registry entry
+— a list kept by hand next to 44 entries drifts from the code the first time a
+branch changes, and the failure mode is a slider that visibly does nothing.
+
 **Clamp and sentinel restore.** Error diffusion pays accumulated error back onto
 cells and can overshoot outside `[0, 1]`. An undershoot below zero would collide with
 the transparency sentinel and punch holes through opaque pixels. So immediately after
@@ -504,9 +514,9 @@ Together these were the cause of the moiré on flat backgrounds.
 Formats: `png`, `jpg`, `svg`.
 
 Re-renders the frame at export resolution through the *same* mode renderer, so
-`rasterMode`, `ditherAlgorithm`, `toneConfig` and `adjustConfig` must all be
-forwarded — an export path that skips one silently produces a different image than
-the viewport.
+`rasterMode`, `ditherAlgorithm`, `ditherParams`, `toneConfig` and `adjustConfig`
+must all be forwarded — an export path that skips one silently produces a different
+image than the viewport.
 
 - **Cell Aspect & Dimensions**:
   - *ASCII mode*: Character cells are calculated using monospace aspect
@@ -557,7 +567,7 @@ Loop over frames, dispatch to the mode renderer, funnel each result through
 - *ASCII mode*: Canvas paints background, optional phosphor glow, and sharp monospace text lines.
 - *Pixel mode*: Canvas paints directly through `drawPixelRasterToCanvas` with $1:1$ square cell bounds
   ($1\times = 1\text{px/cell}$) and no CRT filters, avoiding monospace font spacing anomalies and preserving sharp dithered pixel output.
-Same forwarding requirement as stills (`rasterMode`, `ditherAlgorithm`, `toneConfig`, `adjustConfig`).
+Same forwarding requirement as stills (`rasterMode`, `ditherAlgorithm`, `ditherParams`, `toneConfig`, `adjustConfig`).
 
 ### 3.4 Colour separation ([`separation.ts`](src/engine/separation.ts), [`separationExporter.ts`](src/engine/separationExporter.ts))
 
