@@ -1,10 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Download,
   RotateCcw,
   RotateCw,
   FlipHorizontal,
   FlipVertical,
+  ChevronLeft,
+  ChevronRight,
+  Dices,
 } from 'lucide-react';
 import {
   MediaConfig,
@@ -18,32 +21,24 @@ import {
 import { MediaUploadControls } from './MediaFileControls';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
 import { PaletteControls } from './PaletteControls';
-import { PrecisionSlider } from './controlPrimitives';
+import { NToneRampEditor } from './NToneRampEditor';
 import { CHARSETS } from '../engine/renderer';
 import { clampGridToBudget } from '../engine/mediaPresets';
 import {
   AdjustSlider,
-  ToneBandRows,
   applyToneStops,
+  resolveToneStops,
   DEFAULT_STOP_WEIGHT,
   BackgroundRow,
-  QuantizeDepthNotice,
+  SimpleLevelsSlider,
 } from './ImageAdjustControls';
-import { BUILTIN_PALETTES, PaletteQuantizer } from '../engine/palettes';
-import { paletteIsMonochrome } from '../engine/rasterEngine';
+import { BUILTIN_PALETTES } from '../engine/palettes';
 import { ExportTab } from './ExportModal';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
 const ASCII_CELL_ASPECT = 0.55;
 
-/**
- * Resolution presets, as chips rather than a slider.
- *
- * Pixel output is measured in DPI, a straight percentage of the source. ASCII
- * has no such thing -- its unit is the character column -- so the two modes get
- * different chips behind the same row rather than one control pretending the
- * units are interchangeable.
- */
+/** Resolution presets: DPI for Pixel mode, Columns for ASCII mode */
 const DPI_PRESETS: { label: string; value: number }[] = [
   { label: '25', value: 25 },
   { label: '50', value: 50 },
@@ -62,7 +57,7 @@ const COLS_PRESETS: { label: string; value: number }[] = [
   { label: '240', value: 240 },
 ];
 
-/** Numbered step header, matching the ADVANCED panel's workflow titles. */
+/** Numbered step header, matching the sidebar workflow titles. */
 const Step: React.FC<{ n: string; label: string }> = ({ n, label }) => (
   <div className="sidebar-workflow-title">
     <span className="sidebar-workflow-step">{n}</span>
@@ -105,17 +100,8 @@ interface BasicPanelProps {
 }
 
 /**
- * The BASIC sidebar: one flat panel from a file to an export, in the order
- * someone actually walks it.
- *
- * No disclosures. Every section is a numbered step header and its controls,
- * always visible -- nothing to hunt for, nothing to expand. Each step carries
- * the minimum that step needs; the full versions of these controls all live in
- * ADVANCED.
- *
- * Everything drives the same state the ADVANCED tree does. What BASIC leaves
- * out stays exactly as the user left it and is still live in the render;
- * flipping the header switch reveals it untouched.
+ * The BASIC sidebar: one flat walkthrough from a file import to an export,
+ * following the exact design system and unified color controls of Advanced mode.
  */
 export const BasicPanel: React.FC<BasicPanelProps> = ({
   mediaConfig,
@@ -173,11 +159,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
     onChangeViewConfig({ ...viewConfig, ...next });
   };
 
-  /*
-   * DPI is a percentage of the source resolution, so it has to resize the grid
-   * alongside itself -- the same relationship OptimizeControls maintains in
-   * the ADVANCED panel.
-   */
   const handleDpiChange = (newDpi: number) => {
     const clamped = Math.max(10, Math.min(300, Math.round(newDpi)));
     updateView('dpi', clamped);
@@ -191,7 +172,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
     }
   };
 
-  /* ASCII has no DPI: detail is the column count, with rows locked to aspect. */
   const handleColsChange = (newCols: number) => {
     const clamped = Math.max(20, Math.min(400, Math.round(newCols)));
     const nextRows = Math.max(10, Math.round((clamped * ASCII_CELL_ASPECT) / srcAspect));
@@ -204,93 +184,48 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
     onChangeMediaConfig({ ...mediaConfig, rotation: next });
   };
 
-  const updateTone = <K extends keyof ToneMappingConfig>(key: K, val: ToneMappingConfig[K]) => {
-    onChangeToneConfig({ ...toneConfig, [key]: val });
-  };
+  const [isCharsetRolling, setIsCharsetRolling] = useState(false);
 
-  /* A charset typed by hand in ADVANCED matches no preset; keep it selectable. */
   const activeCharsetId =
     CHARSETS.find((cs) => cs.chars === density)?.id ?? '__custom__';
 
-  const activePalette = BUILTIN_PALETTES.find(
-    (p) => p.id === mediaColorConfig.activePaletteId
-  );
-  const isIndexed = mediaColorConfig.paletteMode === 'indexed';
+  const currentCharsetIdx = useMemo(() => {
+    const idx = CHARSETS.findIndex((cs) => cs.chars === density);
+    return idx >= 0 ? idx : 0;
+  }, [density]);
 
-  /*
-   * Which colour mode is actually on, mirroring how PaletteControls decides it.
-   *
-   * The bands only mean something when a ramp is rendering. Mono has no bands
-   * at all -- colour is a single tint applied downstream, and nothing buckets --
-   * and RGB reads true source colour, so in both cases showing three tonal
-   * bands describes a ramp that is not running.
-   */
-  const colorMode: 'mono' | 'ramp' | 'indexed' | 'content' =
-    mediaColorConfig.paletteMode === 'content'
-      ? 'content'
-      : isIndexed
-      ? 'indexed'
-      : viewConfig.tonalMapping && viewConfig.tonalMapping !== '1color'
-      ? 'ramp'
-      : 'mono';
+  const handleStepCharset = (dir: -1 | 1) => {
+    const total = CHARSETS.length;
+    const nextIdx = (currentCharsetIdx + dir + total) % total;
+    onChangeDensity(CHARSETS[nextIdx].chars);
+  };
 
-  const showToneBands = colorMode === 'ramp' || colorMode === 'indexed';
+  const handleRandomizeCharset = () => {
+    setIsCharsetRolling(true);
+    setTimeout(() => setIsCharsetRolling(false), 450);
+    const pool = CHARSETS.filter((_, i) => i !== currentCharsetIdx);
+    const pick = pool[Math.floor(Math.random() * pool.length)] || CHARSETS[0];
+    onChangeDensity(pick.chars);
+  };
 
-  /*
-   * Whether the active palette is picking colours by hue rather than by tone.
-   *
-   * A multi-hue palette on a chromatic source is matched in CIELAB, nearest
-   * colour wins, and luminance position never enters into it -- so there is no
-   * band to widen and the weights are meaningless. The engine already refuses
-   * to apply them to any palette; this is so the UI says so too instead of
-   * offering sliders that do nothing.
-   *
-   * Source chromaticity is sampled inside the engine and is not visible here,
-   * so this errs toward reporting hue matching whenever the palette could do
-   * it. Being told "tone-matched" and getting hue matching would be the worse
-   * way to be wrong.
-   */
-  const isHueMatched =
-    isIndexed &&
-    !!activePalette &&
-    (mediaColorConfig.paletteMatch || 'auto') !== 'ramp' &&
-    !paletteIsMonochrome(new PaletteQuantizer(activePalette));
+  const { colors: rampColors, weights: rampWeights } = resolveToneStops(viewConfig);
 
-  /*
-   * Turn the active palette into an editable ramp.
-   *
-   * Deliberately a button rather than something a slider drag triggers. The two
-   * are different render paths, and indexed is usually the better one: it
-   * error-diffuses in palette space against the palette's real luminances,
-   * where a ramp buckets evenly (see pipeline.md on Game Boy's spacing), and on
-   * a multi-hue palette it also matches hue. Losing that should be a choice, not
-   * a surprise from nudging a control.
-   */
-  const convertPaletteToRamp = () => {
-    if (!activePalette || activePalette.colors.length < 2) return;
-    const stops = [...activePalette.colors];
-    onChangeMediaColorConfig({ ...mediaColorConfig, paletteMode: 'phosphor', mode: 'fixed' });
-    onChangeViewConfig({
+  const handleEditPaletteAsRamp = () => {
+    const pal = BUILTIN_PALETTES.find((p) => p.id === mediaColorConfig.activePaletteId);
+    if (!pal || pal.colors.length < 2) return;
+    const stops = [...pal.colors];
+    onChangeMediaColorConfig({
+      ...mediaColorConfig,
+      paletteMode: 'phosphor',
+      mode: 'fixed',
+    });
+    updateAdjust({
       ...viewConfig,
       ...applyToneStops(viewConfig, stops),
       toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
       tonalMapping: 'ntone',
     });
   };
-
-  /*
-   * A built-in palette IS a preset N-tone ramp, so touching a band -- recolour
-   * or width -- should just work rather than being refused.
-   *
-   * They are not the same render path though. `indexed` error-diffuses in
-   * palette space against the palette's real luminances; `ntone` buckets the
-   * warped luminance into stops. pipeline.md walks through Game Boy's
-   * 0.153/0.304/0.566/0.621 spacing and why that distinction is load-bearing.
-   * So a palette stays indexed for as long as it is untouched -- keeping the
-   * better rendering -- and converts to an editable ramp only on the first
-   * edit, seeded with its own colours so nothing jumps.
-   */
-
 
   return (
     <div className="basic-panel">
@@ -306,11 +241,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           minimal
         />
 
-        {/*
-         * Orientation only. A newcomer whose phone photo landed sideways is
-         * otherwise stuck with no way forward except discovering ADVANCED,
-         * where scale and offset also live.
-         */}
         {hasSource && (
           <div className="basic-framing">
             <button
@@ -331,7 +261,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
             </button>
             <button
               type="button"
-              className={`btn btn-sm ${mediaConfig.flipX ? 'btn-primary' : ''}`}
+              className={`btn btn-sm ${mediaConfig.flipX ? 'active' : ''}`}
               onClick={() => onChangeMediaConfig({ ...mediaConfig, flipX: !mediaConfig.flipX })}
               title="Flip horizontally"
             >
@@ -339,7 +269,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
             </button>
             <button
               type="button"
-              className={`btn btn-sm ${mediaConfig.flipY ? 'btn-primary' : ''}`}
+              className={`btn btn-sm ${mediaConfig.flipY ? 'active' : ''}`}
               onClick={() => onChangeMediaConfig({ ...mediaConfig, flipY: !mediaConfig.flipY })}
               title="Flip vertically"
             >
@@ -350,27 +280,24 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      {/* Above the resolution chips on purpose: switching raster mode      */}
-      {/* re-derives the grid, which re-derives DPI. Below them, the first  */}
-      {/* thing a newcomer set would be silently overwritten by the second. */}
       <Step n="02" label="Output" />
       <div className="basic-section">
         <div className="basic-output-toggle">
           <button
             type="button"
-            className={`btn ${!isPixel ? 'btn-primary' : ''}`}
-            onClick={() => onChangeRasterMode('ascii')}
-            title="Monospace character density ramp"
-          >
-            ASCII
-          </button>
-          <button
-            type="button"
-            className={`btn ${isPixel ? 'btn-primary' : ''}`}
+            className={`color-mode-tab ${isPixel ? 'active' : ''}`}
             onClick={() => onChangeRasterMode('pixel')}
             title="1:1 square pixel dither"
           >
             PIXEL
+          </button>
+          <button
+            type="button"
+            className={`color-mode-tab ${!isPixel ? 'active' : ''}`}
+            onClick={() => onChangeRasterMode('ascii')}
+            title="Monospace character density ramp"
+          >
+            ASCII
           </button>
         </div>
       </div>
@@ -378,21 +305,22 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       {/* ================================================================ */}
       <Step n="03" label="Dither" />
       <div className="basic-section">
-        <div className="control-row">
-          <span className="control-label">{isPixel ? 'Input DPI' : 'Columns'}</span>
+        {/* 1. Resolution / Grid Density */}
+        <div className="tonal-subheading" style={{ marginTop: 0 }}>
+          <span>{isPixel ? 'Resolution (DPI)' : 'Grid Size (Columns)'}</span>
           <span className="control-static-value">
-            {cols} x {rows} {isPixel ? 'px' : 'chars'}
+            {cols} &times; {rows} {isPixel ? 'px' : 'chars'}
           </span>
         </div>
 
-        <div className="basic-chip-row">
+        <div className="basic-chip-row" style={{ marginBottom: '4px' }}>
           {(isPixel ? DPI_PRESETS : COLS_PRESETS).map((preset) => {
             const isActive = isPixel ? dpi === preset.value : cols === preset.value;
             return (
               <button
                 key={preset.value}
                 type="button"
-                className={`btn btn-sm ${isActive ? 'btn-primary' : ''}`}
+                className={`quantize-chip ${isActive ? 'active' : ''}`}
                 onClick={() =>
                   isPixel ? handleDpiChange(preset.value) : handleColsChange(preset.value)
                 }
@@ -404,79 +332,110 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           })}
         </div>
 
+        {/* 2. Dithering Algorithm & Character Set */}
+        <div className="tonal-subheading" style={{ marginTop: '2px' }}>
+          <span>{isPixel ? 'Dither Pattern' : 'Dither & Glyphs'}</span>
+        </div>
+
         <DitherAlgorithmPicker
           value={viewConfig.algorithm || 'floyd-steinberg'}
           onChange={(algo) => updateView('algorithm', algo)}
           compact
         />
 
-        {/*
-         * The ramp as one dropdown. CharsetThemeBar's card list and custom
-         * string field are a browsing tool; picking a named ramp is all this
-         * step needs.
-         */}
         {!isPixel && (
-          <div className="control-row">
-            <span className="control-label">Charset</span>
-            <select
-              className="number-input basic-select"
-              value={activeCharsetId}
-              onChange={(e) => {
-                const cs = CHARSETS.find((c) => c.id === e.target.value);
-                if (cs) onChangeDensity(cs.chars);
-              }}
-            >
-              {CHARSETS.map((cs) => (
-                <option key={cs.id} value={cs.id}>
-                  {cs.name}
-                </option>
-              ))}
-              {activeCharsetId === '__custom__' && (
-                <option value="__custom__">Custom (set in Advanced)</option>
-              )}
-            </select>
+          <div className="control-row" style={{ alignItems: 'center' }}>
+            <span className="control-label" style={{ flexShrink: 0 }}>
+              Charset
+            </span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+              {/* Previous */}
+              <button
+                type="button"
+                className="slider-nudge-btn"
+                onClick={() => handleStepCharset(-1)}
+                title="Previous charset (wraps around)"
+                style={{ width: '24px', height: '24px', padding: 0 }}
+              >
+                <ChevronLeft size={13} />
+              </button>
+
+              {/* Select Dropdown */}
+              <select
+                className="number-input"
+                style={{
+                  width: '165px',
+                  textAlign: 'left',
+                  padding: '2px 6px',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 700,
+                  height: '24px',
+                }}
+                value={activeCharsetId}
+                onChange={(e) => {
+                  const cs = CHARSETS.find((c) => c.id === e.target.value);
+                  if (cs) onChangeDensity(cs.chars);
+                }}
+              >
+                {CHARSETS.map((cs) => (
+                  <option key={cs.id} value={cs.id}>
+                    {cs.name}
+                  </option>
+                ))}
+                {activeCharsetId === '__custom__' && (
+                  <option value="__custom__">Custom (set in Advanced)</option>
+                )}
+              </select>
+
+              {/* Next */}
+              <button
+                type="button"
+                className="slider-nudge-btn"
+                onClick={() => handleStepCharset(1)}
+                title="Next charset (wraps around)"
+                style={{ width: '24px', height: '24px', padding: 0 }}
+              >
+                <ChevronRight size={13} />
+              </button>
+
+              {/* Surprise Me / Randomizer Button */}
+              <button
+                type="button"
+                className="slider-nudge-btn"
+                onClick={handleRandomizeCharset}
+                title="Surprise Me: pick a random charset"
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  padding: 0,
+                  color: 'var(--accent)',
+                }}
+              >
+                <Dices
+                  size={13}
+                  style={{
+                    transform: isCharsetRolling ? 'rotate(360deg)' : 'none',
+                    transition: 'transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  }}
+                />
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* ================================================================ */}
-      {/* Shapes the greyscale going into the dither (engine steps 2-3).    */}
       <Step n="04" label="Adjust" />
       <div className="basic-section">
-        {/*
-         * Levels without the histogram: two clip points, as plain sliders.
-         *
-         * The midtone handle is deliberately absent -- it is a gamma pivot, and
-         * Tonal Balance below already exposes Midtones doing the same job. Two
-         * controls a slider apart that both bend the midtones is exactly the
-         * confusion BASIC should not have. The histogram, the draggable
-         * handles and AUTO LEVELS are all still in ADVANCED.
-         */}
-        <div className="control-row">
-          <span className="control-label">Black Point</span>
-          <PrecisionSlider
-            value={toneConfig.levelsBlack}
-            sliderMin={0}
-            sliderMax={100}
-            step={1}
-            resetTo={0}
-            onChange={(val) => updateTone('levelsBlack', val)}
-          />
-        </div>
-        <div className="control-row">
-          <span className="control-label">White Point</span>
-          <PrecisionSlider
-            value={toneConfig.levelsWhite}
-            sliderMin={0}
-            sliderMax={100}
-            step={1}
-            resetTo={100}
-            onChange={(val) => updateTone('levelsWhite', val)}
-          />
-        </div>
+        <SimpleLevelsSlider
+          config={toneConfig}
+          onChangeConfig={onChangeToneConfig}
+        />
 
-        <div className="tonal-subheading">
-          <span>Sharpening</span>
+        <div className="tonal-subheading" style={{ marginTop: '4px' }}>
+          <span>Detail &amp; Filtering</span>
         </div>
         <AdjustSlider id="sharpenStrength" config={viewConfig} onChangeConfig={updateAdjust} />
         <AdjustSlider id="sharpenRadius" config={viewConfig} onChangeConfig={updateAdjust} />
@@ -484,7 +443,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      {/* Decides what the graded tone comes out as (engine step 4).        */}
       <Step n="05" label="Color" />
       <div className="basic-section">
         <PaletteControls
@@ -498,53 +456,32 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           tonalMapping={viewConfig.tonalMapping}
           onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
           isPixelMode={isPixel}
-        />
-
-        {/*
-         * One row per stop: its colour and its share of the tonal range. Shown
-         * only for the two modes that actually run a ramp -- mono applies a
-         * single tint downstream and never buckets, RGB reads source colour, so
-         * bands there would describe a ramp that is not running.
-         */}
-        {showToneBands && (
-          <>
-            <ToneBandRows
-              config={viewConfig}
-              onChangeConfig={updateAdjust}
-              paletteColors={isIndexed ? activePalette?.colors : undefined}
-              disabled={isIndexed}
+          colorLevels={viewConfig.colorLevels}
+          onChangeColorLevels={(val) => updateView('colorLevels', val)}
+          rampEditorSlot={
+            <NToneRampEditor
+              stops={rampColors}
+              weights={rampWeights}
+              onChangeRamp={(stops, nextWeights) =>
+                updateAdjust({
+                  ...viewConfig,
+                  ...applyToneStops(viewConfig, stops),
+                  toneStopWeights: nextWeights,
+                })
+              }
             />
-
-            {isIndexed && (
-              <div className="basic-note">
-                <span>
-                  {isHueMatched
-                    ? 'This palette matches colours by hue, so bands do not apply.'
-                    : 'Palette colours are fixed, and their spacing is set by the palette.'}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={convertPaletteToRamp}
-                  title="Copy these colours into an editable ramp. Loses palette matching, which is usually the better rendering."
-                >
-                  EDIT AS RAMP
-                </button>
-              </div>
-            )}
-          </>
-        )}
-
-        <BackgroundRow
-          value={viewConfig.background}
-          onChange={(bg) => updateView('background', bg)}
+          }
+          onEditPaletteAsRamp={
+            mediaColorConfig.paletteMode === 'indexed' ? handleEditPaletteAsRamp : undefined
+          }
         />
 
-        {/* Only appears when a shared link or an ADVANCED session left it set. */}
-        <QuantizeDepthNotice
-          value={viewConfig.colorLevels}
-          onReset={() => updateView('colorLevels', 0)}
-        />
+        <div className="color-backdrop-section" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+          <BackgroundRow
+            value={viewConfig.background}
+            onChange={(bg) => updateView('background', bg)}
+          />
+        </div>
       </div>
 
       {/* ================================================================ */}

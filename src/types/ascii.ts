@@ -302,9 +302,9 @@ export interface ToneMappingConfig {
   shadowColor?: string; // For 2-color / 3-color mode
   midtoneColor?: string; // For 3-color mode
   bgColor?: string; // 'black' | 'dark' | 'white' | 'transparent' | hex
-  levelsBlack: number; // 0..100
-  levelsMidtones: number; // 0..100 (50 default)
-  levelsWhite: number; // 0..100
+  levelsBlack: number; // 0..255 (0 default)
+  levelsMidtones: number; // 0..255 (128 default)
+  levelsWhite: number; // 0..255 (255 default)
   channelMixerR: number; // 0..200 (100 default)
   channelMixerG: number; // 0..200 (100 default)
   channelMixerB: number; // 0..200 (100 default)
@@ -322,8 +322,8 @@ export const DEFAULT_TONE_MAPPING_CONFIG: ToneMappingConfig = {
   midtoneColor: '#4e54c8',
   bgColor: '#000000',
   levelsBlack: 0,
-  levelsMidtones: 50,
-  levelsWhite: 100,
+  levelsMidtones: 128,
+  levelsWhite: 255,
   channelMixerR: 100,
   channelMixerG: 100,
   channelMixerB: 100,
@@ -475,7 +475,7 @@ export const DEFAULT_IMAGE_ADJUST_CONFIG: ImageAdjustConfig = {
   edgeThreshold: 18,
   edgeStrength: 100,
   sharpenStrength: 0,
-  sharpenRadius: 2,
+  sharpenRadius: 1,
   noise: 0,
   denoise: 0,
   blur: 0,

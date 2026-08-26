@@ -45,6 +45,7 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   // 1. Render / Sampling Settings
   resampling: 'preserve-details',
   algorithm: 'floyd-steinberg',
+  rasterMode: 'pixel',
   dpi: 72,
   invert: false,
   edgeDetection: false,
@@ -52,8 +53,8 @@ export const DEFAULT_MEDIA_VIEW_CONFIG: MediaViewConfig = {
   edgeStrength: 100,
 
   // 2. Effect Controls
-  sharpenStrength: 120,
-  sharpenRadius: 2,
+  sharpenStrength: 0,
+  sharpenRadius: 1,
   noise: 0,
   denoise: 0,
   blur: 0,

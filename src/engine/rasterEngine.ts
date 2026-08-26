@@ -824,7 +824,7 @@ export function processRasterFrame(
   }
 
   const sharpenStrength = (options.sharpenStrength || 0) / 100.0;
-  const sharpenRadius = Math.max(0.1, Math.min(MAX_BLUR_RADIUS, options.sharpenRadius || 2));
+  const sharpenRadius = Math.max(0.1, Math.min(MAX_BLUR_RADIUS, options.sharpenRadius || 1));
   if (sharpenStrength > 0) {
     applyFastBoxBlur(lumBuffer, blurBuffer, cols, rows, sharpenRadius);
     for (let y = 0; y < rows; y++) {
@@ -900,9 +900,9 @@ export function processRasterFrame(
   const contrastFactor = Math.tan((((options.contrast || 0) + 100) * Math.PI) / 400);
   const brightnessOffset = (options.brightness || 0) / 100.0;
 
-  const inBlack = Math.max(0, Math.min(0.95, (toneCfg?.levelsBlack ?? 0) / 100.0));
-  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (toneCfg?.levelsWhite ?? 100) / 100.0));
-  const inMid = Math.max(inBlack + 0.01, Math.min(inWhite - 0.01, (toneCfg?.levelsMidtones ?? 50) / 100.0));
+  const inBlack = Math.max(0, Math.min(0.95, (toneCfg?.levelsBlack ?? 0) / 255.0));
+  const inWhite = Math.max(inBlack + 0.05, Math.min(1.0, (toneCfg?.levelsWhite ?? 255) / 255.0));
+  const inMid = Math.max(inBlack + 0.005, Math.min(inWhite - 0.005, (toneCfg?.levelsMidtones ?? 128) / 255.0));
   const midNorm = (inMid - inBlack) / (inWhite - inBlack);
   const levelsGamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
 

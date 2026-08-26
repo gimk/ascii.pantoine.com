@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, Copy, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings, ImagePlus } from 'lucide-react';
+import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings, ImagePlus } from 'lucide-react';
 import {
   PhosphorTheme,
   PhosphorGradient,
@@ -237,7 +237,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const zoom = view.scale;
   const [activeRasterMode, setActiveRasterMode] = useState<RasterOutputMode>('ascii');
   const activeRasterModeRef = useRef<RasterOutputMode>('ascii');
-  const [copied, setCopied] = useState<boolean>(false);
   const [isZoomMenuOpen, setIsZoomMenuOpen] = useState<boolean>(false);
   /** Bumped on container resize purely to force a culled canvas to repaint. */
   const [resizeTick, setResizeTick] = useState<number>(0);
@@ -725,6 +724,26 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const scale = Number(fitScale.toFixed(2));
     setView({ scale, ...centerFor(scale) });
   }, [cols, rows, centerFor, snapScaleToCellGrid]);
+
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // If already at 100% (scale ~ 1.0), alternate back to fit
+      if (Math.abs(view.scale - 1.0) < 0.01) {
+        autoFit();
+      } else {
+        const el = containerRef.current;
+        if (!el) {
+          zoomAboutCenter(1.0);
+          return;
+        }
+        const rect = el.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        zoomAbout(1.0, px, py);
+      }
+    },
+    [view.scale, autoFit, zoomAbout, zoomAboutCenter]
+  );
 
   /**
    * Split the frame once per distinct frame, so a culled draw can address a
@@ -1495,13 +1514,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [autoFit, zoomAboutCenter, nudgeZoom, recenter, panBy]);
 
-  const copySnapshot = () => {
-    const text = latestFrameTextRef.current || preRef.current?.textContent || '';
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
   const showScanlines = crtConfig ? crtConfig.scanlines : true;
   const showCrtGlow = crtConfig && !isColoredView ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
   const showVignette = crtConfig ? crtConfig.vignette : false;
@@ -1546,7 +1558,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onMouseDown={handleMouseDownNative}
-        onDoubleClick={autoFit}
+        onDoubleClick={handleDoubleClick}
         style={{
           ...(showCrtGlow ? {
             background: `radial-gradient(circle at center, ${asciiGlow} 0%, transparent 70%)`,
@@ -1840,11 +1852,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               </>
             )}
           </div>
-
-          <button className="btn btn-sm" onClick={copySnapshot} title="Copy Current Frame">
-            <Copy size={12} />
-            {copied ? 'COPIED!' : 'SNAP'}
-          </button>
 
           {/* Viewfinder Display & Performance Settings Button */}
           {crtConfig && optimizeConfig && onChangeCrtConfig && onChangeOptimizeConfig && (

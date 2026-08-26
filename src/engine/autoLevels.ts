@@ -10,9 +10,9 @@
  */
 
 export interface AutoLevelsResult {
-  /** 0..100, feeds ToneMappingConfig.levelsBlack */
+  /** 0..255, feeds ToneMappingConfig.levelsBlack */
   black: number;
-  /** 0..100, feeds ToneMappingConfig.levelsWhite */
+  /** 0..255, feeds ToneMappingConfig.levelsWhite */
   white: number;
 }
 
@@ -84,14 +84,8 @@ export function computeAutoLevels(
   if (black < 0 || white < 0) return null;
   if (white - black < MIN_SPAN_BINS) return null;
 
-  /*
-   * Bins are the *centres* of the tonal buckets the engine reads back with
-   * Math.round(v * 255), so map straight through 255 rather than widening by
-   * half a bin. The engine clamps black to <= 0.95 and holds white at least
-   * 0.05 above it; MIN_SPAN_BINS already keeps us clear of both.
-   */
   return {
-    black: Number(((black / 255) * 100).toFixed(2)),
-    white: Number(((white / 255) * 100).toFixed(2)),
+    black,
+    white,
   };
 }

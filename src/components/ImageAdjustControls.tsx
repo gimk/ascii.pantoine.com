@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { NumberInput, PrecisionSlider, DeferredColorInput } from './controlPrimitives';
+import { NumberInput, PrecisionSlider } from './controlPrimitives';
 import {
   ImageAdjustConfig,
   ToneMappingConfig,
@@ -10,8 +10,7 @@ import {
 import { BUILTIN_PALETTES } from '../engine/palettes';
 import { evaluateMonotoneCubicSpline } from '../engine/mediaRenderer';
 import { computeAutoLevels } from '../engine/autoLevels';
-import { toneBandShares } from '../engine/rasterEngine';
-import { NToneRampEditor, NEUTRAL_STOP_WEIGHT, resampleRamp } from './NToneRampEditor';
+import { NToneRampEditor, NEUTRAL_STOP_WEIGHT } from './NToneRampEditor';
 import { Sliders, Sparkles, Minus, Plus, Palette, BarChart3 } from 'lucide-react';
 import { BackgroundMode } from '../types/ascii';
 
@@ -346,212 +345,6 @@ export const resolveToneStops = (
   return { colors, weights };
 };
 
-/**
- * One row per ramp stop: its colour, and how much of the tonal range it gets.
- *
- * The slider is a **band width**, not an opacity and not a luminance push. It
- * widens or narrows the slice of the luminance range that maps to that colour,
- * which is what "more of this colour" actually means for a tone ramp -- drag
- * shadows up and more of the image resolves to the shadow stop. The engine
- * implements it as a monotone warp applied before quantization; see
- * buildToneBandLut in rasterEngine for why it cannot simply move the bucket
- * boundaries.
- *
- * Colour and weight sit on the same line deliberately. Split across two
- * sections -- stops under COLORS, grading under TONAL CONTROLS, as ADVANCED
- * still has it -- making a chosen colour actually read means a round trip
- * between panels.
- *
- * Every edit commits the *resolved* stop list, not whatever `customToneColors`
- * happened to hold. While a palette is showing, those are the palette's own
- * colours, so a host converting the palette into an editable ramp gets the
- * colours that were on screen rather than a stale default.
- */
-export const ToneBandRows: React.FC<{
-  config: ImageAdjustConfig;
-  onChangeConfig: (next: ImageAdjustConfig) => void;
-  /**
-   * Colours of the active built-in palette, when one is driving the render.
-   */
-  paletteColors?: string[];
-  /**
-   * Show the bands but refuse edits.
-   *
-   * Used while an indexed palette is rendering: the stops shown are real, but
-   * neither weight nor colour applies to that path, and converting away from it
-   * costs enough that it should be a deliberate act rather than the side effect
-   * of nudging a slider.
-   */
-  disabled?: boolean;
-}> = ({ config, onChangeConfig, paletteColors, disabled = false }) => {
-  const { colors, weights } = resolveToneStops(config, paletteColors);
-
-  const setStopColor = (index: number, hex: string) => {
-    const next = [...colors];
-    next[index] = hex;
-    onChangeConfig({
-      ...applyToneStops(config, next),
-      /* Weights are positional — one per stop — so they travel with the list. */
-      toneStopWeights: [...weights],
-    });
-  };
-
-  const setStopWeight = (index: number, value: number) => {
-    const next = [...weights];
-    next[index] = value;
-    onChangeConfig({
-      ...applyToneStops(config, [...colors]),
-      toneStopWeights: next,
-    });
-  };
-
-  /*
-   * Change how many colours the ramp has. `resampleRamp` is shared with
-   * ADVANCED's editor -- same interpolation, same weight carry-over -- so a
-   * ramp built in one panel and resized in the other behaves identically. Only
-   * the cap differs, and that is a layout limit passed in by the caller.
-   */
-  const setStopCount = (nextCount: number) => {
-    const next = resampleRamp(colors, weights, nextCount, BASIC_MAX_TONE_STOPS);
-    if (next.colors === colors) return;
-    onChangeConfig({
-      ...applyToneStops(config, next.colors),
-      toneStopWeights: next.weights,
-    });
-  };
-
-  const isEven = weights.every((w) => w === weights[0]);
-
-  /*
-   * Proportions straight from the engine helper, so the bar shows the widths
-   * the render will actually use rather than an even split that would hide the
-   * only thing the weights do.
-   */
-  const shares = toneBandShares(disabled ? undefined : weights, colors.length);
-
-  /* Labelled by role at the ends, by position in between. */
-  const labelFor = (i: number) => {
-    if (i === 0) return 'Shadows';
-    if (i === colors.length - 1) return 'Highlights';
-    if (colors.length === 3) return 'Midtones';
-    return `Tone ${i + 1}`;
-  };
-
-  return (
-    <>
-      <div className="tonal-subheading">
-        <span>Tonal Bands</span>
-        {/*
-          * Count sits with the bands rather than in its own section: how many
-          * colours the ramp has and how wide each one is are one decision. An
-          * indexed palette has no say -- its length is the palette's -- so the
-          * stepper is hidden rather than shown inert.
-          */}
-        {!disabled && (
-          <span className="tone-band-count">
-            <button
-              type="button"
-              className="slider-nudge-btn"
-              disabled={colors.length <= 2}
-              onClick={() => setStopCount(colors.length - 1)}
-              title="One fewer colour"
-            >
-              <Minus size={11} />
-            </button>
-            <span className="tone-band-count-value" title={`${colors.length} colours in the ramp`}>
-              {colors.length}
-            </span>
-            <button
-              type="button"
-              className="slider-nudge-btn"
-              disabled={colors.length >= BASIC_MAX_TONE_STOPS}
-              onClick={() => setStopCount(colors.length + 1)}
-              title={
-                colors.length >= BASIC_MAX_TONE_STOPS
-                  ? `${BASIC_MAX_TONE_STOPS} is the most this panel shows -- use ADVANCED for longer ramps`
-                  : 'One more colour'
-              }
-            >
-              <Plus size={11} />
-            </button>
-          </span>
-        )}
-        {!isEven && !disabled && (
-          <button
-            type="button"
-            className="btn-reset"
-            onClick={() =>
-              onChangeConfig({
-                ...config,
-                toneStopWeights: colors.map(() => DEFAULT_STOP_WEIGHT),
-              })
-            }
-            title="Give every colour an equal share of the tonal range"
-          >
-            EVEN
-          </button>
-        )}
-      </div>
-
-      {/*
-       * Shadow on the left, highlight on the right — the same reading order as
-       * the rows below, and as the ramp itself.
-       */}
-      <div
-        className="tone-band-preview"
-        title={
-          disabled
-            ? 'Colours in this palette'
-            : 'Share of the tonal range each colour covers'
-        }
-      >
-        {colors.map((color, i) => (
-          <span
-            key={i}
-            className="tone-band-preview-seg"
-            style={{ background: color, flexGrow: shares[i] }}
-          />
-        ))}
-      </div>
-
-      {colors.map((color, i) => (
-        <div className="tone-band-row" key={i}>
-          <span className="control-label tone-band-label">{labelFor(i)}</span>
-          <DeferredColorInput
-            value={color}
-            showHexField={false}
-            disabled={disabled}
-            title={`${labelFor(i)} colour`}
-            onChange={(hex) => setStopColor(i, hex)}
-          />
-          {/*
-           * A bare range, not PrecisionSlider: its numeric field is 54px of
-           * fixed width that will not shrink, and beside a label and a swatch
-           * there is not room for it in a 380px panel. The weight is relative
-           * anyway — the number carries no meaning worth reading.
-           */}
-          <input
-            type="range"
-            className="range-slider tone-band-slider"
-            min={0}
-            max={100}
-            step={1}
-            value={weights[i]}
-            disabled={disabled}
-            onChange={(e) => setStopWeight(i, parseInt(e.target.value, 10))}
-            onDoubleClick={() => !disabled && setStopWeight(i, DEFAULT_STOP_WEIGHT)}
-            title={
-              disabled
-                ? 'Band widths apply to tone ramps, not to palette matching'
-                : `Share of the tonal range given to ${labelFor(i).toLowerCase()}. Double-click to reset.`
-            }
-          />
-        </div>
-      ))}
-    </>
-  );
-};
-
 /** The three canvas backdrops the media renderer understands. */
 const BACKGROUND_MODES: { id: BackgroundMode; label: string; title: string }[] = [
   { id: 'black', label: 'BLACK', title: 'Solid black backdrop' },
@@ -561,10 +354,6 @@ const BACKGROUND_MODES: { id: BackgroundMode; label: string; title: string }[] =
 
 /**
  * Backdrop selector.
- *
- * The engine has read viewConfig.background since the media renderer landed
- * (mediaRenderer.ts, resolveMediaBackgroundColor) but nothing ever exposed it,
- * so it was stuck on the 'black' default. This is that control.
  */
 export const BackgroundRow: React.FC<{
   value: BackgroundMode;
@@ -587,41 +376,6 @@ export const BackgroundRow: React.FC<{
     </div>
   </div>
 );
-
-/**
- * Escape hatch for a non-auto quantize depth in a panel that does not show the
- * quantize control.
- *
- * BASIC leaves depth on Auto, where it follows the charset or palette and
- * needs no decision. But hiding a control is not the same as resetting it: a
- * shared link serialises colorLevels, and so does flipping over from ADVANCED
- * mid-session. Either way the image comes out posterised with nothing on
- * screen to explain why. Rather than silently forcing it back -- which would
- * throw away a deliberate ADVANCED setting on a mode switch -- surface it only
- * when it is actually set, with one button to return to Auto.
- */
-export const QuantizeDepthNotice: React.FC<{
-  value?: number;
-  onReset: () => void;
-}> = ({ value, onReset }) => {
-  if (!value || value <= 0) return null;
-  return (
-    <div className="control-row">
-      <span className="control-label">Depth</span>
-      <div className="btn-group-inline">
-        <span className="control-static-value">{value} LEVELS</span>
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={onReset}
-          title="Return quantization depth to Auto, following the charset or palette"
-        >
-          AUTO
-        </button>
-      </div>
-    </div>
-  );
-};
 
 // ---------------------------------------------------------------------------
 // High-Accuracy Quantize Levels Control
@@ -1170,6 +924,263 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
    actually operate on.
    ======================================================================== */
 
+// ---------------------------------------------------------------------------
+// Simple 3-Handle Levels Slider (for Basic Mode — without histogram / auto)
+// ---------------------------------------------------------------------------
+interface SimpleLevelsSliderProps {
+  config: ToneMappingConfig;
+  onChangeConfig: (next: ToneMappingConfig) => void;
+}
+
+export const SimpleLevelsSlider: React.FC<SimpleLevelsSliderProps> = ({
+  config,
+  onChangeConfig,
+}) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [active, setActive] = useState<LevelsHandle | null>(null);
+
+  const black = config.levelsBlack ?? 0;
+  const mid = config.levelsMidtones ?? 128;
+  const white = config.levelsWhite ?? 255;
+
+  const midNorm = white > black ? (mid - black) / (white - black) : 0.5;
+
+  const commit = (nextBlack: number, nextWhite: number, keepGamma = true) => {
+    const b = Math.max(0, Math.min(245, Math.round(nextBlack)));
+    const w = Math.max(b + 10, Math.min(255, Math.round(nextWhite)));
+    const m = keepGamma
+      ? Math.round(b + midNorm * (w - b))
+      : Math.max(b + 1, Math.min(w - 1, Math.round(mid)));
+    onChangeConfig({
+      ...config,
+      levelsBlack: b,
+      levelsWhite: w,
+      levelsMidtones: Math.max(b + 1, Math.min(w - 1, m)),
+    });
+  };
+
+  const posToValue = (e: { clientX: number }) => {
+    const el = svgRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(rect.left, Math.min(rect.right, e.clientX));
+    return ((x - rect.left) / rect.width) * 255;
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    const p = posToValue(e);
+    const d = {
+      black: Math.abs(p - black),
+      white: Math.abs(p - white),
+      mid: Math.abs(p - mid) + 0.001,
+    };
+    const pick = (Object.keys(d) as LevelsHandle[]).reduce((a, b) => (d[b] < d[a] ? b : a));
+    setActive(pick);
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!active) return;
+    const p = posToValue(e);
+    if (active === 'black') {
+      commit(Math.min(p, white - 10), white);
+    } else if (active === 'white') {
+      commit(black, Math.max(p, black + 10));
+    } else {
+      onChangeConfig({
+        ...config,
+        levelsMidtones: Math.max(black + 1, Math.min(white - 1, Math.round(p))),
+      });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    setActive(null);
+    svgRef.current?.releasePointerCapture?.(e.pointerId);
+  };
+
+  const resetHandle = (id: LevelsHandle) => {
+    if (id === 'black') {
+      commit(0, white);
+    } else if (id === 'white') {
+      commit(black, 255);
+    } else {
+      const neutralMid = Math.round((black + white) / 2);
+      onChangeConfig({
+        ...config,
+        levelsMidtones: neutralMid,
+      });
+    }
+  };
+
+  const handleSvgDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    const p = posToValue(e);
+    const d = {
+      black: Math.abs(p - black),
+      white: Math.abs(p - white),
+      mid: Math.abs(p - mid) + 0.001,
+    };
+    const pick = (Object.keys(d) as LevelsHandle[]).reduce((a, b) => (d[b] < d[a] ? b : a));
+    resetHandle(pick);
+  };
+
+  const px = (val: number) => (val / 255) * LV_W;
+
+  const handleMark = (val: number, fill: string, stroke: string, id: LevelsHandle) => {
+    const isActive = active === id;
+    return (
+      <g
+        key={id}
+        transform={`translate(${px(val).toFixed(2)}, 0)`}
+        style={{ cursor: 'ew-resize' }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          resetHandle(id);
+        }}
+      >
+        <line
+          x1={0}
+          y1={6}
+          x2={0}
+          y2={22}
+          stroke={stroke}
+          strokeWidth={isActive ? 1.5 : 1}
+          opacity={isActive ? 1 : 0.6}
+        />
+        <path
+          d="M 0 17 L -5 25 L 5 25 Z"
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={1}
+          filter={isActive ? 'drop-shadow(0 0 3px var(--accent))' : undefined}
+        />
+      </g>
+    );
+  };
+
+  return (
+    <div className="simple-levels-section" style={{ marginBottom: '10px' }}>
+      <div className="tonal-subheading" style={{ marginTop: 0 }}>
+        <span>Levels</span>
+      </div>
+
+      <div
+        style={{
+          padding: '8px 10px 10px 10px',
+          background: 'var(--bg-primary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '3px',
+        }}
+      >
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${LV_W} 28`}
+          preserveAspectRatio="none"
+          style={{ display: 'block', width: '100%', height: '28px', touchAction: 'none', cursor: 'ew-resize' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onDoubleClick={handleSvgDoubleClick}
+        >
+          <defs>
+            <linearGradient id="simple-lv-ramp" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#000000" />
+              <stop offset="100%" stopColor="#ffffff" />
+            </linearGradient>
+          </defs>
+
+          {/* Base gradient bar */}
+          <rect
+            x={0}
+            y={6}
+            width={LV_W}
+            height={10}
+            fill="url(#simple-lv-ramp)"
+            rx={2}
+            stroke="var(--border-color)"
+            strokeWidth={1}
+          />
+
+          {/* Black clip shadow */}
+          <rect
+            x={0}
+            y={6}
+            width={px(black)}
+            height={10}
+            fill="rgba(0, 0, 0, 0.65)"
+            rx={2}
+          />
+
+          {/* White clip highlight */}
+          <rect
+            x={px(white)}
+            y={6}
+            width={LV_W - px(white)}
+            height={10}
+            fill="rgba(255, 255, 255, 0.2)"
+            rx={2}
+          />
+
+          {handleMark(black, '#000000', 'var(--text-muted)', 'black')}
+          {handleMark(mid, '#808080', 'var(--text-muted)', 'mid')}
+          {handleMark(white, '#ffffff', 'var(--text-muted)', 'white')}
+        </svg>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '8px',
+            marginTop: '6px',
+            fontSize: '10px',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+            <span style={{ color: 'var(--text-dim)', fontSize: '9.5px', fontWeight: 600 }}>BLACK</span>
+            <NumberInput
+              value={black}
+              min={0}
+              max={white - 10}
+              step={1}
+              onChange={(val) => commit(val, white)}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+            <span style={{ color: 'var(--text-dim)', fontSize: '9.5px', fontWeight: 600 }}>MID</span>
+            <NumberInput
+              value={mid}
+              min={black + 1}
+              max={white - 1}
+              step={1}
+              onChange={(val) =>
+                onChangeConfig({
+                  ...config,
+                  levelsMidtones: Math.max(black + 1, Math.min(white - 1, val)),
+                })
+              }
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+            <span style={{ color: 'var(--text-dim)', fontSize: '9.5px', fontWeight: 600 }}>WHITE</span>
+            <NumberInput
+              value={white}
+              min={black + 10}
+              max={255}
+              step={1}
+              onChange={(val) => commit(black, val)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface LevelsControlProps {
   config: ToneMappingConfig;
   onChangeConfig: (next: ToneMappingConfig) => void;
@@ -1196,41 +1207,41 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
   const noteTimer = useRef<number | null>(null);
 
   const black = config.levelsBlack ?? 0;
-  const mid = config.levelsMidtones ?? 50;
-  const white = config.levelsWhite ?? 100;
+  const mid = config.levelsMidtones ?? 128;
+  const white = config.levelsWhite ?? 255;
 
   const midNorm = white > black ? (mid - black) / (white - black) : 0.5;
   const gamma = Math.log(0.5) / Math.log(Math.max(0.01, Math.min(0.99, midNorm)));
 
   const isNeutral =
     (config.levelsBlack ?? 0) === 0 &&
-    (config.levelsWhite ?? 100) === 100 &&
-    Math.abs((config.levelsMidtones ?? 50) - 50) < 0.01;
+    (config.levelsWhite ?? 255) === 255 &&
+    Math.abs((config.levelsMidtones ?? 128) - 128) <= 1;
 
   const commit = (nextBlack: number, nextWhite: number, keepGamma = true) => {
-    const b = Math.max(0, Math.min(95, nextBlack));
-    const w = Math.max(b + 5, Math.min(100, nextWhite));
+    const b = Math.max(0, Math.min(245, Math.round(nextBlack)));
+    const w = Math.max(b + 10, Math.min(255, Math.round(nextWhite)));
     const m = keepGamma
-      ? b + midNorm * (w - b)
-      : Math.max(b + 1, Math.min(w - 1, mid));
+      ? Math.round(b + midNorm * (w - b))
+      : Math.max(b + 1, Math.min(w - 1, Math.round(mid)));
     onChangeConfig({
       ...config,
-      levelsBlack: Number(b.toFixed(2)),
-      levelsWhite: Number(w.toFixed(2)),
-      levelsMidtones: Number(Math.max(b + 1, Math.min(w - 1, m)).toFixed(2)),
+      levelsBlack: b,
+      levelsWhite: w,
+      levelsMidtones: Math.max(b + 1, Math.min(w - 1, m)),
     });
   };
 
-  const posToPercent = (e: React.PointerEvent) => {
+  const posToValue = (e: { clientX: number }) => {
     const el = svgRef.current;
     if (!el) return 0;
     const rect = el.getBoundingClientRect();
     const x = Math.max(rect.left, Math.min(rect.right, e.clientX));
-    return ((x - rect.left) / rect.width) * 100;
+    return ((x - rect.left) / rect.width) * 255;
   };
 
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    const p = posToPercent(e);
+    const p = posToValue(e);
     const d = {
       black: Math.abs(p - black),
       white: Math.abs(p - white),
@@ -1244,15 +1255,15 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
 
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!active) return;
-    const p = posToPercent(e);
+    const p = posToValue(e);
     if (active === 'black') {
-      commit(Math.min(p, white - 5), white);
+      commit(Math.min(p, white - 10), white);
     } else if (active === 'white') {
-      commit(black, Math.max(p, black + 5));
+      commit(black, Math.max(p, black + 10));
     } else {
       onChangeConfig({
         ...config,
-        levelsMidtones: Number(Math.max(black + 1, Math.min(white - 1, p)).toFixed(2)),
+        levelsMidtones: Math.max(black + 1, Math.min(white - 1, Math.round(p))),
       });
     }
   };
@@ -1268,12 +1279,40 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
     noteTimer.current = window.setTimeout(() => setNote(null), 1800);
   };
 
+  const resetHandle = (id: LevelsHandle) => {
+    if (id === 'black') {
+      commit(0, white);
+      flashNote('RESET BLACK (0)');
+    } else if (id === 'white') {
+      commit(black, 255);
+      flashNote('RESET WHITE (255)');
+    } else {
+      const neutralMid = Math.round((black + white) / 2);
+      onChangeConfig({
+        ...config,
+        levelsMidtones: neutralMid,
+      });
+      flashNote(`RESET MID (${neutralMid})`);
+    }
+  };
+
+  const handleSvgDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    const p = posToValue(e);
+    const d = {
+      black: Math.abs(p - black),
+      white: Math.abs(p - white),
+      mid: Math.abs(p - mid) + 0.001,
+    };
+    const pick = (Object.keys(d) as LevelsHandle[]).reduce((a, b) => (d[b] < d[a] ? b : a));
+    resetHandle(pick);
+  };
+
   const handleReset = () => {
     onChangeConfig({
       ...config,
       levelsBlack: 0,
-      levelsMidtones: 50,
-      levelsWhite: 100,
+      levelsMidtones: 128,
+      levelsWhite: 255,
     });
     flashNote('RESET');
   };
@@ -1288,16 +1327,16 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
       flashNote('NO SIGNAL');
       return;
     }
-    const b = Math.max(0, Math.min(95, res.black));
-    const w = Math.max(b + 5, Math.min(100, res.white));
-    const m = b + midNorm * (w - b);
+    const b = Math.max(0, Math.min(245, res.black));
+    const w = Math.max(b + 10, Math.min(255, res.white));
+    const m = Math.round(b + midNorm * (w - b));
     onChangeConfig({
       ...config,
-      levelsBlack: Number(b.toFixed(2)),
-      levelsWhite: Number(w.toFixed(2)),
-      levelsMidtones: Number(Math.max(b + 1, Math.min(w - 1, m)).toFixed(2)),
+      levelsBlack: b,
+      levelsWhite: w,
+      levelsMidtones: Math.max(b + 1, Math.min(w - 1, m)),
     });
-    flashNote(`AUTO: ${b.toFixed(0)} / ${w.toFixed(0)}`);
+    flashNote(`AUTO: ${b} / ${w}`);
   };
 
   const bars = useMemo(() => {
@@ -1313,13 +1352,17 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
     return out;
   }, [histogram, histogramOpaque]);
 
-  const px = (pct: number) => (pct / 100) * LV_W;
+  const px = (val: number) => (val / 255) * LV_W;
 
-  const handleMark = (pct: number, fill: string, stroke: string, id: LevelsHandle) => (
+  const handleMark = (val: number, fill: string, stroke: string, id: LevelsHandle) => (
     <g
       key={id}
-      transform={`translate(${px(pct).toFixed(2)}, 0)`}
+      transform={`translate(${px(val).toFixed(2)}, 0)`}
       style={{ cursor: 'ew-resize' }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        resetHandle(id);
+      }}
     >
       <line
         x1={0}
@@ -1364,7 +1407,7 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
           type="button"
           className="btn-reset"
           onClick={handleReset}
-          title="Reset black, midtone and white points to 0 / 50 / 100"
+          title="Reset black, midtone and white points to 0 / 128 / 255"
         >
           RESET
         </button>
@@ -1401,6 +1444,7 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            onDoubleClick={handleSvgDoubleClick}
           >
             {/* Everything outside [black, white] is clipped flat by the engine. */}
             <rect x={0} y={0} width={px(black)} height={LV_HIST_H} fill="rgba(0,0,0,0.55)" />
@@ -1572,7 +1616,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       colorLevels: resetDefaults.colorLevels ?? 0,
     });
     if (toneConfig && onChangeToneConfig) {
-      onChangeToneConfig({ ...toneConfig, levelsBlack: 0, levelsMidtones: 50, levelsWhite: 100 });
+      onChangeToneConfig({ ...toneConfig, levelsBlack: 0, levelsMidtones: 128, levelsWhite: 255 });
     }
   };
 

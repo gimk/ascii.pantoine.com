@@ -256,20 +256,20 @@ const OUTPUT_MODES: {
   title: string;
 }[] = [
   {
-    id: 'ascii',
-    name: 'ASCII',
-    badge: 'TEXT',
-    description: 'Monospace Density Ramp',
-    icon: Type,
-    title: 'Monospace ASCII character density rasterization',
-  },
-  {
     id: 'pixel',
     name: 'PIXEL',
     badge: 'DITHER',
     description: '1:1 Square Pixel Grid',
     icon: Grid,
     title: 'Direct square hardware dither rasterization',
+  },
+  {
+    id: 'ascii',
+    name: 'ASCII',
+    badge: 'TEXT',
+    description: 'Monospace Density Ramp',
+    icon: Type,
+    title: 'Monospace ASCII character density rasterization',
   },
 ];
 
@@ -444,7 +444,7 @@ export const App: React.FC = () => {
       rows: (isSynthShared && sharedState?.rows) || savedSettings.synth?.rows || 50,
       autoRes: (isSynthShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.synth?.autoRes !== undefined ? savedSettings.synth.autoRes : true),
       density: (isSynthShared && sharedState?.density) || savedSettings.synth?.density || CHARSETS[0].chars,
-      rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'ascii',
+      rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'pixel',
       ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
       toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
@@ -469,7 +469,7 @@ export const App: React.FC = () => {
       rows: (isMediaShared && sharedState?.rows) || savedSettings.media?.rows || 120,
       autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : false),
       density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || CHARSETS[0].chars,
-      rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'ascii',
+      rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'pixel',
       ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
       toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
@@ -495,7 +495,7 @@ export const App: React.FC = () => {
       rows: (isModelShared && sharedState?.rows) || savedSettings.model?.rows || 50,
       autoRes: (isModelShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.model?.autoRes !== undefined ? savedSettings.model.autoRes : true),
       density: (isModelShared && sharedState?.density) || savedSettings.model?.density || CHARSETS[0].chars,
-      rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'ascii',
+      rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'pixel',
       ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
       toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
@@ -1225,7 +1225,7 @@ export const App: React.FC = () => {
   const currentRasterMode: RasterOutputMode =
     (appMode === 'media'
       ? mediaViewConfig.rasterMode || currentRenderSettings.rasterMode
-      : currentRenderSettings.rasterMode) || 'ascii';
+      : currentRenderSettings.rasterMode) || 'pixel';
 
   const currentTonalMapping =
     (appMode === 'media' ? mediaViewConfig.tonalMapping : currentRenderSettings.adjustConfig?.tonalMapping) || '1color';

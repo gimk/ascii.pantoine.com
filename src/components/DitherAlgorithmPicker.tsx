@@ -87,9 +87,9 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
   }, [selectedFamily]);
 
   return (
-    <div className="dither-picker-container" style={{ marginBottom: '10px' }}>
+    <div className="dither-picker-container" style={{ marginBottom: compact ? 0 : '10px' }}>
       {/* 1. Main Stepper, Dropdown & Surprise Me Bar */}
-      <div className="control-row" style={{ marginBottom: '8px', alignItems: 'center' }}>
+      <div className="control-row" style={{ marginBottom: compact ? 0 : '8px', alignItems: 'center' }}>
         <span className="control-label" style={{ flexShrink: 0 }}>
           Algorithm
         </span>

@@ -1700,7 +1700,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  max-height: 180px;
+  max-height: 280px;
   overflow-y: auto;
   margin-bottom: 8px;
   padding: 4px;
@@ -1712,11 +1712,13 @@ html, body, #root {
 
 .dither-algo-row-btn {
   width: 100%;
+  height: 24px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 0 8px;
   background: var(--bg-control);
   border: 1px solid transparent;
   border-radius: 2px;
@@ -3700,111 +3702,6 @@ select:disabled {
   border-radius: 4px;
 }
 
-/*
- * Tonal band row: name, colour, weight — on one line.
- *
- * The label is fixed-width so the three swatches and three sliders line up in
- * a column; a ragged left edge here makes the group read as three unrelated
- * rows rather than one control with three bands.
- */
-.tone-band-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 9px;
-}
-
-/*
- * Fixed label column so the swatches and sliders line up down the group. A
- * ragged left edge makes three bands read as three unrelated rows rather than
- * one control.
- */
-.tone-band-label {
-  flex: 0 0 62px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/*
- * The range element itself. `min-width: 0` is load-bearing: form controls carry
- * an intrinsic minimum width that flex will not shrink past, so without it the
- * row overflows the panel instead of the track getting shorter.
- */
-.tone-band-slider {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-}
-
-/*
- * Ramp preview: each colour as a segment sized to the share of the tonal range
- * it actually covers. Segments are flex-grown by that share, so the bar is the
- * proportion rather than a legend of equal blocks.
- */
-/*
- * Stop count, sitting in the Tonal Bands subheading.
- *
- * `margin-left: auto` rather than relying on the subheading's space-between:
- * with three children that would strand the stepper in the middle. An auto
- * margin absorbs the free space first, so the label stays left and the stepper
- * and EVEN group together on the right.
- */
-.tone-band-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.tone-band-count + .btn-reset {
-  margin-left: 6px;
-}
-
-.tone-band-count .slider-nudge-btn {
-  width: 18px;
-  height: 18px;
-}
-
-.tone-band-count .slider-nudge-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-  border-color: var(--border-color);
-  color: var(--text-muted);
-  background: var(--bg-control);
-}
-
-.tone-band-count-value {
-  min-width: 16px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-  font-weight: 700;
-}
-
-.tone-band-preview {
-  display: flex;
-  width: 100%;
-  height: 18px;
-  margin-bottom: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.tone-band-preview-seg {
-  display: block;
-  height: 100%;
-  min-width: 2px;
-  flex-basis: 0;
-  /* Matches the slider's travel so the bar reads as a response to the drag. */
-  transition: flex-grow 0.12s ease;
-}
-
-/* Inline explanation plus the action it is explaining. */
-/* Also used from ADVANCED; `.basic-` is only where it was first needed. */
-.basic-note,
 .panel-note {
   display: flex;
   align-items: center;
@@ -3818,39 +3715,31 @@ select:disabled {
   color: var(--text-muted);
 }
 
-.basic-note span,
 .panel-note span {
   flex: 1;
   min-width: 0;
 }
 
-.basic-note .btn,
 .panel-note .btn {
   flex-shrink: 0;
 }
 
-/* Disabled bands still read as real values, just not editable ones. */
-.tone-band-row input[type='range']:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Resolution presets — six chips on one row, replacing the DPI slider. */
+/* Resolution presets — six chips on one row */
 .basic-chip-row {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 4px;
 }
 
-.basic-chip-row .btn {
+.basic-chip-row .btn,
+.basic-chip-row .quantize-chip {
   padding: 5px 0;
   text-align: center;
   font-family: var(--font-mono);
 }
 
 /*
- * Shared inline cluster for the small button groups BASIC leans on (framing,
- * background, the quantize escape hatch).
+ * Shared inline cluster for the small button groups (framing, background).
  */
 .btn-group-inline {
   display: flex;
@@ -3869,17 +3758,7 @@ select:disabled {
 .basic-output-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.basic-output-toggle .btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 6px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
+  gap: 4px;
 }
 
 .basic-select {
