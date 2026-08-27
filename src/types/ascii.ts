@@ -384,6 +384,16 @@ export interface VectorConfig {
    */
   blanking: number;
   occlusion: boolean;
+  /**
+   * Which side of the image the nearest scan line is on — flip the stack.
+   *
+   * A painter's fill only reads as depth if the lines are drawn far to near and
+   * each closes toward the *near* edge, so this flips both at once — changing
+   * either one alone destroys the frame, because every fill then sweeps away
+   * from the near side and across the whole image. False puts the near side at
+   * the bottom for a horizontal relief and at the left for a vertical beam.
+   */
+  occlusionInvert: boolean;
   carrierEnabled: boolean;
   carrierFreq: number;
   carrierThreshold: number;
@@ -411,6 +421,7 @@ export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
   bias: 0.5,
   blanking: 0.02,
   occlusion: false,
+  occlusionInvert: false,
   carrierEnabled: true,
   carrierFreq: 0.45,
   carrierThreshold: 0.32,

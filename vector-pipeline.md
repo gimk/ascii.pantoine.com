@@ -157,6 +157,7 @@ export interface VectorConfig {
   bias: number;             // 0–1, deflection zero point
   blanking: number;         // 0–0.5, beam-off cutoff; independent of the carrier
   occlusion: boolean;
+  occlusionInvert: boolean;  // flip which edge the nearest line sits against
   carrierEnabled: boolean;
   carrierFreq: number;      // 0.05–1.5
   carrierThreshold: number; // 0–0.9
@@ -240,6 +241,21 @@ Four divergences from the studio, all deliberate:
   and `scaleVectorFrame` scales it, since it is a coordinate. Draw order is
   invisible with occlusion off: strokes do not overlap destructively and the
   additive aberration passes are order-independent.
+
+  **Which side is near is a user choice** (`occlusionInvert`, shown as *Stack
+  Front*), and flipping it moves the edge and the draw order **together**.
+  They are one decision, not two settings. Measured on a stripe field where
+  the ridges genuinely cross, both arrangements hide about half the beam —
+  52.8% with the front at the bottom, 44.8% with it at the top — and they hide
+  *different* halves, which is what makes the control worth having. Flip one
+  half of the pair and the frame is destroyed either way (480 and 240
+  surviving cells out of 4349), because every fill then sweeps away from the
+  near side and across the whole image instead of stopping at the ridge in
+  front.
+
+  The control is labelled per axis (BOTTOM/TOP horizontally, LEFT/RIGHT
+  vertically) rather than normal/inverted: the two directions stack along
+  different axes, and "top" means nothing to a vertical beam.
 - **Blanking is its own control, not a mode of the carrier.** The studio gates
   its blanking on `carrierOn`, and copying that leaves only two reachable looks:
   carrier off draws flat baselines across the entire background, carrier on

@@ -380,6 +380,35 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
         </button>
       </div>
 
+      {/*
+        * Which side the nearest line is on. Labelled per axis rather than
+        * "normal / inverted", because the two directions stack along different
+        * axes and 'top' means nothing to a vertical beam. Only shown with
+        * occlusion on, where it is the only thing it affects.
+        */}
+      {config.occlusion && (
+        <div className="control-row" style={{ alignItems: 'center' }}>
+          <span className="control-label" title="Which edge the nearest line sits against — flips which way the stack reads.">
+            Stack Front
+          </span>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {([false, true] as const).map((flip) => (
+              <button
+                key={String(flip)}
+                type="button"
+                className={`btn btn-sm ${config.occlusionInvert === flip ? 'btn-primary' : ''}`}
+                onClick={() => set('occlusionInvert', flip)}
+                style={{ minWidth: '52px', height: '22px', fontSize: '10px', fontWeight: 700 }}
+              >
+                {config.direction === 'vertical'
+                  ? flip ? 'RIGHT' : 'LEFT'
+                  : flip ? 'TOP' : 'BOTTOM'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="tonal-subheading">
         <span>Carrier Modulation</span>
         <button
