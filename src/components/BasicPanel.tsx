@@ -352,6 +352,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
 
         {isVector ? (
           <VectorControls
+            compact
             config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
             onChange={(next) => updateView('vectorConfig', next)}
           />

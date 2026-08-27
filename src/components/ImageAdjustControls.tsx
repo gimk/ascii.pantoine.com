@@ -38,6 +38,8 @@ export type AdjustSliderId =
 
 export interface AdjustSliderSpec {
   label: string;
+  /** One line of help on the label. Optional; most of these name themselves. */
+  hint?: string;
   /** Range the track spans under normal use. */
   sliderMin: number;
   sliderMax: number;
@@ -97,6 +99,8 @@ export const ADJUST_SLIDERS: Record<AdjustSliderId, AdjustSliderSpec> = {
   },
   denoise: {
     label: 'Denoise',
+    hint:
+      'Edge-preserving noise removal. Reads as a contrast threshold: at 4 anything under about 6% local contrast is treated as grain and flattened, and every edge above it is left alone. Unlike Blur, which takes edges and grain equally.',
     sliderMin: 0,
     sliderMax: 8,
     hardMax: 100,
@@ -105,6 +109,8 @@ export const ADJUST_SLIDERS: Record<AdjustSliderId, AdjustSliderSpec> = {
   },
   blur: {
     label: 'Blur',
+    hint:
+      'Plain box softening, applied after Denoise. Takes edges with it by design — reach for Denoise instead to clean grain up without losing the picture.',
     sliderMin: 0,
     sliderMax: 8,
     hardMax: 40,
@@ -142,7 +148,9 @@ export const AdjustSlider: React.FC<{
   const spec = ADJUST_SLIDERS[id];
   return (
     <div className="control-row">
-      <span className="control-label">{label ?? spec.label}</span>
+      <span className="control-label" title={spec.hint}>
+        {label ?? spec.label}
+      </span>
       <PrecisionSlider
         value={config[id] ?? spec.resetTo}
         sliderMin={spec.sliderMin}

@@ -104,7 +104,16 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   colorLevels = 0,
   onChangeColorLevels,
 }) => {
-  const isRgbDisabled = appMode === 'synth';
+  /*
+   * RGB is the one colour mode with no vector meaning. Every other mode picks
+   * the beam colour from the mean luminance of a run, which a polyline has;
+   * RGB would have to average source RGB *along* the run, which is the one
+   * thing that would make the tracer read the RGBA buffer as well as the
+   * luminance — and a deflection beam in true source colour is a muddy look
+   * besides. rasterEngine resolves it to the mono tint, so leaving the tab up
+   * offers a mode that silently does something else. See vector-pipeline.md 8.
+   */
+  const isRgbDisabled = appMode === 'synth' || isVectorMode;
   const rawPaletteMode: PaletteMode = mediaColorConfig?.paletteMode || 'phosphor';
   const paletteMode: PaletteMode = rawPaletteMode === 'content' && isRgbDisabled ? 'phosphor' : rawPaletteMode;
   const activePaletteId = mediaColorConfig?.activePaletteId || 'gameboy-classic';
@@ -134,12 +143,20 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
     () => (activePalette ? paletteIsMonochrome(new PaletteQuantizer(activePalette)) : false),
     [activePalette]
   );
-  const canHueMatch = appMode !== 'synth' && !isMonoPalette;
+  /*
+   * Hue matching needs per-cell RGB to compare against, and a beam has no
+   * cells — its colour is a property of the whole run. The vector branch tone
+   * matches unconditionally, so offering the choice would be offering a
+   * setting that does nothing.
+   */
+  const canHueMatch = appMode !== 'synth' && !isVectorMode && !isMonoPalette;
   const paletteMatchHint = isMonoPalette
     ? 'This palette is a single-hue ramp, so there is no colour to match against.'
-    : appMode === 'synth'
-      ? 'Synth output is luminance-only, so the palette can only be driven as a tone ramp.'
-      : 'How the palette is matched to the source.';
+    : isVectorMode
+      ? 'A beam has no cells to match per-pixel colour against, so the palette is driven as a tone ramp from the mean luminance of each run.'
+      : appMode === 'synth'
+        ? 'Synth output is luminance-only, so the palette can only be driven as a tone ramp.'
+        : 'How the palette is matched to the source.';
 
   const primaryMode: 'ntone' | 'indexed' | 'mono' | 'content' =
     paletteMode === 'content'

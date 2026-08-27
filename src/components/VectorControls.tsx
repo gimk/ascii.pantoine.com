@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { VectorConfig, VECTOR_CONFIG_DEFAULTS } from '../types/ascii';
 import { PrecisionSlider } from './controlPrimitives';
 import { MoveVertical, MoveHorizontal } from 'lucide-react';
@@ -20,6 +20,8 @@ import { MoveVertical, MoveHorizontal } from 'lucide-react';
 interface VectorControlsProps {
   config: VectorConfig;
   onChange: (config: VectorConfig) => void;
+  /** Cut down to the handful of controls the basic panel shows. */
+  compact?: boolean;
 }
 
 type NumericKey = {
@@ -214,6 +216,25 @@ const OPTICS_ROWS: Row[] = [
 ];
 
 /**
+ * What survives into the basic panel, in the order it renders.
+ *
+ * Chosen for what changes the picture most per unit of explanation. Left out:
+ * Sample Step (a sampling-rate control that mostly trades detail for speed and
+ * reads as a smoother without being one), Bias (only meaningful once you know
+ * the deflection is bipolar), Ripple Freq and Phase (both modulate a ripple
+ * that is off by default), and Phosphor Glow and Aberration (finishing passes
+ * that need a look to finish).
+ */
+const COMPACT_ROW_IDS: NumericKey[] = [
+  'lineCount',
+  'amplitude',
+  'smoothing',
+  'blanking',
+  'rippleAmp',
+  'strokeWidth',
+];
+
+/**
  * The studio's four presets, carried across verbatim except for amplitude and
  * ripple, which were pixel figures against its 800px buffer and are grid cells
  * here — the same numbers, because the vector grid is sized to match.
@@ -326,10 +347,31 @@ const PRESETS: { id: string; name: string; hint: string; patch: Partial<VectorCo
   },
 ];
 
-export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange }) => {
+export const VectorControls: React.FC<VectorControlsProps> = ({
+  config,
+  onChange,
+  compact = false,
+}) => {
   const set = <K extends keyof VectorConfig>(key: K, value: VectorConfig[K]) => {
     onChange({ ...config, [key]: value });
   };
+
+  /*
+   * The carrier defaults to *on*, so hiding its deck without switching it off
+   * would leave a basic user with a dashed beam and no control that explains
+   * it. Only `carrierEnabled` is touched — the three tuning values stay in the
+   * config, so the advanced deck still has them when it comes back.
+   */
+  useEffect(() => {
+    if (compact && config.carrierEnabled) {
+      onChange({ ...config, carrierEnabled: false });
+    }
+  }, [compact, config, onChange]);
+
+  const ALL_ROWS = [...GEOMETRY_ROWS, ...CARRIER_ROWS, ...RIPPLE_ROWS, ...OPTICS_ROWS];
+  const compactRows = COMPACT_ROW_IDS.map(
+    (id) => ALL_ROWS.find((r) => r.id === id) as Row
+  );
 
   const renderRows = (rows: Row[], disabled = false) =>
     rows.map((row) => (
@@ -353,19 +395,21 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
 
   return (
     <>
-      <div className="vector-preset-grid">
-        {PRESETS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="btn btn-sm vector-preset-chip"
-            title={p.hint}
-            onClick={() => onChange({ ...config, ...p.patch })}
-          >
-            {p.name}
-          </button>
-        ))}
-      </div>
+      {!compact && (
+        <div className="vector-preset-grid">
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="btn btn-sm vector-preset-chip"
+              title={p.hint}
+              onClick={() => onChange({ ...config, ...p.patch })}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="control-row">
         <span className="control-label" title="Which way the beams sweep.">
@@ -395,7 +439,7 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
         </div>
       </div>
 
-      {renderRows(GEOMETRY_ROWS)}
+      {renderRows(compact ? compactRows : GEOMETRY_ROWS)}
 
       <div className="control-row" style={{ alignItems: 'center' }}>
         <span
@@ -414,30 +458,38 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
         </button>
       </div>
 
+      {/*
+        * The three tuning decks are advanced-only. Compact keeps a single flat
+        * list instead of subheadings, because with one or two rows under each a
+        * heading costs more vertical space than the control it introduces.
+        */}
+      {!compact && (
+        <>
+          <div className="tonal-subheading">
+            <span>Carrier Modulation</span>
+            <button
+              type="button"
+              className={`btn btn-sm ${config.carrierEnabled ? 'btn-primary' : ''}`}
+              onClick={() => set('carrierEnabled', !config.carrierEnabled)}
+              title="Break the beam into pulses where the image is dark"
+              style={{ minWidth: '46px', height: '18px', fontSize: '9.5px', fontWeight: 700 }}
+            >
+              {config.carrierEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          {renderRows(CARRIER_ROWS, !config.carrierEnabled)}
 
-      <div className="tonal-subheading">
-        <span>Carrier Modulation</span>
-        <button
-          type="button"
-          className={`btn btn-sm ${config.carrierEnabled ? 'btn-primary' : ''}`}
-          onClick={() => set('carrierEnabled', !config.carrierEnabled)}
-          title="Break the beam into pulses where the image is dark"
-          style={{ minWidth: '46px', height: '18px', fontSize: '9.5px', fontWeight: 700 }}
-        >
-          {config.carrierEnabled ? 'ON' : 'OFF'}
-        </button>
-      </div>
-      {renderRows(CARRIER_ROWS, !config.carrierEnabled)}
+          <div className="tonal-subheading">
+            <span>Analog Ripple</span>
+          </div>
+          {renderRows(RIPPLE_ROWS)}
 
-      <div className="tonal-subheading">
-        <span>Analog Ripple</span>
-      </div>
-      {renderRows(RIPPLE_ROWS)}
-
-      <div className="tonal-subheading">
-        <span>Beam Optics</span>
-      </div>
-      {renderRows(OPTICS_ROWS)}
+          <div className="tonal-subheading">
+            <span>Beam Optics</span>
+          </div>
+          {renderRows(OPTICS_ROWS)}
+        </>
+      )}
     </>
   );
 };

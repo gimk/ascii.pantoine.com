@@ -1,7 +1,7 @@
 # Vector Modulation Pipeline
 
 **Status: built.** Phases 1–4 below are implemented; §6 records what landed and
-§8 what is deliberately left. The design argument in §1–§4 is why it is shaped
+§8 how colour resolves and what is deliberately left. The design argument in §1–§4 is why it is shaped
 this way.
 
 How the deflection look of
@@ -527,12 +527,37 @@ Until then the Phase slider scrubs by hand, everywhere.
 
 ---
 
-## 8. Open question
+## 8. Colour, and the one mode that has no vector meaning
 
-**Whether `content` colour is worth building.** It currently resolves to the
-mono tint. Averaging source RGB along a run means the tracer would need the RGBA
-buffer, not just `lumBuffer`, which is the one thing that would make this design
-reach back above the fork; every other colour mode reads luminance alone, so
+Colour is **not** decorative in vector mode, and the deck is not reducible to a
+single tint. Three of the four modes drive the beam from the image:
+
+| mode | what a beam gets |
+|---|---|
+| N-TONE | the ramp stop its **mean luminance** falls in |
+| PALETTES | the palette entry nearest that mean, tone-matched |
+| MONO | the phosphor tint |
+| RGB | *nothing it can honour* — see below |
+
+That is the point of `VectorColorResolver` taking `(lineIndex, meanLum)` rather
+than an index: a run crossing a highlight reads as a highlight, so a duotone or a
+palette shades the relief instead of striping it. `meanLum` is accumulated per
+run, not per line, so a beam broken by the carrier colours each surviving
+fragment from what *that fragment* crossed.
+
+**RGB is the exception, and the tab is now hidden in vector mode.** Resolving it
+would mean averaging source RGB along a run, so the tracer would need the RGBA
+buffer and not just `lumBuffer` — the one thing that would make this design reach
+back above the fork. Every other mode reads luminance alone, which is why
 `traceVectorField` takes a `Float32Array` and nothing else and the seam stays
-clean. A deflection beam in true source colour is also a muddy look, and the
-studio does not offer it. Left as-is until someone asks.
+clean. `rasterEngine` resolves RGB to the mono tint, so leaving the tab up
+offered a mode that silently did something else; `isRgbDisabled` now covers
+vector the way it already covered synth. A deflection beam in true source colour
+is a muddy look besides, and the studio does not offer it.
+
+Palette **hue matching** is hidden for the same reason and states it in the hint:
+hue matching needs per-cell RGB to compare against, and a beam has no cells, so
+the vector branch tone matches unconditionally.
+
+Quantize depth was already hidden behind `isVectorMode` — there is no quantizer
+below the fork for it to set.

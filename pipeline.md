@@ -163,11 +163,25 @@ record of what the source looked like, and §2.4 depends on it.
 
 ### Step 2 — Spatial filters
 
-Order is fixed: **blur/denoise → sharpen → edges**.
+Order is fixed: **denoise → blur → sharpen → edges**.
 
-- **Blur + denoise** are summed into one radius (`radius = round(total / 2)`, capped
-  at 10) and run through a separable box blur. The blur is alpha-aware: it averages
-  only over cells with `val >= 0`, so a silhouette does not bleed into transparency.
+- **Denoise** is a self-guided filter, not a blur. It fits `out = a·I + b` over a
+  local window with `a = var / (var + eps)`, so a flat window (`var ≪ eps`) collapses
+  to its mean while a window holding real structure (`var ≫ eps`) passes through
+  untouched; `a` and `b` are themselves blurred before being applied, which is what
+  keeps the boundary between those regimes from showing as a seam.
+
+  `eps = (0.015 · strength)²` reads as a contrast threshold — 4 treats anything under
+  ~6% local contrast as grain — and radius runs 2..5 cells across the normal range.
+  Four box blurs whatever the radius, where a bilateral would be quadratic in it.
+
+  These two used to be summed into one radius and run through the same box kernel,
+  which made denoise a second blur slider. Measured on a step wedge under 20% grain,
+  matched on grain removed: at 51% of the grain gone the guided filter keeps 82% of
+  the edge contrast against the box blur’s 58%, and at 79% gone, 53% against 20%.
+- **Blur** is the separable box average, applied after denoise, and is meant to take
+  edges with it. It is alpha-aware: it averages only over cells with `val >= 0`, so a
+  silhouette does not bleed into transparency.
 - **Sharpen** is unsharp masking against a second box blur:
   `orig + strength · edgeFade · (orig - blurred)`. Two guards matter:
   - cells on the outermost perimeter, or adjacent to a transparent cell, are skipped
