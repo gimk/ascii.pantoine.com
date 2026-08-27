@@ -2011,23 +2011,40 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           two different pictures, not one z-order swap — see the config type.
         */}
         {hasOverlay && contentBounds && !showMediaPlaceholder && (
-          <canvas
-            ref={overlayCanvasRef}
-            className="viewport-source-overlay"
-            aria-hidden="true"
+          <div
+            className="viewport-source-overlay-wrap"
             style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
               transform: `translate3d(${view.tx}px, ${view.ty}px, 0)`,
               width: `${contentBounds.w}px`,
               height: `${contentBounds.h}px`,
+              overflow: 'hidden',
+              pointerEvents: 'none',
               zIndex: overlayUnder ? 1 : 3,
               opacity: post.sourceOverlay.opacity / 100,
               mixBlendMode: overlayUnder ? 'normal' : post.sourceOverlay.blend,
-              filter:
-                post.sourceOverlay.blur && post.sourceOverlay.blur > 0
-                  ? `blur(${post.sourceOverlay.blur}px)`
-                  : undefined,
             }}
-          />
+          >
+            <canvas
+              ref={overlayCanvasRef}
+              className="viewport-source-overlay"
+              aria-hidden="true"
+              style={{
+                display: 'block',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: `${contentBounds.w}px`,
+                height: `${contentBounds.h}px`,
+                filter:
+                  post.sourceOverlay.blur && post.sourceOverlay.blur > 0
+                    ? `blur(${post.sourceOverlay.blur}px)`
+                    : undefined,
+              }}
+            />
+          </div>
         )}
 
         {/*

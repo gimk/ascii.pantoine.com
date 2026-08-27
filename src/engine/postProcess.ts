@@ -438,6 +438,9 @@ export function composePostProcess(options: ComposeOptions): void {
   );
 
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, width, height);
+  ctx.clip();
   ground(ctx);
 
   for (const stage of under) {
