@@ -233,8 +233,7 @@ export function traceVectorField(
   rows: number,
   config: VectorConfig,
   resolveColor: VectorColorResolver,
-  bgColor: string,
-  glowColor: string
+  bgColor: string
 ): VectorFrame {
   const polylines: VectorPolyline[] = [];
   const frame: VectorFrame = {
@@ -242,8 +241,6 @@ export function traceVectorField(
     height: rows,
     polylines,
     bgColor,
-    glow: Math.max(0, config.glow),
-    glowColor,
     additive: config.chroma > 0,
   };
 
@@ -562,9 +559,12 @@ function closeToEdge(ctx: CanvasRenderingContext2D, pts: Float32Array, edge: Fil
  * would be a different render, which is worse than a slow one.
  *
  * Lengths shrink with the grid; frequencies are radians *per cell* and so grow.
- * Everything else (line count, bias, PWM, threshold, phase, glow) is either
- * dimensionless or applied after the geometry is scaled back up, and must not
- * move. Pairs with `scaleVectorFrame`, which undoes the geometric half.
+ * Everything else (line count, bias, PWM, threshold, phase) is dimensionless
+ * and must not move. Pairs with `scaleVectorFrame`, which undoes the geometric
+ * half.
+ *
+ * Post-processing needs no entry here at all: it runs on the composed canvas
+ * in output pixels, long after the geometry has been scaled back up.
  */
 export function previewVectorConfig(config: VectorConfig, divisor: number): VectorConfig {
   if (divisor <= 1) return config;
@@ -631,27 +631,24 @@ export function scaleVectorFrame(frame: VectorFrame, width: number, height: numb
  * scale. Pass the context scale to hold lines at a constant on-screen weight
  * instead.
  *
- * `glowScale` multiplies the shadow radius, because canvas measures
- * `shadowBlur` in device pixels and ignores the transform. Without it the halo
- * would stay a fixed size while the beam under it grew.
+ * **No glow here.** The phosphor halo was a `shadowBlur` held across the stroke
+ * loop, which has the browser rasterize a blurred copy of *every* polyline —
+ * hundreds of them once the carrier breaks a beam into pulses, and the single
+ * most expensive thing in a lit vector frame. It is now one blur of the
+ * finished layer in `engine/postProcess`, shared with ASCII and pixel, and it
+ * finally reaches SVG.
  */
 export function paintVectorFrame(
   ctx: CanvasRenderingContext2D,
   frame: VectorFrame,
-  options: { strokeScale?: number; glowScale?: number } = {}
+  options: { strokeScale?: number } = {}
 ): void {
   const strokeScale = options.strokeScale && options.strokeScale > 0 ? options.strokeScale : 1;
-  const glowScale = options.glowScale && options.glowScale > 0 ? options.glowScale : 1;
   const edge = LEGACY_FILL_EDGE(frame);
 
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-
-  if (frame.glow > 0) {
-    ctx.shadowBlur = frame.glow * glowScale;
-    ctx.shadowColor = frame.glowColor;
-  }
 
   /*
    * Additive compositing is what makes the three aberration passes recombine
@@ -679,16 +676,13 @@ export function paintVectorFrame(
      */
     if (line.filled) {
       const savedOp = ctx.globalCompositeOperation;
-      const savedShadow = ctx.shadowBlur;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.shadowBlur = 0;
       ctx.beginPath();
       ctx.moveTo(pts[0], pts[1]);
       for (let p = 2; p < pts.length; p += 2) ctx.lineTo(pts[p], pts[p + 1]);
       closeToEdge(ctx, pts, edge);
       ctx.fillStyle = frame.bgColor;
       ctx.fill();
-      ctx.shadowBlur = savedShadow;
       ctx.globalCompositeOperation = savedOp;
     }
 
@@ -718,7 +712,18 @@ export function paintVectorFrame(
  */
 export function vectorFrameToSvg(
   frame: VectorFrame,
-  options: { scale?: number; background?: string | null; groupId?: string } = {}
+  options: {
+    scale?: number;
+    background?: string | null;
+    groupId?: string;
+    /**
+     * Optics as SVG filter primitives, from `postProcessSvgFilter`. Passed in
+     * rather than derived here so the geometry serializer stays unaware of the
+     * composite stage — and so a caller that wants raw plotter paths can
+     * simply not ask for it.
+     */
+    filter?: { id: string; markup: string } | null;
+  } = {}
 ): string {
   const scale = options.scale && options.scale > 0 ? options.scale : 1;
   const edge = LEGACY_FILL_EDGE(frame);
@@ -727,18 +732,33 @@ export function vectorFrameToSvg(
 
   const parts: string[] = [];
   const isGroup = Boolean(options.groupId);
+  const filter = options.filter || null;
 
   if (!isGroup) {
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>`);
     parts.push(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
     );
+    if (filter) parts.push(`<defs>\n${filter.markup}\n</defs>`);
     const bg = options.background === undefined ? frame.bgColor : options.background;
     if (bg) parts.push(`<rect width="${w}" height="${h}" fill="${bg}"/>`);
   } else {
+    if (filter) parts.push(`<defs>\n${filter.markup}\n</defs>`);
     parts.push(`<g id="${options.groupId}">`);
   }
 
+  /*
+   * The filter goes on a wrapper with no transform of its own, not on the
+   * scaled stroke group.
+   *
+   * Two reasons, both load-bearing. The ground rect has to stay outside it, or
+   * the bloom blurs the background plate along with the beam and the frame
+   * comes out with soft edges. And a filter on the *scaled* group would have
+   * its `stdDeviation` interpreted in that group's pre-scale user space, so a
+   * 6px halo would come out 6·scale wide — the same class of mistake the
+   * canvas painter needed `glowScale` for.
+   */
+  if (filter) parts.push(`<g filter="url(#${filter.id})">`);
   parts.push(
     `<g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="scale(${scale} ${scale})">`
   );
@@ -784,6 +804,7 @@ export function vectorFrameToSvg(
   }
 
   parts.push(`</g>`);
+  if (filter) parts.push(`</g>`);
   parts.push(isGroup ? `</g>` : `</svg>`);
   return parts.join('\n');
 }

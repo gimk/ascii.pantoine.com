@@ -28,6 +28,17 @@ export interface ModelRenderContext {
   vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
+  /**
+   * Ask for a second, higher-resolution render of the shaded model, kept as a
+   * canvas for the post-processing source overlay. Omit it and nothing extra
+   * is drawn — this is the whole cost gate on the feature.
+   */
+  sourceCapture?: {
+    /** Output pixels per grid cell; the raster's display box, not the grid. */
+    cellWidth: number;
+    cellHeight: number;
+    maxDim?: number;
+  };
 }
 
 
@@ -237,6 +248,8 @@ let modelRgbaBuffer = new Uint8ClampedArray(0);
 // Offscreen Three.js WebGL rendering context singleton
 class HeadlessModelRenderer {
   private canvas: HTMLCanvasElement | null = null;
+  /** Shaded model at overlay resolution; null unless a source capture was asked for. */
+  private sourceCanvas: HTMLCanvasElement | null = null;
   private renderer: THREE.WebGLRenderer | null = null;
   private scene: THREE.Scene;
   private perspCamera: THREE.PerspectiveCamera;
@@ -335,6 +348,69 @@ class HeadlessModelRenderer {
     } catch (e) {
       console.warn('WebGL init error in HeadlessModelRenderer:', e);
     }
+  }
+
+  /**
+   * Re-render the shaded model at the overlay's resolution and keep it as a
+   * 2D canvas.
+   *
+   * `drawImage` off the WebGL canvas rather than `readPixels`: the drawing
+   * buffer is preserved anyway, the copy stays on the GPU, and it arrives the
+   * right way up — `readPixels` is bottom-up, which is why the pipeline path
+   * below has to flip row by row.
+   */
+  private captureSource(
+    capture: NonNullable<ModelRenderContext['sourceCapture']>,
+    cols: number,
+    rows: number,
+    camera: THREE.Camera
+  ): void {
+    if (!this.renderer || !this.canvas || typeof document === 'undefined') {
+      this.sourceCanvas = null;
+      return;
+    }
+
+    let ppcX = capture.cellWidth;
+    let ppcY = capture.cellHeight;
+    const maxDim = capture.maxDim ?? 8192;
+    const longEdge = Math.max(cols * ppcX, rows * ppcY);
+    if (longEdge > maxDim) {
+      const k = maxDim / longEdge;
+      ppcX *= k;
+      ppcY *= k;
+    }
+
+    const w = Math.max(1, Math.round(cols * ppcX));
+    const h = Math.max(1, Math.round(rows * ppcY));
+
+    try {
+      this.renderer.setSize(w, h, false);
+      this.renderer.render(this.scene, camera);
+
+      let out = this.sourceCanvas;
+      if (!out) {
+        out = document.createElement('canvas');
+        this.sourceCanvas = out;
+      }
+      if (out.width !== w || out.height !== h) {
+        out.width = w;
+        out.height = h;
+      }
+      const octx = out.getContext('2d');
+      if (!octx) {
+        this.sourceCanvas = null;
+        return;
+      }
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      octx.clearRect(0, 0, w, h);
+      octx.drawImage(this.canvas, 0, 0, w, h);
+    } catch {
+      this.sourceCanvas = null;
+    }
+  }
+
+  public getSourceCanvas(): HTMLCanvasElement | null {
+    return this.sourceCanvas;
   }
 
   public renderData(ctx: ModelRenderContext): ProcessedRasterResult {
@@ -501,6 +577,26 @@ class HeadlessModelRenderer {
 
     targetObj.rotation.set(rotX, rotY, rotZ);
 
+    /*
+     * Source capture for the post-processing overlay, before the pipeline
+     * render rather than after it.
+     *
+     * A second pass rather than one supersampled pass downsampled to the grid:
+     * the pipeline is entitled to the exact point-sampled `cols x rows` frame
+     * it has always been handed, and area-averaging on the way in would change
+     * every dither in the app as a side effect of a compositing feature.
+     *
+     * Gated on the overlay actually being on. It is a real second GPU render
+     * per frame, which a still model never notices and an auto-rotating one
+     * does; `quality: 1` brings it back to grid resolution.
+     */
+    if (ctx.sourceCapture) {
+      this.captureSource(ctx.sourceCapture, cols, rows, activeCamera);
+      this.renderer.setSize(cols, rows, false);
+    } else {
+      this.sourceCanvas = null;
+    }
+
     // Render WebGL Scene
     this.renderer.render(this.scene, activeCamera);
 
@@ -573,6 +669,18 @@ const globalHeadlessRenderer = new HeadlessModelRenderer();
 
 export function renderModelFrameData(ctx: ModelRenderContext): ProcessedRasterResult {
   return globalHeadlessRenderer.renderData(ctx);
+}
+
+/**
+ * The shaded model at overlay resolution, from the most recent
+ * `renderModelFrameData` that asked for a `sourceCapture`. Null otherwise.
+ *
+ * Returned out-of-band rather than on `ProcessedRasterResult`, which is the
+ * raster pipeline's contract and shared by all three sources — a canvas only
+ * one of them can produce does not belong on it.
+ */
+export function getModelSourceCanvas(): HTMLCanvasElement | null {
+  return globalHeadlessRenderer.getSourceCanvas();
 }
 
 

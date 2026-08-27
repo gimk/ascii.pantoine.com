@@ -129,7 +129,18 @@ export async function exportColorSeparation(
     layeredSvg = false,
   } = opts;
 
-  const frame = renderExportFrame(opts);
+  /*
+   * Post-processing is stripped, deliberately, and this is the one export that
+   * does so.
+   *
+   * A separation's plates must partition the opaque cells exactly (invariant
+   * 9) — that is the only property that makes them reassemble into the image
+   * on a press. A source overlay is a continuous photograph belonging to no
+   * ink; a bloom and an aberration both spread colour across plate boundaries.
+   * Any of the three turns a set of plates into three pictures that happen to
+   * be in the same folder.
+   */
+  const frame = renderExportFrame({ ...opts, postProcess: undefined });
   const isPixel = frame.rasterMode === 'pixel';
   const analysis = analyzeSeparation(frame, cols, rows);
 

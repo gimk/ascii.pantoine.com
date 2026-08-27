@@ -22,11 +22,27 @@ interface VectorControlsProps {
   onChange: (config: VectorConfig) => void;
   /** Cut down to the handful of controls the basic panel shows. */
   compact?: boolean;
+  /**
+   * Applied alongside `onChange` when a preset carries a halo. Optional so a
+   * caller that has no post-processing store (there is none today, but BASIC
+   * once did) simply gets the beam half of the preset.
+   */
+  onChangePresetGlow?: (glow: { amount: number; radius: number }) => void;
 }
 
-type NumericKey = {
-  [K in keyof VectorConfig]: VectorConfig[K] extends number ? K : never;
-}[keyof VectorConfig];
+/*
+ * `Extract<…, string>` is doing real work, not tidying: a mapped type keeps the
+ * `?` modifier, so an *optional* numeric field contributes `undefined` here
+ * rather than its key. That drops the deprecated `glow`, which is exactly
+ * right — it has no row any more — and it will drop the next deprecation the
+ * same way instead of handing it a slider that writes to dead state.
+ */
+type NumericKey = Extract<
+  {
+    [K in keyof VectorConfig]: VectorConfig[K] extends number ? K : never;
+  }[keyof VectorConfig],
+  string
+>;
 
 interface Row {
   id: NumericKey;
@@ -194,19 +210,12 @@ const OPTICS_ROWS: Row[] = [
     step: 0.1,
   },
   {
-    id: 'glow',
-    label: 'Phosphor Glow',
-    hint: 'Halo radius around the beam.',
-    min: 0,
-    max: 25,
-    hardMin: 0,
-    hardMax: 200,
-    step: 1,
-  },
-  {
     id: 'chroma',
-    label: 'Aberration',
-    hint: 'Splits the beam into offset R/G/B passes that recombine where they overlap.',
+    label: 'Beam Aberration',
+    hint:
+      'Splits the beam into offset R/G/B passes that recombine where they overlap. ' +
+      'Real geometry, so it survives into an SVG export — unlike the frame-level ' +
+      'aberration in POST-PROCESSING, which is all the cell modes can have.',
     min: 0,
     max: 8,
     hardMin: 0,
@@ -245,7 +254,20 @@ const COMPACT_ROW_IDS: NumericKey[] = [
  * ripple, which were pixel figures against its 800px buffer and are grid cells
  * here — the same numbers, because the vector grid is sized to match.
  */
-const PRESETS: { id: string; name: string; hint: string; patch: Partial<VectorConfig> }[] = [
+const PRESETS: {
+  id: string;
+  name: string;
+  hint: string;
+  patch: Partial<VectorConfig>;
+  /**
+   * Halo, which is no longer a beam parameter — it is one blur of the finished
+   * frame in `04 · POST-PROCESSING`, shared with ASCII and pixel. A preset
+   * therefore writes two stores, and omitting this means "no glow" rather than
+   * "leave whatever was there": a preset that left the previous look's bloom
+   * running would not be the preset.
+   */
+  glow?: { amount: number; radius: number };
+}[] = [
   {
     id: 'unknown-pleasures',
     name: 'UNKNOWN PLEASURES',
@@ -262,7 +284,6 @@ const PRESETS: { id: string; name: string; hint: string; patch: Partial<VectorCo
       carrierEnabled: false,
       rippleAmp: 0,
       strokeWidth: 1.4,
-      glow: 0,
       chroma: 0,
     },
   },
@@ -285,7 +306,6 @@ const PRESETS: { id: string; name: string; hint: string; patch: Partial<VectorCo
       pwm: 1.2,
       rippleAmp: 0,
       strokeWidth: 1.2,
-      glow: 0,
       chroma: 0,
     },
   },
@@ -306,9 +326,9 @@ const PRESETS: { id: string; name: string; hint: string; patch: Partial<VectorCo
       rippleAmp: 6,
       rippleFreq: 2.4,
       strokeWidth: 1.6,
-      glow: 10,
       chroma: 0,
     },
+    glow: { amount: 100, radius: 5 },
   },
   {
     id: 'contour',
@@ -326,7 +346,6 @@ const PRESETS: { id: string; name: string; hint: string; patch: Partial<VectorCo
       carrierEnabled: false,
       rippleAmp: 0,
       strokeWidth: 1.2,
-      glow: 0,
       chroma: 0,
     },
   },
@@ -347,9 +366,9 @@ const PRESETS: { id: string; name: string; hint: string; patch: Partial<VectorCo
       rippleAmp: 1.5,
       rippleFreq: 3.2,
       strokeWidth: 0.8,
-      glow: 6,
       chroma: 3,
     },
+    glow: { amount: 100, radius: 3 },
   },
 ];
 
@@ -357,6 +376,7 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
   config,
   onChange,
   compact = false,
+  onChangePresetGlow,
 }) => {
   const set = <K extends keyof VectorConfig>(key: K, value: VectorConfig[K]) => {
     onChange({ ...config, [key]: value });
@@ -397,7 +417,10 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
               type="button"
               className="btn btn-sm vector-preset-chip"
               title={p.hint}
-              onClick={() => onChange({ ...config, ...p.patch })}
+              onClick={() => {
+                onChange({ ...config, ...p.patch });
+                onChangePresetGlow?.(p.glow ?? { amount: 0, radius: 6 });
+              }}
             >
               {p.name}
             </button>
@@ -478,6 +501,16 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
           </div>
           {renderRows(RIPPLE_ROWS)}
 
+          {/*
+            Beam Width and Beam Aberration only. Phosphor Glow used to sit here
+            and is now one stage in 04 · POST-PROCESSING, blurring the finished
+            frame once instead of shadowing every stroke — which also gives it
+            to ASCII and pixel, and finally into SVG.
+
+            Aberration stays because it is not a filter: it offsets the *trace*
+            into three real channel passes that export as polylines. The
+            post-processing one shifts pixels, which is all a cell mode can do.
+          */}
           <div className="tonal-subheading">
             <span>Beam Optics</span>
           </div>

@@ -17,6 +17,7 @@ import {
   ToneMappingConfig,
   ImageAdjustConfig,
   VectorConfig,
+  PostProcessConfig,
   VectorFrame,
 } from '../types/ascii';
 import { renderSynthFrameData, MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from './renderer';
@@ -26,6 +27,8 @@ import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { drawPixelRasterToCanvas } from './pixelRasterRenderer';
 import { paintVectorFrame } from './vectorEngine';
+import { overlaySourceLayer, overlaySourcePpc } from './imageExporter';
+import { buildStages, composePostProcess, glowActive } from './postProcess';
 
 export interface VideoExportOptions {
   name: string;
@@ -59,6 +62,8 @@ export interface VideoExportOptions {
   vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
+  /** The composite stage. Invariant 4 applies here as much as to a still. */
+  postProcess?: PostProcessConfig;
 }
 
 export interface VideoExportResult {
@@ -175,7 +180,12 @@ export async function exportVideoAnimation(
   const showScanlines = !isPixel && !isVector && (crtConfig ? crtConfig.scanlines : true);
   const showCrtGlow = !isPixel && !isVector && (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
   const showVignette = !isPixel && !isVector && (crtConfig ? crtConfig.vignette : false);
-  const showPhosphorBloom = !isPixel && !isVector && (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
+  /* Stands down while the post-processing glow drives -- see imageExporter. */
+  const showPhosphorBloom =
+    !isPixel &&
+    !isVector &&
+    !glowActive(opts.postProcess) &&
+    (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
 
   if (typeof document !== 'undefined' && document.fonts) {
     try {
@@ -266,6 +276,13 @@ export async function exportVideoAnimation(
   // Step-by-step frame rendering driven by real clock intervals
   const timeSpeed = (params?.timeSpeed || 1.0);
 
+  /*
+   * Resolved once, outside the loop: it depends only on the export geometry,
+   * not on the frame. The *layer* is rebuilt every frame, because a video
+   * source and an orbiting model both move.
+   */
+  const sourcePpc = overlaySourcePpc(opts.postProcess, charWidth, charHeight);
+
   for (let i = 0; i < totalFrames; i++) {
     const t = i * (1 / fps) * timeSpeed;
 
@@ -287,6 +304,7 @@ export async function exportVideoAnimation(
         vectorConfig: opts.vectorConfig,
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
+        sourceCapture: sourcePpc,
       });
     } else if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
       frameResult = renderAsciiMediaFrameData({
@@ -329,118 +347,167 @@ export async function exportVideoAnimation(
     const isColored = Boolean(frameResult?.isColored && frameResult?.colors);
     const effectiveBg = isColored && frameResult ? frameResult.bgColor : bg;
 
+    const stages = buildStages(
+      opts.postProcess,
+      overlaySourceLayer({
+        postProcess: opts.postProcess,
+        appMode: opts.appMode,
+        rasterMode,
+        cols,
+        rows,
+        ppc: sourcePpc,
+        mediaElement: opts.mediaElement,
+        mediaConfig: opts.mediaConfig,
+        resampling: opts.mediaViewConfig?.resampling,
+        luminance: frameResult?.luminance ?? null,
+      })
+    );
+
     if (isVector) {
       /*
        * Re-strokes per frame at export scale. Phase is advanced by the caller
        * through vectorConfig, so the carrier and ripple drift across the
        * animation instead of every frame being identical.
        */
-      ctx.fillStyle = effectiveBg;
-      ctx.fillRect(0, 0, width, height);
-      if (frameResult?.vector) {
-        ctx.save();
-        ctx.scale(scale, scale);
-        paintVectorFrame(ctx, frameResult.vector, { glowScale: scale });
-        ctx.restore();
-      }
-    } else if (isPixel && frameResult?.luminance) {
-      drawPixelRasterToCanvas({
+      composePostProcess({
         ctx,
-        cols,
-        rows,
-        luminance: frameResult.luminance,
-        colors: frameResult.colors,
+        width,
+        height,
+        stages,
+        scale,
         bgColor: effectiveBg,
-        fgColor: text,
-        cellWidth: charWidth,
-        cellHeight: charHeight,
-        dpr: 1,
+        paintRaster: (target) => {
+          if (!frameResult?.vector) return;
+          target.save();
+          target.scale(scale, scale);
+          paintVectorFrame(target, frameResult.vector);
+          target.restore();
+        },
+      });
+    } else if (isPixel && frameResult?.luminance) {
+      const lum = frameResult.luminance;
+      const cellColors = frameResult.colors;
+      composePostProcess({
+        ctx,
+        width,
+        height,
+        stages,
+        scale,
+        /* Ground out of the cell painter, or an `under` overlay is hidden. */
+        bgColor: effectiveBg,
+        paintRaster: (target) => {
+          drawPixelRasterToCanvas({
+            ctx: target,
+            cols,
+            rows,
+            luminance: lum,
+            colors: cellColors,
+            bgColor: 'transparent',
+            fgColor: text,
+            cellWidth: charWidth,
+            cellHeight: charHeight,
+            dpr: 1,
+          });
+        },
       });
     } else {
-      // 1. Clear & Background
-      ctx.fillStyle = effectiveBg;
-      ctx.fillRect(0, 0, width, height);
+      // The CRT decorations are ground; only the glyphs are the raster layer.
+      const paintBase = (target: CanvasRenderingContext2D) => {
+        target.fillStyle = effectiveBg;
+        target.fillRect(0, 0, width, height);
 
-      // Optional CRT Centered Ambient Background Glow
-      if (showCrtGlow && !isColored) {
-        const ambientGlow = ctx.createRadialGradient(
-          width / 2, height / 2, 0,
-          width / 2, height / 2, Math.max(width, height) * 0.7
-        );
-        const baseGlowHex = gradientConfig ? gradientConfig.color1 : (customThemeColor || text);
-        let glowColor = baseGlowHex;
-        if (baseGlowHex.startsWith('#')) {
-          const hex = baseGlowHex.slice(1);
-          const fullHex = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
-          if (fullHex.length === 6) {
-            const r = parseInt(fullHex.slice(0, 2), 16);
-            const g = parseInt(fullHex.slice(2, 4), 16);
-            const b = parseInt(fullHex.slice(4, 6), 16);
-            glowColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
+        // Optional CRT Centered Ambient Background Glow
+        if (showCrtGlow && !isColored) {
+          const ambientGlow = target.createRadialGradient(
+            width / 2, height / 2, 0,
+            width / 2, height / 2, Math.max(width, height) * 0.7
+          );
+          const baseGlowHex = gradientConfig ? gradientConfig.color1 : (customThemeColor || text);
+          let glowColor = baseGlowHex;
+          if (baseGlowHex.startsWith('#')) {
+            const hex = baseGlowHex.slice(1);
+            const fullHex = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+            if (fullHex.length === 6) {
+              const r = parseInt(fullHex.slice(0, 2), 16);
+              const g = parseInt(fullHex.slice(2, 4), 16);
+              const b = parseInt(fullHex.slice(4, 6), 16);
+              glowColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
+            }
+          }
+          ambientGlow.addColorStop(0, glowColor);
+          ambientGlow.addColorStop(1, 'transparent');
+          target.fillStyle = ambientGlow;
+          target.fillRect(0, 0, width, height);
+        }
+
+        // CRT Scanlines on background
+        if (showScanlines) {
+          target.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          const step = Math.max(2, Math.round(3 * scale));
+          for (let y = 0; y < height; y += step) {
+            target.fillRect(0, y, width, 1);
           }
         }
-        ambientGlow.addColorStop(0, glowColor);
-        ambientGlow.addColorStop(1, 'transparent');
-        ctx.fillStyle = ambientGlow;
-        ctx.fillRect(0, 0, width, height);
-      }
+      };
 
-      // CRT Scanlines on background
-      if (showScanlines) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-        const step = Math.max(2, Math.round(3 * scale));
-        for (let y = 0; y < height; y += step) {
-          ctx.fillRect(0, y, width, 1);
+      const paintGlyphs = (target: CanvasRenderingContext2D) => {
+        target.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', monospace`;
+        target.textBaseline = 'top';
+        target.textAlign = 'left';
+
+        if (!isColored && showPhosphorBloom && gradientConfig) {
+          // Direct directional gradient bloom matching character gradient
+          target.save();
+          target.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
+          target.fillStyle = textFillStyle;
+          for (let row = 0; row < lines.length && row < rows; row++) {
+            const line = lines[row];
+            if (line) target.fillText(line, 0, Math.round(row * charHeight));
+          }
+          target.restore();
+        } else if (!isColored && showPhosphorBloom) {
+          target.shadowColor = text;
+          target.shadowBlur = Math.round(4 * scale);
+        } else {
+          target.shadowBlur = 0;
         }
-      }
 
-      // 2. Draw ASCII Text Lines (with Phosphor Bloom if enabled)
-      ctx.font = `${Math.round(10 * scale)}px 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', monospace`;
-      ctx.textBaseline = 'top';
-      ctx.textAlign = 'left';
-
-      if (!isColored && showPhosphorBloom && gradientConfig) {
-        // Direct directional gradient bloom matching character gradient
-        ctx.save();
-        ctx.filter = `blur(${Math.max(2, Math.round(3.5 * scale))}px)`;
-        ctx.fillStyle = textFillStyle;
-        for (let row = 0; row < lines.length && row < rows; row++) {
-          const line = lines[row];
-          if (line) ctx.fillText(line, 0, Math.round(row * charHeight));
-        }
-        ctx.restore();
-      } else if (!isColored && showPhosphorBloom) {
-        ctx.shadowColor = text;
-        ctx.shadowBlur = Math.round(4 * scale);
-      } else {
-        ctx.shadowBlur = 0;
-      }
-
-      // Main sharp text render
-      if (isColored && frameResult?.colors) {
-        const colors = frameResult.colors;
-        for (let row = 0; row < rows; row++) {
-          const line = lines[row] || '';
-          for (let col = 0; col < cols && col < line.length; col++) {
-            const ch = line[col];
-            if (ch && ch !== ' ') {
-              const cIdx = (row * cols + col) * 3;
-              ctx.fillStyle = `rgb(${colors[cIdx]}, ${colors[cIdx + 1]}, ${colors[cIdx + 2]})`;
-              ctx.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+        // Main sharp text render
+        if (isColored && frameResult?.colors) {
+          const colors = frameResult.colors;
+          for (let row = 0; row < rows; row++) {
+            const line = lines[row] || '';
+            for (let col = 0; col < cols && col < line.length; col++) {
+              const ch = line[col];
+              if (ch && ch !== ' ') {
+                const cIdx = (row * cols + col) * 3;
+                target.fillStyle = `rgb(${colors[cIdx]}, ${colors[cIdx + 1]}, ${colors[cIdx + 2]})`;
+                target.fillText(ch, Math.round(col * charWidth), Math.round(row * charHeight));
+              }
+            }
+          }
+        } else {
+          target.fillStyle = textFillStyle;
+          for (let row = 0; row < lines.length && row < rows; row++) {
+            const line = lines[row];
+            if (line) {
+              target.fillText(line, 0, Math.round(row * charHeight));
             }
           }
         }
-      } else {
-        ctx.fillStyle = textFillStyle;
-        for (let row = 0; row < lines.length && row < rows; row++) {
-          const line = lines[row];
-          if (line) {
-            ctx.fillText(line, 0, Math.round(row * charHeight));
-          }
-        }
-      }
 
-      ctx.shadowBlur = 0;
+        target.shadowBlur = 0;
+      };
+
+      composePostProcess({
+        ctx,
+        width,
+        height,
+        stages,
+        scale,
+        paintBase,
+        paintRaster: paintGlyphs,
+      });
     }
 
     // 4. Optional CRT Corner Vignette

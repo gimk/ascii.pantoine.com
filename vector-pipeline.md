@@ -136,8 +136,7 @@ export interface VectorFrame {
   height: number;  // = rows
   polylines: VectorPolyline[];
   bgColor: string;
-  glow: number;
-  glowColor: string;
+  /* No glow: the halo is one post-processing stage now. See §4.4. */
   /** Where an occlusion polygon closes to. Direction-dependent. */
   fillEdge?: { axis: 'x' | 'y'; value: number };
   /** Composite additively — set when aberration split the beam into channels. */
@@ -166,8 +165,9 @@ export interface VectorConfig {
   rippleFreq: number;       // 0.1–5.0
   phase: number;            // animation input, radians
   strokeWidth: number;      // 0.5–4.0
-  glow: number;             // 0–25, canvas shadowBlur
-  chroma: number;           // 0–8, aberration offset
+  chroma: number;           // 0–8, aberration offset — geometry, not a filter
+  /** @deprecated read-on-load only; migrated into PostProcessConfig.glow. */
+  glow?: number;
 }
 ```
 
@@ -395,10 +395,16 @@ scale instead of magnifying a bitmap — a line stays one device pixel wide at 8
 zoom. Do not add a bitmap cache here; it would throw away the only thing vector
 output is for.
 
-Glow is `ctx.shadowBlur` / `shadowColor` on the stroke, and chroma is the
-studio's three-pass offset with `globalCompositeOperation = 'lighter'` on passes
-1 and 2. CSS CRT effects do not apply, the same as pixel mode — the canvas glow
-replaces them.
+Chroma is the studio's three-pass offset with
+`globalCompositeOperation = 'lighter'` on passes 1 and 2. CSS CRT effects do not
+apply, the same as pixel mode.
+
+**Glow is no longer painted here.** It was `ctx.shadowBlur` / `shadowColor` held
+across the stroke loop, which meant the browser rasterized a blurred copy of
+*every* polyline — hundreds of them once the carrier breaks a beam into pulses,
+and the single most expensive thing in a lit frame. It is now one blur of the
+finished layer in [`postProcess.ts`](src/engine/postProcess.ts), shared with the
+cell modes, and `paintVectorFrame` takes no `glowScale`. See §4.4.
 
 ### 4.2 Still export ([`imageExporter.ts`](src/engine/imageExporter.ts))
 
@@ -424,7 +430,44 @@ Because phase is an input (§3.3), the studio's animate button becomes a real
 export — the ripple and carrier drift are recorded rather than being a preview
 toy.
 
-### 4.4 Colour separation — refuse, for now
+### 4.4 Optics — where the halo actually lives
+
+Glow and aberration used to be two beam parameters. They are now split by what
+they *are*, not by which mode they came from.
+
+**Glow left entirely.** It is `PostProcessConfig.glow`, one blur of the composed
+frame in [`postProcess.ts`](src/engine/postProcess.ts), and the reasons stack up
+in one direction:
+
+- **Cost.** Per-stroke `shadowBlur` is O(polylines) blurred rasterizations. One
+  layer blur is O(1), and it does not care whether the carrier broke the beam
+  into three lines or three hundred.
+- **Reach.** ASCII and pixel now have a glow at all, in the viewport *and* in
+  exports. They never did — `showPhosphorBloom` only ever touched the ASCII
+  text path and was hard-bypassed in the other two.
+- **SVG.** `vectorFrameToSvg` emitted nothing for `shadowBlur`, so the halo was
+  silently absent from every SVG export while being visible in the viewport and
+  in a PNG of the same frame. It is now an `feGaussianBlur` in a `<defs>`
+  filter, on a wrapper group with no transform — put it on the *scaled* group
+  and `stdDeviation` lands in pre-scale user space, the same trap `glowScale`
+  existed for on canvas.
+
+Compositing order is glow **under** the sharp layer, which is what preserves
+occlusion of the halo: the opaque ground polygons in the sharp layer cover the
+bloom of the ridge behind them, exactly as the old draw order did by accident.
+
+**Chroma stayed.** It is not a filter — it offsets the *trace* into three real
+channel-split passes that recombine additively and export as SVG polylines.
+`PostProcessConfig.aberration` shifts rasterized pixels instead, which is the
+only thing a cell mode can do and strictly worse here. Both are live and they
+stack; the UI labels which is which.
+
+`VectorConfig.glow` survives as an optional deprecated field, read once by
+`migratePostProcess` and never written. `shadowBlur = b` spreads like a Gaussian
+of sigma `b/2`, so it is halved on the way across and an existing preset or
+shared link blooms the width it always did.
+
+### 4.5 Colour separation — refuse, for now
 
 `analyzeSeparation` and `maskLuminance` are cell-based, and the plates are
 defined as a partition of the opaque *cells*. Vector has none. Add a

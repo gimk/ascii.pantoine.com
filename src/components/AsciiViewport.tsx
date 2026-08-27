@@ -7,8 +7,16 @@ import {
   OptimizeConfig,
   RasterOutputMode,
   UiThemeSettings,
+  PostProcessConfig,
   VectorFrame,
 } from '../types/ascii';
+import {
+  buildStages,
+  composePostProcess,
+  glowActive,
+  overlayActive,
+  resolvePostProcess,
+} from '../engine/postProcess';
 
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
@@ -105,7 +113,14 @@ export interface AsciiViewportHandle {
     colors?: Uint8ClampedArray | null,
     bgColor?: string,
     rasterMode?: RasterOutputMode,
-    vector?: VectorFrame | null
+    vector?: VectorFrame | null,
+    /**
+     * The ungraded source for the post-processing overlay, belonging to this
+     * frame. Rides along here rather than as a prop because the mode renderers
+     * redraw one canvas in place every tick — a prop would either never look
+     * changed, or force a React render per frame to say that it had.
+     */
+    sourceLayer?: HTMLCanvasElement | null
   ) => void;
   getFrameText: () => string;
   autoFit: () => void;
@@ -172,6 +187,14 @@ interface AsciiViewportProps {
    * auto-fit. Same shape as getViewFraming returns.
    */
   initialView?: { scale: number; cx: number; cy: number } | null;
+  /**
+   * The composite stage. The viewport realises it in CSS rather than on canvas
+   * — it has to, because the monochrome ASCII path is a `<pre>` and no canvas
+   * operation can reach it — and `BlendMode` is deliberately the set of names
+   * `mix-blend-mode` and `globalCompositeOperation` share, so this agrees with
+   * an export without a translation table.
+   */
+  postProcess?: PostProcessConfig;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -211,6 +234,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onWheelZoom,
   showMediaPlaceholder = false,
   initialView = null,
+  postProcess,
 }, ref) => {
   const isTimelineDisabled = appMode === 'media' && mediaType === 'image';
   const containerRef = useRef<HTMLDivElement>(null);
@@ -220,6 +244,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   // 1:1 scratch buffer for pixel mode; blitted to the visible canvas so cells
   // land on exact device pixels instead of fractional fillRect edges.
   const pixelBufferCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const timeSpanRef = useRef<HTMLElement>(null);
   const fpsSpanRef = useRef<HTMLElement>(null);
@@ -233,6 +258,35 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const isDraggingRef = useRef<boolean>(false);
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  /*
+   * How the composite stage is split between CSS and canvas here, and why.
+   *
+   *  - The **overlay** is a DOM layer with `mix-blend-mode`. It has to be:
+   *    monochrome ASCII renders into a `<pre>`, and no canvas operation can
+   *    reach that. One implementation covers all three viewport paths.
+   *  - **Glow and aberration** run through the real `composePostProcess` chain
+   *    inside the canvas painters, so what is on screen is what a PNG will be.
+   *    The chain applies `paint` stages to the raster layer *before* anything
+   *    is composited with it, which is exactly what CSS does when the overlay
+   *    blends against an already-bloomed canvas — the two orders agree.
+   *  - The `<pre>` path approximates both in CSS. It already diverges from the
+   *    exporters that way for the CRT effects, and it is the one surface that
+   *    cannot do otherwise.
+   */
+  const post = resolvePostProcess(postProcess);
+  const hasOverlay = overlayActive(postProcess);
+  const overlayUnder = hasOverlay && post.sourceOverlay.placement === 'under';
+
+  /*
+   * The two canvas painters are `useCallback([])` — they are re-created never,
+   * so they read the composite config through refs rather than closing over a
+   * stale one. Same pattern the view transform already uses.
+   */
+  const postProcessRef = useRef<PostProcessConfig | undefined>(postProcess);
+  postProcessRef.current = postProcess;
+  const overlayUnderRef = useRef<boolean>(overlayUnder);
+  overlayUnderRef.current = overlayUnder;
 
   const [view, setView] = useState<ViewTransform>({ scale: 1.0, tx: 0, ty: 0 });
   const viewRef = useRef<ViewTransform>(view);
@@ -794,7 +848,18 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     culled: boolean;
     cols: number;
     rows: number;
+    /**
+     * Identity of the composite settings that produced the bitmap on the
+     * canvas. Part of the key because a pan short-circuits the repaint, and
+     * dragging a glow slider must not be mistaken for one.
+     */
+    post: string;
   } | null>(null);
+
+  /** Everything the canvas painters read out of the composite config. */
+  const postDrawKey = `${post.glow.amount}|${post.glow.radius}|${post.glow.tint}|${post.aberration.amount}|${post.aberration.angle}|${overlayUnder ? 'u' : '-'}`;
+  const postDrawKeyRef = useRef<string>(postDrawKey);
+  postDrawKeyRef.current = postDrawKey;
 
   /**
    * Paint a traced beam.
@@ -843,7 +908,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         prev.mode === 'vector' &&
         prev.culled === culled &&
         prev.cols === frame.width &&
-        prev.rows === frame.height;
+        prev.rows === frame.height &&
+        prev.post === postDrawKeyRef.current;
 
       if (sameContent && !culled) {
         const translate = `translate3d(${v.tx}px, ${v.ty}px, 0)`;
@@ -858,6 +924,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         culled,
         cols: frame.width,
         rows: frame.height,
+        post: postDrawKeyRef.current,
       };
 
       const viewW = container.clientWidth;
@@ -881,26 +948,57 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         canvas.height = backingH;
       }
 
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.imageSmoothingEnabled = true;
-      ctx.clearRect(0, 0, cssW, cssH);
+      ctx.clearRect(0, 0, backingW, backingH);
 
-      const ground = bgColor || frame.bgColor;
-      ctx.save();
-      ctx.translate(originX, originY);
-      ctx.scale(scale, scale);
-      if (ground && ground !== 'transparent') {
-        ctx.fillStyle = ground;
-        ctx.fillRect(0, 0, unscaledW, unscaledH);
-      }
       /*
-       * strokeScale stays 1, so a stroke grows with the zoom the way a vector
-       * document does and the viewport matches what an export at that scale
-       * produces. glowScale compensates for shadowBlur being measured in
-       * device pixels rather than user space, so the halo scales with it.
+       * With the source overlay sitting *under* the beam, the canvas must not
+       * paint its own ground: an opaque plate here covers the overlay
+       * completely. `.viewport-content-ground` is the ground in that case, and
+       * it already sits below both.
        */
-      paintVectorFrame(ctx, frame, { glowScale: scale * dpr });
-      ctx.restore();
+      const ground = overlayUnderRef.current ? null : bgColor || frame.bgColor;
+
+      /*
+       * Device pixels, not CSS pixels. The chain's scratch layers are sized
+       * from these, so passing CSS units would rasterize the bloom at 1x and
+       * then upscale it on a retina display.
+       */
+      composePostProcess({
+        ctx,
+        width: backingW,
+        height: backingH,
+        stages: buildStages(postProcessRef.current, null),
+        scale: scale * dpr,
+        /*
+         * The ground covers the raster's own box, not the whole backing store.
+         * At deep zoom the canvas is the viewport and the raster is a window
+         * inside it; flooding the lot would paint over the dot backdrop.
+         */
+        paintBase: ground && ground !== 'transparent'
+          ? (target) => {
+              target.setTransform(dpr, 0, 0, dpr, 0, 0);
+              target.translate(originX, originY);
+              target.scale(scale, scale);
+              target.fillStyle = ground;
+              target.fillRect(0, 0, unscaledW, unscaledH);
+              target.setTransform(1, 0, 0, 1, 0, 0);
+            }
+          : undefined,
+        paintRaster: (target) => {
+          target.setTransform(dpr, 0, 0, dpr, 0, 0);
+          target.translate(originX, originY);
+          target.scale(scale, scale);
+          /*
+           * strokeScale stays 1, so a stroke grows with the zoom the way a
+           * vector document does and the viewport matches what an export at
+           * that scale produces.
+           */
+          paintVectorFrame(target, frame);
+          target.setTransform(1, 0, 0, 1, 0, 0);
+        },
+      });
     },
     []
   );
@@ -973,7 +1071,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         prev.mode === rasterMode &&
         prev.culled === culled &&
         prev.cols === cols &&
-        prev.rows === rows;
+        prev.rows === rows &&
+        prev.post === postDrawKeyRef.current;
 
       // A pan in whole-raster mode just moves the bitmap that is already there.
       if (sameContent && !culled) {
@@ -989,6 +1088,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         culled,
         cols,
         rows,
+        post: postDrawKeyRef.current,
       };
 
       /*
@@ -1096,26 +1196,52 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         ctx.imageSmoothingEnabled = false;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        if (culled) {
-          const sw = col1 - col0;
-          const sh = row1 - row0;
-          if (sw > 0 && sh > 0) {
-            // Anchor on whole device pixels so cell edges stay hard.
-            const dx = Math.round(originX * dpr) + col0 * cellPx;
-            const dy = Math.round(originY * dpr) + row0 * cellPx;
-            if (bgColor && bgColor !== 'transparent') {
-              ctx.fillStyle = bgColor;
-              ctx.fillRect(dx, dy, sw * cellPx, sh * cellPx);
+        // Suppressed under an `under` overlay, which the plate would cover.
+        const plate = overlayUnderRef.current ? null : bgColor;
+        const hasPlate = Boolean(plate && plate !== 'transparent');
+
+        composePostProcess({
+          ctx,
+          width: canvas.width,
+          height: canvas.height,
+          stages: buildStages(postProcessRef.current, null),
+          scale: cellPx,
+          paintBase: hasPlate
+            ? (target) => {
+                target.setTransform(1, 0, 0, 1, 0, 0);
+                target.fillStyle = plate as string;
+                if (culled) {
+                  const sw = col1 - col0;
+                  const sh = row1 - row0;
+                  if (sw > 0 && sh > 0) {
+                    target.fillRect(
+                      Math.round(originX * dpr) + col0 * cellPx,
+                      Math.round(originY * dpr) + row0 * cellPx,
+                      sw * cellPx,
+                      sh * cellPx
+                    );
+                  }
+                } else {
+                  target.fillRect(0, 0, canvas.width, canvas.height);
+                }
+              }
+            : undefined,
+          paintRaster: (target) => {
+            target.setTransform(1, 0, 0, 1, 0, 0);
+            target.imageSmoothingEnabled = false;
+            if (culled) {
+              const sw = col1 - col0;
+              const sh = row1 - row0;
+              if (sw <= 0 || sh <= 0) return;
+              // Anchor on whole device pixels so cell edges stay hard.
+              const dx = Math.round(originX * dpr) + col0 * cellPx;
+              const dy = Math.round(originY * dpr) + row0 * cellPx;
+              target.drawImage(buf!, col0, row0, sw, sh, dx, dy, sw * cellPx, sh * cellPx);
+            } else {
+              target.drawImage(buf!, 0, 0, cols, rows, 0, 0, canvas.width, canvas.height);
             }
-            ctx.drawImage(buf, col0, row0, sw, sh, dx, dy, sw * cellPx, sh * cellPx);
-          }
-        } else {
-          if (bgColor && bgColor !== 'transparent') {
-            ctx.fillStyle = bgColor;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-          }
-          ctx.drawImage(buf, 0, 0, cols, rows, 0, 0, canvas.width, canvas.height);
-        }
+          },
+        });
         ctx.restore();
         return;
       }
@@ -1129,40 +1255,106 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
 
       ctx.save();
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.imageSmoothingEnabled = true;
-      ctx.clearRect(0, 0, cssW, cssH);
-      ctx.translate(originX, originY);
-      ctx.scale(scale, scale);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, backingW, backingH);
 
-      if (bgColor && bgColor !== 'transparent' && bgColor !== '#0a0a0a' && bgColor !== '#000000' && bgColor !== '#000') {
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, unscaledW, unscaledH);
-      }
-
-      ctx.font = '10px "JuliaMono", "JetBrains Mono", "Courier New", monospace';
-      ctx.textBaseline = 'top';
-      ctx.textAlign = 'left';
+      const plate =
+        !overlayUnderRef.current &&
+        bgColor &&
+        bgColor !== 'transparent' &&
+        bgColor !== '#0a0a0a' &&
+        bgColor !== '#000000' &&
+        bgColor !== '#000'
+          ? bgColor
+          : null;
 
       const lines = getFrameLines(frameText);
-      for (let y = row0; y < row1; y++) {
-        const line = lines[y];
-        if (!line) continue;
-        const rowBase = y * cols;
-        const yPx = y * cellH;
-        const end = Math.min(col1, line.length);
-        for (let x = col0; x < end; x++) {
-          const ch = line[x];
-          if (ch === ' ') continue;
-          const cIdx = (rowBase + x) * 3;
-          ctx.fillStyle = `rgb(${colors[cIdx]},${colors[cIdx + 1]},${colors[cIdx + 2]})`;
-          ctx.fillText(ch, x * cellW, yPx);
-        }
-      }
+
+      composePostProcess({
+        ctx,
+        width: backingW,
+        height: backingH,
+        stages: buildStages(postProcessRef.current, null),
+        scale: scale * dpr,
+        paintBase: plate
+          ? (target) => {
+              target.setTransform(dpr, 0, 0, dpr, 0, 0);
+              target.translate(originX, originY);
+              target.scale(scale, scale);
+              target.fillStyle = plate;
+              target.fillRect(0, 0, unscaledW, unscaledH);
+              target.setTransform(1, 0, 0, 1, 0, 0);
+            }
+          : undefined,
+        paintRaster: (target) => {
+          target.setTransform(dpr, 0, 0, dpr, 0, 0);
+          target.imageSmoothingEnabled = true;
+          target.translate(originX, originY);
+          target.scale(scale, scale);
+          target.font = '10px "JuliaMono", "JetBrains Mono", "Courier New", monospace';
+          target.textBaseline = 'top';
+          target.textAlign = 'left';
+
+          for (let y = row0; y < row1; y++) {
+            const line = lines[y];
+            if (!line) continue;
+            const rowBase = y * cols;
+            const yPx = y * cellH;
+            const end = Math.min(col1, line.length);
+            for (let x = col0; x < end; x++) {
+              const ch = line[x];
+              if (ch === ' ') continue;
+              const cIdx = (rowBase + x) * 3;
+              target.fillStyle = `rgb(${colors[cIdx]},${colors[cIdx + 1]},${colors[cIdx + 2]})`;
+              target.fillText(ch, x * cellW, yPx);
+            }
+          }
+          target.setTransform(1, 0, 0, 1, 0, 0);
+        },
+      });
       ctx.restore();
     },
     [cols, rows, getFrameLines]
   );
+
+  /**
+   * Copy the frame's source into the overlay layer.
+   *
+   * Called from `setFrame`, so it runs once per frame and never on a pan or a
+   * zoom: the backing store is the source's own resolution and the CSS box
+   * carries the view transform, so moving the camera costs nothing here. That
+   * is also why this layer can never hit `MAX_BACKING_DIM` the way the raster
+   * canvas does at deep zoom.
+   */
+  const blitSourceLayer = useCallback((src: HTMLCanvasElement | null, bgColor?: string) => {
+    const dest = overlayCanvasRef.current;
+    if (!dest) return;
+
+    /*
+     * Under an `under` overlay the raster canvas paints no ground, so the
+     * frame's own background has to live here instead — otherwise the picture
+     * falls back to `.viewport-content-ground`'s theme colour and a white
+     * background setting silently turns dark. This reproduces the export
+     * chain's layer order exactly: ground, then source, then blended raster.
+     */
+    const ground = overlayUnderRef.current && bgColor && bgColor !== 'transparent' ? bgColor : '';
+    if (dest.style.backgroundColor !== ground) dest.style.backgroundColor = ground;
+
+    if (!src || src.width === 0 || src.height === 0) {
+      const c = dest.getContext('2d');
+      if (c) c.clearRect(0, 0, dest.width, dest.height);
+      return;
+    }
+    if (dest.width !== src.width || dest.height !== src.height) {
+      dest.width = src.width;
+      dest.height = src.height;
+    }
+    const ctx = dest.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, dest.width, dest.height);
+    ctx.drawImage(src, 0, 0);
+  }, []);
 
   /*
    * Depends on the whole transform, not just the scale: once the draw is
@@ -1197,11 +1389,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       colors?: Uint8ClampedArray | null,
       bgColor?: string,
       rasterMode?: RasterOutputMode,
-      vector?: VectorFrame | null
+      vector?: VectorFrame | null,
+      sourceLayer?: HTMLCanvasElement | null
     ) => {
       // A new frame, by definition: invalidates the pan short-circuit in
       // drawCanvas regardless of whether the buffers came back identical.
       frameSeqRef.current++;
+      blitSourceLayer(sourceLayer ?? null, bgColor);
       latestFrameTextRef.current = frameText;
       latestColorsRef.current = colors || null;
       latestBgColorRef.current = bgColor;
@@ -1671,11 +1865,42 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const showScanlines = crtConfig ? crtConfig.scanlines : true;
   const showCrtGlow = crtConfig && !isColoredView ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
   const showVignette = crtConfig ? crtConfig.vignette : false;
-  const showPhosphorBloom = crtConfig && !isColoredView ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false;
+  /*
+   * The CRT bloom stands down while the post-processing glow drives, and the
+   * blurred `<pre>` underlayer becomes that glow's rendering on this path.
+   * Two blurred copies of the same text at two radii is a smear, not a bloom.
+   */
+  const postGlowOnPre = glowActive(postProcess) && !isColoredView;
+  const showPhosphorBloom =
+    postGlowOnPre ||
+    (crtConfig && !isColoredView ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
 
   const asciiColor = resolvePhosphorTint(theme, customThemeColor);
   const [ar, ag, ab] = hexToRgb(asciiColor);
   const asciiGlow = `rgba(${ar}, ${ag}, ${ab}, 0.11)`;
+
+  /*
+   * Optics on the monochrome text path, in CSS.
+   *
+   * An approximation, and the one place the viewport knowingly differs from
+   * what a PNG of the same frame contains: a `<pre>` is not a canvas, so the
+   * real chain cannot reach it. Aberration in particular is a pair of coloured
+   * text shadows rather than a true channel split — it reads the same at a
+   * glance and there is no cheaper honest option short of rasterizing the text
+   * ourselves. Both are exact on every canvas path.
+   */
+  const preGlowFilter = postGlowOnPre
+    ? `blur(${post.glow.radius.toFixed(2)}px) brightness(${(1 + post.glow.amount / 200).toFixed(2)})`
+    : undefined;
+  const preAberration = post.aberration.amount > 0 && !isColoredView ? post.aberration : null;
+  const preAberrationShadow = preAberration
+    ? (() => {
+        const rad = (preAberration.angle * Math.PI) / 180;
+        const dx = Math.cos(rad) * preAberration.amount;
+        const dy = Math.sin(rad) * preAberration.amount;
+        return `${(-dx).toFixed(2)}px ${(-dy).toFixed(2)}px 0 rgba(255,0,0,0.75), ${dx.toFixed(2)}px ${dy.toFixed(2)}px 0 rgba(0,128,255,0.75)`;
+      })()
+    : null;
 
   // A couple of pixels of slack, so a fit that rounded to an odd number of
   // pixels does not permanently claim the view is panned.
@@ -1774,6 +1999,34 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         )}
 
         {/*
+          Source overlay.
+
+          Sized to the raster box and carrying the same translate, with a
+          backing store fixed at the source's own resolution — so a pan and a
+          zoom are both pure CSS and it can never hit MAX_BACKING_DIM the way
+          the raster canvas can.
+
+          `under` puts it below at `normal` and moves the blend onto the raster
+          surfaces; `over` puts it above carrying the blend itself. Those are
+          two different pictures, not one z-order swap — see the config type.
+        */}
+        {hasOverlay && contentBounds && !showMediaPlaceholder && (
+          <canvas
+            ref={overlayCanvasRef}
+            className="viewport-source-overlay"
+            aria-hidden="true"
+            style={{
+              transform: `translate3d(${view.tx}px, ${view.ty}px, 0)`,
+              width: `${contentBounds.w}px`,
+              height: `${contentBounds.h}px`,
+              zIndex: overlayUnder ? 1 : 3,
+              opacity: post.sourceOverlay.opacity / 100,
+              mixBlendMode: overlayUnder ? 'normal' : post.sourceOverlay.blend,
+            }}
+          />
+        )}
+
+        {/*
           The canvas lives outside the stage because a culled draw anchors it to
           the viewport and paints the pan itself; in whole-raster mode
           drawCanvas gives it its own CSS translate instead. Either way it is
@@ -1784,6 +2037,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           className="ascii-canvas"
           style={{
             display: isColoredView ? 'block' : 'none',
+            mixBlendMode: overlayUnder ? post.sourceOverlay.blend : undefined,
             /*
              * The pixel backing store snaps to whole cells, so it rarely maps
              * 1:1 onto the CSS box. Keep that residual resample nearest-
@@ -1800,9 +2054,18 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           Scale is still realised on the <pre> itself; only the translation
           lives here.
         */}
+        {/*
+          The stage blends as a *group* under an `under` overlay, so the bloom
+          `<pre>` and the sharp one composite together first and only then
+          against the source. Blending them separately would put the blurred
+          copy through the blend twice.
+        */}
         <div
           className="viewport-stage"
-          style={{ transform: `translate3d(${view.tx}px, ${view.ty}px, 0)` }}
+          style={{
+            transform: `translate3d(${view.tx}px, ${view.ty}px, 0)`,
+            mixBlendMode: overlayUnder ? post.sourceOverlay.blend : undefined,
+          }}
         >
           {/* Directional Phosphor Bloom Underlayer (Character Bloom) */}
           {showPhosphorBloom && !isColoredView && (
@@ -1813,8 +2076,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               style={{
                 transform: `scale(${zoom})`,
                 fontSize: '10px',
-                color: gradientConfig ? 'transparent' : asciiColor,
-                textShadow: gradientConfig ? undefined : `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}`,
+                color: gradientConfig ? 'transparent' : (post.glow.tint || asciiColor),
+                textShadow:
+                  gradientConfig || postGlowOnPre
+                    ? undefined
+                    : `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}`,
+                /* Radius and strength come from the glow config when it drives. */
+                ...(preGlowFilter ? { filter: preGlowFilter, opacity: 1 } : {}),
                 ...(gradientConfig ? ({
                   '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
                 } as React.CSSProperties) : {}),
@@ -1831,7 +2099,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               transform: `scale(${zoom})`,
               fontSize: '10px',
               color: gradientConfig ? 'transparent' : asciiColor,
-              textShadow: showPhosphorBloom && !gradientConfig ? `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}` : 'none',
+              /*
+               * Aberration wins the shadow slot when it is on: the CRT glow it
+               * would otherwise carry is already being drawn by the blurred
+               * underlayer above whenever the bloom is enabled at all.
+               */
+              textShadow:
+                preAberrationShadow ||
+                (showPhosphorBloom && !gradientConfig && !postGlowOnPre
+                  ? `0 0 3px ${asciiColor}, 0 0 8px ${asciiGlow}`
+                  : 'none'),
               ...(gradientConfig ? ({
                 '--text-gradient': `linear-gradient(${gradientConfig.angle}deg, ${gradientConfig.color1}, ${gradientConfig.color2})`,
               } as React.CSSProperties) : {}),

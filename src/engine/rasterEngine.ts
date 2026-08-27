@@ -1287,15 +1287,7 @@ export function processRasterFrame(
       rasterMode: 'vector',
       bgColor,
       isColored: false,
-      vector: traceVectorField(
-        lumBuffer,
-        cols,
-        rows,
-        vectorCfg,
-        resolveColor,
-        bgColor,
-        monoTint
-      ),
+      vector: traceVectorField(lumBuffer, cols, rows, vectorCfg, resolveColor, bgColor),
       histogram: histogramBuffer,
       histogramOpaque,
     };

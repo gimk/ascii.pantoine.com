@@ -481,6 +481,33 @@ html, body, #root {
   z-index: 1;
   pointer-events: none;
   transform-origin: 0 0;
+  /*
+   * Pins the source overlay's blend to the artwork. `mix-blend-mode` composites
+   * against everything beneath it in the stacking context, so without this a
+   * multiply would reach the dotted backdrop and the container behind it --
+   * the picture would change depending on what the viewfinder happened to be
+   * sitting on.
+   */
+  isolation: isolate;
+}
+
+/*
+ * The source layer for the post-processing overlay.
+ *
+ * Its backing store is the *source's* resolution and never the zoom's, so the
+ * CSS box below can be scaled freely: a pan and a zoom are both free, and it
+ * can never hit the canvas size limit that forces the raster canvas into its
+ * culled regime. z-index is set inline, since it is the placement.
+ */
+.viewport-source-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  max-width: none;
+  max-height: none;
+  border-radius: 2px;
 }
 
 /*

@@ -17,6 +17,7 @@ import {
   VectorConfig,
   ToneMappingConfig,
   ImageAdjustConfig,
+  PostProcessConfig,
 } from '../types/ascii';
 
 /**
@@ -55,6 +56,15 @@ export interface FullAnimationState {
   vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
+  /**
+   * The composite stage — source overlay, phosphor glow, aberration.
+   *
+   * One field for the whole section rather than three, so the next post effect
+   * cannot repeat the failure this interface has already had once: a field
+   * declared here and read on load, but never *written* by
+   * `currentFullState`, so every link opened with the recipient's defaults.
+   */
+  postProcess?: PostProcessConfig;
   theme: PhosphorTheme;
   customThemeColor?: string;
   gradientConfig?: PhosphorGradient | null;

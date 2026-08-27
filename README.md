@@ -1,7 +1,7 @@
 # Dither Studio
 
 [![Live App](https://img.shields.io/badge/Live_App-ascii.pantoine.com-00FF66?style=flat-square&logo=google-chrome&logoColor=black)](https://ascii.pantoine.com)
-[![Version](https://img.shields.io/badge/version-2.2-00FF66?style=flat-square)](https://github.com/gimk/ascii.pantoine.com/releases)
+[![Version](https://img.shields.io/badge/version-2.3-00FF66?style=flat-square)](https://github.com/gimk/ascii.pantoine.com/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -45,13 +45,25 @@ print-ready colour plates.
 - Vector output forks out of the raster pipeline before quantization, so the beam reads a fully
   graded luminance field and returns polylines. Curves, not squares, all the way to the SVG.
 - Scan lines deflected by luminance on either axis, with occlusion (a painter’s fill, so a
-  nearer ridge hides what is behind it), analog ripple, phosphor glow and chromatic aberration.
+  nearer ridge hides what is behind it), analog ripple, and a chromatic aberration that
+  splits the *trace* into three real channel passes — so it survives into the SVG as
+  polylines rather than as shifted pixels.
 - **Carrier modulation** breaks the beam into pulses where the image is dark — the Joy
   Division dot-break — with a beam-cutoff control kept separate from it, so a background can
   be cleared without dissolving the subject into dots.
 - **Smoothing** low-passes the luminance before it becomes a displacement, along the beam only,
   so lines settle without bleeding into each other.
 - Five presets: Unknown Pleasures, Oscilloscope, Pulsar, Contour, Rutt-Etra.
+
+**Post-processing** — the composite stage, after the raster
+- **Source overlay** — put the original back over its own rasterization, under or over, with
+  any of the sixteen CSS blend modes and an opacity. Framed through the identical maths the
+  raster used, so it registers cell for cell at any zoom with nothing to line up. Feed it the
+  raw source or the graded greyscale the dither actually quantized.
+- **Phosphor glow** — one blur of the finished frame rather than a halo struck per glyph or
+  per stroke, so it costs the same on a three-line beam and a three-hundred-line one, reaches
+  ASCII and pixel for the first time, and finally comes out in the SVG as a real filter.
+- **Chromatic aberration** on the composed frame, for the modes that have no geometry to split.
 
 **Interface**
 - **BASIC / ADVANCED** modes over one shared state — flip freely, nothing is converted or lost.

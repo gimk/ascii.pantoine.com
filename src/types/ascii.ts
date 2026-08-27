@@ -331,9 +331,13 @@ export interface VectorFrame {
   height: number;
   polylines: VectorPolyline[];
   bgColor: string;
-  /** Canvas shadowBlur for the phosphor halo, carried through to every painter. */
-  glow: number;
-  glowColor: string;
+  /*
+   * No glow field. The phosphor halo used to live here as a canvas
+   * `shadowBlur` applied per stroke, which meant the browser rasterized a
+   * blurred copy of every polyline — hundreds of them on a carrier-broken
+   * beam. It is now one post-processing stage that blurs the finished
+   * emissive layer once, shared with the cell modes. See engine/postProcess.
+   */
   /**
    * Where an occlusion polygon closes to.
    *
@@ -410,8 +414,22 @@ export interface VectorConfig {
   /** Animation input in radians, driven by the render loop rather than stored. */
   phase: number;
   strokeWidth: number;
-  glow: number;
-  /** Chromatic aberration offset in grid cells; 0 disables the extra passes. */
+  /**
+   * @deprecated Moved to `PostProcessConfig.glow`, which blurs the finished
+   * frame once instead of shadowing every stroke, and reaches ASCII and pixel
+   * too. Still read on load so existing links and presets keep their halo —
+   * `migratePostProcess` folds it forward — but never written again.
+   */
+  glow?: number;
+  /**
+   * Chromatic aberration offset in grid cells; 0 disables the extra passes.
+   *
+   * Stays here rather than moving to post-processing with the glow, because it
+   * is *geometry*: three real traced passes that recombine additively and
+   * export as SVG polylines. `PostProcessConfig.aberration` shifts the
+   * rasterized frame instead, which is the only thing available in the cell
+   * modes but strictly worse here.
+   */
   chroma: number;
 }
 
@@ -445,8 +463,134 @@ export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
   rippleFreq: 1.2,
   phase: 0,
   strokeWidth: 1.2,
-  glow: 0,
   chroma: 0,
+};
+
+// --- Post-processing (the composite stage, after the raster) ---
+
+/**
+ * Separable and non-separable blend modes, named identically in CSS
+ * `mix-blend-mode` and canvas `globalCompositeOperation`.
+ *
+ * That overlap is the reason the list is exactly this: the viewport blends in
+ * CSS (it has to — the monochrome ASCII path is a `<pre>`, not a canvas) and
+ * every export blends on canvas, so one enum with no translation table is what
+ * keeps the screen and the file agreeing.
+ */
+export type BlendMode =
+  | 'normal'
+  | 'multiply'
+  | 'screen'
+  | 'overlay'
+  | 'darken'
+  | 'lighten'
+  | 'color-dodge'
+  | 'color-burn'
+  | 'hard-light'
+  | 'soft-light'
+  | 'difference'
+  | 'exclusion'
+  | 'hue'
+  | 'saturation'
+  | 'color'
+  | 'luminosity';
+
+/**
+ * Bring the source back in over its own rasterization.
+ *
+ * The layer is the *ungraded* frame the pipeline was handed, drawn through the
+ * identical framing maths, so it registers with the raster cell for cell at
+ * any zoom without a single alignment parameter.
+ */
+export interface SourceOverlayConfig {
+  enabled: boolean;
+  /**
+   * Which layer carries the blend.
+   *
+   * Not a mere z-order swap: blending is non-commutative for most of these
+   * modes. `over` computes blend(raster, source), `under` computes
+   * blend(source, raster) — genuinely different pictures, which is the whole
+   * reason both exist.
+   */
+  placement: 'under' | 'over';
+  blend: BlendMode;
+  /** 0..100. */
+  opacity: number;
+  /**
+   * Supersample of the raster's *display* box, not of the grid.
+   *
+   * An ASCII cell is 6.015 x 10 px, so a cols x rows layer would be six times
+   * too soft behind the glyphs it is meant to sit under. 1 means one source
+   * pixel per display pixel.
+   */
+  quality: 1 | 2 | 4;
+  /**
+   * `original` is the raw framed source. `graded` is the luminance field as it
+   * leaves tone mapping — the same picture the dither quantized, before it was
+   * quantized. Blend tone with `graded`, blend the photograph with `original`.
+   */
+  source: 'original' | 'graded';
+}
+
+/**
+ * Phosphor bloom over the finished frame.
+ *
+ * One implementation for all three output modes. Vector used to strike its own
+ * halo with a canvas `shadowBlur` held across every stroke, which made the
+ * browser rasterize a blurred copy per polyline; ASCII had a second, unrelated
+ * bloom in CSS. This blurs the emissive layer once and adds it back.
+ */
+export interface GlowConfig {
+  /** 0..200 — how much of the blurred layer is added back. 0 is off. */
+  amount: number;
+  /** Gaussian sigma in output pixels, scaled by zoom and export scale. */
+  radius: number;
+  /** Empty means the resolved phosphor / accent tint. */
+  tint: string;
+}
+
+/**
+ * RGB channel split of the finished frame.
+ *
+ * The cell modes have no geometry to split, so this is the only aberration
+ * available to them. Vector keeps `VectorConfig.chroma` as well, which offsets
+ * the *trace* and therefore survives into SVG as real polylines.
+ */
+export interface AberrationConfig {
+  /** Channel offset in output pixels at 1x. 0 is off. */
+  amount: number;
+  /** Split direction in degrees. */
+  angle: number;
+}
+
+/**
+ * Everything that happens to a frame after the raster pipeline is done with
+ * it, in the order it is applied.
+ *
+ * A container rather than three fields on `RenderSettings`, so the next effect
+ * is one key here instead of another entry to add to the persisted blob, the
+ * share payload and every preset type — each of which is a separate chance to
+ * declare a field and forget to write it (pipeline.md invariant 4).
+ */
+export interface PostProcessConfig {
+  sourceOverlay: SourceOverlayConfig;
+  glow: GlowConfig;
+  aberration: AberrationConfig;
+}
+
+export const SOURCE_OVERLAY_DEFAULTS: SourceOverlayConfig = {
+  enabled: false,
+  placement: 'under',
+  blend: 'normal',
+  opacity: 100,
+  quality: 2,
+  source: 'original',
+};
+
+export const POST_PROCESS_DEFAULTS: PostProcessConfig = {
+  sourceOverlay: SOURCE_OVERLAY_DEFAULTS,
+  glow: { amount: 0, radius: 6, tint: '' },
+  aberration: { amount: 0, angle: 0 },
 };
 
 export type PaletteCategory = 'retro' | 'print' | 'design' | 'ramp' | 'custom';
@@ -820,5 +964,11 @@ export interface RenderSettings {
   vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
+  /**
+   * The composite stage. Deliberately here and *only* here, including for
+   * media — it is not grading, so invariant 8's "media grading lives in
+   * mediaViewConfig" does not pull it into a second home.
+   */
+  postProcess?: PostProcessConfig;
 }
 

@@ -17,6 +17,8 @@ import {
   PhosphorTheme,
   RasterOutputMode,
   ImageAdjustConfig,
+  BlendMode,
+  PostProcessConfig,
   VECTOR_CONFIG_DEFAULTS,
 } from '../types/ascii';
 import { MediaUploadControls } from './MediaFileControls';
@@ -35,6 +37,7 @@ import {
   SimpleLevelsSlider,
 } from './ImageAdjustControls';
 import { BUILTIN_PALETTES } from '../engine/palettes';
+import { PrecisionSlider } from './controlPrimitives';
 import { ExportTab } from './ExportModal';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
@@ -87,6 +90,25 @@ const VECTOR_COLS_PRESETS: { label: string; value: number }[] = [
   { label: '1600', value: 1600 },
 ];
 
+/**
+ * The blend modes worth putting in a flat list.
+ *
+ * Eight of the sixteen, chosen for what changes the picture most per unit of
+ * explanation — the same rule the compact beam deck follows. The rest stay
+ * live in state and reachable from ADVANCED; a ramp arriving from there or
+ * from a shared link renders in full. This panel only hides.
+ */
+const BASIC_BLEND_MODES: BlendMode[] = [
+  'normal',
+  'multiply',
+  'screen',
+  'overlay',
+  'soft-light',
+  'difference',
+  'color',
+  'luminosity',
+];
+
 /** Numbered step header, matching the sidebar workflow titles. */
 const Step: React.FC<{ n: string; label: string }> = ({ n, label }) => (
   <div className="sidebar-workflow-title">
@@ -126,6 +148,9 @@ interface BasicPanelProps {
   toneConfig: ToneMappingConfig;
   onChangeToneConfig: (next: ToneMappingConfig) => void;
 
+  postProcess: PostProcessConfig;
+  onChangePostProcess: (next: PostProcessConfig) => void;
+
   onExport: (tab: ExportTab) => void;
 }
 
@@ -156,6 +181,8 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   onChangeMediaColorConfig,
   toneConfig,
   onChangeToneConfig,
+  postProcess,
+  onChangePostProcess,
   onExport,
 }) => {
   const isPixel = rasterMode === 'pixel';
@@ -559,7 +586,103 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <Step n="06" label="Export" />
+      {/*
+        The composite stage, reduced to the three controls that change the
+        picture. Detail, source layer and the optics tuning stay at whatever
+        ADVANCED left them — this panel only ever hides.
+      */}
+      <Step n="06" label="Post" />
+      <div className="basic-section">
+        <div className="control-row" style={{ alignItems: 'center' }}>
+          <span
+            className="control-label"
+            title="Bring the original back in over its own rasterization, framed identically."
+          >
+            Overlay
+          </span>
+          <button
+            type="button"
+            className={`btn btn-sm ${postProcess.sourceOverlay.enabled ? 'btn-primary' : ''}`}
+            onClick={() =>
+              onChangePostProcess({
+                ...postProcess,
+                sourceOverlay: {
+                  ...postProcess.sourceOverlay,
+                  enabled: !postProcess.sourceOverlay.enabled,
+                },
+              })
+            }
+            disabled={!mediaElement}
+            style={{ minWidth: '46px', height: '18px', fontSize: '9.5px', fontWeight: 700 }}
+          >
+            {postProcess.sourceOverlay.enabled ? 'ON' : 'OFF'}
+          </button>
+        </div>
+
+        <div className="control-row" style={{ alignItems: 'center' }}>
+          <span className="control-label" title="How the original and the raster combine.">
+            Blend
+          </span>
+          <select
+            className="number-input"
+            value={postProcess.sourceOverlay.blend}
+            disabled={!postProcess.sourceOverlay.enabled}
+            onChange={(e) =>
+              onChangePostProcess({
+                ...postProcess,
+                sourceOverlay: {
+                  ...postProcess.sourceOverlay,
+                  blend: e.target.value as BlendMode,
+                },
+              })
+            }
+            style={{ flex: 1, minWidth: 0, textAlign: 'left', height: '24px', padding: '2px 6px' }}
+          >
+            {BASIC_BLEND_MODES.map((m) => (
+              <option key={m} value={m}>
+                {m.replace(/-/g, ' ').toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="control-row">
+          <span className="control-label">Opacity</span>
+          <PrecisionSlider
+            value={postProcess.sourceOverlay.opacity}
+            sliderMin={0}
+            sliderMax={100}
+            step={1}
+            resetTo={100}
+            disabled={!postProcess.sourceOverlay.enabled}
+            onChange={(v) =>
+              onChangePostProcess({
+                ...postProcess,
+                sourceOverlay: { ...postProcess.sourceOverlay, opacity: v },
+              })
+            }
+          />
+        </div>
+
+        <div className="control-row">
+          <span className="control-label" title="Blooms the finished frame. Works in every output mode.">
+            Glow
+          </span>
+          <PrecisionSlider
+            value={postProcess.glow.amount}
+            sliderMin={0}
+            sliderMax={200}
+            step={1}
+            resetTo={0}
+            onChange={(v) =>
+              onChangePostProcess({ ...postProcess, glow: { ...postProcess.glow, amount: v } })
+            }
+          />
+        </div>
+      </div>
+
+      {/* ================================================================ */}
+      <Step n="07" label="Export" />
       <div className="basic-section">
         <button
           type="button"

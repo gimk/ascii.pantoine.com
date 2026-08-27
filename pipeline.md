@@ -9,13 +9,13 @@ Every mode and every export path funnels through it. Modes differ only in how th
 produce the raw frame that goes in, and in how the result is painted afterwards.
 
 ```
-                 ┌───────────────────┐
-  synth ────────►│                   │                            ┌──► viewport
-  media ────────►│  processRasterFrame├──► ProcessedRasterResult ──┼──► image export
-  model ────────►│   6 stages        │                            ├──► colour separation
-                 └───────────────────┘                            ├──► GIF export
-                          ▲                                       └──► video export
-                          │
+                 ┌───────────────────┐         ┌───────────────┐    ┌──► viewport
+  synth ────────►│                   │         │ post-process  │    ├──► image export
+  media ────────►│ processRasterFrame├─result──►│  §3.5 overlay ├────┼──► GIF export
+  model ────────►│   6 stages        │    │    │  glow · chroma│    └──► video export
+                 └───────────────────┘    │    └───────────────┘
+                          ▲               └───────────────────────────► colour separation
+                          │                                             (bypasses it: inv. 9)
                     ascii | pixel run all six. **vector** forks after step 3
                     and returns polylines instead — see §2.3.6.
                     all state arrives as
@@ -738,6 +738,91 @@ Packaging is [`zip.ts`](src/engine/zip.ts), a stored-method ZIP writer with no
 dependency — PNG and JPG already carry their own deflate. It exists because firing N
 downloads from a single gesture is throttled or blocked by Chrome and Safari.
 
+### 3.5 Post-processing ([`postProcess.ts`](src/engine/postProcess.ts))
+
+Everything that happens to a frame **after** the raster pipeline is done with it.
+Deliberately not a pipeline stage and it must not become one: `processRasterFrame`
+ends at a cell buffer or a polyline set, and this works on the painted result —
+which is exactly why one implementation serves ascii, pixel and vector without
+knowing which it is looking at.
+
+Three effects today, in one config object (`RenderSettings.postProcess`):
+
+| stage | what it is | modes |
+|---|---|---|
+| **Source overlay** | the ungraded source composited back over its own rasterization, with a blend mode | media, model (raw); all three (graded) |
+| **Phosphor glow** | one blur of the emissive layer, added back | all |
+| **Chromatic aberration** | RGB channel offset of the finished frame | all |
+
+**One container, not three fields.** The next effect is a key on
+`PostProcessConfig`, not another entry to add to the persisted blob, the share
+payload and every preset type — each of which is a separate chance to declare a
+field and forget to write it (invariant 4, which this interface has already
+failed once).
+
+**`composePostProcess` is the only way in**, and with no active stage it calls
+the caller's own painter against the real context and allocates nothing. Two
+stage kinds cover both shapes an effect can take: `composite` brings a layer in
+with a blend mode, `paint` filters the frame composed so far. Order is ground →
+`under` composites → raster layer → `over` composites, with `paint` stages
+applied to the raster **before** anything is composited with it — a bloom is
+emitted by the artwork, not by the photograph behind it.
+
+**Layer at a time, never primitive at a time.** Setting a composite operation and
+then painting glyphs or polylines blends each primitive against everything
+already drawn, which for overlapping vector occlusion fills is visibly wrong. The
+raster goes to its own transparent surface and arrives as one `drawImage`.
+
+**The ground has to leave the raster layer.** Every paint site used to fill
+`bgColor` before drawing. With an `under` overlay that plate sits on top of the
+source and hides it completely, so the ground is now `composePostProcess`'s
+`bgColor` / `paintBase`, beneath both layers. In the viewport the raster canvas
+paints no ground at all while `under` is active — `.viewport-content-ground` and
+the overlay layer's own background carry it.
+
+**`under` and `over` are not one z-order with a swap.** Blending is
+non-commutative for most of these modes: `over` computes `blend(raster, source)`,
+`under` computes `blend(source, raster)`. Two different pictures, which is the
+whole reason both exist.
+
+**The viewport splits CSS from canvas, and has to.** The overlay is a DOM layer
+with `mix-blend-mode`, because monochrome ASCII renders into a `<pre>` that no
+canvas operation can reach; `BlendMode` is exactly the set of names
+`mix-blend-mode` and `globalCompositeOperation` share, so screen and file agree
+with no translation table. Glow and aberration run the real chain inside the
+canvas painters. The `<pre>` path approximates both in CSS — a blurred underlayer
+and a pair of coloured text shadows — which is the one place the viewport
+knowingly differs from a PNG of the same frame, the same way the CRT effects
+already do.
+
+**Source resolution comes from the raster's display box, not the grid.** An ASCII
+cell is 6.015 × 10 px, so a `cols × rows` layer would be six times too soft
+behind the glyphs it sits under. `drawFramedMedia` takes a uniform
+`pixelsPerCell` pre-scale and every length in the framing maths is in grid cells,
+so the identical framing reproduces at any resolution with no per-`fit` special
+case — that is what makes the overlay register with its own rasterization cell
+for cell, at any zoom, with no alignment parameter. The overlay canvas's backing
+store is fixed at that resolution and the CSS box carries the zoom, so panning
+and zooming are free and it can never hit `MAX_BACKING_DIM`.
+
+**Model pays for a second GPU pass**, gated on the overlay being on: the pipeline
+is entitled to the exact point-sampled `cols × rows` frame it has always been
+handed, and area-downsampling a supersampled render on the way in would change
+every dither in the app as a side effect of a compositing feature.
+
+**Two blooms became one.** `crtConfig.phosphorBloom` and the beam's
+`vectorConfig.glow` were separate implementations of the same effect — a
+`shadowBlur` per `fillText`, and a `shadowBlur` held across the whole stroke loop.
+The beam's is gone (see vector-pipeline.md §4.4 for why it was also the most
+expensive thing in a lit frame); the CRT one stands down whenever the
+post-processing glow is driving, in the viewport and in all three exporters,
+because two halos of different radii on one glyph is a smear. Folding
+`phosphorBloom` out of `CrtConfig` entirely is the obvious next step and is left
+for the CRT migration pass — the stand-down guard is what makes that a deletion
+rather than a reconciliation.
+
+**Separation is the one export that strips it** — see §3.4 and invariant 9.
+
 ---
 
 ## 4. State
@@ -757,6 +842,11 @@ store in practice, since nothing else reads it, but it is not keyed by mode and 
 
 Media is also the exception to the `adjustConfig` rule: its grading lives in
 `mediaViewConfig`, not in `RenderSettings.adjustConfig`. See §1.2.
+
+`postProcess` is **not** an exception: it lives on `RenderSettings` in every mode,
+media included. It is not grading, so invariant 8 does not pull it into
+`mediaViewConfig`, and one home is what keeps the media fallback chain
+(`mediaViewConfig.x || renderSettings.x`) from growing a fourth member.
 
 Levels is the one piece of grading that is **not** in `adjustConfig` in any mode: it
 lives in `RenderSettings.toneConfig`, alongside it. `ImageAdjustControls` therefore
@@ -846,8 +936,9 @@ whatever ADVANCED left it at.
 
 - **ADVANCED** ([`App.tsx`](src/App.tsx)) — the Content / Render tab tree
   documented below. Every source, every control.
-- **BASIC** ([`BasicPanel.tsx`](src/components/BasicPanel.tsx)) — six numbered
-  steps in a flat column: import → output → dither → adjust → colour → export.
+- **BASIC** ([`BasicPanel.tsx`](src/components/BasicPanel.tsx)) — seven numbered
+  steps in a flat column: import → output → dither → adjust → colour → post →
+  export.
   **No disclosures anywhere.** Every control is visible the moment the panel is;
   section rhythm comes from `.sidebar-workflow-title`, the same numbered header
   ADVANCED uses. Media only; entering it from synth or model switches the source,
@@ -859,7 +950,10 @@ not by reimplementing them: `MediaUploadControls minimal` (paste + dropzone,
 no filename / URL / video timeline), `DitherAlgorithmPicker compact` (arrows,
 dropdown, dice — no family filter, swatch grid or description card),
 `VectorControls compact` (eight beam controls — no presets, Sample Step, Bias,
-carrier deck, Ripple Freq, Phase, Glow or Aberration), preset chips instead of
+carrier deck, Ripple Freq, Phase or Beam Aberration; Glow is not there to hide
+any more, having moved to `04 · POST-PROCESSING`), four post controls out of the
+eleven that section has (overlay on/off, blend, opacity, glow intensity — with
+eight blend modes of the sixteen), preset chips instead of
 the DPI slider, a charset `<select>` instead of `CharsetThemeBar`, and two plain
 clip-point sliders instead of the histogram Levels editor. One implementation,
 two levels of detail.
@@ -985,6 +1079,27 @@ The **Render** tab follows a strict vertical workflow across all three input sou
 
 5. **Character Set Ramp** ([`CharsetThemeBar.tsx`](src/components/CharsetThemeBar.tsx))
    - Monospace density ramps: active in ASCII, dimmed in pixel, omitted entirely in vector — a beam has no glyphs.
+
+6. **`04 · POST-PROCESSING`** ([`PostProcessControls.tsx`](src/components/PostProcessControls.tsx))
+   - Numbered `04` and rendered **last** in the tab, because that is where it
+     happens: the tab reads top to bottom in engine order and everything above
+     produces the frame this operates on. (The numbered headers had stopped at
+     `03`; the charset ramp and the tonal decks sit inside `03`'s section.)
+   - A **host**, not one effect. Two decks, matching the two `PostStage` kinds —
+     `SOURCE OVERLAY` composites a layer, `OPTICS` filters the composed frame.
+     A third effect is a deck here plus a key on `PostProcessConfig`; it does not
+     touch the four paint sites again.
+   - `OPTICS` is where **Phosphor Glow** now lives, having left the beam deck: it
+     is one blur of the finished frame, so it reaches ASCII and pixel too. **Beam
+     Aberration** stayed in `VectorControls` because it is geometry rather than a
+     filter, and the deck says so — the two aberrations are both live and stack.
+   - Hidden in synth mode, which has no source distinct from the field it already
+     rendered. Once a source-free stage exists (vignette, grain), the section
+     shows in all three modes and gates per deck instead.
+   - **A beam preset writes two stores.** `VectorControls` takes
+     `onChangePresetGlow` alongside `onChange`, and a preset with no halo
+     explicitly zeroes it — leaving the previous look's bloom running would not
+     be the preset.
 
 ---
 
@@ -1155,11 +1270,15 @@ Things that will silently break rendering if violated.
 3. **`srcLumBuffer` is the only pre-filter record.** The grade ratio and the sentinel
    restore both read it. It must be snapshotted before step 2 and never written
    afterwards.
-4. **Every path out must forward all four render settings** — `rasterMode`,
-   `ditherAlgorithm`, `toneConfig`, `adjustConfig`. Missing one produces an export,
-   or a shared link, that differs from what the user sees. This is why the still and
-   separation exports share `renderExportFrame` rather than each dispatching to the
-   mode renderers themselves, and why the share payload is checked field by field.
+4. **Every path out must forward all five render settings** — `rasterMode`,
+   `ditherAlgorithm`, `toneConfig`, `adjustConfig`, `postProcess`. Missing one
+   produces an export, or a shared link, that differs from what the user sees. This
+   is why the still and separation exports share `renderExportFrame` rather than each
+   dispatching to the mode renderers themselves, why the GIF and video exporters
+   (which do dispatch themselves) share `overlaySourcePpc` / `overlaySourceLayer`,
+   and why the share payload is checked field by field. `postProcess` is one object
+   for the whole composite stage precisely so the next effect added to it cannot
+   re-open this.
 5. **`ProcessedRasterResult.luminance` and `.histogram` are live module buffers, not
    copies.** Read them before the next frame, or copy them to hold on.
 6. **Quantization depth must track real output depth.** Dithering at 256 levels is
@@ -1180,7 +1299,15 @@ Things that will silently break rendering if violated.
 9. **A separation's plates partition the opaque cells exactly.** Every opaque cell in
    exactly one plate, no plate empty, no transparent cell included. Anything else and
    the plates no longer reassemble into the image, which is the only thing they are
-   for.
+   for. This is why `exportColorSeparation` is the one export that *strips*
+   `postProcess`: a source overlay belongs to no ink, and a bloom or an aberration
+   spreads colour across plate boundaries.
+10. **The raster layer paints no ground while a post stage is active.** The ground is
+    the base layer, below the composite — an opaque plate left inside the raster
+    layer sits on top of an `under` overlay and hides it completely. Every paint site
+    passes it as `composePostProcess`'s `bgColor` or `paintBase`, never inside
+    `paintRaster`; in the viewport the overlay layer carries the frame's background
+    itself, so a white background does not fall back to the theme's.
 
 ---
 
@@ -1194,6 +1321,17 @@ Things that will silently break rendering if violated.
 - `2color` / `3color` ignore Quantize Levels in effect — the hard threshold pins the
   output to 2 or 3 colours regardless. The setting still shifts the dither pattern,
   so it is not inert, just weak.
+- `crtConfig.phosphorBloom` is still a separate bloom from `postProcess.glow`.
+  The new one wins whenever it is active (§3.5), so the two never stack, but
+  folding `phosphorBloom` out of `CrtConfig` — along with scanlines, ambient glow
+  and vignette, all of which are `paint` stages in disguise — is a migration of
+  its own: `crtConfig` is persisted, shared, and in every preset.
+- The monochrome `<pre>` path approximates glow and aberration in CSS rather than
+  running the chain, because it is not a canvas. Aberration in particular is a
+  pair of coloured text shadows, not a channel split. Every canvas path is exact.
+- Pixel-mode **SVG** export carries the source overlay but not the optics: the
+  cell merger's whole point is a small mesh of merged rectangles, and blurring it
+  defeats that. Vector and ASCII SVG both carry the filter.
 - `three` is imported eagerly (~566 kB, ~142 kB gzipped) for all users including
   those who never open model mode.
 - `App.tsx` is ~3000 lines and owns all orchestration.

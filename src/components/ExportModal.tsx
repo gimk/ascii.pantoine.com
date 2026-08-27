@@ -41,6 +41,7 @@ import {
   VectorConfig,
   ToneMappingConfig,
   ImageAdjustConfig,
+  PostProcessConfig,
 } from '../types/ascii';
 
 interface ExportModalProps {
@@ -75,6 +76,8 @@ interface ExportModalProps {
   vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
+  /** The composite stage, forwarded to every export path. Invariant 4. */
+  postProcess?: PostProcessConfig;
 }
 
 /**
@@ -138,6 +141,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   vectorConfig,
   toneConfig,
   adjustConfig,
+  postProcess,
   mediaElement,
 }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>(initialTab);
@@ -248,6 +252,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         vectorConfig,
         toneConfig,
         adjustConfig,
+        postProcess,
       });
 
       if (imageUrl) URL.revokeObjectURL(imageUrl);
@@ -340,6 +345,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         vectorConfig,
         toneConfig,
         adjustConfig,
+        postProcess,
       });
       setSepResult((prev) => {
         if (prev?.url) URL.revokeObjectURL(prev.url);
@@ -358,7 +364,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     density, cols, rows, theme, customThemeColor, gradientConfig, crtConfig,
     appMode, modelConfig, modelViewConfig, geometry, mediaConfig,
     mediaViewConfig, mediaColorConfig, mediaElement, rasterMode,
-    ditherAlgorithm, ditherParams, vectorConfig, toneConfig, adjustConfig,
+    ditherAlgorithm, ditherParams, vectorConfig, toneConfig, adjustConfig, postProcess,
   ]);
 
   useEffect(() => {
@@ -496,6 +502,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           vectorConfig,
           toneConfig,
           adjustConfig,
+          postProcess,
         },
         (progress, frame, total) => {
           setRecordProgressGif(progress);
@@ -554,6 +561,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           vectorConfig,
           toneConfig,
           adjustConfig,
+          postProcess,
         },
         (progress, frame, total) => {
           setRecordProgressVideo(progress);

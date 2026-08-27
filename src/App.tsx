@@ -23,7 +23,9 @@ import {
   LEGACY_TONAL_PRESET_PALETTES,
   DEFAULT_TONE_MAPPING_CONFIG,
   DEFAULT_IMAGE_ADJUST_CONFIG,
+  POST_PROCESS_DEFAULTS,
   ImageAdjustConfig,
+  PostProcessConfig,
   ToneMappingConfig,
   RasterOutputMode,
   UiThemeSettings,
@@ -55,6 +57,15 @@ import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRe
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelFrameData, applyTrackballRotationWithTime } from './engine/modelRenderer';
 import { renderAsciiMediaFrameData } from './engine/mediaRenderer';
+import { migratePostProcess } from './engine/postProcess';
+/*
+ * The overlay's source layer comes from the exporter's helpers, not from a
+ * second copy here. They are the one thing the still, GIF and video exporters
+ * share, and the viewport producing its own would be a fourth definition of
+ * "what the source looks like at this resolution" — see invariant 4.
+ */
+import { overlaySourceLayer, overlaySourcePpc, exportCellSize } from './engine/imageExporter';
+import { PostProcessControls } from './components/PostProcessControls';
 import { previewVectorConfig, scaleVectorFrame } from './engine/vectorEngine';
 import { choosePreviewDivisor, upscaleFrame } from './engine/framePreview';
 import { CHARSETS, renderSynthFrameData } from './engine/renderer';
@@ -424,6 +435,17 @@ export const App: React.FC = () => {
   // Active HTML image/video/canvas element reference for media rasterizer
   const mediaElementRef = useRef<HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null>(null);
 
+  /*
+   * The source layer for the post-processing overlay.
+   *
+   * Travels to the viewport as an argument to `setFrame`, alongside the frame
+   * it belongs to — *not* as a React prop. The mode renderers redraw the same
+   * canvas in place every tick, so a prop would either never appear to change
+   * (reference comparison) or re-render App sixty times a second to say that
+   * it had. `setFrame` is already the imperative per-frame channel.
+   */
+  const sourceLayerRef = useRef<HTMLCanvasElement | null>(null);
+
   // Isolated Render Settings for each mode (Synth, Media, Model)
   const [renderSettingsByMode, setRenderSettingsByMode] = useState<Record<AppMode, RenderSettings>>(() => {
     let savedSettings: Partial<Record<AppMode, Partial<RenderSettings>>> = {};
@@ -472,6 +494,16 @@ export const App: React.FC = () => {
       vectorConfig: (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig,
       toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
+      /*
+       * `migratePostProcess` folds a pre-2.3 `vectorConfig.glow` forward: the
+       * halo used to be a beam parameter and is now one post stage shared with
+       * ASCII and pixel, so an old link or a persisted session keeps its bloom
+       * rather than silently losing it.
+       */
+      postProcess: migratePostProcess(
+        (isSynthShared ? sharedState?.postProcess : undefined) || savedSettings.synth?.postProcess,
+        (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig
+      ),
       theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'monochrome',
       customThemeColor: (isSynthShared && sharedState?.customThemeColor) || savedSettings.synth?.customThemeColor || '',
       gradientConfig: (isSynthShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.synth?.gradientConfig ?? null),
@@ -499,6 +531,10 @@ export const App: React.FC = () => {
       vectorConfig: (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig,
       toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
+      postProcess: migratePostProcess(
+        (isMediaShared ? sharedState?.postProcess : undefined) || savedSettings.media?.postProcess,
+        (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig
+      ),
       theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'monochrome',
       customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
       gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
@@ -527,6 +563,10 @@ export const App: React.FC = () => {
       vectorConfig: (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig,
       toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
+      postProcess: migratePostProcess(
+        (isModelShared ? sharedState?.postProcess : undefined) || savedSettings.model?.postProcess,
+        (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig
+      ),
       theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'monochrome',
       customThemeColor: (isModelShared && sharedState?.customThemeColor) || savedSettings.model?.customThemeColor || '',
       gradientConfig: (isModelShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.model?.gradientConfig ?? null),
@@ -572,6 +612,15 @@ export const App: React.FC = () => {
 
   const renderSettingsRef = useRef<RenderSettings>(currentRenderSettings);
   renderSettingsRef.current = currentRenderSettings;
+
+  /*
+   * Read by `buildViewportSourceLayer`, which is a stable `useCallback([])`
+   * called from both the animation loop and the static-image scheduler.
+   */
+  const mediaConfigRef = useRef<MediaConfig>(mediaConfig);
+  mediaConfigRef.current = mediaConfig;
+  const mediaViewConfigRef = useRef<MediaViewConfig>(mediaViewConfig);
+  mediaViewConfigRef.current = mediaViewConfig;
 
 
   // Standalone interface theme settings (managed in Viewfinder Settings Modal)
@@ -1712,6 +1761,54 @@ export const App: React.FC = () => {
     triggerMediaRender();
   }, [appMode, triggerMediaRender]);
 
+  /**
+   * The overlay's source layer for one viewport frame, at the raster's display
+   * resolution rather than the grid's.
+   *
+   * Goes through the exporters' own helpers so the screen and the file cannot
+   * disagree about what "the source" is — the same reason the still and
+   * separation exports share `renderExportFrame`.
+   *
+   * `sourceCapture` for a model frame has to be requested *before* the render,
+   * so `modelSourcePpc` below is read inside the animation loop and this only
+   * collects the result.
+   */
+  const buildViewportSourceLayer = useCallback(
+    (luminance: Float32Array | null): HTMLCanvasElement | null => {
+      const settings = renderSettingsRef.current;
+      const mode = appModeRef.current;
+      const raster =
+        (mode === 'media' ? mediaViewConfigRef.current?.rasterMode : undefined) ||
+        settings.rasterMode ||
+        'ascii';
+      const cell = exportCellSize(raster, 1);
+      const layer = overlaySourceLayer({
+        postProcess: settings.postProcess,
+        appMode: mode,
+        rasterMode: raster,
+        cols: settings.cols,
+        rows: settings.rows,
+        ppc: overlaySourcePpc(settings.postProcess, cell.cellWidth, cell.cellHeight),
+        mediaElement: mediaElementRef.current,
+        mediaConfig: mediaConfigRef.current,
+        resampling: mediaViewConfigRef.current?.resampling,
+        luminance,
+      });
+      const canvas = layer instanceof HTMLCanvasElement ? layer : null;
+      sourceLayerRef.current = canvas;
+      return canvas;
+    },
+    []
+  );
+
+  const handleChangePostProcess = useCallback((next: PostProcessConfig) => {
+    setRenderSettingsByMode((prev) => ({
+      ...prev,
+      [appMode]: { ...prev[appMode], postProcess: next },
+    }));
+    triggerMediaRender();
+  }, [appMode, triggerMediaRender]);
+
 
   /**
    * Reset the colour state that lives outside adjustConfig.
@@ -2258,6 +2355,14 @@ export const App: React.FC = () => {
          * sampled from a quarter of the cells and make the Levels graph twitch
          * for no benefit.
          */
+        /*
+         * The overlay is built at the *full* grid even during a draft preview.
+         * It is one `drawImage`, so it does not benefit from the coarse pass,
+         * and rebuilding it at the reduced grid would make the source visibly
+         * change resolution under the raster on every drag.
+         */
+        const sourceLayer = buildViewportSourceLayer(result.luminance);
+
         if (divisor > 1) {
           const scaled = upscaleFrame(result.text, result.colors, renderCols, renderRows, cols, rows);
           /*
@@ -2266,10 +2371,10 @@ export const App: React.FC = () => {
            * physical size as the pass that replaces it.
            */
           const scaledVector = result.vector ? scaleVectorFrame(result.vector, cols, rows) : null;
-          viewportRef.current?.setFrame(scaled.text, 0, 0, scaled.colors, result.bgColor, result.rasterMode, scaledVector);
+          viewportRef.current?.setFrame(scaled.text, 0, 0, scaled.colors, result.bgColor, result.rasterMode, scaledVector, sourceLayer);
         } else {
           captureHistogram(result);
-          viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode, result.vector);
+          viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode, result.vector, sourceLayer);
           lastStaticRenderMsRef.current = performance.now() - startedAt;
         }
 
@@ -2427,6 +2532,7 @@ export const App: React.FC = () => {
       let frameColors: Uint8ClampedArray | null = null;
       let frameBgColor: string | undefined = undefined;
       let frameVector: VectorFrame | null = null;
+      let frameLuminance: Float32Array | null = null;
 
       /*
        * Phase is an input to the trace, not stored state -- see
@@ -2438,6 +2544,13 @@ export const App: React.FC = () => {
         cfg ? { ...cfg, phase: cfg.phase + timeRef.current * VECTOR_PHASE_RATE } : cfg;
 
       if (appMode === 'model') {
+        /*
+         * A second GPU pass at overlay resolution, and the only reason it is
+         * requested here rather than collected afterwards: the capture happens
+         * inside the renderer, before the pipeline's own point-sampled read.
+         * `undefined` when the overlay is off, which is the whole cost gate.
+         */
+        const modelCell = exportCellSize(activeSettings.rasterMode || 'ascii', 1);
         const res = renderModelFrameData({
           cols,
           rows,
@@ -2453,11 +2566,17 @@ export const App: React.FC = () => {
           vectorConfig: animatedVectorConfig(activeSettings.vectorConfig),
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
+          sourceCapture: overlaySourcePpc(
+            activeSettings.postProcess,
+            modelCell.cellWidth,
+            modelCell.cellHeight
+          ),
         });
         captureHistogram(res);
         frameText = res.text;
         frameColors = res.colors;
         frameVector = res.vector || null;
+        frameLuminance = res.luminance;
       } else if (appMode === 'media') {
         const result = renderAsciiMediaFrameData({
           cols,
@@ -2478,6 +2597,7 @@ export const App: React.FC = () => {
         frameColors = result.colors;
         frameBgColor = result.bgColor;
         frameVector = result.vector || null;
+        frameLuminance = result.luminance;
       } else {
         const res = renderSynthFrameData({
           cols,
@@ -2504,6 +2624,7 @@ export const App: React.FC = () => {
         frameColors = res.colors;
         frameBgColor = res.bgColor;
         frameVector = res.vector || null;
+        frameLuminance = res.luminance;
       }
 
 
@@ -2514,7 +2635,8 @@ export const App: React.FC = () => {
         frameColors,
         frameBgColor,
         appMode === 'media' ? (mediaViewConfig.rasterMode || activeSettings.rasterMode) : activeSettings.rasterMode,
-        frameVector
+        frameVector,
+        buildViewportSourceLayer(frameLuminance)
       );
       animFrameId = requestAnimationFrame(loop);
     };
@@ -2676,6 +2798,11 @@ export const App: React.FC = () => {
         : currentRenderSettings.vectorConfig,
       toneConfig: currentRenderSettings.toneConfig,
       adjustConfig: currentRenderSettings.adjustConfig,
+      /*
+       * One home for the composite stage in every mode, media included — it is
+       * not grading, so the mediaViewConfig fallback above does not apply.
+       */
+      postProcess: currentRenderSettings.postProcess,
 
       /*
        * Not gated on media mode: synth and model both hand this to the engine as
@@ -3003,6 +3130,7 @@ export const App: React.FC = () => {
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
           showMediaPlaceholder={appMode === 'media' && !mediaConfig.fileData}
           initialView={sharedState?.view ?? null}
+          postProcess={currentRenderSettings.postProcess}
 
           isLoading={appMode === 'model' && isModelLoading}
           loadingFileName={modelLoadingFileName}
@@ -3039,6 +3167,8 @@ export const App: React.FC = () => {
                   onChangeMediaColorConfig={handleSelectMediaColorConfig}
                   toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
                   onChangeToneConfig={handleChangeToneConfig}
+                  postProcess={currentRenderSettings.postProcess ?? POST_PROCESS_DEFAULTS}
+                  onChangePostProcess={handleChangePostProcess}
                   onExport={(tab) => {
                     setExportInitialTab(tab);
                     setIsExportOpen(true);
@@ -3398,6 +3528,22 @@ export const App: React.FC = () => {
                               },
                             }));
                           }}
+                          /*
+                           * A beam preset writes two stores now: the halo is a
+                           * post-processing stage, not a beam parameter.
+                           */
+                          onChangePresetGlow={(glow) => {
+                            setRenderSettingsByMode((prev) => {
+                              const base = prev[appMode].postProcess ?? POST_PROCESS_DEFAULTS;
+                              return {
+                                ...prev,
+                                [appMode]: {
+                                  ...prev[appMode],
+                                  postProcess: { ...base, glow: { ...base.glow, ...glow } },
+                                },
+                              };
+                            });
+                          }}
                         />
                       ) : (
                         <DitherAlgorithmPicker
@@ -3508,6 +3654,22 @@ export const App: React.FC = () => {
                     })()}
                   </div>
                 )}
+
+                {/*
+                  4. Post-Processing — the composite stage.
+
+                  Last in the tab because that is where it happens: the Render
+                  tab reads top to bottom in engine order, and everything above
+                  produces the frame this operates on.
+                */}
+                <PostProcessControls
+                  config={currentRenderSettings.postProcess ?? POST_PROCESS_DEFAULTS}
+                  onChange={handleChangePostProcess}
+                  appMode={appMode}
+                  rasterMode={currentRasterMode}
+                  sourceUnavailable={appMode === 'media' && !mediaElementRef.current}
+                  persistKeyPrefix={`${appMode}-post`}
+                />
               </>
             )}
             </AccordionProvider>
@@ -3633,6 +3795,7 @@ export const App: React.FC = () => {
         vectorConfig={appMode === 'media' ? (mediaViewConfig.vectorConfig || currentRenderSettings.vectorConfig) : currentRenderSettings.vectorConfig}
         toneConfig={currentRenderSettings.toneConfig}
         adjustConfig={currentRenderSettings.adjustConfig}
+        postProcess={currentRenderSettings.postProcess}
       />
 
       {/* Share Modal */}
