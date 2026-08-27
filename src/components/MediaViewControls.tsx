@@ -126,12 +126,47 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         }
         persistKey="MediaViewControls-render-settings"
         onReset={resetRenderSettings}
-        resetTitle={isVector ? 'Reset every beam parameter' : 'Reset dither algorithm and resampling filter'}
+        resetTitle={
+          isVector
+            ? 'Reset resampling filter and every beam parameter'
+            : 'Reset resampling filter and dither algorithm'
+        }
       >
+        {/*
+          * Resampling first, and fenced off.
+          *
+          * It is the only control here that acts on the *source* rather than
+          * on the render: it picks the filter the browser downsamples the image
+          * with on its way into the grid (pipeline.md 1.2), so it runs before
+          * everything below it and applies whichever output mode is selected.
+          * Sitting last, under a dither picker or a beam deck, it read as one
+          * more of their parameters.
+          */}
+        <div className="render-settings-source">
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Filter the source is downsampled with on its way into the grid, before any dithering or deflection."
+            >
+              Resampling
+            </span>
+            <select
+              className="number-input"
+              style={{ width: '165px', textAlign: 'left', padding: '2px 6px', fontSize: '11px', height: '24px' }}
+              value={config.resampling || 'preserve-details'}
+              onChange={(e) => update('resampling', e.target.value as ResamplingMode)}
+            >
+              <option value="preserve-details">Preserve Details</option>
+              <option value="nearest">Nearest (Pixel Art)</option>
+              <option value="bilinear">Bilinear Smooth</option>
+            </select>
+          </div>
+        </div>
+
         {/*
           * Vector output leaves the pipeline before quantization, so an
           * algorithm has nothing to act on. The picker is hidden rather than
-          * disabled and  is left in state untouched, so switching
+          * disabled and `algorithm` is left in state untouched, so switching
           * back restores whatever was selected.
           */}
         {isVector ? (
@@ -147,21 +182,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
             onChangeParams={(next) => update('ditherParams', next)}
           />
         )}
-
-        {/* Resampling Filter */}
-        <div className="control-row" style={{ marginTop: '8px' }}>
-          <span className="control-label">Resampling</span>
-          <select
-            className="number-input"
-            style={{ width: '165px', textAlign: 'left', padding: '2px 6px', fontSize: '11px', height: '24px' }}
-            value={config.resampling || 'preserve-details'}
-            onChange={(e) => update('resampling', e.target.value as ResamplingMode)}
-          >
-            <option value="preserve-details">Preserve Details</option>
-            <option value="nearest">Nearest (Pixel Art)</option>
-            <option value="bilinear">Bilinear Smooth</option>
-          </select>
-        </div>
       </CollapsibleSection>
 
       <ImageAdjustControls

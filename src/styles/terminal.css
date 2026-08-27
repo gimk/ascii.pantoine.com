@@ -3984,3 +3984,19 @@ select:disabled {
 .vector-preset-chip:last-child:nth-child(odd) {
   grid-column: span 2;
 }
+
+/* ---------------------------------------------------------------------------
+   RENDER SETTINGS — the source-side row
+   Resampling acts on the image on its way *into* the grid, not on the render
+   that follows, so it sits at the top behind a rule rather than reading as one
+   more parameter of whichever picker is below it.
+   --------------------------------------------------------------------------- */
+.render-settings-source {
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.render-settings-source .control-row {
+  margin: 0;
+}
