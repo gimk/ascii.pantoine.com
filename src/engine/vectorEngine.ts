@@ -228,13 +228,22 @@ export function traceVectorField(
    * destructively, and the additive aberration passes are order-independent.
    */
   const canFill = config.occlusion;
-  const invert = config.occlusionInvert ?? false;
 
   /*
-   * Which edge the *nearest* line sits against. Bottom for a horizontal relief,
-   * left for a vertical beam; `occlusionInvert` flips both to the far side, so
-   * the stack reads as coming from the other direction.
+   * Which side the stack faces is **derived from the deflection**, not chosen.
+   *
+   * A ridge is solid on the side its peak points *away* from — the mountain body
+   * is below its skyline — so the near edge is always opposite the direction
+   * bright deflects, and that direction is the sign of the amplitude. Negating
+   * the amplitude turns the relief over, and the stack turns with it.
+   *
+   * This used to be a separate control, which meant it could be set to disagree
+   * with the geometry: the fill would then cover the sky rather than the body
+   * and the stack read inside out. There is exactly one right answer for any
+   * given deflection, so the config no longer carries a way to express the
+   * wrong one.
    */
+  const invert = amp < 0;
   if (canFill) {
     frame.fillEdge = isVertical
       ? { axis: 'x', value: invert ? cols : 0 }
@@ -246,12 +255,10 @@ export function traceVectorField(
    * depth when the lines go far to near.
    *
    * The two halves are one decision, not two settings. Measured on a 20-line
-   * stripe field where the ridges genuinely cross: both arrangements hide about
-   * half the beam (52.8% front-bottom, 44.8% front-top) and hide *different*
-   * halves, which is the whole point. Flip only one of the pair and the frame is
-   * destroyed either way — 480 and 240 surviving cells out of 4349 — because
-   * every fill then sweeps away from the near side and across the entire image
-   * instead of stopping at the ridge in front.
+   * stripe field where the ridges genuinely cross, flipping only one of the pair
+   * destroys the frame either way — 480 and 240 surviving cells out of 4349 —
+   * because every fill then sweeps away from the near side and across the entire
+   * image instead of stopping at the ridge in front.
    *
    * Vertical is reversed relative to horizontal to begin with (its near side is
    * the left, so far-to-near counts down), hence the XOR rather than a plain

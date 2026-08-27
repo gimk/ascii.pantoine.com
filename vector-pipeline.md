@@ -157,7 +157,6 @@ export interface VectorConfig {
   bias: number;             // 0–1, deflection zero point
   blanking: number;         // 0–0.5, beam-off cutoff; independent of the carrier
   occlusion: boolean;
-  occlusionInvert: boolean;  // flip which edge the nearest line sits against
   carrierEnabled: boolean;
   carrierFreq: number;      // 0.05–1.5
   carrierThreshold: number; // 0–0.9
@@ -242,20 +241,20 @@ Four divergences from the studio, all deliberate:
   invisible with occlusion off: strokes do not overlap destructively and the
   additive aberration passes are order-independent.
 
-  **Which side is near is a user choice** (`occlusionInvert`, shown as *Stack
-  Front*), and flipping it moves the edge and the draw order **together**.
-  They are one decision, not two settings. Measured on a stripe field where
-  the ridges genuinely cross, both arrangements hide about half the beam —
-  52.8% with the front at the bottom, 44.8% with it at the top — and they hide
-  *different* halves, which is what makes the control worth having. Flip one
-  half of the pair and the frame is destroyed either way (480 and 240
-  surviving cells out of 4349), because every fill then sweeps away from the
-  near side and across the whole image instead of stopping at the ridge in
-  front.
+  **Which side is near is derived, not chosen.** A ridge is solid on the side
+  its peak points *away* from — the mountain body is below its skyline — so
+  the near edge is always opposite the direction bright deflects, which is the
+  sign of `amplitude`. Negate the amplitude and the relief turns over; the
+  stack turns with it.
 
-  The control is labelled per axis (BOTTOM/TOP horizontally, LEFT/RIGHT
-  vertically) rather than normal/inverted: the two directions stack along
-  different axes, and "top" means nothing to a vertical beam.
+  It was briefly a separate control, which was a mistake: it could then be set
+  to disagree with the geometry, and the fill would cover the sky instead of
+  the body. Measured by software-rasterizing the painter's algorithm on a
+  stripe field tuned so the ridges genuinely cross, all four
+  direction/sign combinations hide 48–53% of the beam, while forcing the
+  opposite edge hides 89–95% — the frame is destroyed, not merely restyled.
+  There is exactly one right answer for any given deflection, so the config no
+  longer carries a way to express the wrong one.
 - **Blanking is its own control, not a mode of the carrier.** The studio gates
   its blanking on `carrierOn`, and copying that leaves only two reachable looks:
   carrier off draws flat baselines across the entire background, carrier on
