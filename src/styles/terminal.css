@@ -1540,6 +1540,11 @@ html, body, #root {
 }
 
 /* Quantize Levels UI */
+.quantize-controls-section.subsection-divided {
+  margin-top: 0;
+  padding-top: 14px;
+}
+
 .quantize-chip-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
