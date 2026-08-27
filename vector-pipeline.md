@@ -241,20 +241,28 @@ Four divergences from the studio, all deliberate:
   invisible with occlusion off: strokes do not overlap destructively and the
   additive aberration passes are order-independent.
 
-  **Which side is near is derived, not chosen.** A ridge is solid on the side
-  its peak points *away* from — the mountain body is below its skyline — so
-  the near edge is always opposite the direction bright deflects, which is the
-  sign of `amplitude`. Negate the amplitude and the relief turns over; the
-  stack turns with it.
+  **Which side is near is derived, never a control** — but only the vertical
+  beam follows the deflection.
 
-  It was briefly a separate control, which was a mistake: it could then be set
-  to disagree with the geometry, and the fill would cover the sky instead of
-  the body. Measured by software-rasterizing the painter's algorithm on a
-  stripe field tuned so the ridges genuinely cross, all four
-  direction/sign combinations hide 48–53% of the beam, while forcing the
-  opposite edge hides 89–95% — the frame is destroyed, not merely restyled.
-  There is exactly one right answer for any given deflection, so the config no
-  longer carries a way to express the wrong one.
+  *Horizontal keeps its near side at the bottom whatever the amplitude does.*
+  Geometrically a downward ridge is solid above its curve, so the "correct"
+  near side is the top; perceptually that is wrong, because lower in the frame
+  reads as nearer whichever way the ridges point, and flipping the stack
+  upward on a negative amplitude looks like the frame being eaten from above
+  rather than like an inverted relief. It costs a little bite — 43.6% of the
+  beam hidden against 52.8% for a positive amplitude — and keeps working.
+
+  *Vertical does follow it*, because neither side of the frame is the ground
+  and there is no convention to violate; negating the amplitude mirrors the
+  image cleanly, near side and all (48.3% hidden facing left, 52.4% facing
+  right).
+
+  It was briefly a user control, which was a mistake: it could then be set to
+  disagree with the geometry, and the fill would cover the sky instead of the
+  body. Measured by software-rasterizing the painter's algorithm on a stripe
+  field tuned so the ridges genuinely cross, forcing the opposite edge hides
+  89–95% of the beam — the frame is destroyed, not merely restyled. So there
+  is no way left to express the wrong one.
 - **Blanking is its own control, not a mode of the carrier.** The studio gates
   its blanking on `carrierOn`, and copying that leaves only two reachable looks:
   carrier off draws flat baselines across the entire background, carrier on

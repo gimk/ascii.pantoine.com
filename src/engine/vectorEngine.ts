@@ -230,20 +230,24 @@ export function traceVectorField(
   const canFill = config.occlusion;
 
   /*
-   * Which side the stack faces is **derived from the deflection**, not chosen.
+   * Which side the stack faces. Derived, never a control — but only the
+   * vertical beam follows the deflection.
    *
-   * A ridge is solid on the side its peak points *away* from — the mountain body
-   * is below its skyline — so the near edge is always opposite the direction
-   * bright deflects, and that direction is the sign of the amplitude. Negating
-   * the amplitude turns the relief over, and the stack turns with it.
+   * **Horizontal keeps its near side at the bottom whatever the amplitude
+   * does.** Geometrically a downward ridge is solid above its curve, so the
+   * "correct" near side is the top; perceptually that is wrong, because lower
+   * in the frame reads as nearer whichever way the ridges point. Flipping the
+   * stack upward on a negative amplitude looks like the frame being eaten from
+   * above rather than like an inverted relief. Occlusion does lose a little
+   * bite, since a downward ridge dips away from a fill that also runs
+   * downward — measured 43.6% of the beam hidden against 52.8% for a positive
+   * amplitude — but it keeps working, and reading right beats measuring best.
    *
-   * This used to be a separate control, which meant it could be set to disagree
-   * with the geometry: the fill would then cover the sky rather than the body
-   * and the stack read inside out. There is exactly one right answer for any
-   * given deflection, so the config no longer carries a way to express the
-   * wrong one.
+   * **Vertical does follow it**, because neither side of the frame is the
+   * ground and there is no convention to violate. Negating the amplitude
+   * mirrors the image cleanly, near side and all.
    */
-  const invert = amp < 0;
+  const invert = isVertical && amp < 0;
   if (canFill) {
     frame.fillEdge = isVertical
       ? { axis: 'x', value: invert ? cols : 0 }
