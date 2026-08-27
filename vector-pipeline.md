@@ -444,6 +444,7 @@ which question the old `=== 'pixel'` test was really asking.
 | [`App.tsx`](src/App.tsx) `autoSetMediaResolution` | vector takes its own branch: `min(800, source.width)` columns, `cellAspect 1.0` |
 | [`App.tsx`](src/App.tsx) `densityRampSection` | charset section omitted — a beam has no glyphs |
 | [`App.tsx`](src/App.tsx) `OptimizeControls isPixelMode` | DPI aspect, both mounts |
+| [`BasicPanel.tsx`](src/components/BasicPanel.tsx) `handleColsChange` | **missed on the first pass** — see below |
 | [`mediaRenderer.ts`](src/engine/mediaRenderer.ts) `isTextMode` | already `=== 'ascii'`; correct unchanged |
 | [`AsciiViewport.tsx`](src/components/AsciiViewport.tsx) `getContentSize`, `autoFit` | 1:1 cell geometry |
 | [`ExportModal.tsx`](src/components/ExportModal.tsx) CRT gating | a screen artefact baked into a plotter path |
@@ -470,6 +471,21 @@ which question the old `=== 'pixel'` test was really asking.
 | [`share.ts`](src/engine/share.ts) | `vectorConfig` on the payload, **written** by `currentFullState` as well as read on load |
 | [`BasicPanel.tsx`](src/components/BasicPanel.tsx) | third output button; `!isPixel` for the charset became `isAscii` |
 | [`PaletteControls.tsx`](src/components/PaletteControls.tsx) | `isVectorMode` hides Quantize Depth |
+
+`BasicPanel.handleColsChange` is the one this audit missed, and it is worth
+recording because it is the exact failure mode §3.1 predicts. It had no
+`=== 'pixel'` test to find and rewrite — it simply applied `ASCII_CELL_ASPECT`
+unconditionally, so the search for sites to widen never surfaced it. Vector
+therefore rendered at 55% height from the basic panel while the advanced panel
+(which routes through `OptimizeControls`, and *did* get widened) was correct:
+a 3:2 source came out at 2.72:1. The 400-column ceiling compounded it, pinning
+every preset above 400 to the same grid. Now `cellAspectFor(rasterMode)` and a
+per-mode ceiling, with `VECTOR_COLS_PRESETS` running 300..1600 around the 800
+`autoSetMediaResolution` picks unaided.
+
+The general lesson: widening a union finds the sites that *branch* on it. It
+cannot find the sites that assumed the old value so completely they never
+branched at all.
 
 Two behavioural rules held throughout, both instances of the BASIC/ADVANCED
 invariant (pipeline.md §4) applied to modes: **the dither picker is hidden, not

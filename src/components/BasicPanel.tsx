@@ -25,7 +25,7 @@ import { VectorControls } from './VectorControls';
 import { PaletteControls } from './PaletteControls';
 import { NToneRampEditor } from './NToneRampEditor';
 import { CHARSETS } from '../engine/renderer';
-import { clampGridToBudget } from '../engine/mediaPresets';
+import { clampGridToBudget, MAX_GRID_COLS } from '../engine/mediaPresets';
 import {
   AdjustSlider,
   applyToneStops,
@@ -39,6 +39,15 @@ import { ExportTab } from './ExportModal';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
 const ASCII_CELL_ASPECT = 0.55;
+
+/**
+ * Vector shares pixel’s square cells: a polyline is geometry, not a glyph.
+ *
+ * Applying the monospace correction to it squashed the render to 55% height,
+ * which is the same mistake `autoSetMediaResolution` documents avoiding on the
+ * automatic path.
+ */
+const cellAspectFor = (mode: RasterOutputMode) => (mode === 'ascii' ? ASCII_CELL_ASPECT : 1.0);
 
 /** Resolution presets: DPI for Pixel mode, Columns for ASCII mode */
 const DPI_PRESETS: { label: string; value: number }[] = [
@@ -57,6 +66,25 @@ const COLS_PRESETS: { label: string; value: number }[] = [
   { label: '140', value: 140 },
   { label: '180', value: 180 },
   { label: '240', value: 240 },
+];
+
+/**
+ * Vector runs an order of magnitude wider, because the grid stopped being a
+ * display raster and became the beam’s *sampling* raster.
+ *
+ * Nothing downstream quantizes to it, so there are no visible cells to keep
+ * legible and no reason to stay near 100 — what a coarse grid costs instead is
+ * a visibly faceted deflection curve. 800 is the centre because it is what
+ * `autoSetMediaResolution` picks on its own, matching the studio’s
+ * `min(800, source.width)` working buffer.
+ */
+const VECTOR_COLS_PRESETS: { label: string; value: number }[] = [
+  { label: '300', value: 300 },
+  { label: '400', value: 400 },
+  { label: '600', value: 600 },
+  { label: '800', value: 800 },
+  { label: '1200', value: 1200 },
+  { label: '1600', value: 1600 },
 ];
 
 /** Numbered step header, matching the sidebar workflow titles. */
@@ -177,9 +205,15 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
     }
   };
 
+  /*
+   * The ceiling is per-mode for the same reason the presets are: 400 columns is
+   * already an enormous wall of glyphs and a third of what a beam wants to
+   * sample at. Vector stops at the shared grid budget instead.
+   */
   const handleColsChange = (newCols: number) => {
-    const clamped = Math.max(20, Math.min(400, Math.round(newCols)));
-    const nextRows = Math.max(10, Math.round((clamped * ASCII_CELL_ASPECT) / srcAspect));
+    const ceiling = isVector ? MAX_GRID_COLS : 400;
+    const clamped = Math.max(20, Math.min(ceiling, Math.round(newCols)));
+    const nextRows = Math.max(10, Math.round((clamped * cellAspectFor(rasterMode)) / srcAspect));
     onChangeResolution(clamped, nextRows);
   };
 
@@ -320,14 +354,26 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       <div className="basic-section">
         {/* 1. Resolution / Grid Density */}
         <div className="tonal-subheading" style={{ marginTop: 0 }}>
-          <span>{isPixel ? 'Resolution (DPI)' : 'Grid Size (Columns)'}</span>
+          <span
+            title={
+              isVector
+                ? 'How finely the beam reads the image. Nothing quantizes to this grid, so it is a sampling rate rather than a visible resolution — too coarse and the deflection curve turns faceted.'
+                : undefined
+            }
+          >
+            {isPixel
+              ? 'Resolution (DPI)'
+              : isVector
+                ? 'Beam Sampling (Columns)'
+                : 'Grid Size (Columns)'}
+          </span>
           <span className="control-static-value">
-            {cols} &times; {rows} {isPixel ? 'px' : 'chars'}
+            {cols} &times; {rows} {isPixel ? 'px' : isVector ? 'samples' : 'chars'}
           </span>
         </div>
 
         <div className="basic-chip-row" style={{ marginBottom: '4px' }}>
-          {(isPixel ? DPI_PRESETS : COLS_PRESETS).map((preset) => {
+          {(isPixel ? DPI_PRESETS : isVector ? VECTOR_COLS_PRESETS : COLS_PRESETS).map((preset) => {
             const isActive = isPixel ? dpi === preset.value : cols === preset.value;
             return (
               <button
@@ -337,7 +383,13 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
                 onClick={() =>
                   isPixel ? handleDpiChange(preset.value) : handleColsChange(preset.value)
                 }
-                title={isPixel ? `${preset.value} DPI` : `${preset.value} columns wide`}
+                title={
+                  isPixel
+                    ? `${preset.value} DPI`
+                    : isVector
+                      ? `Sample the beam at ${preset.value} columns across`
+                      : `${preset.value} columns wide`
+                }
               >
                 {preset.label}
               </button>
