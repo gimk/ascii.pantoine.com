@@ -34,8 +34,11 @@ import { VectorConfig, VectorFrame, VectorPolyline } from '../types/ascii';
  */
 export type VectorColorResolver = (lineIndex: number, meanLum: number) => string;
 
-/** Below this the beam is blanked, matching the studio's cutoff. */
-const BLANKING_LEVEL = 0.02;
+/**
+ * Fallback blanking level for a config written before the control existed.
+ * Matches the studio's hardcoded cutoff.
+ */
+const DEFAULT_BLANKING = 0.02;
 
 /**
  * Above this luminance the carrier never gates, so highlights stay a solid
@@ -194,6 +197,7 @@ export function traceVectorField(
   const step = Math.max(1, Math.round(config.sampleStep));
   const amp = config.amplitude;
   const bias = config.bias;
+  const blanking = config.blanking ?? DEFAULT_BLANKING;
   const carrierOn = config.carrierEnabled;
   const freq = config.carrierFreq;
   const threshold = config.carrierThreshold;
@@ -204,12 +208,29 @@ export function traceVectorField(
   const strokeWidth = config.strokeWidth;
 
   /*
-   * Occlusion is a painter's fill, so it needs a stable draw order: lines are
-   * emitted far-to-near and each closes down to the far edge and fills with the
-   * background before the next is stroked over it. The emission order below is
-   * already 1..N, which for horizontal relief means top (far) to bottom (near).
+   * Occlusion is a painter's fill, so both the draw order and the edge the
+   * polygon closes to are direction-dependent.
+   *
+   * The rule that makes it read as relief: **a line's fill must extend in the
+   * direction of increasing draw order, and its bright deflection must go the
+   * other way.** Then a line that peaks hard reaches back over the lines
+   * already drawn behind it, and its fill hides them — while the lines still to
+   * come are painted afterwards and stay visible.
+   *
+   * For a horizontal relief that is the familiar arrangement: draw top to
+   * bottom, close down to the bottom edge, bright peaks upward. A vertical beam
+   * deflects sideways with bright going *right*, so the same rule requires the
+   * mirror image — draw right to left, close to the left edge. Closing a
+   * vertical beam downward (which is what a single hardcoded edge gives you)
+   * fills a meaningless wedge under each line.
+   *
+   * Draw order is invisible when occlusion is off: strokes do not overlap
+   * destructively, and the additive aberration passes are order-independent.
    */
   const canFill = config.occlusion;
+  if (canFill) {
+    frame.fillEdge = isVertical ? { axis: 'x', value: 0 } : { axis: 'y', value: rows };
+  }
 
   /* Sampling along the line; the axis the beam travels. */
   const travelExtent = isVertical ? rows : cols;
@@ -251,7 +272,14 @@ export function traceVectorField(
         ? (hex: string) => hex
         : (hex: string) => channelSplit(hex, pass as 0 | 1 | 2);
 
-    for (let i = 1; i <= lineCount; i++) {
+    /*
+     * Vertical runs right to left so that bright, right-deflected beams reach
+     * back over what is already drawn — see the fill-edge note above. The line
+     * index `i` stays geometric either way, because the ripple phase is keyed
+     * to it and reversing the numbering would reshuffle the noise.
+     */
+    for (let n = 1; n <= lineCount; n++) {
+      const i = isVertical ? lineCount + 1 - n : n;
       const base = i * spacing;
       const beam = new BeamAccumulator(
         polylines,
@@ -278,16 +306,27 @@ export function traceVectorField(
         }
 
         /*
-         * Blanking is gated on the carrier, as in the studio.
+         * Blanking: the beam is off below this luminance.
          *
-         * Cutting the beam in black regardless would destroy the flat baseline
-         * that a relief look is built on — Unknown Pleasures is precisely a
-         * dead-flat line that lifts only where the image is bright, and
-         * blanking it leaves ridges floating over nothing. With the carrier on
-         * the beam is meant to dissolve in shadow, so there the blanking is the
-         * point.
+         * Its own control, not a side effect of the carrier. The studio gates
+         * blanking on `carrierOn`, which collapses the space of looks to two —
+         * baselines drawn flat across the entire background, or a frame
+         * dissolved into dots — with nothing in between. Separating them makes
+         * the useful third look reachable: raise the cutoff, leave the carrier
+         * off, and the background clears while the lit subject stays a
+         * continuous line.
+         *
+         * At 0 the beam is never blanked, which is what a relief wants: Unknown
+         * Pleasures is precisely a dead-flat line that lifts only where the
+         * image is bright, and cutting it leaves ridges floating over nothing.
          */
-        if (carrierOn && v <= BLANKING_LEVEL) {
+        /*
+         * `blanking > 0` guards the comparison rather than relying on `v <= 0`
+         * being false: a pure black ground is *exactly* 0, so an unguarded
+         * `<=` cuts the baseline at a cutoff of zero and the control never
+         * reaches its own documented off position.
+         */
+        if (blanking > 0 && v <= blanking) {
           beam.break_();
           continue;
         }
@@ -347,6 +386,30 @@ export function traceVectorField(
   return frame;
 }
 
+/** Where an occlusion polygon closes to; `y`/`rows` for a relief, `x`/`0` for a beam. */
+type FillEdge = NonNullable<VectorFrame['fillEdge']>;
+
+/** Fallback for a frame traced before `fillEdge` existed. */
+const LEGACY_FILL_EDGE = (frame: VectorFrame): FillEdge =>
+  frame.fillEdge ?? { axis: 'y', value: frame.height };
+
+/**
+ * The two legs that turn an open run into a closed occlusion polygon: drop both
+ * ends onto the edge, in the axis the edge is measured on.
+ */
+function closeToEdge(ctx: CanvasRenderingContext2D, pts: Float32Array, edge: FillEdge): void {
+  const lastX = pts[pts.length - 2];
+  const lastY = pts[pts.length - 1];
+  if (edge.axis === 'y') {
+    ctx.lineTo(lastX, edge.value);
+    ctx.lineTo(pts[0], edge.value);
+  } else {
+    ctx.lineTo(edge.value, lastY);
+    ctx.lineTo(edge.value, pts[1]);
+  }
+  ctx.closePath();
+}
+
 /**
  * Retune a config for a grid `divisor` times smaller, so a draft preview traces
  * the *same picture* at a coarser sampling rate.
@@ -398,6 +461,10 @@ export function scaleVectorFrame(frame: VectorFrame, width: number, height: numb
     ...frame,
     width,
     height,
+    /* The occlusion edge is a coordinate, so it moves with the geometry. */
+    fillEdge: frame.fillEdge
+      ? { axis: frame.fillEdge.axis, value: frame.fillEdge.value * (frame.fillEdge.axis === 'x' ? kx : ky) }
+      : undefined,
     polylines: frame.polylines.map((line) => {
       const pts = new Float32Array(line.points.length);
       for (let i = 0; i < pts.length; i += 2) {
@@ -434,6 +501,7 @@ export function paintVectorFrame(
 ): void {
   const strokeScale = options.strokeScale && options.strokeScale > 0 ? options.strokeScale : 1;
   const glowScale = options.glowScale && options.glowScale > 0 ? options.glowScale : 1;
+  const edge = LEGACY_FILL_EDGE(frame);
 
   ctx.save();
   ctx.lineCap = 'round';
@@ -457,32 +525,37 @@ export function paintVectorFrame(
     const pts = line.points;
     if (pts.length < 4) continue;
 
+    /*
+     * Occlusion: close the run to the far edge and fill with the ground, so a
+     * nearer ridge hides what is behind it. Painted per polyline rather than as
+     * a depth pass because the emission order already runs far to near.
+     *
+     * **This must be its own path.** Closing the run and then stroking the same
+     * path draws the two closing legs and the edge run in the beam colour --
+     * which reads as a hard vertical line dropping off each end of every ridge,
+     * appearing the moment occlusion is switched on. The SVG exporter always
+     * emitted a separate <polygon>; the canvas painter did not.
+     */
+    if (line.filled) {
+      const savedOp = ctx.globalCompositeOperation;
+      const savedShadow = ctx.shadowBlur;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(pts[0], pts[1]);
+      for (let p = 2; p < pts.length; p += 2) ctx.lineTo(pts[p], pts[p + 1]);
+      closeToEdge(ctx, pts, edge);
+      ctx.fillStyle = frame.bgColor;
+      ctx.fill();
+      ctx.shadowBlur = savedShadow;
+      ctx.globalCompositeOperation = savedOp;
+    }
+
     ctx.beginPath();
     ctx.moveTo(pts[0], pts[1]);
     for (let p = 2; p < pts.length; p += 2) {
       ctx.lineTo(pts[p], pts[p + 1]);
     }
-
-    /*
-     * Occlusion: close the run down to the far edge and fill with the ground
-     * before stroking, so a nearer ridge hides what is behind it. Painted per
-     * polyline rather than as a depth pass because the emission order already
-     * runs far to near.
-     */
-    if (line.filled) {
-      const saved = ctx.globalCompositeOperation;
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.lineTo(pts[pts.length - 2], frame.height);
-      ctx.lineTo(pts[0], frame.height);
-      ctx.closePath();
-      ctx.fillStyle = frame.bgColor;
-      const savedShadow = ctx.shadowBlur;
-      ctx.shadowBlur = 0;
-      ctx.fill();
-      ctx.shadowBlur = savedShadow;
-      ctx.globalCompositeOperation = saved;
-    }
-
     ctx.strokeStyle = line.color;
     ctx.lineWidth = Math.max(0.05, line.width / strokeScale);
     ctx.stroke();
@@ -507,6 +580,7 @@ export function vectorFrameToSvg(
   options: { scale?: number; background?: string | null; groupId?: string } = {}
 ): string {
   const scale = options.scale && options.scale > 0 ? options.scale : 1;
+  const edge = LEGACY_FILL_EDGE(frame);
   const w = Math.round(frame.width * scale);
   const h = Math.round(frame.height * scale);
 
@@ -548,11 +622,18 @@ export function vectorFrameToSvg(
        * cannot both fill with the ground and stroke with the beam colour, and
        * splitting them keeps the stroke a true open polyline for a plotter.
        */
-      const closed = [
-        ...coords,
-        `${fmt(pts[pts.length - 2])},${fmt(frame.height)}`,
-        `${fmt(pts[0])},${fmt(frame.height)}`,
-      ];
+      const closed =
+        edge.axis === 'y'
+          ? [
+              ...coords,
+              `${fmt(pts[pts.length - 2])},${fmt(edge.value)}`,
+              `${fmt(pts[0])},${fmt(edge.value)}`,
+            ]
+          : [
+              ...coords,
+              `${fmt(edge.value)},${fmt(pts[pts.length - 1])}`,
+              `${fmt(edge.value)},${fmt(pts[1])}`,
+            ];
       parts.push(`<polygon points="${closed.join(' ')}" fill="${frame.bgColor}" stroke="none"/>`);
     }
 

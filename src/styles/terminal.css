@@ -3978,3 +3978,8 @@ select:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* An odd preset count would otherwise leave the last chip half width. */
+.vector-preset-chip:last-child:nth-child(odd) {
+  grid-column: span 2;
+}

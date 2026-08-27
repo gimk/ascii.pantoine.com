@@ -335,6 +335,15 @@ export interface VectorFrame {
   glow: number;
   glowColor: string;
   /**
+   * Where an occlusion polygon closes to.
+   *
+   * Direction-dependent, so the painters cannot assume it: a horizontal relief
+   * closes down to the bottom edge, but a vertical beam deflects sideways and
+   * closing it downward fills a meaningless wedge. Absent when nothing is
+   * filled.
+   */
+  fillEdge?: { axis: 'x' | 'y'; value: number };
+  /**
    * Composite the strokes additively. Set when chromatic aberration split the
    * beam into channel passes, which have to recombine to white where they
    * coincide rather than the last one covering the others.
@@ -360,6 +369,20 @@ export interface VectorConfig {
   amplitude: number;
   /** Luminance that deflects to zero. 0.5 is bipolar, 0 is unidirectional. */
   bias: number;
+  /**
+   * Luminance below which the beam is off entirely — the CRT blanking level.
+   *
+   * Independent of the carrier, which is the whole point. The two answer
+   * different questions: blanking is *where there is no beam at all*, the
+   * carrier is *how the beam breaks up where it is dim*. Tying them together
+   * (as the reference studio does, and as this did at first) leaves only two
+   * reachable looks — flat baselines drawn across the whole background, or
+   * everything dissolved into dots — with no way to clear the background while
+   * keeping the lit subject a continuous line.
+   *
+   * 0 draws the baseline everywhere, which is what a Joy Division relief wants.
+   */
+  blanking: number;
   occlusion: boolean;
   carrierEnabled: boolean;
   carrierFreq: number;
@@ -386,6 +409,7 @@ export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
   sampleStep: 2,
   amplitude: 65,
   bias: 0.5,
+  blanking: 0.02,
   occlusion: false,
   carrierEnabled: true,
   carrierFreq: 0.45,

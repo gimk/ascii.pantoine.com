@@ -138,6 +138,8 @@ export interface VectorFrame {
   bgColor: string;
   glow: number;
   glowColor: string;
+  /** Where an occlusion polygon closes to. Direction-dependent. */
+  fillEdge?: { axis: 'x' | 'y'; value: number };
   /** Composite additively — set when aberration split the beam into channels. */
   additive: boolean;
 }
@@ -153,6 +155,7 @@ export interface VectorConfig {
   sampleStep: number;       // 1–6 grid cells between samples
   amplitude: number;        // −180…180, in grid cells
   bias: number;             // 0–1, deflection zero point
+  blanking: number;         // 0–0.5, beam-off cutoff; independent of the carrier
   occlusion: boolean;
   carrierEnabled: boolean;
   carrierFreq: number;      // 0.05–1.5
@@ -211,19 +214,53 @@ Four divergences from the studio, all deliberate:
   (~`54 × 450` stroke calls), and its `isDrawingSegment` flag is dead — it
   reassigns `segStart` every iteration regardless. Accumulating points removes
   both by construction.
-- Occlusion is a painter's fill: each line closes down to the far edge and fills
-  with `bgColor` before stroking, lines drawn far-to-near. That is correct and
-  cheap, and worth keeping — but the studio disables it whenever the carrier is
-  on, because a broken polyline cannot close. `filled` is emitted on the first
+- Occlusion is a painter's fill: each line closes to the far edge and fills with
+  `bgColor` before stroking, lines drawn far-to-near. That is correct and cheap,
+  and worth keeping — but the studio disables it whenever the carrier is on,
+  because a broken polyline cannot close. `filled` is emitted on the first
   *unbroken* run instead, so a partly-dashed frame still occludes where the beam
   stayed continuous, and a dotted one does not stamp a ground under every dash.
-- **Blanking is gated on the carrier**, as in the studio — and getting this
-  wrong is what a first pass did. Cutting the beam wherever the image is black
-  destroys the flat baseline a relief look is built on: Unknown Pleasures is
-  precisely a dead-flat line that lifts only where the image is bright, and
-  blanking it leaves ridges floating over nothing. With the carrier on the beam
-  is *meant* to dissolve in shadow, so there the blanking is the point.
-  Transparency is different and always cuts, carrier or not.
+
+  **The fill must be its own path.** Closing the run and then stroking the same
+  path draws the two closing legs and the edge run in the beam colour, which
+  reads as a hard line dropping off each end of every ridge the moment occlusion
+  is switched on. The SVG exporter always emitted a separate `<polygon>`; the
+  canvas painter did not, so the artefact appeared on screen and in PNG but
+  never in an exported SVG.
+
+  **Which edge it closes to is direction-dependent**, and one hardcoded value is
+  wrong for half the cases. The rule that makes a fill read as relief: a line's
+  fill extends in the direction of *increasing draw order*, and its bright
+  deflection goes the other way — then a line that peaks hard reaches back over
+  what is already drawn and hides it, while the lines still to come are painted
+  afterwards and survive. Horizontal is the familiar arrangement (draw top to
+  bottom, close to the bottom edge, bright peaks up); vertical deflects bright
+  to the right, so it needs the mirror image — draw right to left, close to the
+  left edge. `VectorFrame.fillEdge` carries this so the painters do not guess,
+  and `scaleVectorFrame` scales it, since it is a coordinate. Draw order is
+  invisible with occlusion off: strokes do not overlap destructively and the
+  additive aberration passes are order-independent.
+- **Blanking is its own control, not a mode of the carrier.** The studio gates
+  its blanking on `carrierOn`, and copying that leaves only two reachable looks:
+  carrier off draws flat baselines across the entire background, carrier on
+  dissolves the whole frame into dots. The one people actually want — background
+  cleared, lit subject still a continuous line — is not expressible.
+
+  They are answering different questions. Blanking is *where there is no beam at
+  all*; the carrier is *how the beam breaks up where it is dim*. `VectorConfig`
+  carries a `blanking` cutoff applied regardless of the carrier, exposed as
+  **Beam Cutoff**:
+
+  | carrier | cutoff | result |
+  |---|---|---|
+  | on | 0.02 | pulses in shadow, solid in light — the studio default |
+  | off | 0 | flat baselines everywhere — what a Joy Division relief wants |
+  | off | 0.14 | **continuous beams on the subject only, background cleared** |
+
+  The `blanking > 0` guard on the comparison is load-bearing: a pure black
+  ground is *exactly* 0, so an unguarded `v <= blanking` cuts the baseline even
+  at a cutoff of zero and the control cannot reach its own off position.
+  Transparency is separate again and always cuts, whatever either is set to.
 - **Bias means the same thing on both axes.** The studio writes the horizontal
   case as `-(lum - (1 - bias))`, which makes one slider mean opposite things per
   direction: 0 is unidirectional vertically, 1 is unidirectional horizontally,
