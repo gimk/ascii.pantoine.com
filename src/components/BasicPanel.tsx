@@ -288,7 +288,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   return (
     <div className="basic-panel">
       {/* ================================================================ */}
-      <WorkflowStep n="01" label="Import" />
+      <WorkflowStep n="01" label="Source" />
       <div className="basic-section">
         <MediaUploadControls
           config={mediaConfig}
@@ -341,13 +341,9 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       <WorkflowStep n="02" label="Output" />
       <div className="basic-section">
         <OutputModeCards value={rasterMode} onChange={onChangeRasterMode} compact />
-      </div>
 
-      {/* ================================================================ */}
-      <WorkflowStep n="03" label="Dither" />
-      <div className="basic-section">
-        {/* 1. Resolution / Grid Density */}
-        <div className="tonal-subheading tonal-subheading-flush">
+        {/* Resolution / Grid Density */}
+        <div className="tonal-subheading tonal-subheading-flush" style={{ marginTop: '10px' }}>
           <span
             title={
               isVector
@@ -391,27 +387,8 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           })}
         </div>
 
-        {/* 2. Dithering Algorithm & Character Set */}
-        <div className="tonal-subheading tonal-subheading-tight">
-          <span>{isVector ? 'Beam Deflection' : isPixel ? 'Dither Pattern' : 'Dither & Glyphs'}</span>
-        </div>
-
-        {isVector ? (
-          <VectorControls
-            compact
-            config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
-            onChange={(next) => updateView('vectorConfig', next)}
-          />
-        ) : (
-          <DitherAlgorithmPicker
-            value={viewConfig.algorithm || 'floyd-steinberg'}
-            onChange={(algo) => updateView('algorithm', algo)}
-            compact
-          />
-        )}
-
         {isAscii && (
-          <div className="control-row">
+          <div className="control-row" style={{ marginTop: '8px' }}>
             <span className="control-label control-fixed">Charset</span>
 
             <div className="control-cluster">
@@ -471,24 +448,31 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <WorkflowStep n="04" label="Adjust" />
+      <WorkflowStep n="03" label="Aesthetic" />
       <div className="basic-section">
-        <SimpleLevelsSlider
-          config={toneConfig}
-          onChangeConfig={onChangeToneConfig}
-        />
-
-        <div className="tonal-subheading tonal-subheading-tight">
-          <span>Detail &amp; Filtering</span>
+        {/* Dithering Algorithm & Character Set */}
+        <div className="tonal-subheading tonal-subheading-flush">
+          <span>{isVector ? 'Beam Deflection' : isPixel ? 'Dither Pattern' : 'Dithering'}</span>
         </div>
-        <AdjustSlider id="sharpenStrength" config={viewConfig} onChangeConfig={updateAdjust} />
-        <AdjustSlider id="sharpenRadius" config={viewConfig} onChangeConfig={updateAdjust} />
-        <AdjustSlider id="denoise" config={viewConfig} onChangeConfig={updateAdjust} />
-      </div>
 
-      {/* ================================================================ */}
-      <WorkflowStep n="05" label="Color" />
-      <div className="basic-section">
+        {isVector ? (
+          <VectorControls
+            compact
+            config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+            onChange={(next) => updateView('vectorConfig', next)}
+          />
+        ) : (
+          <DitherAlgorithmPicker
+            value={viewConfig.algorithm || 'floyd-steinberg'}
+            onChange={(algo) => updateView('algorithm', algo)}
+            compact
+          />
+        )}
+
+        <div className="tonal-subheading tonal-subheading-tight" style={{ marginTop: '12px' }}>
+          <span>Color &amp; Palette</span>
+        </div>
+
         <PaletteControls
           currentTheme={theme}
           onChangeTheme={onChangeTheme}
@@ -530,12 +514,23 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      {/*
-        The composite stage, reduced to the three controls that change the
-        picture. Detail, source layer and the optics tuning stay at whatever
-        ADVANCED left them — this panel only ever hides.
-      */}
-      <WorkflowStep n="06" label="Post" />
+      <WorkflowStep n="04" label="Adjust" />
+      <div className="basic-section">
+        <SimpleLevelsSlider
+          config={toneConfig}
+          onChangeConfig={onChangeToneConfig}
+        />
+
+        <div className="tonal-subheading tonal-subheading-tight">
+          <span>Detail &amp; Filtering</span>
+        </div>
+        <AdjustSlider id="sharpenStrength" config={viewConfig} onChangeConfig={updateAdjust} />
+        <AdjustSlider id="sharpenRadius" config={viewConfig} onChangeConfig={updateAdjust} />
+        <AdjustSlider id="denoise" config={viewConfig} onChangeConfig={updateAdjust} />
+      </div>
+
+      {/* ================================================================ */}
+      <WorkflowStep n="05" label="Compositing" />
       <div className="basic-section">
         <div className="control-row">
           <span
@@ -626,7 +621,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <WorkflowStep n="07" label="Export" />
+      <WorkflowStep n="06" label="Export" />
       <div className="basic-section">
         <button
           type="button"

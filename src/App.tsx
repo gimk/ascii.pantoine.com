@@ -87,10 +87,16 @@ import { CharsetThemeBar } from './components/CharsetThemeBar';
 import { PaletteControls } from './components/PaletteControls';
 import { ModelImportControls, ModelMeshControls } from './components/ModelSettingsControls';
 import { ModelViewControls } from './components/ModelViewControls';
-import { MediaUploadControls, MediaFramingControls } from './components/MediaFileControls';
+import { MediaUploadControls } from './components/MediaFileControls';
 import { MediaViewControls } from './components/MediaViewControls';
-import { ImageAdjustControls, resolveToneStops, applyToneStops, DEFAULT_STOP_WEIGHT } from './components/ImageAdjustControls';
 import { NToneRampEditor } from './components/NToneRampEditor';
+import {
+  ColorAdjustControls,
+  TonalAdjustControls,
+  resolveToneStops,
+  applyToneStops,
+  DEFAULT_STOP_WEIGHT,
+} from './components/ImageAdjustControls';
 import { CollapsibleSection, AccordionProvider } from './components/CollapsibleSection';
 import { BasicPanel } from './components/BasicPanel';
 import { UiModeSwitch } from './components/UiModeSwitch';
@@ -112,25 +118,18 @@ import {
 
 import {
   Sliders,
-  Palette,
   Share2,
   Download,
-  Layers,
   Undo2,
   Redo2,
   Box,
   Image as ImageIcon,
   Settings,
   Keyboard,
-  Sparkles,
-  X,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
 const LOCAL_STORAGE_UI_THEME_KEY = 'ascii_studio_ui_theme_settings';
-
-/** One-time nudge towards the render panel after a first media upload. */
-const LOCAL_STORAGE_RENDER_HINT_KEY = 'ascii_studio_render_hint_seen';
 
 /**
  * Pick the sidebar layout to open with.
@@ -265,46 +264,6 @@ const SOURCES: {
     description: 'WebGL Mesh',
     icon: Box,
     title: '3D Model to 2D ASCII Visualizer [3]',
-  },
-];
-
-/**
- * The ADVANCED sidebar's three stretches, and the rail that jumps between them.
- *
- * These are headings in one scrolling column, not tabs: the rail scrolls to
- * them and highlights whichever is nearest the top. `step` is the workflow
- * number the section opens on, so the rail and the rules down the column agree
- * on where 04 starts.
- */
-type SidebarSection = 'content' | 'render' | 'post';
-
-const SIDEBAR_SECTIONS: {
-  id: SidebarSection;
-  step: string;
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  title: string;
-}[] = [
-  {
-    id: 'content',
-    step: '01',
-    label: 'CONTENT',
-    icon: Layers,
-    title: 'Content source, import & framing [Hotkey: 1]',
-  },
-  {
-    id: 'render',
-    step: '04',
-    label: 'RENDER',
-    icon: Palette,
-    title: 'Output mode, resolution, shading & palette [Hotkey: 2]',
-  },
-  {
-    id: 'post',
-    step: '07',
-    label: 'POST',
-    icon: Sparkles,
-    title: 'Overlay, glow & optics — the composite stage [Hotkey: 3]',
   },
 ];
 
@@ -842,19 +801,6 @@ export const App: React.FC = () => {
    * longer a filter on what renders: it is scroll position, read back from the
    * headings, and the rail scrolls to them rather than swapping them in.
    */
-  const [activeSection, setActiveSection] = useState<SidebarSection>('content');
-  const sectionRefs: Record<SidebarSection, React.RefObject<HTMLDivElement | null>> = {
-    content: useRef<HTMLDivElement>(null),
-    render: useRef<HTMLDivElement>(null),
-    post: useRef<HTMLDivElement>(null),
-  };
-
-  const scrollToSection = useCallback((id: SidebarSection) => {
-    setActiveSection(id);
-    sectionRefs[id].current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   /* ======================================================================
      Luminance histogram, for the Levels control.
 
@@ -864,12 +810,12 @@ export const App: React.FC = () => {
      frame -- a synth loop runs at 60fps and would re-render the whole sidebar
      that often to redraw 256 bars.
 
-     So: sampled only while the Render panel is open, throttled, and copied on
+     So: sampled while the editor is active, throttled to 200ms, and copied on
      the way out.
      ====================================================================== */
   const [histogramSnapshot, setHistogramSnapshot] =
     useState<{ bins: Uint32Array; opaque: number } | null>(null);
-  const wantsHistogramRef = useRef<boolean>(false);
+  const wantsHistogramRef = useRef<boolean>(true);
   const lastHistogramPushRef = useRef<number>(0);
 
   const captureHistogram = useCallback(
@@ -886,99 +832,10 @@ export const App: React.FC = () => {
     []
   );
 
-  /* The rail only exists in the ADVANCED sidebar, and only in the editor. */
-  const hasSidebarRail = viewMode === 'editor' && uiMode === 'advanced';
-
-  /*
-   * The Levels readout lives in RENDER, which is now a stretch of one column
-   * rather than a tab that had to be opened — so "is that panel open" becomes
-   * "has the column been scrolled that far".
-   *
-   * Still a gate rather than always-on: a synth loop runs at 60fps, and each
-   * push copies 256 bins into state and re-renders the whole sidebar. Paying
-   * that five times a second while the reader is up in CONTENT, looking at a
-   * histogram that is a screen and a half below them, buys nothing.
-   */
-  const wantsHistogram = hasSidebarRail && activeSection !== 'content';
   useEffect(() => {
-    wantsHistogramRef.current = wantsHistogram;
-    if (!wantsHistogram) return;
-    /*
-     * A static image renders once and then sits there, so the histogram would
-     * otherwise stay empty until something else happened to invalidate the
-     * frame. Force one pass; the throttle guard is reset so it is not
-     * swallowed.
-     */
-    lastHistogramPushRef.current = 0;
-    triggerMediaRender();
-  }, [wantsHistogram, triggerMediaRender]);
+    wantsHistogramRef.current = viewMode === 'editor';
+  }, [viewMode]);
 
-  /*
-   * Which heading the rail lights up.
-   *
-   * The band is a thin strip below the sticky rail: at most one heading is
-   * inside it, and while a long section scrolls past none are, which is what
-   * keeps the highlight on that section rather than flickering off.
-   */
-  useEffect(() => {
-    if (!hasSidebarRail) return;
-    const observed = SIDEBAR_SECTIONS.map((s) => sectionRefs[s.id].current).filter(
-      (el): el is HTMLDivElement => Boolean(el)
-    );
-    if (!observed.length || typeof IntersectionObserver === 'undefined') return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const hit = entries.find((e) => e.isIntersecting);
-        if (!hit) return;
-        const match = SIDEBAR_SECTIONS.find((s) => sectionRefs[s.id].current === hit.target);
-        if (match) setActiveSection(match.id);
-      },
-      { rootMargin: '-52px 0px -78% 0px', threshold: 0 }
-    );
-    observed.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasSidebarRail, appMode]);
-
-  /*
-   * Landing a media file is the moment the render controls become the
-   * interesting half of the app, and nothing on screen says so. Fires once
-   * ever, on the transition from no source to a source -- not on a reload or a
-   * shared link that already had one, where the nudge would be noise.
-   */
-  const [showRenderHint, setShowRenderHint] = useState<boolean>(false);
-  const hasMediaSource = appMode === 'media' && Boolean(mediaConfig.fileData);
-  const hadMediaSourceRef = useRef<boolean>(hasMediaSource);
-
-  const dismissRenderHint = useCallback(() => {
-    setShowRenderHint(false);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_RENDER_HINT_KEY, '1');
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    const wasEmpty = !hadMediaSourceRef.current;
-    hadMediaSourceRef.current = hasMediaSource;
-    if (!hasMediaSource || !wasEmpty) return;
-    try {
-      if (localStorage.getItem(LOCAL_STORAGE_RENDER_HINT_KEY) === '1') return;
-    } catch {}
-    setShowRenderHint(true);
-  }, [hasMediaSource]);
-
-  /*
-   * Scrolling as far as RENDER is the hint succeeding, so retire it for good --
-   * here rather than on the rail button's onClick, so the `2` hotkey and a
-   * plain scroll down the column count too.
-   */
-  useEffect(() => {
-    if (activeSection !== 'content' && showRenderHint) dismissRenderHint();
-  }, [activeSection, showRenderHint, dismissRenderHint]);
-
-  // Pointless once they are already looking at the section it points to.
-  const isRenderHintVisible = showRenderHint && activeSection === 'content';
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportInitialTab, setExportInitialTab] = useState<ExportTab>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
@@ -2762,12 +2619,15 @@ export const App: React.FC = () => {
           handleRandomize();
         }
       } else if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        /* BASIC is one flat column with no rail, so 1/2/3 do nothing there. */
-        if (uiMode === 'basic') return;
-        const jump = SIDEBAR_SECTIONS[Number(e.key) - 1];
-        if (jump && e.key >= '1' && e.key <= '3') {
+        if (e.key === '1') {
           e.preventDefault();
-          scrollToSection(jump.id);
+          handleSelectRasterMode('ascii');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          handleSelectRasterMode('pixel');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          handleSelectRasterMode('vector');
         }
       }
     };
@@ -2779,8 +2639,7 @@ export const App: React.FC = () => {
     handleRandomize,
     appMode,
     mediaConfig.mediaType,
-    scrollToSection,
-    uiMode,
+    handleSelectRasterMode,
   ]);
 
   // Toggle between editor and fullscreen viewfinder
@@ -3237,251 +3096,173 @@ export const App: React.FC = () => {
                 />
             ) : (
             <AccordionProvider autoCollapse={!!uiThemeSettings.autoCollapsePanels}>
-              {/*
-                A rail, not a tab strip. Everything below stays mounted — these
-                scroll to their heading and light up whichever one the column
-                is currently sitting on.
-              */}
-              <nav className="tab-nav" aria-label="Sidebar sections">
-                {SIDEBAR_SECTIONS.map((section) => {
-                  const Icon = section.icon;
-                  const isHinted = section.id === 'render' && isRenderHintVisible;
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      className={`tab-btn${activeSection === section.id ? ' active' : ''}${
-                        isHinted ? ' tab-btn-hint' : ''
-                      }`}
-                      onClick={() => scrollToSection(section.id)}
-                      title={section.title}
-                      aria-current={activeSection === section.id}
-                    >
-                      <span className="tab-btn-index">{section.step}</span>
-                      <Icon size={12} className="tab-btn-icon" />
-                      <span className="tab-btn-label">{section.label}</span>
-                      {section.id === 'render' && (
-                        <span className="tab-btn-subbadge">{appMode.toUpperCase()}</span>
-                      )}
-                    </button>
-                  );
-                })}
+              {/* ---------------------------------------------------------- */}
+              {/* 01 · SOURCE: define & configure the visual subject         */}
+              {/* ---------------------------------------------------------- */}
+              <WorkflowStep n="01" label="Source" />
 
-                {isRenderHintVisible && (
-                  <div className="tab-hint" role="status">
-                    <span className="tab-hint-text">
-                      Media loaded. Style it further down in <strong>RENDER</strong> &mdash;
-                      dithering, palette, tone &amp; resolution.
-                    </span>
-                    <button
-                      type="button"
-                      className="tab-hint-close"
-                      onClick={dismissRenderHint}
-                      title="Dismiss"
-                      aria-label="Dismiss hint"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                )}
-              </nav>
-
-            {/* ---------------------------------------------------------- */}
-            {/* CONTENT: define & configure the visual subject             */}
-            {/* ---------------------------------------------------------- */}
-            <>
-                <WorkflowStep n="01" label="Content Mode" anchorRef={sectionRefs.content} />
-
-                <div className="source-selector-wrapper">
-                  <div className="source-grid">
-                    {SOURCES.map((source) => {
-                      const Icon = source.icon;
-                      const isActive = appMode === source.id;
-                      return (
-                        <button
-                          key={source.id}
-                          className={`source-card ${isActive ? 'active' : ''}`}
-                          onClick={() => handleSelectSource(source.id)}
-                          title={source.title}
-                        >
-                          <div className="source-card-header">
-                            <div className="source-card-icon-wrap">
-                              <Icon size={14} />
-                            </div>
-                            <span className="source-card-badge">{source.badge}</span>
+              <div className="source-selector-wrapper">
+                <div className="source-grid">
+                  {SOURCES.map((source) => {
+                    const Icon = source.icon;
+                    const isActive = appMode === source.id;
+                    return (
+                      <button
+                        key={source.id}
+                        className={`source-card ${isActive ? 'active' : ''}`}
+                        onClick={() => handleSelectSource(source.id)}
+                        title={source.title}
+                      >
+                        <div className="source-card-header">
+                          <div className="source-card-icon-wrap">
+                            <Icon size={14} />
                           </div>
-                          <div className="source-card-body">
-                            <span className="source-card-name">{source.name}</span>
-                            <span className="source-card-desc">{source.description}</span>
-                          </div>
-                          <div className="source-card-footer">
-                            <span className="source-card-dot" />
-                            <span className="source-card-status">{isActive ? 'ACTIVE' : 'READY'}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          <span className="source-card-badge">{source.badge}</span>
+                        </div>
+                        <div className="source-card-body">
+                          <span className="source-card-name">{source.name}</span>
+                          <span className="source-card-desc">{source.description}</span>
+                        </div>
+                        <div className="source-card-footer">
+                          <span className="source-card-dot" />
+                          <span className="source-card-status">{isActive ? 'ACTIVE' : 'READY'}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
+              </div>
 
-                {appMode === 'media' && (
-                  <>
-                    <WorkflowStep n="02" label="Media Upload" />
-
-                    <MediaUploadControls
-                      config={mediaConfig}
-                      onChangeConfig={handleChangeMediaConfig}
-                      mediaElement={mediaElementRef.current}
-                      onFileUpload={handleMediaFileUpload}
-                      onUrlLoad={handleMediaUrlLoad}
-                    />
-
-                    <WorkflowStep n="03" label="Adapt &amp; Frame" />
-
-                    <MediaFramingControls
-                      config={mediaConfig}
-                      onChangeConfig={handleChangeMediaConfig}
-                    />
-                  </>
-                )}
-
-                {appMode === 'synth' && (
-                  <>
-                    <WorkflowStep n="02" label="Synth Generator" />
-
-                    <PresetSelector
-                      activePresetId={activePreset.id}
-                      onSelectPreset={handleSelectPreset}
-                      onRandomize={handleRandomize}
-                      isRandomizing={isRandomizing}
-                    />
-                    <SynthControls
-                      params={waveParams}
-                      onChangeParams={handleParamChange}
-                      onResetDynamics={() =>
-                        handleParamChange({
-                          ...waveParams,
-                          timeSpeed: DEFAULT_WAVE_PARAMS.timeSpeed,
-                          aspectRatio: DEFAULT_WAVE_PARAMS.aspectRatio,
-                          contrast: DEFAULT_WAVE_PARAMS.contrast,
-                          bias: DEFAULT_WAVE_PARAMS.bias,
-                          invert: DEFAULT_WAVE_PARAMS.invert,
-                        })
-                      }
-                      code={customCode}
-                      prepareCode={customPrepare}
-                      compileError={compileError}
-                      onChangeFormula={handleFormulaCodeChange}
-                      isFormulaDivergent={presetType === 'custom'}
-                      onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
-                    />
-
-                    <WorkflowStep n="03" label="Particle Physics" />
-
-                    <ParticleControls
-                      config={particleConfig}
-                      onChange={setParticleConfig}
-                      onClearParticles={() => {
-                        trailPointsRef.current = [];
-                      }}
-                    />
-                  </>
-                )}
-
-                {appMode === 'model' && (
-                  <>
-                    <WorkflowStep n="02" label="3D Model Import" />
-
-                    <ModelImportControls
-                      config={modelConfig}
-                      onLoadCustomGeometry={handleLoadCustomGeometry}
-                      onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
-                      onLoadRemoteModel={handleLoadRemoteModel}
-                      onStartLoading={(fileName, statusText) => {
-                        setIsModelLoading(true);
-                        if (fileName) setModelLoadingFileName(fileName);
-                        if (statusText) setModelLoadingStatusText(statusText);
-                      }}
-                      onEndLoading={() => setIsModelLoading(false)}
-                    />
-
-                    <WorkflowStep n="03" label="Transforms &amp; Mesh" />
-
-                    <ModelMeshControls
-                      config={modelConfig}
-                      onChangeConfig={handleChangeModelConfig}
-                    />
-                  </>
-                )}
-            </>
-
-            {/* ---------------------------------------------------------- */}
-            {/* RENDER: shading, effects, palettes, charsets & resolution  */}
-            {/* ---------------------------------------------------------- */}
-            <>
-                {/* 1. Output Mode Command Selector (ASCII vs PIXEL) */}
-                <WorkflowStep n="04" label="Output Mode" anchorRef={sectionRefs.render} />
-
-                <div className="source-selector-wrapper">
-                  <OutputModeCards
-                    value={currentRasterMode}
-                    onChange={handleSelectRasterMode}
-                  />
-                </div>
-
-                {/* 2. Top-level Resolution & DPI */}
-                <WorkflowStep n="05" label="Resolution &amp; Density" />
-
-                <OptimizeControls
-                  cols={cols}
-                  rows={rows}
-                  onChangeResolution={handleManualResolutionChange}
-                  autoRes={autoRes}
-                  onToggleAutoRes={handleToggleAutoRes}
-                  appMode={appMode}
+              {appMode === 'media' && (
+                <MediaUploadControls
+                  config={mediaConfig}
+                  onChangeConfig={handleChangeMediaConfig}
                   mediaElement={mediaElementRef.current}
-                  mediaConfig={mediaConfig}
-                  isPixelMode={currentRasterMode !== 'ascii'}
-                  viewfinderAspect={viewfinderAspect}
-                  dpi={mediaViewConfig.dpi ?? 72}
-                  onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
+                  onFileUpload={handleMediaFileUpload}
+                  onUrlLoad={handleMediaUrlLoad}
                 />
+              )}
 
-                {/* Charset Density Ramp for ASCII Mode */}
-                {densityRampSection}
-
-                {/* 3. Mode-specific Shading, Color & Optics */}
-                <WorkflowStep n="06" label="Shading, Color &amp; Optics" />
-
-                {appMode === 'media' && (
-                  <MediaViewControls
-                    config={mediaViewConfig}
-                    onChangeConfig={handleChangeMediaViewConfig}
-                    rasterMode={currentRasterMode}
-                    currentTheme={theme}
-                    onChangeTheme={handleSelectTheme}
-                    customThemeColor={customThemeColor}
-                    onChangeCustomColor={handleSelectCustomColor}
-                    mediaColorConfig={mediaColorConfig}
-                    onChangeMediaColorConfig={handleSelectMediaColorConfig}
-                    appMode={appMode}
-                    toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
-                    onChangeToneConfig={handleChangeToneConfig}
-                    histogram={histogramSnapshot?.bins ?? null}
-                    histogramOpaque={histogramSnapshot?.opaque ?? 0}
+              {appMode === 'synth' && (
+                <>
+                  <PresetSelector
+                    activePresetId={activePreset.id}
+                    onSelectPreset={handleSelectPreset}
+                    onRandomize={handleRandomize}
+                    isRandomizing={isRandomizing}
                   />
-                )}
+                  <SynthControls
+                    params={waveParams}
+                    onChangeParams={handleParamChange}
+                    onResetDynamics={() =>
+                      handleParamChange({
+                        ...waveParams,
+                        timeSpeed: DEFAULT_WAVE_PARAMS.timeSpeed,
+                        aspectRatio: DEFAULT_WAVE_PARAMS.aspectRatio,
+                        contrast: DEFAULT_WAVE_PARAMS.contrast,
+                        bias: DEFAULT_WAVE_PARAMS.bias,
+                        invert: DEFAULT_WAVE_PARAMS.invert,
+                      })
+                    }
+                    code={customCode}
+                    prepareCode={customPrepare}
+                    compileError={compileError}
+                    onChangeFormula={handleFormulaCodeChange}
+                    isFormulaDivergent={presetType === 'custom'}
+                    onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
+                  />
+                  <ParticleControls
+                    config={particleConfig}
+                    onChange={setParticleConfig}
+                    onClearParticles={() => {
+                      trailPointsRef.current = [];
+                    }}
+                  />
+                </>
+              )}
 
-                {appMode === 'model' && (
+              {appMode === 'model' && (
+                <>
+                  <ModelImportControls
+                    config={modelConfig}
+                    onLoadCustomGeometry={handleLoadCustomGeometry}
+                    onSelectBuiltinGeometry={handleSelectBuiltinGeometry}
+                    onLoadRemoteModel={handleLoadRemoteModel}
+                    onStartLoading={(fileName, statusText) => {
+                      setIsModelLoading(true);
+                      if (fileName) setModelLoadingFileName(fileName);
+                      if (statusText) setModelLoadingStatusText(statusText);
+                    }}
+                    onEndLoading={() => setIsModelLoading(false)}
+                  />
+
+                  <ModelMeshControls
+                    config={modelConfig}
+                    onChangeConfig={handleChangeModelConfig}
+                  />
+                </>
+              )}
+
+              {/* ---------------------------------------------------------- */}
+              {/* 02 · OUTPUT: raster mode, resolution & grid density        */}
+              {/* ---------------------------------------------------------- */}
+              <WorkflowStep n="02" label="Output" />
+
+              <div className="source-selector-wrapper">
+                <OutputModeCards
+                  value={currentRasterMode}
+                  onChange={handleSelectRasterMode}
+                />
+              </div>
+
+              <OptimizeControls
+                cols={cols}
+                rows={rows}
+                onChangeResolution={handleManualResolutionChange}
+                autoRes={autoRes}
+                onToggleAutoRes={handleToggleAutoRes}
+                appMode={appMode}
+                mediaElement={mediaElementRef.current}
+                mediaConfig={mediaConfig}
+                isPixelMode={currentRasterMode !== 'ascii'}
+                viewfinderAspect={viewfinderAspect}
+                dpi={mediaViewConfig.dpi ?? 72}
+                onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
+              />
+
+              {densityRampSection}
+
+              {/* ---------------------------------------------------------- */}
+              {/* 03 · AESTHETIC & 04 · ADJUST                               */}
+              {/* ---------------------------------------------------------- */}
+              <WorkflowStep n="03" label="Aesthetic" />
+
+              {appMode === 'media' && (
+                <MediaViewControls
+                  config={mediaViewConfig}
+                  onChangeConfig={handleChangeMediaViewConfig}
+                  rasterMode={currentRasterMode}
+                  currentTheme={theme}
+                  onChangeTheme={handleSelectTheme}
+                  customThemeColor={customThemeColor}
+                  onChangeCustomColor={handleSelectCustomColor}
+                  mediaColorConfig={mediaColorConfig}
+                  onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                  appMode={appMode}
+                  toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                  onChangeToneConfig={handleChangeToneConfig}
+                  histogram={histogramSnapshot?.bins ?? null}
+                  histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                />
+              )}
+
+              {appMode === 'model' && (
+                <>
                   <ModelViewControls
                     config={modelViewConfig}
                     onChangeConfig={handleChangeModelViewConfig}
                     onResetRotation={handleResetModelRotation}
                   />
-                )}
-
-                {/* Synth / Model render and tonal controls */}
-                {appMode !== 'media' && (
                   <div className="tab-content">
                     <CollapsibleSection
                       title="RENDER SETTINGS"
@@ -3501,11 +3282,6 @@ export const App: React.FC = () => {
                             ...prev[appMode],
                             ditherAlgorithm: 'floyd-steinberg',
                             ditherParams: undefined,
-                            /*
-                             * VectorControls has no reset of its own -- the
-                             * section header owns it, so this has to clear the
-                             * beam as well or nothing does.
-                             */
                             vectorConfig: undefined,
                           },
                         }));
@@ -3528,10 +3304,6 @@ export const App: React.FC = () => {
                               },
                             }));
                           }}
-                          /*
-                           * A beam preset writes two stores now: the halo is a
-                           * post-processing stage, not a beam parameter.
-                           */
                           onChangePresetGlow={(glow) => {
                             setRenderSettingsByMode((prev) => {
                               const base = prev[appMode].postProcess ?? POST_PROCESS_DEFAULTS;
@@ -3576,17 +3348,12 @@ export const App: React.FC = () => {
                       const { colors: synthModelRampColors, weights: synthModelRampWeights } = resolveToneStops(synthModelAdjustConfig);
 
                       return (
-                        <ImageAdjustControls
+                        <ColorAdjustControls
                           config={synthModelAdjustConfig}
                           onChangeConfig={handleChangeAdjustConfig}
                           persistKeyPrefix={`${appMode}-image-adjust`}
                           onResetPalette={handleResetPalette}
-                          toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
-                          onChangeToneConfig={handleChangeToneConfig}
-                          histogram={histogramSnapshot?.bins ?? null}
-                          histogramOpaque={histogramSnapshot?.opaque ?? 0}
                           mediaColorConfig={mediaColorConfig}
-                          showAlphaCutoff={false}
                           paletteSlot={
                             <PaletteControls
                               currentTheme={theme}
@@ -3653,26 +3420,228 @@ export const App: React.FC = () => {
                       );
                     })()}
                   </div>
-                )}
 
-                {/*
-                  4. Post-Processing — the composite stage.
+                  <WorkflowStep n="04" label="Adjust" />
 
-                  Last in the tab because that is where it happens: the Render
-                  tab reads top to bottom in engine order, and everything above
-                  produces the frame this operates on.
-                */}
-                <PostProcessControls
-                  config={currentRenderSettings.postProcess ?? POST_PROCESS_DEFAULTS}
-                  onChange={handleChangePostProcess}
-                  appMode={appMode}
-                  rasterMode={currentRasterMode}
-                  sourceUnavailable={appMode === 'media' && !mediaElementRef.current}
-                  persistKeyPrefix={`${appMode}-post`}
-                  step="07"
-                  anchorRef={sectionRefs.post}
-                />
-            </>
+                  <div className="tab-content">
+                    {(() => {
+                      const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
+                      return (
+                        <TonalAdjustControls
+                          config={synthModelAdjustConfig}
+                          onChangeConfig={handleChangeAdjustConfig}
+                          persistKeyPrefix={`${appMode}-image-adjust`}
+                          toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                          onChangeToneConfig={handleChangeToneConfig}
+                          histogram={histogramSnapshot?.bins ?? null}
+                          histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                          showAlphaCutoff={false}
+                        />
+                      );
+                    })()}
+                  </div>
+                </>
+              )}
+
+              {appMode === 'synth' && (
+                <>
+                  <div className="tab-content">
+                    <CollapsibleSection
+                      title="RENDER SETTINGS"
+                      icon={<Settings size={12} />}
+                      badge={
+                        currentRasterMode === 'vector'
+                          ? 'Beam Deflection'
+                          : DITHER_ALGORITHMS.find(
+                              (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
+                            )?.name || 'Floyd-Steinberg'
+                      }
+                      persistKey={`${appMode}-render-settings`}
+                      onReset={() => {
+                        setRenderSettingsByMode((prev) => ({
+                          ...prev,
+                          [appMode]: {
+                            ...prev[appMode],
+                            ditherAlgorithm: 'floyd-steinberg',
+                            ditherParams: undefined,
+                            vectorConfig: undefined,
+                          },
+                        }));
+                      }}
+                      resetTitle={
+                        currentRasterMode === 'vector'
+                          ? 'Reset every beam parameter'
+                          : 'Reset dither algorithm and parameters'
+                      }
+                    >
+                      {currentRasterMode === 'vector' ? (
+                        <VectorControls
+                          config={currentRenderSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+                          onChange={(next) => {
+                            setRenderSettingsByMode((prev) => ({
+                              ...prev,
+                              [appMode]: {
+                                ...prev[appMode],
+                                vectorConfig: next,
+                              },
+                            }));
+                          }}
+                          onChangePresetGlow={(glow) => {
+                            setRenderSettingsByMode((prev) => {
+                              const base = prev[appMode].postProcess ?? POST_PROCESS_DEFAULTS;
+                              return {
+                                ...prev,
+                                [appMode]: {
+                                  ...prev[appMode],
+                                  postProcess: { ...base, glow: { ...base.glow, ...glow } },
+                                },
+                              };
+                            });
+                          }}
+                        />
+                      ) : (
+                        <DitherAlgorithmPicker
+                          value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
+                          onChange={(algo) => {
+                            setRenderSettingsByMode((prev) => ({
+                              ...prev,
+                              [appMode]: {
+                                ...prev[appMode],
+                                ditherAlgorithm: algo,
+                              },
+                            }));
+                          }}
+                          params={currentRenderSettings.ditherParams}
+                          onChangeParams={(next) => {
+                            setRenderSettingsByMode((prev) => ({
+                              ...prev,
+                              [appMode]: {
+                                ...prev[appMode],
+                                ditherParams: next,
+                              },
+                            }));
+                          }}
+                        />
+                      )}
+                    </CollapsibleSection>
+
+                    {(() => {
+                      const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
+                      const { colors: synthModelRampColors, weights: synthModelRampWeights } = resolveToneStops(synthModelAdjustConfig);
+
+                      return (
+                        <ColorAdjustControls
+                          config={synthModelAdjustConfig}
+                          onChangeConfig={handleChangeAdjustConfig}
+                          persistKeyPrefix={`${appMode}-image-adjust`}
+                          onResetPalette={handleResetPalette}
+                          mediaColorConfig={mediaColorConfig}
+                          paletteSlot={
+                            <PaletteControls
+                              currentTheme={theme}
+                              onChangeTheme={handleSelectTheme}
+                              customThemeColor={customThemeColor}
+                              onChangeCustomColor={handleSelectCustomColor}
+                              mediaColorConfig={mediaColorConfig}
+                              onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                              appMode={appMode}
+                              tonalMapping={synthModelAdjustConfig.tonalMapping}
+                              onChangeTonalMapping={(t) =>
+                                handleChangeAdjustConfig({
+                                  ...synthModelAdjustConfig,
+                                  tonalMapping: t,
+                                })
+                              }
+                              isPixelMode={currentRasterMode !== 'ascii'}
+                              isVectorMode={currentRasterMode === 'vector'}
+                              colorLevels={synthModelAdjustConfig.colorLevels}
+                              onChangeColorLevels={(val) =>
+                                handleChangeAdjustConfig({
+                                  ...synthModelAdjustConfig,
+                                  colorLevels: val,
+                                })
+                              }
+                              rampEditorSlot={
+                                <NToneRampEditor
+                                  stops={synthModelRampColors}
+                                  weights={synthModelRampWeights}
+                                  onChangeRamp={(stops, nextWeights) =>
+                                    handleChangeAdjustConfig({
+                                      ...synthModelAdjustConfig,
+                                      ...applyToneStops(synthModelAdjustConfig, stops),
+                                      toneStopWeights: nextWeights,
+                                    })
+                                  }
+                                />
+                              }
+                              onEditPaletteAsRamp={
+                                mediaColorConfig?.paletteMode === 'indexed'
+                                  ? () => {
+                                      const pal = BUILTIN_PALETTES.find(
+                                        (p) => p.id === mediaColorConfig.activePaletteId
+                                      );
+                                      if (!pal || pal.colors.length < 2) return;
+                                      const stops = [...pal.colors];
+                                      handleSelectMediaColorConfig({
+                                        ...mediaColorConfig,
+                                        paletteMode: 'phosphor',
+                                        mode: 'fixed',
+                                      });
+                                      handleChangeAdjustConfig({
+                                        ...synthModelAdjustConfig,
+                                        ...applyToneStops(synthModelAdjustConfig, stops),
+                                        toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
+                                        tonalMapping: 'ntone',
+                                      });
+                                    }
+                                  : undefined
+                              }
+                            />
+                          }
+                        />
+                      );
+                    })()}
+                  </div>
+
+                  <WorkflowStep n="04" label="Adjust" />
+
+                  <div className="tab-content">
+                    {(() => {
+                      const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
+                      return (
+                        <TonalAdjustControls
+                          config={synthModelAdjustConfig}
+                          onChangeConfig={handleChangeAdjustConfig}
+                          persistKeyPrefix={`${appMode}-image-adjust`}
+                          toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                          onChangeToneConfig={handleChangeToneConfig}
+                          histogram={histogramSnapshot?.bins ?? null}
+                          histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                          showAlphaCutoff={false}
+                        />
+                      );
+                    })()}
+                  </div>
+                </>
+              )}
+
+              {/* ---------------------------------------------------------- */}
+              {/* 05 · COMPOSITING                                           */}
+              {/* ---------------------------------------------------------- */}
+              <PostProcessControls
+                config={currentRenderSettings.postProcess ?? POST_PROCESS_DEFAULTS}
+                onChange={handleChangePostProcess}
+                appMode={appMode}
+                rasterMode={currentRasterMode}
+                sourceUnavailable={appMode === 'media' && !mediaElementRef.current}
+                persistKeyPrefix={`${appMode}-post`}
+                step="05"
+              />
+
+              {/* ---------------------------------------------------------- */}
+              {/* 06 · EXPORT                                                */}
+              {/* ---------------------------------------------------------- */}
+              <WorkflowStep n="06" label="Export" />
             </AccordionProvider>
             )}
 

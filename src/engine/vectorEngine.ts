@@ -664,24 +664,25 @@ export function paintVectorFrame(
     if (pts.length < 4) continue;
 
     /*
-     * Occlusion: close the run to the far edge and fill with the ground, so a
-     * nearer ridge hides what is behind it. Painted per polyline rather than as
-     * a depth pass because the emission order already runs far to near.
+     * Occlusion: close the run to the far edge and clear whatever was already
+     * painted beneath it, so a nearer ridge hides what is behind it without
+     * leaving an opaque black mask in the canvas buffer.
+     *
+     * Using `destination-out` clears previously drawn strokes from the scratch
+     * canvas within this polygon while keeping the background transparent, so
+     * source overlays and transparent exports composite cleanly.
      *
      * **This must be its own path.** Closing the run and then stroking the same
-     * path draws the two closing legs and the edge run in the beam colour --
-     * which reads as a hard vertical line dropping off each end of every ridge,
-     * appearing the moment occlusion is switched on. The SVG exporter always
-     * emitted a separate <polygon>; the canvas painter did not.
+     * path draws the two closing legs and the edge run in the beam colour.
      */
     if (line.filled) {
       const savedOp = ctx.globalCompositeOperation;
-      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalCompositeOperation = 'destination-out';
       ctx.beginPath();
       ctx.moveTo(pts[0], pts[1]);
       for (let p = 2; p < pts.length; p += 2) ctx.lineTo(pts[p], pts[p + 1]);
       closeToEdge(ctx, pts, edge);
-      ctx.fillStyle = frame.bgColor;
+      ctx.fillStyle = '#000000';
       ctx.fill();
       ctx.globalCompositeOperation = savedOp;
     }

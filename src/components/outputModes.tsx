@@ -21,20 +21,20 @@ export interface OutputModeSpec {
 
 export const OUTPUT_MODES: OutputModeSpec[] = [
   {
-    id: 'pixel',
-    name: 'PIXEL',
-    badge: 'DITHER',
-    description: '1:1 Square Pixel Grid',
-    icon: Grid,
-    title: 'Direct square hardware dither rasterization',
-  },
-  {
     id: 'ascii',
     name: 'ASCII',
     badge: 'TEXT',
     description: 'Monospace Density Ramp',
     icon: Type,
-    title: 'Monospace ASCII character density rasterization',
+    title: 'Monospace ASCII character density rasterization [Hotkey: 1]',
+  },
+  {
+    id: 'pixel',
+    name: 'PIXEL',
+    badge: 'DITHER',
+    description: '1:1 Square Pixel Grid',
+    icon: Grid,
+    title: 'Direct square hardware dither rasterization [Hotkey: 2]',
   },
   {
     id: 'vector',
@@ -42,7 +42,7 @@ export const OUTPUT_MODES: OutputModeSpec[] = [
     badge: 'BEAM',
     description: 'Rutt-Etra Scanline Relief',
     icon: Activity,
-    title: 'Oscilloscope beam deflection and carrier modulation, as polylines',
+    title: 'Oscilloscope beam deflection and carrier modulation, as polylines [Hotkey: 3]',
   },
 ];
 

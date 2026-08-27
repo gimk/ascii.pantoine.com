@@ -353,6 +353,9 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
           </div>
         </CollapsibleSection>
       )}
+
+      {/* Transform & Framing Controls */}
+      <MediaFramingSection config={config} onChangeConfig={onChangeConfig} />
     </div>
   );
 };
@@ -362,7 +365,7 @@ interface MediaFramingControlsProps {
   onChangeConfig: (cfg: MediaConfig) => void;
 }
 
-export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
+export const MediaFramingSection: React.FC<MediaFramingControlsProps> = ({
   config,
   onChangeConfig,
 }) => {
@@ -393,14 +396,14 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
   };
 
   return (
-    <div className="tab-content">
-      <CollapsibleSection
-        title="Transform &amp; Framing"
-        icon={<Maximize2 size={12} />}
-        persistKey="MediaFileControls-transform-framing"
-        onReset={resetTransforms}
-        resetTitle="Reset transforms to default fit and framing"
-      >
+    <CollapsibleSection
+      title="Transform &amp; Framing"
+      icon={<Maximize2 size={12} />}
+      persistKey="MediaFileControls-transform-framing"
+      defaultOpen={false}
+      onReset={resetTransforms}
+      resetTitle="Reset transforms to default fit and framing"
+    >
         {/* Fit Mode */}
         <div className="control-row">
           <span className="control-label">Fit Mode</span>
@@ -528,15 +531,17 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
           </button>
         </div>
       </CollapsibleSection>
+  );
+};
+
+export const MediaFramingControls: React.FC<MediaFramingControlsProps> = (props) => {
+  return (
+    <div className="tab-content">
+      <MediaFramingSection {...props} />
     </div>
   );
 };
 
 export const MediaFileControls: React.FC<MediaUploadControlsProps> = (props) => {
-  return (
-    <>
-      <MediaUploadControls {...props} />
-      <MediaFramingControls config={props.config} onChangeConfig={props.onChangeConfig} />
-    </>
-  );
+  return <MediaUploadControls {...props} />;
 };

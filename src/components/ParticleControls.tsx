@@ -2,7 +2,7 @@ import React from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { ParticleConfig } from '../types/ascii';
 import { DEFAULT_PARTICLE_CONFIG } from '../engine/particles';
-import { Activity, Wind, Zap } from 'lucide-react';
+import { Wind, Zap, Sparkles } from 'lucide-react';
 
 interface ParticleControlsProps {
   config: ParticleConfig;
@@ -26,12 +26,13 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
     <div className="tab-content">
       {/* Interaction Status */}
       <CollapsibleSection
-        title="Simulation Particle System"
-        icon={<Activity size={12} />}
+        title="PARTICLE PHYSICS"
+        icon={<Sparkles size={12} />}
         persistKey="ParticleControls-simulation-particle-system"
-        badge={config.enabled ? 'ON' : 'OFF'}
+        badge={config.enabled ? `${config.burstCount} Particles` : 'OFF'}
         onReset={() => onChange({ ...DEFAULT_PARTICLE_CONFIG, enabled: config.enabled })}
         resetTitle="Reset particle physics settings"
+        defaultOpen={false}
         headerRight={
           <button
             type="button"

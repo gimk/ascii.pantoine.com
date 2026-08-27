@@ -1458,46 +1458,27 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
   );
 };
 
-interface ImageAdjustControlsProps {
+export interface ColorAdjustControlsProps {
   config: ImageAdjustConfig;
   onChangeConfig: (next: ImageAdjustConfig) => void;
   paletteSlot?: React.ReactNode;
   backgroundSlot?: React.ReactNode;
-  showAlphaCutoff?: boolean;
-  showInvert?: boolean;
-  onResetPalette?: () => void;
   resetDefaults?: ImageAdjustConfig;
+  onResetPalette?: () => void;
   persistKeyPrefix?: string;
-  toneConfig?: ToneMappingConfig;
-  onChangeToneConfig?: (next: ToneMappingConfig) => void;
-  histogram?: Uint32Array | null;
-  histogramOpaque?: number;
   mediaColorConfig?: MediaColorConfig;
 }
 
-export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
+export const ColorAdjustControls: React.FC<ColorAdjustControlsProps> = ({
   config,
   onChangeConfig,
   paletteSlot,
   backgroundSlot,
   resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG,
-  showAlphaCutoff = true,
-  showInvert = false,
   onResetPalette,
   persistKeyPrefix = 'MediaViewControls',
-  toneConfig,
-  onChangeToneConfig,
-  histogram = null,
-  histogramOpaque = 0,
   mediaColorConfig,
 }) => {
-  const update = <K extends keyof ImageAdjustConfig>(key: K, val: ImageAdjustConfig[K]) => {
-    onChangeConfig({
-      ...config,
-      [key]: val,
-    });
-  };
-
   const colorBadge = useMemo(() => {
     if (mediaColorConfig?.paletteMode === 'content') {
       return 'RGB (CONTENT)';
@@ -1513,15 +1494,63 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
     return '1-COLOR';
   }, [mediaColorConfig?.paletteMode, mediaColorConfig?.activePaletteId, config.tonalMapping, config.customToneColors]);
 
-  const resetEffects = () => {
+  const resetColors = () => {
     onChangeConfig({
       ...config,
-      sharpenStrength: resetDefaults.sharpenStrength,
-      sharpenRadius: resetDefaults.sharpenRadius,
-      noise: resetDefaults.noise,
-      denoise: resetDefaults.denoise,
-      blur: resetDefaults.blur,
-      ...(showInvert ? { invert: resetDefaults.invert } : {}),
+      tonalMapping: resetDefaults.tonalMapping,
+      highlightColor: resetDefaults.highlightColor,
+      midtoneColor: resetDefaults.midtoneColor,
+      shadowColor: resetDefaults.shadowColor,
+      customToneColors: resetDefaults.customToneColors ? [...resetDefaults.customToneColors] : ['#0a0a0a', '#00a848', '#00ff66'],
+      colorLevels: resetDefaults.colorLevels ?? 0,
+    });
+    onResetPalette?.();
+  };
+
+  return (
+    <CollapsibleSection
+      title="COLORS"
+      icon={<Palette size={12} />}
+      badge={colorBadge}
+      persistKey={`${persistKeyPrefix}-colors`}
+      onReset={resetColors}
+      resetTitle="Reset color mode, palette and quantization depth"
+    >
+      {paletteSlot}
+      {backgroundSlot}
+    </CollapsibleSection>
+  );
+};
+
+export interface TonalAdjustControlsProps {
+  config: ImageAdjustConfig;
+  onChangeConfig: (next: ImageAdjustConfig) => void;
+  resetDefaults?: ImageAdjustConfig;
+  showAlphaCutoff?: boolean;
+  showInvert?: boolean;
+  persistKeyPrefix?: string;
+  toneConfig?: ToneMappingConfig;
+  onChangeToneConfig?: (next: ToneMappingConfig) => void;
+  histogram?: Uint32Array | null;
+  histogramOpaque?: number;
+}
+
+export const TonalAdjustControls: React.FC<TonalAdjustControlsProps> = ({
+  config,
+  onChangeConfig,
+  resetDefaults = DEFAULT_IMAGE_ADJUST_CONFIG,
+  showAlphaCutoff = true,
+  showInvert = false,
+  persistKeyPrefix = 'MediaViewControls',
+  toneConfig,
+  onChangeToneConfig,
+  histogram = null,
+  histogramOpaque = 0,
+}) => {
+  const update = <K extends keyof ImageAdjustConfig>(key: K, val: ImageAdjustConfig[K]) => {
+    onChangeConfig({
+      ...config,
+      [key]: val,
     });
   };
 
@@ -1541,34 +1570,20 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
     }
   };
 
-  const resetColors = () => {
+  const resetEffects = () => {
     onChangeConfig({
       ...config,
-      tonalMapping: resetDefaults.tonalMapping,
-      highlightColor: resetDefaults.highlightColor,
-      midtoneColor: resetDefaults.midtoneColor,
-      shadowColor: resetDefaults.shadowColor,
-      customToneColors: resetDefaults.customToneColors ? [...resetDefaults.customToneColors] : ['#0a0a0a', '#00a848', '#00ff66'],
-      colorLevels: resetDefaults.colorLevels ?? 0,
+      sharpenStrength: resetDefaults.sharpenStrength,
+      sharpenRadius: resetDefaults.sharpenRadius,
+      noise: resetDefaults.noise,
+      denoise: resetDefaults.denoise,
+      blur: resetDefaults.blur,
+      ...(showInvert ? { invert: resetDefaults.invert } : {}),
     });
-    onResetPalette?.();
   };
 
   return (
     <>
-      {/* COLORS */}
-      <CollapsibleSection
-        title="COLORS"
-        icon={<Palette size={12} />}
-        badge={colorBadge}
-        persistKey={`${persistKeyPrefix}-colors`}
-        onReset={resetColors}
-        resetTitle="Reset color mode, palette and quantization depth"
-      >
-        {paletteSlot}
-        {backgroundSlot}
-      </CollapsibleSection>
-
       {/* TONAL CONTROLS */}
       <CollapsibleSection
         title="TONAL CONTROLS"
@@ -1577,14 +1592,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         onReset={resetTonal}
         resetTitle="Reset exposure, curve, levels, highlights, midtones and shadows"
       >
-        {/*
-          * Exposure sits above the curve because the engine runs it there. It
-          * used to live in EFFECT CONTROLS, visually below everything, while
-          * running between levels and the tonal balance -- so the two coarsest
-          * controls silently undid the two most precise ones, and dragging the
-          * levels black point stopped producing black. The panel now reads in
-          * pipeline order, top to bottom.
-          */}
         <div className="tonal-subheading tonal-subheading-flush">
           <span>Exposure &amp; Contrast</span>
         </div>
@@ -1684,8 +1691,21 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         </div>
 
         <AdjustSlider id="blur" config={config} onChangeConfig={onChangeConfig} />
-
       </CollapsibleSection>
+    </>
+  );
+};
+
+export interface ImageAdjustControlsProps extends ColorAdjustControlsProps, TonalAdjustControlsProps {
+  adjustStepSlot?: React.ReactNode;
+}
+
+export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = (props) => {
+  return (
+    <>
+      <ColorAdjustControls {...props} />
+      {props.adjustStepSlot}
+      <TonalAdjustControls {...props} />
     </>
   );
 };

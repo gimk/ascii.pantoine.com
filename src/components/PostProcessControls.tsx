@@ -9,10 +9,10 @@ import {
 import { PrecisionSlider, DeferredColorInput, WorkflowStep } from './controlPrimitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { supportsCanvasFilter } from '../engine/postProcess';
-import { Layers, Sparkles } from 'lucide-react';
+import { Layers, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
- * `04 · POST-PROCESSING` — everything that happens to a frame after the raster
+ * `05 · COMPOSITING` — everything that happens to a frame after the raster
  * pipeline has finished with it.
  *
  * A host, not a single effect. The two decks here are the two shapes a post
@@ -109,7 +109,7 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
 
   return (
     <>
-      <WorkflowStep n={step} label="Post-Processing" anchorRef={anchorRef} />
+      <WorkflowStep n={step} label="Compositing" anchorRef={anchorRef} />
 
       {/*
         The decks sit in a `.tab-content`, like every other collapsible in the
@@ -182,21 +182,51 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
           </div>
 
           <div className="control-row">
-            <span className="control-label" title="How the two layers combine.">
+            <span className="control-label control-fixed" title="How the two layers combine.">
               Blend
             </span>
-            <select
-              className="number-input control-fill"
-              value={overlay.blend}
-              disabled={overlayDisabled}
-              onChange={(e) => setOverlay({ blend: e.target.value as BlendMode })}
-            >
-              {BLEND_MODES.map((m) => (
-                <option key={m} value={m}>
-                  {blendLabel(m)}
-                </option>
-              ))}
-            </select>
+            <div className="control-cluster">
+              <button
+                type="button"
+                className="slider-nudge-btn btn-icon-sq"
+                disabled={overlayDisabled}
+                onClick={() => {
+                  const idx = BLEND_MODES.indexOf(overlay.blend);
+                  const prevIdx = (idx - 1 + BLEND_MODES.length) % BLEND_MODES.length;
+                  setOverlay({ blend: BLEND_MODES[prevIdx] });
+                }}
+                title="Previous blend mode (wraps around)"
+              >
+                <ChevronLeft size={13} />
+              </button>
+
+              <select
+                className="number-input stepper-select"
+                value={overlay.blend}
+                disabled={overlayDisabled}
+                onChange={(e) => setOverlay({ blend: e.target.value as BlendMode })}
+              >
+                {BLEND_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {blendLabel(m)}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                className="slider-nudge-btn btn-icon-sq"
+                disabled={overlayDisabled}
+                onClick={() => {
+                  const idx = BLEND_MODES.indexOf(overlay.blend);
+                  const nextIdx = (idx + 1) % BLEND_MODES.length;
+                  setOverlay({ blend: BLEND_MODES[nextIdx] });
+                }}
+                title="Next blend mode (wraps around)"
+              >
+                <ChevronRight size={13} />
+              </button>
+            </div>
           </div>
 
           <div className="control-row">
