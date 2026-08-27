@@ -153,6 +153,7 @@ export interface VectorConfig {
   direction: 'vertical' | 'horizontal';
   lineCount: number;        // 16–180
   sampleStep: number;       // 1–6 grid cells between samples
+  smoothing: number;        // 0–48, low-pass radius in grid cells, along the beam only
   amplitude: number;        // −180…180, in grid cells
   bias: number;             // 0–1, deflection zero point
   blanking: number;         // 0–0.5, beam-off cutoff; independent of the carrier
@@ -187,6 +188,9 @@ A port of the studio's `render()` with the canvas calls removed — it accumulat
 points instead of stroking, which is the whole change. Per line `i`, per sample
 `t` along it:
 
+0. **Filter** — the whole line is sampled into a scratch series first, then
+   low-passed by `smoothing` (two box passes, tent kernel). Everything below
+   reads the filtered value. This step has no counterpart in the studio.
 1. **Deflection** — `(lum − bias) · amplitude`, perpendicular to the line.
    Horizontal lines negate it (`−(lum − (1 − bias)) · amp`) so bright reads as a
    peak rather than a trough; that asymmetry is deliberate in the studio and is
@@ -208,7 +212,7 @@ Any break **ends the current polyline and starts a new one**, so one line yields
 1..n entries in `polylines`. That is the natural representation for a dashed beam
 and it exports to SVG unchanged.
 
-Four divergences from the studio, all deliberate:
+Five divergences from the studio, all deliberate:
 
 - The studio's vertical branch calls `beginPath`/`stroke` **once per sample**
   (~`54 × 450` stroke calls), and its `isDrawingSegment` flag is dead — it
@@ -284,6 +288,41 @@ Four divergences from the studio, all deliberate:
   ground is *exactly* 0, so an unguarded `v <= blanking` cuts the baseline even
   at a cutoff of zero and the control cannot reach its own off position.
   Transparency is separate again and always cuts, whatever either is set to.
+- **Smoothing is a filter on the luminance, not on the geometry.** `sampleStep`
+  is the control that *looks* like a smoother and is not — it decimates the
+  series, so raising it drops vertices while the ones that survive keep the
+  same point-sampled noise. Measured on a grainy test field, mean vertex
+  curvature is 12.46 at step 1 and 12.08 at step 6: six times fewer points,
+  the same jitter. A radius of 4 cells takes it to 0.49, and 32 cells to 0.012.
+
+  The filter runs on the sampled series before any of it becomes a
+  displacement, which forces three decisions:
+
+  - **One-dimensional, along the beam only.** Blurring across the placement
+    axis would bleed neighbouring scan lines together, and lines staying
+    independent is the whole premise of a relief.
+  - **A tent kernel, as two box passes of half the radius.** One box pass turns
+    a hard silhouette edge into a straight ramp with a corner at each end,
+    which on a ridge reads as a chamfer; two convolve to an S-curve for one
+    extra O(n) pass over prefix sums.
+  - **The radius is in grid cells, so it is divided by `sampleStep` to reach
+    the same distance whatever the sampling rate**, and divided again by the
+    draft divisor in `previewVectorConfig` like every other length.
+
+  The sentinel is excluded from the average rather than blurred into it — the
+  prefix sums carry a running *count* alongside the total for exactly this —
+  and a transparent sample stays transparent whatever the radius. Verified: a
+  20-row alpha band cuts 20 vertical beams into 40 runs with zero vertices
+  inside the band at radii 0, 8, 24 and 48, the last drawn row being 89 in
+  every case.
+
+  Everything downstream reads the filtered value — deflection, ripple falloff,
+  carrier duty cycle and blanking alike. Giving the geometry a smoothed
+  luminance while the gates read the raw one would break the beam in places
+  the curve gives no reason for. The visible consequence is that **Beam Cutoff
+  softens as Smoothing rises**, since dark cells beside a bright edge get
+  lifted over the threshold; a large radius grows the silhouette by roughly
+  that radius. Documented in the control hint rather than compensated for.
 - **Bias means the same thing on both axes.** The studio writes the horizontal
   case as `-(lum - (1 - bias))`, which makes one slider mean opposite things per
   direction: 0 is unidirectional vertically, 1 is unidirectional horizontally,

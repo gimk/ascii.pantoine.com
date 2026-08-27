@@ -365,6 +365,22 @@ export interface VectorConfig {
   lineCount: number;
   /** Grid cells between samples along a line. Higher is coarser and faster. */
   sampleStep: number;
+  /**
+   * Low-pass radius in grid cells, along the beam only.
+   *
+   * The control that actually smooths a line. `sampleStep` reads like one and is
+   * not: it *decimates* the series, so raising it drops vertices without
+   * touching the values that survive — a coarser, more angular line carrying the
+   * same point-sampled noise. Filtering has to happen to the luminance, before
+   * it becomes a displacement.
+   *
+   * One-dimensional on purpose. Blurring across the placement axis would bleed
+   * neighbouring scan lines into each other, and lines staying independent is
+   * the entire premise of a relief.
+   *
+   * 0 is off and every sample is read raw.
+   */
+  smoothing: number;
   /** Peak deflection in grid cells. Negative inverts the relief. */
   amplitude: number;
   /** Luminance that deflects to zero. 0.5 is bipolar, 0 is unidirectional. */
@@ -407,6 +423,7 @@ export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
   direction: 'vertical',
   lineCount: 54,
   sampleStep: 2,
+  smoothing: 0,
   amplitude: 65,
   bias: 0.5,
   blanking: 0.02,

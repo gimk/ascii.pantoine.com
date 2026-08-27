@@ -49,6 +49,63 @@ const DEFAULT_BLANKING = 0.02;
 const CARRIER_SOLID_ABOVE_VERTICAL = 0.7;
 const CARRIER_SOLID_ABOVE_HORIZONTAL = 0.65;
 
+/*
+ * Scratch for the per-line luminance series, module-level and grown on demand
+ * so a 120-line trace allocates once rather than 120 times — the same discipline
+ * rasterEngine keeps for its cell buffers. Never read across calls.
+ */
+let rawSeries = new Float32Array(0);
+let filteredA = new Float32Array(0);
+let filteredB = new Float32Array(0);
+/* Prefix sums are `n + 1` long, and hold the running count separately so the
+ * transparency sentinel can be excluded from the average rather than blurred
+ * into it. */
+let prefixSum = new Float64Array(0);
+let prefixCount = new Int32Array(0);
+
+function ensureSeriesCapacity(n: number): void {
+  if (rawSeries.length < n) {
+    rawSeries = new Float32Array(n);
+    filteredA = new Float32Array(n);
+    filteredB = new Float32Array(n);
+  }
+  if (prefixSum.length < n + 1) {
+    prefixSum = new Float64Array(n + 1);
+    prefixCount = new Int32Array(n + 1);
+  }
+}
+
+/**
+ * One box average of half-width `radius` over a luminance series, in O(n).
+ *
+ * Two things it must not do. It must not let a transparent sample (`-1`) into
+ * an average, which is why the count is carried alongside the sum — averaging
+ * the sentinel would ring a dark halo into the beam either side of a cut-out.
+ * And it must not *remove* a transparent sample: a hole in the silhouette stays
+ * exactly where the alpha put it, whatever the radius, so the beam still breaks
+ * on the same cells it did unsmoothed.
+ */
+function boxPass(src: Float32Array, dst: Float32Array, n: number, radius: number): void {
+  prefixSum[0] = 0;
+  prefixCount[0] = 0;
+  for (let i = 0; i < n; i++) {
+    const v = src[i];
+    const valid = v >= 0;
+    prefixSum[i + 1] = prefixSum[i] + (valid ? v : 0);
+    prefixCount[i + 1] = prefixCount[i] + (valid ? 1 : 0);
+  }
+  for (let i = 0; i < n; i++) {
+    if (src[i] < 0) {
+      dst[i] = -1;
+      continue;
+    }
+    const lo = i - radius < 0 ? 0 : i - radius;
+    const hi = i + radius + 1 > n ? n : i + radius + 1;
+    const c = prefixCount[hi] - prefixCount[lo];
+    dst[i] = c > 0 ? (prefixSum[hi] - prefixSum[lo]) / c : src[i];
+  }
+}
+
 /**
  * Accumulates points for one beam pass and cuts a new polyline at every break.
  *
@@ -292,6 +349,24 @@ export function traceVectorField(
   const chroma = Math.max(0, config.chroma);
   const passOffsets = chroma > 0 ? [-chroma, 0, chroma] : [0];
 
+  /*
+   * Smoothing is a radius in *grid cells*, so it has to be converted into
+   * samples before it can filter a decimated series — otherwise the same slider
+   * would reach twice as far at a sample step of 1 as at 2.
+   *
+   * Two box passes rather than one. A single box turns a hard silhouette edge
+   * into a straight ramp with a corner at each end, which on a relief reads as a
+   * chamfer rather than a curve; convolving two boxes gives a tent kernel and an
+   * S-curve, for one extra O(n) pass. Each pass is half the radius so the two
+   * together reach the radius the user asked for.
+   */
+  const smoothCells = Math.max(0, config.smoothing ?? 0);
+  const smoothRadius = Math.round(smoothCells / (step * 2));
+  const smoothOn = smoothRadius >= 1;
+
+  const sampleCount = Math.floor(travelExtent / step) + 1;
+  ensureSeriesCapacity(sampleCount);
+
   const sampleLum = (px: number, py: number): number => {
     const ix = px < 0 ? 0 : px > cols - 1 ? cols - 1 : Math.floor(px);
     const iy = py < 0 ? 0 : py > rows - 1 ? rows - 1 : Math.floor(py);
@@ -327,10 +402,38 @@ export function traceVectorField(
         tint
       );
 
-      for (let t = 0; t <= travelExtent; t += step) {
-        const sampleX = isVertical ? base : t;
-        const sampleY = isVertical ? t : base;
-        const v = sampleLum(sampleX, sampleY);
+      /*
+       * Read the whole line before drawing any of it, so the filter has a
+       * series to work on. Sampling stays exactly where it was — at the
+       * *undeflected* position, on the placement axis — which is what keeps the
+       * three aberration passes a pure shift of one trace.
+       */
+      for (let j = 0; j < sampleCount; j++) {
+        const t = j * step;
+        rawSeries[j] = sampleLum(isVertical ? base : t, isVertical ? t : base);
+      }
+      let series = rawSeries;
+      if (smoothOn) {
+        boxPass(rawSeries, filteredA, sampleCount, smoothRadius);
+        boxPass(filteredA, filteredB, sampleCount, smoothRadius);
+        series = filteredB;
+      }
+
+      /*
+       * Everything downstream reads the filtered value, not the raw one:
+       * deflection, ripple falloff, carrier duty cycle and blanking alike. The
+       * beam is one instrument, and giving its geometry a smoothed luminance
+       * while its gates read the unsmoothed one makes it break in places the
+       * curve gives no reason for.
+       *
+       * The visible consequence, worth knowing before reaching for the slider:
+       * Beam Cutoff softens with Smoothing, because dark cells next to a bright
+       * edge get lifted over the threshold. A large radius grows the silhouette
+       * by roughly that radius.
+       */
+      for (let j = 0; j < sampleCount; j++) {
+        const t = j * step;
+        const v = series[j];
 
         /*
          * Transparency always cuts the beam: a line drawn straight through a
@@ -471,6 +574,7 @@ export function previewVectorConfig(config: VectorConfig, divisor: number): Vect
     rippleAmp: config.rippleAmp / divisor,
     strokeWidth: config.strokeWidth / divisor,
     chroma: config.chroma / divisor,
+    smoothing: (config.smoothing ?? 0) / divisor,
     carrierFreq: config.carrierFreq * divisor,
     rippleFreq: config.rippleFreq * divisor,
     sampleStep: Math.max(1, config.sampleStep / divisor),
