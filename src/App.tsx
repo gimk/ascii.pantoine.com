@@ -3089,10 +3089,6 @@ export const App: React.FC = () => {
                   onChangeToneConfig={handleChangeToneConfig}
                   postProcess={currentRenderSettings.postProcess ?? POST_PROCESS_DEFAULTS}
                   onChangePostProcess={handleChangePostProcess}
-                  onExport={(tab) => {
-                    setExportInitialTab(tab);
-                    setIsExportOpen(true);
-                  }}
                 />
             ) : (
             <AccordionProvider autoCollapse={!!uiThemeSettings.autoCollapsePanels}>
@@ -3631,70 +3627,59 @@ export const App: React.FC = () => {
             </AccordionProvider>
             )}
 
-            {/* Bottom Footer Area */}
-            {uiMode === 'advanced' ? (
-              <div className="sidebar-floating-export">
+            {/* Bottom Floating Export Dock */}
+            <div className="sidebar-floating-export">
+              <button
+                type="button"
+                className="btn basic-export-primary"
+                onClick={() => {
+                  setExportInitialTab('image');
+                  setIsExportOpen(true);
+                }}
+                disabled={appMode === 'media' && !mediaElementRef.current}
+                title={appMode === 'media' && !mediaElementRef.current ? 'Import a file first' : 'Export as PNG, JPG or SVG'}
+              >
+                <Download size={15} />
+                <span>EXPORT IMAGE</span>
+              </button>
+              <div className="basic-export-secondary">
                 <button
                   type="button"
-                  className="btn basic-export-primary"
+                  className="btn btn-sm"
                   onClick={() => {
-                    setExportInitialTab('image');
+                    setExportInitialTab('gif');
                     setIsExportOpen(true);
                   }}
-                  title="Export as PNG, JPG or SVG"
+                  disabled={appMode === 'media' && !mediaElementRef.current}
+                  title="Export an animated GIF"
                 >
-                  <Download size={15} />
-                  <span>EXPORT IMAGE</span>
+                  GIF
                 </button>
-                <div className="basic-export-secondary">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      setExportInitialTab('gif');
-                      setIsExportOpen(true);
-                    }}
-                    title="Export an animated GIF"
-                  >
-                    GIF
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      setExportInitialTab('video');
-                      setIsExportOpen(true);
-                    }}
-                    title="Export a video file"
-                  >
-                    VIDEO
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      setExportInitialTab('separation');
-                      setIsExportOpen(true);
-                    }}
-                    title="Export one image per colour plate"
-                  >
-                    PLATES
-                  </button>
-                </div>
-                <div className="sidebar-credits">
-                  <span>
-                    Made with dedication by{' '}
-                    <a
-                      href="https://www.pantoine.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Antoine Pouligny
-                    </a>
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    setExportInitialTab('video');
+                    setIsExportOpen(true);
+                  }}
+                  disabled={appMode === 'media' && !mediaElementRef.current}
+                  title="Export a video file"
+                >
+                  VIDEO
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    setExportInitialTab('separation');
+                    setIsExportOpen(true);
+                  }}
+                  disabled={appMode === 'media' && !mediaElementRef.current}
+                  title="Export one image per colour plate"
+                >
+                  PLATES
+                </button>
               </div>
-            ) : (
               <div className="sidebar-credits">
                 <span>
                   Made with dedication by{' '}
@@ -3707,7 +3692,7 @@ export const App: React.FC = () => {
                   </a>
                 </span>
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>

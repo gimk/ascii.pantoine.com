@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Download,
   RotateCcw,
   RotateCw,
   FlipHorizontal,
@@ -39,7 +38,6 @@ import {
 } from './ImageAdjustControls';
 import { BUILTIN_PALETTES } from '../engine/palettes';
 import { PrecisionSlider, WorkflowStep } from './controlPrimitives';
-import { ExportTab } from './ExportModal';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
 const ASCII_CELL_ASPECT = 0.55;
@@ -142,8 +140,6 @@ interface BasicPanelProps {
 
   postProcess: PostProcessConfig;
   onChangePostProcess: (next: PostProcessConfig) => void;
-
-  onExport: (tab: ExportTab) => void;
 }
 
 /**
@@ -175,7 +171,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   onChangeToneConfig,
   postProcess,
   onChangePostProcess,
-  onExport,
 }) => {
   const isPixel = rasterMode === 'pixel';
   const isVector = rasterMode === 'vector';
@@ -617,49 +612,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
               onChangePostProcess({ ...postProcess, glow: { ...postProcess.glow, amount: v } })
             }
           />
-        </div>
-      </div>
-
-      {/* ================================================================ */}
-      <div className="basic-section">
-        <button
-          type="button"
-          className="btn basic-export-primary"
-          onClick={() => onExport('image')}
-          disabled={!hasSource}
-          title={hasSource ? 'Export as PNG, JPG or SVG' : 'Import a file first'}
-        >
-          <Download size={15} />
-          <span>EXPORT IMAGE</span>
-        </button>
-        <div className="basic-export-secondary">
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => onExport('gif')}
-            disabled={!hasSource}
-            title="Export an animated GIF"
-          >
-            GIF
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => onExport('video')}
-            disabled={!hasSource}
-            title="Export a video file"
-          >
-            VIDEO
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => onExport('separation')}
-            disabled={!hasSource}
-            title="Export one image per colour plate"
-          >
-            PLATES
-          </button>
         </div>
       </div>
     </div>
