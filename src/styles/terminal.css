@@ -4754,15 +4754,6 @@ select:disabled {
   margin-bottom: 0;
 }
 
-/* Remove the space between the hero action button and the panel directly below it */
-.tab-content > .btn-hero-wrap + .collapsible-section {
-  margin-top: -14px;
-}
-
-.basic-section > .btn-hero + .model-dropzone {
-  margin-top: -8px;
-}
-
 .panel-note {
   display: flex;
   align-items: center;
