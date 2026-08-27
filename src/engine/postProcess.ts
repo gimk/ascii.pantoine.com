@@ -446,12 +446,15 @@ export function composePostProcess(options: ComposeOptions): void {
   for (const stage of under) {
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = stage.opacity;
-    if (stage.blur && stage.blur > 0 && supportsCanvasFilter()) {
-      ctx.filter = `blur(${stage.blur * scale}px)`;
+    const b = stage.blur ? stage.blur * scale : 0;
+    if (b > 0 && supportsCanvasFilter()) {
+      ctx.filter = `blur(${b}px)`;
+      const pad = b * 1.5;
+      ctx.drawImage(stage.layer as CanvasImageSource, -pad, -pad, width + pad * 2, height + pad * 2);
     } else {
       ctx.filter = 'none';
+      ctx.drawImage(stage.layer as CanvasImageSource, 0, 0, width, height);
     }
-    ctx.drawImage(stage.layer as CanvasImageSource, 0, 0, width, height);
     ctx.filter = 'none';
   }
 
@@ -467,12 +470,15 @@ export function composePostProcess(options: ComposeOptions): void {
   for (const stage of over) {
     ctx.globalCompositeOperation = blendToCanvasOp(stage.blend);
     ctx.globalAlpha = stage.opacity;
-    if (stage.blur && stage.blur > 0 && supportsCanvasFilter()) {
-      ctx.filter = `blur(${stage.blur * scale}px)`;
+    const b = stage.blur ? stage.blur * scale : 0;
+    if (b > 0 && supportsCanvasFilter()) {
+      ctx.filter = `blur(${b}px)`;
+      const pad = b * 1.5;
+      ctx.drawImage(stage.layer as CanvasImageSource, -pad, -pad, width + pad * 2, height + pad * 2);
     } else {
       ctx.filter = 'none';
+      ctx.drawImage(stage.layer as CanvasImageSource, 0, 0, width, height);
     }
-    ctx.drawImage(stage.layer as CanvasImageSource, 0, 0, width, height);
     ctx.filter = 'none';
   }
 

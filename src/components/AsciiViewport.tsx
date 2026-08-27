@@ -2034,10 +2034,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               style={{
                 display: 'block',
                 position: 'absolute',
-                top: 0,
-                left: 0,
-                width: `${contentBounds.w}px`,
-                height: `${contentBounds.h}px`,
+                top: post.sourceOverlay.blur && post.sourceOverlay.blur > 0 ? `-${post.sourceOverlay.blur * 1.5}px` : 0,
+                left: post.sourceOverlay.blur && post.sourceOverlay.blur > 0 ? `-${post.sourceOverlay.blur * 1.5}px` : 0,
+                width:
+                  post.sourceOverlay.blur && post.sourceOverlay.blur > 0
+                    ? `${contentBounds.w + post.sourceOverlay.blur * 3}px`
+                    : `${contentBounds.w}px`,
+                height:
+                  post.sourceOverlay.blur && post.sourceOverlay.blur > 0
+                    ? `${contentBounds.h + post.sourceOverlay.blur * 3}px`
+                    : `${contentBounds.h}px`,
                 filter:
                   post.sourceOverlay.blur && post.sourceOverlay.blur > 0
                     ? `blur(${post.sourceOverlay.blur}px)`
