@@ -5,7 +5,6 @@ import {
   ImageAdjustConfig,
   PhosphorTheme,
   MediaColorConfig,
-  ToneMappingConfig,
   AppMode,
   ResamplingMode,
   RasterOutputMode,
@@ -18,7 +17,6 @@ import { DITHER_ALGORITHMS } from '../engine/ditherAlgorithms';
 import { PaletteControls } from './PaletteControls';
 import {
   ColorAdjustControls,
-  TonalAdjustControls,
   BackgroundRow,
   applyToneStops,
   DEFAULT_STOP_WEIGHT,
@@ -40,11 +38,6 @@ interface MediaViewControlsProps {
   onChangeMediaColorConfig?: (config: MediaColorConfig) => void;
   appMode?: AppMode;
   rasterMode?: RasterOutputMode;
-  toneConfig?: ToneMappingConfig;
-  onChangeToneConfig?: (next: ToneMappingConfig) => void;
-  histogram?: Uint32Array | null;
-  histogramOpaque?: number;
-  adjustStepSlot?: React.ReactNode;
 }
 
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
@@ -58,11 +51,6 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   onChangeMediaColorConfig,
   appMode = 'media',
   rasterMode,
-  toneConfig,
-  onChangeToneConfig,
-  histogram = null,
-  histogramOpaque = 0,
-  adjustStepSlot,
 }) => {
   const effectiveRasterMode = rasterMode || config.rasterMode;
   const isPixelMode = effectiveRasterMode === 'pixel';
@@ -102,151 +90,132 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   const { colors: rampColors, weights: rampWeights } = resolveToneStops(config);
 
   return (
-    <>
-      <div className="tab-content">
-        {/* 1. RENDER SETTINGS */}
-        <CollapsibleSection
-          title="RENDER SETTINGS"
-          icon={<Settings size={12} />}
-          badge={
-            isVector
-              ? 'Beam Deflection'
-              : DITHER_ALGORITHMS.find((a) => a.id === (config.algorithm || 'floyd-steinberg'))?.name ||
-                'Floyd-Steinberg'
-          }
-          persistKey="MediaViewControls-render-settings"
-          onReset={resetRenderSettings}
-          resetTitle={
-            isVector
-              ? 'Reset resampling filter and every beam parameter'
-              : 'Reset resampling filter and dither algorithm'
-          }
-        >
-          {/* Resampling */}
-          <div className="render-settings-source">
-            <div className="control-row">
-              <span
-                className="control-label"
-                title="Filter the source is downsampled with on its way into the grid, before any dithering or deflection."
-              >
-                Resampling
-              </span>
-              <select
-                className="number-input stepper-select"
-                value={config.resampling || 'preserve-details'}
-                onChange={(e) => update('resampling', e.target.value as ResamplingMode)}
-              >
-                <option value="preserve-details">Preserve Details</option>
-                <option value="nearest">Nearest (Pixel Art)</option>
-                <option value="bilinear">Bilinear Smooth</option>
-              </select>
-            </div>
+    <div className="tab-content">
+      {/* 1. RENDER SETTINGS */}
+      <CollapsibleSection
+        title="RENDER SETTINGS"
+        icon={<Settings size={12} />}
+        badge={
+          isVector
+            ? 'Beam Deflection'
+            : DITHER_ALGORITHMS.find((a) => a.id === (config.algorithm || 'floyd-steinberg'))?.name ||
+              'Floyd-Steinberg'
+        }
+        persistKey="MediaViewControls-render-settings"
+        onReset={resetRenderSettings}
+        resetTitle={
+          isVector
+            ? 'Reset resampling filter and every beam parameter'
+            : 'Reset resampling filter and dither algorithm'
+        }
+      >
+        {/* Resampling */}
+        <div className="render-settings-source">
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Filter the source is downsampled with on its way into the grid, before any dithering or deflection."
+            >
+              Resampling
+            </span>
+            <select
+              className="number-input stepper-select"
+              value={config.resampling || 'preserve-details'}
+              onChange={(e) => update('resampling', e.target.value as ResamplingMode)}
+            >
+              <option value="preserve-details">Preserve Details</option>
+              <option value="nearest">Nearest (Pixel Art)</option>
+              <option value="bilinear">Bilinear Smooth</option>
+            </select>
           </div>
+        </div>
 
-          {/* Dither or Vector */}
-          {isVector ? (
-            <VectorControls
-              config={config.vectorConfig || VECTOR_CONFIG_DEFAULTS}
-              onChange={(next) => update('vectorConfig', next)}
-            />
-          ) : (
-            <DitherAlgorithmPicker
-              value={config.algorithm || 'floyd-steinberg'}
-              onChange={(algo) => update('algorithm', algo)}
-              params={config.ditherParams}
-              onChangeParams={(next) => update('ditherParams', next)}
-            />
-          )}
-        </CollapsibleSection>
+        {/* Dither or Vector */}
+        {isVector ? (
+          <VectorControls
+            config={config.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+            onChange={(next) => update('vectorConfig', next)}
+          />
+        ) : (
+          <DitherAlgorithmPicker
+            value={config.algorithm || 'floyd-steinberg'}
+            onChange={(algo) => update('algorithm', algo)}
+            params={config.ditherParams}
+            onChangeParams={(next) => update('ditherParams', next)}
+          />
+        )}
+      </CollapsibleSection>
 
-        {/* 2. COLORS */}
-        <ColorAdjustControls
-          config={config}
-          onChangeConfig={(next: ImageAdjustConfig) => onChangeConfig({ ...config, ...next })}
-          resetDefaults={DEFAULT_MEDIA_VIEW_CONFIG}
-          onResetPalette={resetPalette}
-          mediaColorConfig={mediaColorConfig}
-          paletteSlot={
-            onChangeTheme ? (
-              <PaletteControls
-                currentTheme={currentTheme || 'green'}
-                onChangeTheme={onChangeTheme}
-                customThemeColor={customThemeColor}
-                onChangeCustomColor={onChangeCustomColor}
-                mediaColorConfig={mediaColorConfig}
-                onChangeMediaColorConfig={onChangeMediaColorConfig}
-                appMode={appMode}
-                tonalMapping={config.tonalMapping}
-                onChangeTonalMapping={(t) => onChangeConfig({ ...config, tonalMapping: t })}
-                isPixelMode={isPixelMode || isVector}
-                isVectorMode={isVector}
-                colorLevels={config.colorLevels}
-                onChangeColorLevels={(val) => update('colorLevels', val)}
-                rampEditorSlot={
-                  <NToneRampEditor
-                    stops={rampColors}
-                    weights={rampWeights}
-                    onChangeRamp={(stops, nextWeights) =>
+      {/* 2. COLORS */}
+      <ColorAdjustControls
+        config={config}
+        onChangeConfig={(next: ImageAdjustConfig) => onChangeConfig({ ...config, ...next })}
+        resetDefaults={DEFAULT_MEDIA_VIEW_CONFIG}
+        onResetPalette={resetPalette}
+        mediaColorConfig={mediaColorConfig}
+        paletteSlot={
+          onChangeTheme ? (
+            <PaletteControls
+              currentTheme={currentTheme || 'green'}
+              onChangeTheme={onChangeTheme}
+              customThemeColor={customThemeColor}
+              onChangeCustomColor={onChangeCustomColor}
+              mediaColorConfig={mediaColorConfig}
+              onChangeMediaColorConfig={onChangeMediaColorConfig}
+              appMode={appMode}
+              tonalMapping={config.tonalMapping}
+              onChangeTonalMapping={(t) => onChangeConfig({ ...config, tonalMapping: t })}
+              isPixelMode={isPixelMode || isVector}
+              isVectorMode={isVector}
+              colorLevels={config.colorLevels}
+              onChangeColorLevels={(val) => update('colorLevels', val)}
+              rampEditorSlot={
+                <NToneRampEditor
+                  stops={rampColors}
+                  weights={rampWeights}
+                  onChangeRamp={(stops, nextWeights) =>
+                    onChangeConfig({
+                      ...config,
+                      ...applyToneStops(config, stops),
+                      toneStopWeights: nextWeights,
+                    })
+                  }
+                />
+              }
+              onEditPaletteAsRamp={
+                mediaColorConfig?.paletteMode === 'indexed' && onChangeMediaColorConfig
+                  ? () => {
+                      const pal = BUILTIN_PALETTES.find(
+                        (p) => p.id === mediaColorConfig.activePaletteId
+                      );
+                      if (!pal || pal.colors.length < 2) return;
+                      const stops = [...pal.colors];
+                      onChangeMediaColorConfig({
+                        ...mediaColorConfig,
+                        paletteMode: 'phosphor',
+                        mode: 'fixed',
+                      });
                       onChangeConfig({
                         ...config,
                         ...applyToneStops(config, stops),
-                        toneStopWeights: nextWeights,
-                      })
+                        toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
+                        tonalMapping: 'ntone',
+                      });
                     }
-                  />
-                }
-                onEditPaletteAsRamp={
-                  mediaColorConfig?.paletteMode === 'indexed' && onChangeMediaColorConfig
-                    ? () => {
-                        const pal = BUILTIN_PALETTES.find(
-                          (p) => p.id === mediaColorConfig.activePaletteId
-                        );
-                        if (!pal || pal.colors.length < 2) return;
-                        const stops = [...pal.colors];
-                        onChangeMediaColorConfig({
-                          ...mediaColorConfig,
-                          paletteMode: 'phosphor',
-                          mode: 'fixed',
-                        });
-                        onChangeConfig({
-                          ...config,
-                          ...applyToneStops(config, stops),
-                          toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
-                          tonalMapping: 'ntone',
-                        });
-                      }
-                    : undefined
-                }
-              />
-            ) : null
-          }
-          backgroundSlot={
-            <div className="color-backdrop-section">
-              <BackgroundRow
-                value={config.background}
-                onChange={(bg) => update('background', bg)}
-              />
-            </div>
-          }
-        />
-      </div>
-
-      {adjustStepSlot}
-
-      <div className="tab-content">
-        {/* 3. TONAL CONTROLS & 4. EFFECT CONTROLS */}
-        <TonalAdjustControls
-          config={config}
-          onChangeConfig={(next: ImageAdjustConfig) => onChangeConfig({ ...config, ...next })}
-          resetDefaults={DEFAULT_MEDIA_VIEW_CONFIG}
-          showAlphaCutoff={config.background === 'transparent'}
-          showInvert
-          toneConfig={toneConfig}
-          onChangeToneConfig={onChangeToneConfig}
-          histogram={histogram}
-          histogramOpaque={histogramOpaque}
-        />
-      </div>
-    </>
+                  : undefined
+              }
+            />
+          ) : null
+        }
+        backgroundSlot={
+          <div className="color-backdrop-section">
+            <BackgroundRow
+              value={config.background}
+              onChange={(bg) => update('background', bg)}
+            />
+          </div>
+        }
+      />
+    </div>
   );
 };

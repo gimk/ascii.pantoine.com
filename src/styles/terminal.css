@@ -35,8 +35,8 @@
      the gap is the same whichever kind of block precedes it.
      ------------------------------------------------------------------------ */
   --sidebar-gutter: 14px;
-  --section-gap: 26px;
-  --section-tail: 10px;
+  --section-gap: 34px;
+  --section-tail: 14px;
   /* Height of the sticky rail, so a jump lands the rule below it. */
   --sidebar-rail-height: 46px;
 }
@@ -966,7 +966,7 @@ html, body, #root {
 /* Tab Content */
 .tab-content {
   /* Bottom is --section-tail, so every seam above a rule measures the same. */
-  padding: 14px var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
+  padding: 4px var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -976,7 +976,7 @@ html, body, #root {
 /*
  * A panel can now stack several of these (CONTROLS shows the synth and
  * particle panels together, for instance). Without this the adjoining
- * paddings would double up to 28px and read as a gap rather than a seam.
+ * paddings would double up and read as a gap rather than a seam.
  */
 .tab-content + .tab-content {
   padding-top: 0;
@@ -1196,7 +1196,7 @@ html, body, #root {
  * Sits permanently at the top of the CONTENT panel without disclosures.
  */
 .source-selector-wrapper {
-  padding: 0 var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
+  padding: 4px var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
 }
 
 .source-mode-frame {
@@ -4751,7 +4751,16 @@ select:disabled {
 }
 
 .btn-hero-wrap {
-  margin-bottom: 14px;
+  margin-bottom: 0;
+}
+
+/* Remove the space between the hero action button and the panel directly below it */
+.tab-content > .btn-hero-wrap + .collapsible-section {
+  margin-top: -14px;
+}
+
+.basic-section > .btn-hero + .model-dropzone {
+  margin-top: -8px;
 }
 
 .panel-note {

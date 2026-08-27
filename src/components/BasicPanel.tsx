@@ -621,7 +621,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <WorkflowStep n="06" label="Export" />
       <div className="basic-section">
         <button
           type="button"

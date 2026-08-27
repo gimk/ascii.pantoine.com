@@ -3233,7 +3233,7 @@ export const App: React.FC = () => {
               {densityRampSection}
 
               {/* ---------------------------------------------------------- */}
-              {/* 03 · AESTHETIC & 04 · ADJUST                               */}
+              {/* 03 · AESTHETIC                                             */}
               {/* ---------------------------------------------------------- */}
               <WorkflowStep n="03" label="Aesthetic" />
 
@@ -3249,10 +3249,6 @@ export const App: React.FC = () => {
                   mediaColorConfig={mediaColorConfig}
                   onChangeMediaColorConfig={handleSelectMediaColorConfig}
                   appMode={appMode}
-                  toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
-                  onChangeToneConfig={handleChangeToneConfig}
-                  histogram={histogramSnapshot?.bins ?? null}
-                  histogramOpaque={histogramSnapshot?.opaque ?? 0}
                 />
               )}
 
@@ -3420,210 +3416,205 @@ export const App: React.FC = () => {
                       );
                     })()}
                   </div>
-
-                  <WorkflowStep n="04" label="Adjust" />
-
-                  <div className="tab-content">
-                    {(() => {
-                      const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
-                      return (
-                        <TonalAdjustControls
-                          config={synthModelAdjustConfig}
-                          onChangeConfig={handleChangeAdjustConfig}
-                          persistKeyPrefix={`${appMode}-image-adjust`}
-                          toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
-                          onChangeToneConfig={handleChangeToneConfig}
-                          histogram={histogramSnapshot?.bins ?? null}
-                          histogramOpaque={histogramSnapshot?.opaque ?? 0}
-                          showAlphaCutoff={false}
-                        />
-                      );
-                    })()}
-                  </div>
                 </>
               )}
 
               {appMode === 'synth' && (
-                <>
-                  <div className="tab-content">
-                    <CollapsibleSection
-                      title="RENDER SETTINGS"
-                      icon={<Settings size={12} />}
-                      badge={
-                        currentRasterMode === 'vector'
-                          ? 'Beam Deflection'
-                          : DITHER_ALGORITHMS.find(
-                              (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
-                            )?.name || 'Floyd-Steinberg'
-                      }
-                      persistKey={`${appMode}-render-settings`}
-                      onReset={() => {
-                        setRenderSettingsByMode((prev) => ({
-                          ...prev,
-                          [appMode]: {
-                            ...prev[appMode],
-                            ditherAlgorithm: 'floyd-steinberg',
-                            ditherParams: undefined,
-                            vectorConfig: undefined,
-                          },
-                        }));
-                      }}
-                      resetTitle={
-                        currentRasterMode === 'vector'
-                          ? 'Reset every beam parameter'
-                          : 'Reset dither algorithm and parameters'
-                      }
-                    >
-                      {currentRasterMode === 'vector' ? (
-                        <VectorControls
-                          config={currentRenderSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS}
-                          onChange={(next) => {
-                            setRenderSettingsByMode((prev) => ({
+                <div className="tab-content">
+                  <CollapsibleSection
+                    title="RENDER SETTINGS"
+                    icon={<Settings size={12} />}
+                    badge={
+                      currentRasterMode === 'vector'
+                        ? 'Beam Deflection'
+                        : DITHER_ALGORITHMS.find(
+                            (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
+                          )?.name || 'Floyd-Steinberg'
+                    }
+                    persistKey={`${appMode}-render-settings`}
+                    onReset={() => {
+                      setRenderSettingsByMode((prev) => ({
+                        ...prev,
+                        [appMode]: {
+                          ...prev[appMode],
+                          ditherAlgorithm: 'floyd-steinberg',
+                          ditherParams: undefined,
+                          vectorConfig: undefined,
+                        },
+                      }));
+                    }}
+                    resetTitle={
+                      currentRasterMode === 'vector'
+                        ? 'Reset every beam parameter'
+                        : 'Reset dither algorithm and parameters'
+                    }
+                  >
+                    {currentRasterMode === 'vector' ? (
+                      <VectorControls
+                        config={currentRenderSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+                        onChange={(next) => {
+                          setRenderSettingsByMode((prev) => ({
+                            ...prev,
+                            [appMode]: {
+                              ...prev[appMode],
+                              vectorConfig: next,
+                            },
+                          }));
+                        }}
+                        onChangePresetGlow={(glow) => {
+                          setRenderSettingsByMode((prev) => {
+                            const base = prev[appMode].postProcess ?? POST_PROCESS_DEFAULTS;
+                            return {
                               ...prev,
                               [appMode]: {
                                 ...prev[appMode],
-                                vectorConfig: next,
+                                postProcess: { ...base, glow: { ...base.glow, ...glow } },
                               },
-                            }));
-                          }}
-                          onChangePresetGlow={(glow) => {
-                            setRenderSettingsByMode((prev) => {
-                              const base = prev[appMode].postProcess ?? POST_PROCESS_DEFAULTS;
-                              return {
-                                ...prev,
-                                [appMode]: {
-                                  ...prev[appMode],
-                                  postProcess: { ...base, glow: { ...base.glow, ...glow } },
-                                },
-                              };
-                            });
-                          }}
-                        />
-                      ) : (
-                        <DitherAlgorithmPicker
-                          value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
-                          onChange={(algo) => {
-                            setRenderSettingsByMode((prev) => ({
-                              ...prev,
-                              [appMode]: {
-                                ...prev[appMode],
-                                ditherAlgorithm: algo,
-                              },
-                            }));
-                          }}
-                          params={currentRenderSettings.ditherParams}
-                          onChangeParams={(next) => {
-                            setRenderSettingsByMode((prev) => ({
-                              ...prev,
-                              [appMode]: {
-                                ...prev[appMode],
-                                ditherParams: next,
-                              },
-                            }));
-                          }}
-                        />
-                      )}
-                    </CollapsibleSection>
+                            };
+                          });
+                        }}
+                      />
+                    ) : (
+                      <DitherAlgorithmPicker
+                        value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
+                        onChange={(algo) => {
+                          setRenderSettingsByMode((prev) => ({
+                            ...prev,
+                            [appMode]: {
+                              ...prev[appMode],
+                              ditherAlgorithm: algo,
+                            },
+                          }));
+                        }}
+                        params={currentRenderSettings.ditherParams}
+                        onChangeParams={(next) => {
+                          setRenderSettingsByMode((prev) => ({
+                            ...prev,
+                            [appMode]: {
+                              ...prev[appMode],
+                              ditherParams: next,
+                            },
+                          }));
+                        }}
+                      />
+                    )}
+                  </CollapsibleSection>
 
-                    {(() => {
-                      const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
-                      const { colors: synthModelRampColors, weights: synthModelRampWeights } = resolveToneStops(synthModelAdjustConfig);
+                  {(() => {
+                    const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
+                    const { colors: synthModelRampColors, weights: synthModelRampWeights } = resolveToneStops(synthModelAdjustConfig);
 
-                      return (
-                        <ColorAdjustControls
-                          config={synthModelAdjustConfig}
-                          onChangeConfig={handleChangeAdjustConfig}
-                          persistKeyPrefix={`${appMode}-image-adjust`}
-                          onResetPalette={handleResetPalette}
-                          mediaColorConfig={mediaColorConfig}
-                          paletteSlot={
-                            <PaletteControls
-                              currentTheme={theme}
-                              onChangeTheme={handleSelectTheme}
-                              customThemeColor={customThemeColor}
-                              onChangeCustomColor={handleSelectCustomColor}
-                              mediaColorConfig={mediaColorConfig}
-                              onChangeMediaColorConfig={handleSelectMediaColorConfig}
-                              appMode={appMode}
-                              tonalMapping={synthModelAdjustConfig.tonalMapping}
-                              onChangeTonalMapping={(t) =>
-                                handleChangeAdjustConfig({
-                                  ...synthModelAdjustConfig,
-                                  tonalMapping: t,
-                                })
-                              }
-                              isPixelMode={currentRasterMode !== 'ascii'}
-                              isVectorMode={currentRasterMode === 'vector'}
-                              colorLevels={synthModelAdjustConfig.colorLevels}
-                              onChangeColorLevels={(val) =>
-                                handleChangeAdjustConfig({
-                                  ...synthModelAdjustConfig,
-                                  colorLevels: val,
-                                })
-                              }
-                              rampEditorSlot={
-                                <NToneRampEditor
-                                  stops={synthModelRampColors}
-                                  weights={synthModelRampWeights}
-                                  onChangeRamp={(stops, nextWeights) =>
+                    return (
+                      <ColorAdjustControls
+                        config={synthModelAdjustConfig}
+                        onChangeConfig={handleChangeAdjustConfig}
+                        persistKeyPrefix={`${appMode}-image-adjust`}
+                        onResetPalette={handleResetPalette}
+                        mediaColorConfig={mediaColorConfig}
+                        paletteSlot={
+                          <PaletteControls
+                            currentTheme={theme}
+                            onChangeTheme={handleSelectTheme}
+                            customThemeColor={customThemeColor}
+                            onChangeCustomColor={handleSelectCustomColor}
+                            mediaColorConfig={mediaColorConfig}
+                            onChangeMediaColorConfig={handleSelectMediaColorConfig}
+                            appMode={appMode}
+                            tonalMapping={synthModelAdjustConfig.tonalMapping}
+                            onChangeTonalMapping={(t) =>
+                              handleChangeAdjustConfig({
+                                ...synthModelAdjustConfig,
+                                tonalMapping: t,
+                              })
+                            }
+                            isPixelMode={currentRasterMode !== 'ascii'}
+                            isVectorMode={currentRasterMode === 'vector'}
+                            colorLevels={synthModelAdjustConfig.colorLevels}
+                            onChangeColorLevels={(val) =>
+                              handleChangeAdjustConfig({
+                                ...synthModelAdjustConfig,
+                                colorLevels: val,
+                              })
+                            }
+                            rampEditorSlot={
+                              <NToneRampEditor
+                                stops={synthModelRampColors}
+                                weights={synthModelRampWeights}
+                                onChangeRamp={(stops, nextWeights) =>
+                                  handleChangeAdjustConfig({
+                                    ...synthModelAdjustConfig,
+                                    ...applyToneStops(synthModelAdjustConfig, stops),
+                                    toneStopWeights: nextWeights,
+                                  })
+                                }
+                              />
+                            }
+                            onEditPaletteAsRamp={
+                              mediaColorConfig?.paletteMode === 'indexed'
+                                ? () => {
+                                    const pal = BUILTIN_PALETTES.find(
+                                      (p) => p.id === mediaColorConfig.activePaletteId
+                                    );
+                                    if (!pal || pal.colors.length < 2) return;
+                                    const stops = [...pal.colors];
+                                    handleSelectMediaColorConfig({
+                                      ...mediaColorConfig,
+                                      paletteMode: 'phosphor',
+                                      mode: 'fixed',
+                                    });
                                     handleChangeAdjustConfig({
                                       ...synthModelAdjustConfig,
                                       ...applyToneStops(synthModelAdjustConfig, stops),
-                                      toneStopWeights: nextWeights,
-                                    })
+                                      toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
+                                      tonalMapping: 'ntone',
+                                    });
                                   }
-                                />
-                              }
-                              onEditPaletteAsRamp={
-                                mediaColorConfig?.paletteMode === 'indexed'
-                                  ? () => {
-                                      const pal = BUILTIN_PALETTES.find(
-                                        (p) => p.id === mediaColorConfig.activePaletteId
-                                      );
-                                      if (!pal || pal.colors.length < 2) return;
-                                      const stops = [...pal.colors];
-                                      handleSelectMediaColorConfig({
-                                        ...mediaColorConfig,
-                                        paletteMode: 'phosphor',
-                                        mode: 'fixed',
-                                      });
-                                      handleChangeAdjustConfig({
-                                        ...synthModelAdjustConfig,
-                                        ...applyToneStops(synthModelAdjustConfig, stops),
-                                        toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
-                                        tonalMapping: 'ntone',
-                                      });
-                                    }
-                                  : undefined
-                              }
-                            />
-                          }
-                        />
-                      );
-                    })()}
-                  </div>
-
-                  <WorkflowStep n="04" label="Adjust" />
-
-                  <div className="tab-content">
-                    {(() => {
-                      const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
-                      return (
-                        <TonalAdjustControls
-                          config={synthModelAdjustConfig}
-                          onChangeConfig={handleChangeAdjustConfig}
-                          persistKeyPrefix={`${appMode}-image-adjust`}
-                          toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
-                          onChangeToneConfig={handleChangeToneConfig}
-                          histogram={histogramSnapshot?.bins ?? null}
-                          histogramOpaque={histogramSnapshot?.opaque ?? 0}
-                          showAlphaCutoff={false}
-                        />
-                      );
-                    })()}
-                  </div>
-                </>
+                                : undefined
+                            }
+                          />
+                        }
+                      />
+                    );
+                  })()}
+                </div>
               )}
+
+              {/* ---------------------------------------------------------- */}
+              {/* 04 · ADJUST                                                */}
+              {/* ---------------------------------------------------------- */}
+              <WorkflowStep n="04" label="Adjust" />
+
+              <div className="tab-content">
+                {appMode === 'media' ? (
+                  <TonalAdjustControls
+                    config={mediaViewConfig}
+                    onChangeConfig={(next: ImageAdjustConfig) => handleChangeMediaViewConfig({ ...mediaViewConfig, ...next })}
+                    resetDefaults={DEFAULT_MEDIA_VIEW_CONFIG}
+                    showAlphaCutoff={mediaViewConfig.background === 'transparent'}
+                    showInvert
+                    toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                    onChangeToneConfig={handleChangeToneConfig}
+                    histogram={histogramSnapshot?.bins ?? null}
+                    histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                  />
+                ) : (
+                  (() => {
+                    const synthModelAdjustConfig = currentRenderSettings.adjustConfig ?? DEFAULT_IMAGE_ADJUST_CONFIG;
+                    return (
+                      <TonalAdjustControls
+                        config={synthModelAdjustConfig}
+                        onChangeConfig={handleChangeAdjustConfig}
+                        persistKeyPrefix={`${appMode}-image-adjust`}
+                        toneConfig={currentRenderSettings.toneConfig ?? DEFAULT_TONE_MAPPING_CONFIG}
+                        onChangeToneConfig={handleChangeToneConfig}
+                        histogram={histogramSnapshot?.bins ?? null}
+                        histogramOpaque={histogramSnapshot?.opaque ?? 0}
+                        showAlphaCutoff={false}
+                      />
+                    );
+                  })()
+                )}
+              </div>
 
               {/* ---------------------------------------------------------- */}
               {/* 05 · COMPOSITING                                           */}
@@ -3637,11 +3628,6 @@ export const App: React.FC = () => {
                 persistKeyPrefix={`${appMode}-post`}
                 step="05"
               />
-
-              {/* ---------------------------------------------------------- */}
-              {/* 06 · EXPORT                                                */}
-              {/* ---------------------------------------------------------- */}
-              <WorkflowStep n="06" label="Export" />
             </AccordionProvider>
             )}
 
