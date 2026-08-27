@@ -129,7 +129,14 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
           </div>
 
           {sourceUnavailable && (
-            <div className="panel-note" style={{ margin: '6px 0' }}>Load a source first — there is nothing to bring back.</div>
+            <div className="panel-note" style={{ margin: '6px 0' }}>
+              {/*
+                One `<span>`, always. `.panel-note` is a flex row and only its
+                span gets `flex: 1`, so loose text nodes become separate flex
+                items and the note lays itself out in columns.
+              */}
+              <span>Load a source first — there is nothing to bring back.</span>
+            </div>
           )}
 
           <div className="control-row" style={{ alignItems: 'center' }}>
@@ -271,7 +278,7 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
         >
           {noFilter && (
             <div className="panel-note" style={{ margin: '6px 0' }}>
-              This browser has no canvas blur, so the glow is skipped. Everything else applies.
+              <span>This browser has no canvas blur, so the glow is skipped.</span>
             </div>
           )}
 
@@ -377,9 +384,14 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
 
           {rasterMode === 'vector' && (
             <div className="panel-note" style={{ margin: '6px 0' }}>
-              The beam has its own aberration in <strong>03 · Shading</strong> → Beam Optics. That
-              one offsets the geometry into three real traced passes, so it exports as SVG
-              polylines; this one shifts the rasterized frame. They stack.
+              {/*
+                One line. The full version of this — geometry versus pixels,
+                and which one survives into an SVG — is a paragraph, and a
+                paragraph in a note box under a slider is not where anyone
+                reads it. The tooltip on Beam Aberration itself says it, next
+                to the control it is about.
+              */}
+              <span>Stacks with Beam Aberration in RENDER SETTINGS, which splits the geometry.</span>
             </div>
           )}
         </CollapsibleSection>
