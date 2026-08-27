@@ -153,6 +153,8 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         resetDefaults={DEFAULT_MEDIA_VIEW_CONFIG}
         onResetPalette={resetPalette}
         mediaColorConfig={mediaColorConfig}
+        appMode={appMode}
+        isVectorMode={isVector}
         paletteSlot={
           onChangeTheme ? (
             <PaletteControls

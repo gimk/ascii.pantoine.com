@@ -5,6 +5,7 @@ import {
   ImageAdjustConfig,
   ToneMappingConfig,
   MediaColorConfig,
+  AppMode,
   DEFAULT_IMAGE_ADJUST_CONFIG,
 } from '../types/ascii';
 import { BUILTIN_PALETTES } from '../engine/palettes';
@@ -446,7 +447,7 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
   };
 
   return (
-    <div className="quantize-controls-section subsection-divided">
+    <div className="quantize-controls-section">
       <div className="tonal-subheading tonal-subheading-flush">
         <span>Quantize Depth</span>
         {!isMax && (
@@ -1467,6 +1468,8 @@ export interface ColorAdjustControlsProps {
   onResetPalette?: () => void;
   persistKeyPrefix?: string;
   mediaColorConfig?: MediaColorConfig;
+  appMode?: AppMode;
+  isVectorMode?: boolean;
 }
 
 export const ColorAdjustControls: React.FC<ColorAdjustControlsProps> = ({
@@ -1478,13 +1481,21 @@ export const ColorAdjustControls: React.FC<ColorAdjustControlsProps> = ({
   onResetPalette,
   persistKeyPrefix = 'MediaViewControls',
   mediaColorConfig,
+  appMode = 'media',
+  isVectorMode = false,
 }) => {
   const colorBadge = useMemo(() => {
-    if (mediaColorConfig?.paletteMode === 'content') {
+    const isRgbDisabled = appMode === 'synth' || isVectorMode;
+    const effectivePaletteMode =
+      mediaColorConfig?.paletteMode === 'content' && isRgbDisabled
+        ? 'phosphor'
+        : mediaColorConfig?.paletteMode || 'phosphor';
+
+    if (effectivePaletteMode === 'content') {
       return 'RGB (CONTENT)';
     }
-    if (mediaColorConfig?.paletteMode === 'indexed') {
-      const pal = BUILTIN_PALETTES.find((p) => p.id === mediaColorConfig.activePaletteId);
+    if (effectivePaletteMode === 'indexed') {
+      const pal = BUILTIN_PALETTES.find((p) => p.id === mediaColorConfig?.activePaletteId);
       return pal ? pal.name : 'PRESET PALETTE';
     }
     if (config.tonalMapping && config.tonalMapping !== '1color') {
@@ -1492,7 +1503,14 @@ export const ColorAdjustControls: React.FC<ColorAdjustControlsProps> = ({
       return `${count}-TONE RAMP`;
     }
     return '1-COLOR';
-  }, [mediaColorConfig?.paletteMode, mediaColorConfig?.activePaletteId, config.tonalMapping, config.customToneColors]);
+  }, [
+    mediaColorConfig?.paletteMode,
+    mediaColorConfig?.activePaletteId,
+    config.tonalMapping,
+    config.customToneColors,
+    appMode,
+    isVectorMode,
+  ]);
 
   const resetColors = () => {
     onChangeConfig({

@@ -3346,6 +3346,8 @@ export const App: React.FC = () => {
                           persistKeyPrefix={`${appMode}-image-adjust`}
                           onResetPalette={handleResetPalette}
                           mediaColorConfig={mediaColorConfig}
+                          appMode={appMode}
+                          isVectorMode={currentRasterMode === 'vector'}
                           paletteSlot={
                             <PaletteControls
                               currentTheme={theme}
@@ -3507,6 +3509,8 @@ export const App: React.FC = () => {
                         persistKeyPrefix={`${appMode}-image-adjust`}
                         onResetPalette={handleResetPalette}
                         mediaColorConfig={mediaColorConfig}
+                        appMode={appMode}
+                        isVectorMode={currentRasterMode === 'vector'}
                         paletteSlot={
                           <PaletteControls
                             currentTheme={theme}

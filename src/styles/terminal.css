@@ -1540,9 +1540,8 @@ html, body, #root {
 }
 
 /* Quantize Levels UI */
-.quantize-controls-section.subsection-divided {
-  margin-top: 0;
-  padding-top: 14px;
+.quantize-controls-section {
+  margin-top: 4px;
 }
 
 .quantize-chip-row {
