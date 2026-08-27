@@ -15,6 +15,8 @@ import {
   ModelPreset,
   BuiltinModelId,
   MediaConfig,
+  CropRect,
+  CROP_FULL,
   MediaViewConfig,
   MediaPreset,
   RenderSettings,
@@ -56,7 +58,7 @@ import {
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelFrameData, applyTrackballRotationWithTime } from './engine/modelRenderer';
-import { renderAsciiMediaFrameData } from './engine/mediaRenderer';
+import { renderAsciiMediaFrameData, resolveCrop, cropActive } from './engine/mediaRenderer';
 import { migratePostProcess } from './engine/postProcess';
 /*
  * The overlay's source layer comes from the exporter's helpers, not from a
@@ -99,9 +101,9 @@ import {
 } from './components/ImageAdjustControls';
 import { CollapsibleSection, AccordionProvider } from './components/CollapsibleSection';
 import { BasicPanel } from './components/BasicPanel';
-import { UiModeSwitch } from './components/UiModeSwitch';
+import { UiModeSwitch, UiModeMenu } from './components/UiModeSwitch';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
-import { OutputModeCards } from './components/outputModes';
+import { OutputModeCards, outputModeForKey } from './components/outputModes';
 import { WorkflowStep } from './components/controlPrimitives';
 import { VectorControls } from './components/VectorControls';
 import { ExportModal, ExportTab } from './components/ExportModal';
@@ -121,6 +123,7 @@ import {
   Share2,
   Download,
   Undo2,
+  RotateCcw,
   Redo2,
   Box,
   Image as ImageIcon,
@@ -146,6 +149,15 @@ const resolveUiMode = (stored: Record<string, unknown> | null): UiMode => {
   if (stored.uiMode === 'basic' || stored.uiMode === 'advanced') return stored.uiMode;
   return 'advanced';
 };
+
+/*
+ * Viewport width below which the header drops the centred BASIC/ADVANCED
+ * switch for the UiModeMenu, and below which ADVANCED is a poor opening hand:
+ * its two-tab sidebar stacks under the viewport and asks for a lot of scroll
+ * before anything is rendered. Kept in step with the 620px media query in
+ * terminal.css that moves the switch.
+ */
+const NARROW_UI_BREAKPOINT = 620;
 
 /** DPI a freshly loaded media source starts at: 1:1 with the source pixels. */
 const MEDIA_DEFAULT_DPI = 100;
@@ -305,6 +317,174 @@ interface MediaHistorySnapshot {
   optimizeConfig?: OptimizeConfig;
 }
 
+/**
+ * Read the persisted render-settings blob, or null if there is none.
+ *
+ * Separate from the builder so RESET ALL can withhold it: a reset that fed the
+ * saved blob back in would restore the settings it was asked to clear.
+ */
+function readSavedRenderSettings(): string | null {
+  try {
+    return localStorage.getItem(LOCAL_STORAGE_RENDER_SETTINGS_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The three modes' render settings: share link first, then the persisted blob,
+ * then the built-in defaults.
+ *
+ * A named function rather than an inline `useState` initializer so RESET ALL
+ * can ask for the same thing with both inputs withheld and get exactly what a
+ * first-ever visit gets. The alternative — a second copy of the defaults in a
+ * reset handler — is how a reset drifts from a fresh session, one forgotten
+ * default at a time (invariant 4, applied to defaults rather than to exports).
+ */
+function buildRenderSettings(
+  sharedState: FullAnimationState | null,
+  savedRaw: string | null
+): Record<AppMode, RenderSettings> {
+  let savedSettings: Partial<Record<AppMode, Partial<RenderSettings>>> = {};
+  try {
+    if (savedRaw) savedSettings = JSON.parse(savedRaw);
+  } catch {}
+
+  // Synth mode exposes no dither control, so a persisted 'floyd-steinberg' can
+  // only be the old default. Error diffusion is temporally unstable on an
+  // animated field and made the output flicker, so drop it.
+  if (savedSettings.synth?.ditherAlgorithm === 'floyd-steinberg') {
+    savedSettings.synth.ditherAlgorithm = 'none';
+  }
+
+  // The 'gameboy' / 'cyberpunk' / 'amber' tonal presets are built-in palettes
+  // now. Move a persisted preset onto its palette so the look survives.
+  for (const modeKey of ['synth', 'media', 'model'] as const) {
+    const saved = savedSettings[modeKey];
+    const legacy = saved?.adjustConfig?.tonalMapping as string | undefined;
+    const paletteId = legacy ? LEGACY_TONAL_PRESET_PALETTES[legacy] : undefined;
+    if (!saved || !paletteId) continue;
+    saved.adjustConfig = { ...saved.adjustConfig!, tonalMapping: '1color' };
+    saved.mediaColorConfig = {
+      ...(saved.mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG),
+      paletteMode: 'indexed',
+      mode: 'fixed',
+      activePaletteId: paletteId,
+    };
+  }
+
+  const isSynthShared = sharedState?.appMode === 'synth' || !sharedState?.appMode;
+  const isMediaShared = sharedState?.appMode === 'media';
+  const isModelShared = sharedState?.appMode === 'model';
+
+  const defaultSynthSettings: RenderSettings = {
+    cols: (isSynthShared && sharedState?.cols) || savedSettings.synth?.cols || 100,
+    rows: (isSynthShared && sharedState?.rows) || savedSettings.synth?.rows || 50,
+    autoRes: (isSynthShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.synth?.autoRes !== undefined ? savedSettings.synth.autoRes : true),
+    density: (isSynthShared && sharedState?.density) || savedSettings.synth?.density || CHARSETS[0].chars,
+    rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'pixel',
+    ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
+    ditherParams: (isSynthShared && sharedState?.ditherParams) || savedSettings.synth?.ditherParams,
+    vectorConfig: (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig,
+    toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
+    adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
+    /*
+     * `migratePostProcess` folds a pre-2.3 `vectorConfig.glow` forward: the
+     * halo used to be a beam parameter and is now one post stage shared with
+     * ASCII and pixel, so an old link or a persisted session keeps its bloom
+     * rather than silently losing it.
+     */
+    postProcess: migratePostProcess(
+      (isSynthShared ? sharedState?.postProcess : undefined) || savedSettings.synth?.postProcess,
+      (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig
+    ),
+    theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'monochrome',
+    customThemeColor: (isSynthShared && sharedState?.customThemeColor) || savedSettings.synth?.customThemeColor || '',
+    gradientConfig: (isSynthShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.synth?.gradientConfig ?? null),
+    crtConfig: (isSynthShared && sharedState?.crtConfig) || savedSettings.synth?.crtConfig || {
+      scanlines: true,
+      crtGlow: true,
+      vignette: false,
+      phosphorBloom: false,
+    },
+    optimizeConfig: (isSynthShared && sharedState?.optimizeConfig) || savedSettings.synth?.optimizeConfig || {
+      targetFps: 60,
+      pauseWhenHidden: true,
+      idleThrottle: false,
+    },
+  };
+
+  const defaultMediaSettings: RenderSettings = {
+    cols: (isMediaShared && sharedState?.cols) || savedSettings.media?.cols || 240,
+    rows: (isMediaShared && sharedState?.rows) || savedSettings.media?.rows || 120,
+    autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : false),
+    density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || CHARSETS[0].chars,
+    rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'pixel',
+    ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
+    ditherParams: (isMediaShared && sharedState?.ditherParams) || savedSettings.media?.ditherParams,
+    vectorConfig: (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig,
+    toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
+    adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
+    postProcess: migratePostProcess(
+      (isMediaShared ? sharedState?.postProcess : undefined) || savedSettings.media?.postProcess,
+      (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig
+    ),
+    theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'monochrome',
+    customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
+    gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
+    crtConfig: (isMediaShared && sharedState?.crtConfig) || savedSettings.media?.crtConfig || {
+      scanlines: true,
+      crtGlow: true,
+      vignette: false,
+      phosphorBloom: false,
+    },
+    optimizeConfig: (isMediaShared && sharedState?.optimizeConfig) || savedSettings.media?.optimizeConfig || {
+      targetFps: 60,
+      pauseWhenHidden: true,
+      idleThrottle: false,
+    },
+    mediaColorConfig: (isMediaShared && sharedState?.mediaColorConfig) || savedSettings.media?.mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG,
+  };
+
+  const defaultModelSettings: RenderSettings = {
+    cols: (isModelShared && sharedState?.cols) || savedSettings.model?.cols || 100,
+    rows: (isModelShared && sharedState?.rows) || savedSettings.model?.rows || 50,
+    autoRes: (isModelShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.model?.autoRes !== undefined ? savedSettings.model.autoRes : true),
+    density: (isModelShared && sharedState?.density) || savedSettings.model?.density || CHARSETS[0].chars,
+    rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'pixel',
+    ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
+    ditherParams: (isModelShared && sharedState?.ditherParams) || savedSettings.model?.ditherParams,
+    vectorConfig: (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig,
+    toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
+    adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
+    postProcess: migratePostProcess(
+      (isModelShared ? sharedState?.postProcess : undefined) || savedSettings.model?.postProcess,
+      (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig
+    ),
+    theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'monochrome',
+    customThemeColor: (isModelShared && sharedState?.customThemeColor) || savedSettings.model?.customThemeColor || '',
+    gradientConfig: (isModelShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.model?.gradientConfig ?? null),
+    crtConfig: (isModelShared && sharedState?.crtConfig) || savedSettings.model?.crtConfig || {
+      scanlines: true,
+      crtGlow: true,
+      vignette: false,
+      phosphorBloom: false,
+    },
+    optimizeConfig: (isModelShared && sharedState?.optimizeConfig) || savedSettings.model?.optimizeConfig || {
+      targetFps: 60,
+      pauseWhenHidden: true,
+      idleThrottle: false,
+    },
+  };
+
+
+  return {
+    synth: defaultSynthSettings,
+    media: defaultMediaSettings,
+    model: defaultModelSettings,
+  };
+}
+
 export const App: React.FC = () => {
   // Decode URL state on initialization if present
   const initialUrlData = useMemo(() => decodeShareFromUrl(), []);
@@ -408,149 +588,9 @@ export const App: React.FC = () => {
   const sourceLayerRef = useRef<HTMLCanvasElement | null>(null);
 
   // Isolated Render Settings for each mode (Synth, Media, Model)
-  const [renderSettingsByMode, setRenderSettingsByMode] = useState<Record<AppMode, RenderSettings>>(() => {
-    let savedSettings: Partial<Record<AppMode, Partial<RenderSettings>>> = {};
-    try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_RENDER_SETTINGS_KEY);
-      if (raw) {
-        savedSettings = JSON.parse(raw);
-      }
-    } catch {}
-
-    // Synth mode exposes no dither control, so a persisted 'floyd-steinberg' can
-    // only be the old default. Error diffusion is temporally unstable on an
-    // animated field and made the output flicker, so drop it.
-    if (savedSettings.synth?.ditherAlgorithm === 'floyd-steinberg') {
-      savedSettings.synth.ditherAlgorithm = 'none';
-    }
-
-    // The 'gameboy' / 'cyberpunk' / 'amber' tonal presets are built-in palettes
-    // now. Move a persisted preset onto its palette so the look survives.
-    for (const modeKey of ['synth', 'media', 'model'] as const) {
-      const saved = savedSettings[modeKey];
-      const legacy = saved?.adjustConfig?.tonalMapping as string | undefined;
-      const paletteId = legacy ? LEGACY_TONAL_PRESET_PALETTES[legacy] : undefined;
-      if (!saved || !paletteId) continue;
-      saved.adjustConfig = { ...saved.adjustConfig!, tonalMapping: '1color' };
-      saved.mediaColorConfig = {
-        ...(saved.mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG),
-        paletteMode: 'indexed',
-        mode: 'fixed',
-        activePaletteId: paletteId,
-      };
-    }
-
-    const isSynthShared = sharedState?.appMode === 'synth' || !sharedState?.appMode;
-    const isMediaShared = sharedState?.appMode === 'media';
-    const isModelShared = sharedState?.appMode === 'model';
-
-    const defaultSynthSettings: RenderSettings = {
-      cols: (isSynthShared && sharedState?.cols) || savedSettings.synth?.cols || 100,
-      rows: (isSynthShared && sharedState?.rows) || savedSettings.synth?.rows || 50,
-      autoRes: (isSynthShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.synth?.autoRes !== undefined ? savedSettings.synth.autoRes : true),
-      density: (isSynthShared && sharedState?.density) || savedSettings.synth?.density || CHARSETS[0].chars,
-      rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'pixel',
-      ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
-      ditherParams: (isSynthShared && sharedState?.ditherParams) || savedSettings.synth?.ditherParams,
-      vectorConfig: (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig,
-      toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
-      adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
-      /*
-       * `migratePostProcess` folds a pre-2.3 `vectorConfig.glow` forward: the
-       * halo used to be a beam parameter and is now one post stage shared with
-       * ASCII and pixel, so an old link or a persisted session keeps its bloom
-       * rather than silently losing it.
-       */
-      postProcess: migratePostProcess(
-        (isSynthShared ? sharedState?.postProcess : undefined) || savedSettings.synth?.postProcess,
-        (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig
-      ),
-      theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'monochrome',
-      customThemeColor: (isSynthShared && sharedState?.customThemeColor) || savedSettings.synth?.customThemeColor || '',
-      gradientConfig: (isSynthShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.synth?.gradientConfig ?? null),
-      crtConfig: (isSynthShared && sharedState?.crtConfig) || savedSettings.synth?.crtConfig || {
-        scanlines: true,
-        crtGlow: true,
-        vignette: false,
-        phosphorBloom: false,
-      },
-      optimizeConfig: (isSynthShared && sharedState?.optimizeConfig) || savedSettings.synth?.optimizeConfig || {
-        targetFps: 60,
-        pauseWhenHidden: true,
-        idleThrottle: false,
-      },
-    };
-
-    const defaultMediaSettings: RenderSettings = {
-      cols: (isMediaShared && sharedState?.cols) || savedSettings.media?.cols || 240,
-      rows: (isMediaShared && sharedState?.rows) || savedSettings.media?.rows || 120,
-      autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : false),
-      density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || CHARSETS[0].chars,
-      rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'pixel',
-      ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
-      ditherParams: (isMediaShared && sharedState?.ditherParams) || savedSettings.media?.ditherParams,
-      vectorConfig: (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig,
-      toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
-      adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
-      postProcess: migratePostProcess(
-        (isMediaShared ? sharedState?.postProcess : undefined) || savedSettings.media?.postProcess,
-        (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig
-      ),
-      theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'monochrome',
-      customThemeColor: (isMediaShared && sharedState?.customThemeColor) || savedSettings.media?.customThemeColor || '',
-      gradientConfig: (isMediaShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.media?.gradientConfig ?? null),
-      crtConfig: (isMediaShared && sharedState?.crtConfig) || savedSettings.media?.crtConfig || {
-        scanlines: true,
-        crtGlow: true,
-        vignette: false,
-        phosphorBloom: false,
-      },
-      optimizeConfig: (isMediaShared && sharedState?.optimizeConfig) || savedSettings.media?.optimizeConfig || {
-        targetFps: 60,
-        pauseWhenHidden: true,
-        idleThrottle: false,
-      },
-      mediaColorConfig: (isMediaShared && sharedState?.mediaColorConfig) || savedSettings.media?.mediaColorConfig || DEFAULT_MEDIA_COLOR_CONFIG,
-    };
-
-    const defaultModelSettings: RenderSettings = {
-      cols: (isModelShared && sharedState?.cols) || savedSettings.model?.cols || 100,
-      rows: (isModelShared && sharedState?.rows) || savedSettings.model?.rows || 50,
-      autoRes: (isModelShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.model?.autoRes !== undefined ? savedSettings.model.autoRes : true),
-      density: (isModelShared && sharedState?.density) || savedSettings.model?.density || CHARSETS[0].chars,
-      rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'pixel',
-      ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
-      ditherParams: (isModelShared && sharedState?.ditherParams) || savedSettings.model?.ditherParams,
-      vectorConfig: (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig,
-      toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
-      adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
-      postProcess: migratePostProcess(
-        (isModelShared ? sharedState?.postProcess : undefined) || savedSettings.model?.postProcess,
-        (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig
-      ),
-      theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'monochrome',
-      customThemeColor: (isModelShared && sharedState?.customThemeColor) || savedSettings.model?.customThemeColor || '',
-      gradientConfig: (isModelShared && sharedState?.gradientConfig !== undefined) ? sharedState.gradientConfig : (savedSettings.model?.gradientConfig ?? null),
-      crtConfig: (isModelShared && sharedState?.crtConfig) || savedSettings.model?.crtConfig || {
-        scanlines: true,
-        crtGlow: true,
-        vignette: false,
-        phosphorBloom: false,
-      },
-      optimizeConfig: (isModelShared && sharedState?.optimizeConfig) || savedSettings.model?.optimizeConfig || {
-        targetFps: 60,
-        pauseWhenHidden: true,
-        idleThrottle: false,
-      },
-    };
-
-
-    return {
-      synth: defaultSynthSettings,
-      media: defaultMediaSettings,
-      model: defaultModelSettings,
-    };
-  });
+  const [renderSettingsByMode, setRenderSettingsByMode] = useState<Record<AppMode, RenderSettings>>(
+    () => buildRenderSettings(sharedState ?? null, readSavedRenderSettings())
+  );
 
   // Current active render settings derived from active appMode
   const currentRenderSettings = renderSettingsByMode[appMode];
@@ -639,6 +679,24 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (uiThemeSettings.uiMode === 'basic' && appMode !== 'media') {
       setUiThemeSettings((prev) => ({ ...prev, uiMode: 'advanced' }));
+      return;
+    }
+    /*
+     * Open BASIC on a phone. A stored ADVANCED is a preference formed on a
+     * desktop -- the switch was unreachable at this width until now, so it
+     * cannot have been chosen here -- and ADVANCED on a narrow screen is a
+     * tall stack of collapsed panels below the image. Once, at mount, and
+     * only for a plain media session: a shared synth or model link is the
+     * more specific intent and is handled by the branch above. The
+     * UiModeMenu makes the other choice reachable, and taking it persists.
+     */
+    if (
+      uiThemeSettings.uiMode === 'advanced' &&
+      appMode === 'media' &&
+      typeof window !== 'undefined' &&
+      window.innerWidth <= NARROW_UI_BREAKPOINT
+    ) {
+      setUiThemeSettings((prev) => ({ ...prev, uiMode: 'basic' }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1656,6 +1714,288 @@ export const App: React.FC = () => {
     }, 400);
   }, [mediaViewConfig, pushMediaHistorySnapshot]);
 
+  /* ======================================================================
+     Crop
+
+     The marquee is modal and its rectangle is a *draft*: `mediaConfig.crop`
+     only moves when APPLY says so, so CANCEL costs nothing and the pipeline
+     behind the stage goes on rendering the committed crop the whole time.
+
+     The one thing the marquee does touch while open is the media grid, which
+     it borrows and hands back — see `handleToggleCrop`.
+     ====================================================================== */
+  const [cropEditing, setCropEditing] = useState<boolean>(false);
+  const [cropDraft, setCropDraft] = useState<CropRect | null>(null);
+
+  /** The loaded source's own pixel dimensions, or null with nothing loaded. */
+  const measureSource = useCallback((): { w: number; h: number } | null => {
+    const el = mediaElementRef.current;
+    if (!el) return null;
+    if (el instanceof HTMLImageElement) {
+      const w = el.naturalWidth || el.width;
+      const h = el.naturalHeight || el.height;
+      return w > 0 && h > 0 ? { w, h } : null;
+    }
+    if (el instanceof HTMLVideoElement) {
+      const w = el.videoWidth || el.width;
+      const h = el.videoHeight || el.height;
+      return w > 0 && h > 0 ? { w, h } : null;
+    }
+    return el.width > 0 && el.height > 0 ? { w: el.width, h: el.height } : null;
+  }, []);
+
+  /**
+   * Re-derive the grid from the crop and the rotation, so the raster ends
+   * where the picture does.
+   *
+   * Both reshape what is actually being rasterized, and without this the grid
+   * keeps the *whole, unrotated* source's aspect: a crop of a different shape
+   * letterboxes inside it under CONTAIN, and a quarter-turned landscape sits
+   * in a landscape canvas with dead margin either side. Sizing the grid to the
+   * result is the same call a freshly loaded source makes, which is the point
+   * — a crop, and a rotation, are each a new source as far as framing goes.
+   *
+   * The rotation term is the rotated rectangle's bounding box rather than a
+   * 90-degree swap, because the angle is a free slider, not four buttons: at
+   * 90 it reduces to exactly that swap, and at 45 it gives the square that
+   * actually contains the diamond. Anything narrower would clip the corners
+   * off every intermediate angle.
+   */
+  const syncResolutionToFraming = useCallback(
+    (crop: CropRect | null, rotation: number) => {
+      const src = measureSource();
+      if (!src) return;
+      const c = resolveCrop(crop);
+      const cw = src.w * c.w;
+      const ch = src.h * c.h;
+      const rad = (rotation * Math.PI) / 180;
+      const cosA = Math.abs(Math.cos(rad));
+      const sinA = Math.abs(Math.sin(rad));
+      autoSetMediaResolution(
+        cw * cosA + ch * sinA,
+        cw * sinA + ch * cosA,
+        currentRasterMode
+      );
+    },
+    [measureSource, autoSetMediaResolution, currentRasterMode]
+  );
+
+  /**
+   * The grid the marquee interrupted, so closing it without applying puts the
+   * resolution back exactly as it was.
+   */
+  const preCropResolutionRef = useRef<{ cols: number; rows: number; autoRes: boolean } | null>(null);
+
+  const restorePreCropResolution = useCallback(() => {
+    const prev = preCropResolutionRef.current;
+    preCropResolutionRef.current = null;
+    if (!prev) return;
+    setRenderSettingsByMode((s) => ({
+      ...s,
+      media: { ...s.media, cols: prev.cols, rows: prev.rows, autoRes: prev.autoRes },
+    }));
+    // Opening the marquee auto-fit the view to the borrowed grid, so leaving it
+    // has to re-fit to the restored one or the raster comes back off-centre.
+    setTimeout(() => viewportRef.current?.autoFit(), 60);
+  }, []);
+
+  const handleToggleCrop = useCallback(() => {
+    if (cropEditing) {
+      // The toolbar's CANCEL and this button are the same gesture: leave
+      // without committing, and put back the grid the marquee borrowed.
+      setCropEditing(false);
+      setCropDraft(null);
+      restorePreCropResolution();
+      return;
+    }
+    // Opens on the committed crop, so re-entering resumes where you left off
+    // rather than starting from the whole frame every time.
+    setCropDraft(resolveCrop(mediaConfigRef.current.crop));
+    setCropEditing(true);
+
+    /*
+     * The marquee borrows the *uncropped* source's aspect for as long as it is
+     * open.
+     *
+     * It has to: the stage shows the whole source, but after a first crop the
+     * grid has been re-derived to that crop's shape — so a second pass drew
+     * the full picture letterboxed inside a box shaped for the last rectangle,
+     * with dead bars either side of an image that never had that ratio. The
+     * grid is a *rendering* target and the crop is chosen against the source,
+     * so while choosing, the grid follows the source.
+     */
+    const rs = renderSettingsRef.current;
+    preCropResolutionRef.current = { cols: rs.cols, rows: rs.rows, autoRes: rs.autoRes };
+    syncResolutionToFraming(null, mediaConfigRef.current.rotation);
+  }, [cropEditing, restorePreCropResolution, syncResolutionToFraming]);
+
+  const handleCropApply = useCallback(() => {
+    const draft = cropDraft;
+    setCropEditing(false);
+    // Applying supersedes the borrowed grid; nothing to put back.
+    preCropResolutionRef.current = null;
+    if (!draft) return;
+    /*
+     * `cropActive` decides between a rect and `undefined` rather than storing
+     * a full-frame rect: absent is the documented no-op, and writing 0,0,1,1
+     * would put a crop key in every share link and preset that never cropped
+     * anything.
+     */
+    const next = cropActive(draft) ? draft : undefined;
+    handleChangeMediaConfig({ ...mediaConfigRef.current, crop: next });
+    syncResolutionToFraming(next ?? null, mediaConfigRef.current.rotation);
+  }, [cropDraft, handleChangeMediaConfig, syncResolutionToFraming]);
+
+  const handleCropCancel = useCallback(() => {
+    setCropEditing(false);
+    setCropDraft(null);
+    restorePreCropResolution();
+  }, [restorePreCropResolution]);
+
+  /** Clear the committed crop without opening the marquee. */
+  const handleCropReset = useCallback(() => {
+    setCropDraft(CROP_FULL);
+    handleChangeMediaConfig({ ...mediaConfigRef.current, crop: undefined });
+    // Back to the whole source's aspect, or the grid would keep the shape of
+    // a crop that is no longer applied.
+    syncResolutionToFraming(null, mediaConfigRef.current.rotation);
+  }, [handleChangeMediaConfig, syncResolutionToFraming]);
+
+  /**
+   * Every framing control back to neutral: fit, zoom, pan, rotation, flips and
+   * the crop.
+   *
+   * BASIC's rotate and flip buttons had no way back to square — each one only
+   * toggles or advances, so a quarter-turn too far meant three more clicks and
+   * a flip could only be undone by finding it again. ADVANCED has this on the
+   * Transform & Framing header; BASIC had nowhere to put it until the crop row
+   * gave it one.
+   */
+  const handleResetFraming = useCallback(() => {
+    handleChangeMediaConfig({
+      ...mediaConfigRef.current,
+      scale: DEFAULT_MEDIA_CONFIG.scale,
+      fit: DEFAULT_MEDIA_CONFIG.fit,
+      offsetX: DEFAULT_MEDIA_CONFIG.offsetX,
+      offsetY: DEFAULT_MEDIA_CONFIG.offsetY,
+      rotation: DEFAULT_MEDIA_CONFIG.rotation,
+      flipX: DEFAULT_MEDIA_CONFIG.flipX,
+      flipY: DEFAULT_MEDIA_CONFIG.flipY,
+      crop: undefined,
+    });
+    setCropDraft(CROP_FULL);
+    // The grid was sized to the crop and rotation this write just cleared, so
+    // it re-derives against the whole source at zero degrees.
+    syncResolutionToFraming(null, 0);
+  }, [handleChangeMediaConfig, syncResolutionToFraming]);
+
+  /*
+   * A rotation reshapes the canvas, wherever it came from.
+   *
+   * An effect rather than a call inside the rotate handlers because rotation
+   * has four writers — BASIC's quarter-turn buttons, ADVANCED's, ADVANCED's
+   * free angle slider, and the framing reset — and a shared link or a preset
+   * can arrive carrying one. Watching the value catches all of them and cannot
+   * be forgotten by the fifth.
+   *
+   * Debounced, because the slider is a continuous control: dragging it from 0
+   * to 360 at 5-degree steps would otherwise re-derive the grid seventy-odd
+   * times and auto-fit the viewport after each, re-rasterizing the whole
+   * pipeline at a new size every step of the drag.
+   */
+  const lastRotationRef = useRef<number>(mediaConfig.rotation);
+  const rotationResyncTimer = useRef<any>(null);
+  useEffect(() => {
+    if (mediaConfig.rotation === lastRotationRef.current) return;
+    lastRotationRef.current = mediaConfig.rotation;
+    /*
+     * The marquee has borrowed the grid for as long as it is open and hands it
+     * back on close; resizing underneath it would be resizing the thing the
+     * user is currently dragging a rectangle on. APPLY re-derives with the
+     * rotation anyway.
+     */
+    if (cropEditing) return;
+    clearTimeout(rotationResyncTimer.current);
+    rotationResyncTimer.current = setTimeout(() => {
+      syncResolutionToFraming(
+        mediaConfigRef.current.crop ?? null,
+        mediaConfigRef.current.rotation
+      );
+    }, 150);
+  }, [mediaConfig.rotation, cropEditing, syncResolutionToFraming]);
+
+  /* ======================================================================
+     RESET ALL
+
+     Everything the app renders *with*, back to a first-visit state, while
+     everything the app renders *from* stays exactly where it is.
+
+     The split is deliberate and it is the whole contract of the button: the
+     loaded image or video, the loaded model, and the synth preset are the
+     user's content and survive; resolution, dither, tone, colour, optics,
+     compositing, framing and the CRT chrome are the settings and do not. It
+     reads the same defaults a fresh session reads, by calling the same builder
+     with the share link and the persisted blob withheld.
+
+     Not undoable in one step by design — it pushes no history entry, because
+     an entry per reset field would bury whatever came before it. UNDO still
+     walks back into the state from before the reset.
+     ====================================================================== */
+  const handleResetAll = useCallback(() => {
+    const pristine = buildRenderSettings(null, null);
+
+    /*
+     * Resolution is content-derived, not a default: a 240x120 grid on a
+     * portrait photograph is not "reset", it is a different wrong answer. So
+     * the built-in cols/rows are kept for synth and model, and media re-derives
+     * from the source it still has once the rest has settled.
+     */
+    setRenderSettingsByMode(pristine);
+    setMediaViewConfig({ ...DEFAULT_MEDIA_VIEW_CONFIG });
+    setModelViewConfig({ ...DEFAULT_MODEL_VIEW_CONFIG });
+    setParticleConfig({ ...DEFAULT_PARTICLE_CONFIG });
+
+    /*
+     * Framing is a setting, the file is content. Everything identifying the
+     * loaded source is carried across; fit, zoom, pan, rotation, flips and the
+     * crop go back to default.
+     */
+    setMediaConfig((prev) => ({
+      ...DEFAULT_MEDIA_CONFIG,
+      sourceType: prev.sourceType,
+      mediaType: prev.mediaType,
+      mediaId: prev.mediaId,
+      fileName: prev.fileName,
+      fileData: prev.fileData,
+      remoteUrl: prev.remoteUrl,
+    }));
+
+    // Any open crop draft describes a rectangle that no longer applies.
+    setCropEditing(false);
+    setCropDraft(null);
+
+    /*
+     * Re-derive the media grid from the source that is still loaded, after the
+     * state above has committed — `autoSetMediaResolution` writes cols/rows
+     * itself and would otherwise be overwritten by the pristine settings.
+     */
+    const src = measureSource();
+    if (src) {
+      setTimeout(() => autoSetMediaResolution(src.w, src.h, pristine.media.rasterMode, true), 0);
+    }
+  }, [measureSource, autoSetMediaResolution]);
+
+  /*
+   * A new source invalidates the rectangle: normalized coordinates survive a
+   * resolution change of the same picture, which is what they are for, but a
+   * different picture cropped to the last one's framing is never what was
+   * meant.
+   */
+  useEffect(() => {
+    setCropEditing(false);
+    setCropDraft(null);
+  }, [mediaConfig.fileData, mediaConfig.remoteUrl]);
+
   const handleChangeAdjustConfig = useCallback((next: ImageAdjustConfig) => {
     setRenderSettingsByMode((prev) => ({
       ...prev,
@@ -2619,15 +2959,15 @@ export const App: React.FC = () => {
           handleRandomize();
         }
       } else if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (e.key === '1') {
+        /*
+         * Positional: the number keys follow the order of the output-mode row,
+         * so 1 is whatever sits leftmost. `outputModeForKey` is the only place
+         * that mapping exists — see the note in outputModes.tsx.
+         */
+        const picked = outputModeForKey(e.key);
+        if (picked) {
           e.preventDefault();
-          handleSelectRasterMode('ascii');
-        } else if (e.key === '2') {
-          e.preventDefault();
-          handleSelectRasterMode('pixel');
-        } else if (e.key === '3') {
-          e.preventDefault();
-          handleSelectRasterMode('vector');
+          handleSelectRasterMode(picked.id);
         }
       }
     };
@@ -2937,6 +3277,19 @@ export const App: React.FC = () => {
         <div className="header-actions">
           {viewMode === 'editor' && (
             <>
+              {/*
+                RESET ALL, left of UNDO: it belongs with the history controls
+                rather than with SHARE and EXPORT, and it reads as the far end
+                of the same axis — step back, step forward, go all the way back.
+              */}
+              <button
+                className="btn btn-sm header-btn-reset"
+                onClick={handleResetAll}
+                title="Reset every setting to its default. Keeps the loaded image, model and preset."
+              >
+                <RotateCcw size={13} className="header-btn-icon" />
+                <span className="btn-label">RESET ALL</span>
+              </button>
               <button
                 className="btn btn-sm header-btn-undo"
                 onClick={handleUndo}
@@ -2991,13 +3344,21 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            className={`btn btn-sm ${isShortcutsOpen ? 'btn-primary' : ''}`}
+            className={`btn btn-sm header-btn-shortcuts ${isShortcutsOpen ? 'btn-primary' : ''}`}
             onClick={() => setIsShortcutsOpen(true)}
             title="Keyboard & pointer shortcuts (?)"
             aria-label="Keyboard and pointer shortcuts"
           >
             <Keyboard size={13} className="header-btn-icon" />
           </button>
+
+          {/*
+            Takes over the slot above from SHORTCUTS below 620px, where the
+            centred switch has no room and a touch device has no keyboard to
+            shortcut with. Both are always rendered; CSS picks the one that
+            fits, so neither needs to know the viewport width.
+          */}
+          {viewMode === 'editor' && <UiModeMenu value={uiMode} onChange={handleChangeUiMode} />}
         </div>
       </header>
 
@@ -3057,6 +3418,16 @@ export const App: React.FC = () => {
           loadingStatusText={modelLoadingStatusText}
           onOrbitRotate={handleOrbitRotate}
           onWheelZoom={handleWheelZoom}
+          cropEditing={cropEditing}
+          onToggleCrop={handleToggleCrop}
+          cropDraft={cropDraft}
+          onCropDraftChange={setCropDraft}
+          onCropDraftCommit={setCropDraft}
+          onCropApply={handleCropApply}
+          onCropCancel={handleCropCancel}
+          mediaElement={mediaElementRef.current}
+          mediaConfig={mediaConfig}
+          resampling={mediaViewConfig.resampling}
         />
 
         {/* Right Sidebar Control Panel */}
@@ -3089,6 +3460,9 @@ export const App: React.FC = () => {
                   onChangeToneConfig={handleChangeToneConfig}
                   postProcess={currentRenderSettings.postProcess ?? POST_PROCESS_DEFAULTS}
                   onChangePostProcess={handleChangePostProcess}
+                  onEnterCrop={handleToggleCrop}
+                  onResetFraming={handleResetFraming}
+                  cropEditing={cropEditing}
                 />
             ) : (
             <AccordionProvider autoCollapse={!!uiThemeSettings.autoCollapsePanels}>
@@ -3136,6 +3510,9 @@ export const App: React.FC = () => {
                   mediaElement={mediaElementRef.current}
                   onFileUpload={handleMediaFileUpload}
                   onUrlLoad={handleMediaUrlLoad}
+                  onEnterCrop={handleToggleCrop}
+                  onResetCrop={handleCropReset}
+                  cropEditing={cropEditing}
                 />
               )}
 

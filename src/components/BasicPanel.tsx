@@ -4,6 +4,8 @@ import {
   RotateCw,
   FlipHorizontal,
   FlipVertical,
+  Scissors,
+  RefreshCw,
   ChevronLeft,
   ChevronRight,
   Dices,
@@ -16,11 +18,11 @@ import {
   PhosphorTheme,
   RasterOutputMode,
   ImageAdjustConfig,
-  BlendMode,
   PostProcessConfig,
   VECTOR_CONFIG_DEFAULTS,
 } from '../types/ascii';
 import { MediaUploadControls } from './MediaFileControls';
+import { cropActive } from '../engine/mediaRenderer';
 import { OutputModeCards } from './outputModes';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
 import { VectorControls } from './VectorControls';
@@ -37,7 +39,7 @@ import {
   SimpleLevelsSlider,
 } from './ImageAdjustControls';
 import { BUILTIN_PALETTES } from '../engine/palettes';
-import { PrecisionSlider, WorkflowStep } from './controlPrimitives';
+import { PrecisionSlider, WorkflowStep, BlendModePicker } from './controlPrimitives';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
 const ASCII_CELL_ASPECT = 0.55;
@@ -89,25 +91,6 @@ const VECTOR_COLS_PRESETS: { label: string; value: number }[] = [
   { label: '1600', value: 1600 },
 ];
 
-/**
- * The blend modes worth putting in a flat list.
- *
- * Eight of the sixteen, chosen for what changes the picture most per unit of
- * explanation — the same rule the compact beam deck follows. The rest stay
- * live in state and reachable from ADVANCED; a ramp arriving from there or
- * from a shared link renders in full. This panel only hides.
- */
-const BASIC_BLEND_MODES: BlendMode[] = [
-  'normal',
-  'multiply',
-  'screen',
-  'overlay',
-  'soft-light',
-  'difference',
-  'color',
-  'luminosity',
-];
-
 interface BasicPanelProps {
   mediaConfig: MediaConfig;
   onChangeMediaConfig: (cfg: MediaConfig) => void;
@@ -140,6 +123,12 @@ interface BasicPanelProps {
 
   postProcess: PostProcessConfig;
   onChangePostProcess: (next: PostProcessConfig) => void;
+  /** Opens the crop marquee on the viewport. */
+  onEnterCrop?: () => void;
+  /** Fit, zoom, pan, rotation, flips and crop back to neutral. */
+  onResetFraming?: () => void;
+  /** True while the marquee is open, so the button can show it. */
+  cropEditing?: boolean;
 }
 
 /**
@@ -171,6 +160,9 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   onChangeToneConfig,
   postProcess,
   onChangePostProcess,
+  onEnterCrop,
+  onResetFraming,
+  cropEditing = false,
 }) => {
   const isPixel = rasterMode === 'pixel';
   const isVector = rasterMode === 'vector';
@@ -295,40 +287,80 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
         />
 
         {hasSource && (
-          <div className="basic-framing">
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => rotateBy(-90)}
-              title="Rotate 90 degrees counter-clockwise"
-            >
-              <RotateCcw size={12} />
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => rotateBy(90)}
-              title="Rotate 90 degrees clockwise"
-            >
-              <RotateCw size={12} />
-            </button>
-            <button
-              type="button"
-              className={`btn btn-sm ${mediaConfig.flipX ? 'active' : ''}`}
-              onClick={() => onChangeMediaConfig({ ...mediaConfig, flipX: !mediaConfig.flipX })}
-              title="Flip horizontally"
-            >
-              <FlipHorizontal size={12} />
-            </button>
-            <button
-              type="button"
-              className={`btn btn-sm ${mediaConfig.flipY ? 'active' : ''}`}
-              onClick={() => onChangeMediaConfig({ ...mediaConfig, flipY: !mediaConfig.flipY })}
-              title="Flip vertically"
-            >
-              <FlipVertical size={12} />
-            </button>
-          </div>
+          <>
+            {/*
+              Crop and the framing reset, on their own two-up row above the
+              quarter-turns and flips.
+
+              They are the two framing actions that are not a single-axis nudge:
+              one opens a stage on the viewport, the other undoes everything on
+              this row and that one at once. Sitting them together above the
+              four-up grid keeps the icon buttons reading as one set of nudges.
+            */}
+            <div className="basic-framing basic-framing-pair">
+              <button
+                type="button"
+                className={`btn btn-sm ${cropEditing ? 'btn-primary' : ''}`}
+                onClick={onEnterCrop}
+                disabled={!onEnterCrop}
+                title={
+                  cropEditing
+                    ? 'The crop marquee is open on the viewport'
+                    : 'Drag a crop rectangle on the viewport'
+                }
+              >
+                <Scissors size={12} />
+                <span className="basic-framing-label">
+                  {cropEditing ? 'EDITING' : cropActive(mediaConfig.crop) ? 'ADJUST' : 'CROP'}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={onResetFraming}
+                disabled={!onResetFraming}
+                title="Reset fit, zoom, pan, rotation, flips and crop"
+              >
+                <RefreshCw size={12} />
+                <span className="basic-framing-label">RESET</span>
+              </button>
+            </div>
+
+            <div className="basic-framing">
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => rotateBy(-90)}
+                title="Rotate 90 degrees counter-clockwise"
+              >
+                <RotateCcw size={12} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => rotateBy(90)}
+                title="Rotate 90 degrees clockwise"
+              >
+                <RotateCw size={12} />
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${mediaConfig.flipX ? 'active' : ''}`}
+                onClick={() => onChangeMediaConfig({ ...mediaConfig, flipX: !mediaConfig.flipX })}
+                title="Flip horizontally"
+              >
+                <FlipHorizontal size={12} />
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${mediaConfig.flipY ? 'active' : ''}`}
+                onClick={() => onChangeMediaConfig({ ...mediaConfig, flipY: !mediaConfig.flipY })}
+                title="Flip vertically"
+              >
+                <FlipVertical size={12} />
+              </button>
+            </div>
+          </>
         )}
       </div>
 
@@ -545,6 +577,17 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
                 sourceOverlay: {
                   ...postProcess.sourceOverlay,
                   enabled: !postProcess.sourceOverlay.enabled,
+                  /*
+                   * BASIC has no Placement switch, so it pins the one it can
+                   * neither show nor undo. Without this, an overlay turned on
+                   * here after ADVANCED had chosen OVER composites the other
+                   * way round with nothing on screen to say so — and the two
+                   * are genuinely different pictures, not a z-order swap.
+                   * Written on the toggle rather than forced while BASIC is
+                   * open, so ADVANCED's choice still survives a trip through
+                   * this panel untouched.
+                   */
+                  placement: 'under',
                 },
               })
             }
@@ -558,26 +601,16 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           <span className="control-label" title="How the original and the raster combine.">
             Blend
           </span>
-          <select
-            className="number-input control-fill"
+          <BlendModePicker
             value={postProcess.sourceOverlay.blend}
             disabled={!postProcess.sourceOverlay.enabled}
-            onChange={(e) =>
+            onChange={(blend) =>
               onChangePostProcess({
                 ...postProcess,
-                sourceOverlay: {
-                  ...postProcess.sourceOverlay,
-                  blend: e.target.value as BlendMode,
-                },
+                sourceOverlay: { ...postProcess.sourceOverlay, blend },
               })
             }
-          >
-            {BASIC_BLEND_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m.replace(/-/g, ' ').toUpperCase()}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
         <div className="control-row">

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings, ImagePlus } from 'lucide-react';
+import { Play, Pause, RotateCcw, ZoomIn, ZoomOut, Maximize2, Edit3, Crop, Settings, ImagePlus, Scissors } from 'lucide-react';
 import {
   PhosphorTheme,
   PhosphorGradient,
@@ -9,6 +9,9 @@ import {
   UiThemeSettings,
   PostProcessConfig,
   VectorFrame,
+  CropRect,
+  MediaConfig,
+  ResamplingMode,
 } from '../types/ascii';
 import {
   buildStages,
@@ -20,7 +23,8 @@ import {
 
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
-import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
+import { CropOverlay } from './CropOverlay';
+import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT, MONOSPACE_CELL_ASPECT } from '../engine/renderer';
 import { resolvePhosphorTint } from '../engine/palettes';
 import { paintVectorFrame } from '../engine/vectorEngine';
 
@@ -176,6 +180,29 @@ interface AsciiViewportProps {
     height: number
   ) => void;
   onWheelZoom?: (deltaZoom: number) => void;
+
+  /*
+   * --- Crop -------------------------------------------------------------
+   *
+   * The marquee is a stage of its own (see CropOverlay): while it is open it
+   * paints the *uncropped* source over the raster, because a crop cannot be
+   * widened again from a picture that has already had the rest thrown away.
+   * Nothing here reaches the render pipeline — the draft is App state and only
+   * `onCropApply` commits it to `mediaConfig`.
+   */
+  cropEditing?: boolean;
+  onToggleCrop?: () => void;
+  /** The draft rectangle, live during the gesture. */
+  cropDraft?: CropRect | null;
+  onCropDraftChange?: (crop: CropRect) => void;
+  /** End of gesture — one history entry per drag, not per pointermove. */
+  onCropDraftCommit?: (crop: CropRect) => void;
+  onCropApply?: () => void;
+  onCropCancel?: () => void;
+  /** Needed by the marquee to frame its backdrop the way the raster is framed. */
+  mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
+  mediaConfig?: MediaConfig | null;
+  resampling?: ResamplingMode;
   /**
    * Media mode with no source loaded. Drawn as a fixed-size DOM prompt rather
    * than into the raster grid, so it stays legible at any zoom and in pixel
@@ -232,6 +259,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   loadingStatusText,
   onOrbitRotate,
   onWheelZoom,
+  cropEditing = false,
+  onToggleCrop,
+  cropDraft,
+  onCropDraftChange,
+  onCropDraftCommit,
+  onCropApply,
+  onCropCancel,
+  mediaElement,
+  mediaConfig,
+  resampling = 'bilinear',
   showMediaPlaceholder = false,
   initialView = null,
   postProcess,
@@ -2142,6 +2179,38 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             }}
           />
         </div>
+        {/*
+          The crop marquee.
+
+          Inside the camera and translated by the pan like the ground is, so it
+          rides a pan and a zoom with the picture instead of being re-derived
+          against the container. Last in the camera because it is modal while
+          open: it covers the raster deliberately, and the source it paints is
+          the uncropped one the rectangle is being chosen from.
+        */}
+        {cropEditing && contentBounds && mediaConfig && cropDraft && (
+          <div
+            className="crop-stage-anchor"
+            style={{ transform: `translate3d(${view.tx}px, ${view.ty}px, 0)` }}
+          >
+            <CropOverlay
+              mediaElement={mediaElement ?? null}
+              mediaConfig={mediaConfig}
+              cols={cols}
+              rows={rows}
+              pxPerCol={contentBounds.w / Math.max(1, cols)}
+              pxPerRow={contentBounds.h / Math.max(1, rows)}
+              cellAspect={activeRasterMode === 'ascii' ? MONOSPACE_CELL_ASPECT : 1}
+              resampling={resampling}
+              crop={cropDraft}
+              onChange={(c) => onCropDraftChange?.(c)}
+              onCommit={(c) => onCropDraftCommit?.(c)}
+              onApply={() => onCropApply?.()}
+              onCancel={() => onCropCancel?.()}
+            />
+          </div>
+        )}
+
         </div>
 
         {/* No-Media Prompt: fixed size, outside the zoomed raster surface */}
@@ -2247,6 +2316,21 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             >
               <Crop size={11} />
               <span className="btn-label-sm">{autoRes ? 'AUTO RES [ON]' : 'AUTO RES'}</span>
+            </button>
+          )}
+
+          {/*
+            Crop. Media only, and only with something loaded — the marquee
+            frames a source, and there is nothing to frame otherwise.
+          */}
+          {onToggleCrop && appMode === 'media' && !showMediaPlaceholder && (
+            <button
+              className={`btn btn-sm ${cropEditing ? 'btn-primary' : ''}`}
+              onClick={onToggleCrop}
+              title={cropEditing ? 'Close the crop marquee' : 'Crop the source'}
+            >
+              <Scissors size={11} />
+              <span className="btn-label-sm">CROP</span>
             </button>
           )}
 

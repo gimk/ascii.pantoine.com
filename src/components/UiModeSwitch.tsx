@@ -70,3 +70,67 @@ export const UiModeSwitch: React.FC<UiModeSwitchProps> = ({ value, onChange }) =
     </div>
   );
 };
+
+/**
+ * The same choice as UiModeSwitch, collapsed into one icon button plus a
+ * two-item menu.
+ *
+ * The segmented switch is centred in the header and needs room for two labels
+ * side by side; below 620px the header has no such room, which is why it used
+ * to simply disappear. The sidebar does not disappear at that width -- it
+ * stacks under the viewport -- so hiding the switch left the layout choice
+ * unreachable on a phone. This is that choice at the cost of a single icon
+ * slot, taking the place of the keyboard-shortcuts button, which is the one
+ * header control a touch device has no use for.
+ */
+export const UiModeMenu: React.FC<UiModeSwitchProps> = ({ value, onChange }) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const active = MODES.find((m) => m.id === value) ?? MODES[0];
+  const ActiveIcon = active.icon;
+
+  return (
+    <div className="header-mode-menu">
+      <button
+        type="button"
+        className={`btn btn-sm ${isOpen ? 'btn-primary' : ''}`}
+        onClick={() => setIsOpen((open) => !open)}
+        title={`Interface: ${active.label}`}
+        aria-label="Interface complexity"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+      >
+        <ActiveIcon size={13} className="header-btn-icon" />
+      </button>
+
+      {isOpen && (
+        <>
+          {/* Catches the tap-away without needing a document listener. */}
+          <div className="zoom-menu-scrim" onClick={() => setIsOpen(false)} />
+          <div className="zoom-menu header-mode-menu-list" role="menu">
+            {MODES.map((mode) => {
+              const Icon = mode.icon;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={mode.id === value}
+                  className={`zoom-menu-item ${mode.id === value ? 'active' : ''}`}
+                  onClick={() => {
+                    onChange(mode.id);
+                    setIsOpen(false);
+                  }}
+                >
+                  <span className="header-mode-menu-item-label">
+                    <Icon size={12} className="ui-mode-switch-icon" />
+                    {mode.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};

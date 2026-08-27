@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { X, Keyboard, MousePointer2, Move, Command } from 'lucide-react';
 import { AppMode } from '../types/ascii';
+import { OUTPUT_MODES } from './outputModes';
 
 interface ShortcutsModalProps {
   isOpen: boolean;
@@ -83,9 +84,17 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
         { keys: [mod, 'Shift', 'Z'], action: 'Redo' },
         { keys: ['Space'], action: 'Play / pause', note: 'Not for static images' },
         { keys: ['R'], action: 'Randomize the preset', note: 'Synth' },
-        { keys: ['1'], action: 'ASCII output mode' },
-        { keys: ['2'], action: 'Pixel output mode' },
-        { keys: ['3'], action: 'Vector output mode' },
+        /*
+         * Read from OUTPUT_MODES rather than listed here, so the sheet cannot
+         * end up describing keys that select something else after the row is
+         * re-ordered — the bindings are positional in that same array.
+         */
+        ...OUTPUT_MODES.map((m, i) => ({
+          keys: [String(i + 1)],
+          // The card's own label, verbatim: title-casing it would render the
+          // ASCII acronym as "Ascii".
+          action: `${m.name} output mode`,
+        })),
         { keys: ['?'], action: 'This list' },
         { keys: ['Esc'], action: 'Close any dialog' },
       ],

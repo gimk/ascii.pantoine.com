@@ -19,22 +19,32 @@ export interface OutputModeSpec {
   title: string;
 }
 
+/*
+ * Display order, and the hotkey order with it: PIXEL leads because it is the
+ * one most reached for.
+ *
+ * This array is the single definition of both. The number keys are read as an
+ * index into it (App's key handler), the card tooltips number themselves from
+ * the same index, and the shortcuts sheet lists it directly — so re-ordering
+ * these three entries moves the row, the tooltips, the sheet and the actual
+ * bindings together, and there is no second list to update or forget.
+ */
 export const OUTPUT_MODES: OutputModeSpec[] = [
-  {
-    id: 'ascii',
-    name: 'ASCII',
-    badge: 'TEXT',
-    description: 'Monospace Density Ramp',
-    icon: Type,
-    title: 'Monospace ASCII character density rasterization [Hotkey: 1]',
-  },
   {
     id: 'pixel',
     name: 'PIXEL',
     badge: 'DITHER',
     description: '1:1 Square Pixel Grid',
     icon: Grid,
-    title: 'Direct square hardware dither rasterization [Hotkey: 2]',
+    title: 'Direct square hardware dither rasterization',
+  },
+  {
+    id: 'ascii',
+    name: 'ASCII',
+    badge: 'TEXT',
+    description: 'Monospace Density Ramp',
+    icon: Type,
+    title: 'Monospace ASCII character density rasterization',
   },
   {
     id: 'vector',
@@ -42,9 +52,28 @@ export const OUTPUT_MODES: OutputModeSpec[] = [
     badge: 'BEAM',
     description: 'Rutt-Etra Scanline Relief',
     icon: Activity,
-    title: 'Oscilloscope beam deflection and carrier modulation, as polylines [Hotkey: 3]',
+    title: 'Oscilloscope beam deflection and carrier modulation, as polylines',
   },
 ];
+
+/**
+ * The mode a number key selects, or null for any other key.
+ *
+ * The binding is positional by design — see the note above `OUTPUT_MODES`. One
+ * reader for the key handler and the shortcuts sheet both, so a reorder can
+ * never leave the sheet describing keys that do something else.
+ */
+export function outputModeForKey(key: string): OutputModeSpec | null {
+  const n = Number(key);
+  if (!Number.isInteger(n) || n < 1 || n > OUTPUT_MODES.length) return null;
+  return OUTPUT_MODES[n - 1];
+}
+
+/** The number key that selects a mode, matching its position in the row. */
+export function outputModeHotkey(id: RasterOutputMode): string {
+  const i = OUTPUT_MODES.findIndex((m) => m.id === id);
+  return i >= 0 ? String(i + 1) : '';
+}
 
 interface OutputModeCardsProps {
   value: RasterOutputMode;
@@ -71,7 +100,7 @@ export const OutputModeCards: React.FC<OutputModeCardsProps> = ({ value, onChang
           type="button"
           className={`source-card${compact ? ' source-card-mini' : ''}${isActive ? ' active' : ''}`}
           onClick={() => onChange(mode.id)}
-          title={mode.title}
+          title={`${mode.title} [Hotkey: ${outputModeHotkey(mode.id)}]`}
         >
           <div className="source-card-header">
             <div className="source-card-icon-wrap">

@@ -33,7 +33,7 @@ export const CHARSETS = [
   { id: 'dense', name: 'Dense ASCII', chars: ' .`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$' },
   { id: 'blocks', name: 'Shading Blocks', chars: ' ░▒▓█' },
   { id: 'matrix', name: 'Matrix / Binary', chars: ' 010101' },
-  { id: 'minimal', name: 'Minimal Dot Ramp', chars: ' .·:oO@' },
+  { id: 'minimal', name: 'Minimal Dot Ramp', chars: ' ·:oO@' },
   { id: 'math', name: 'Math Operators', chars: ' ·-+=*#%' },
   { id: 'braille', name: 'Braille Pattern', chars: ' ⠁⠃⠇⠗⠷⠿' },
   { id: 'contrast', name: 'High Contrast', chars: '  ..::##@@' },

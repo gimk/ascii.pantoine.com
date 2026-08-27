@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { MediaConfig } from '../types/ascii';
+import { cropActive } from '../engine/mediaRenderer';
 import {
   Upload,
   Image as ImageIcon,
@@ -10,6 +11,7 @@ import {
   RotateCcw,
   RotateCw,
   FlipHorizontal,
+  Scissors,
   FlipVertical,
   Maximize2,
   ZoomIn,
@@ -34,6 +36,19 @@ interface MediaUploadControlsProps {
    * any of it here is the padding BASIC is meant to be free of.
    */
   minimal?: boolean;
+  /**
+   * Open the crop marquee on the viewport.
+   *
+   * The rectangle is dragged over the picture, not typed in here, so this row
+   * is a way in and a readout rather than a control — but the setting lives in
+   * `MediaConfig` alongside fit and pan, so this is where it has to be
+   * discoverable and resettable from.
+   */
+  onEnterCrop?: () => void;
+  /** Clear `config.crop` without opening the marquee. */
+  onResetCrop?: () => void;
+  /** True while the marquee is open, so the row can show it. */
+  cropEditing?: boolean;
 }
 
 export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
@@ -43,6 +58,9 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
   onFileUpload,
   onUrlLoad,
   minimal = false,
+  onEnterCrop,
+  onResetCrop,
+  cropEditing = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -355,7 +373,13 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
       )}
 
       {/* Transform & Framing Controls */}
-      <MediaFramingSection config={config} onChangeConfig={onChangeConfig} />
+      <MediaFramingSection
+        config={config}
+        onChangeConfig={onChangeConfig}
+        onEnterCrop={onEnterCrop}
+        onResetCrop={onResetCrop}
+        cropEditing={cropEditing}
+      />
     </div>
   );
 };
@@ -363,11 +387,18 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
 interface MediaFramingControlsProps {
   config: MediaConfig;
   onChangeConfig: (cfg: MediaConfig) => void;
+  /** Opens the crop marquee on the viewport; see MediaUploadControlsProps. */
+  onEnterCrop?: () => void;
+  onResetCrop?: () => void;
+  cropEditing?: boolean;
 }
 
 export const MediaFramingSection: React.FC<MediaFramingControlsProps> = ({
   config,
   onChangeConfig,
+  onEnterCrop,
+  onResetCrop,
+  cropEditing = false,
 }) => {
   const update = <K extends keyof MediaConfig>(key: K, val: MediaConfig[K]) => {
     onChangeConfig({
@@ -392,6 +423,10 @@ export const MediaFramingSection: React.FC<MediaFramingControlsProps> = ({
       flipX: false,
       flipY: false,
       fit: 'contain',
+      // A reset of framing includes the crop: it is the source rect the rest of
+      // this section frames, so leaving it behind would reset around a picture
+      // the user can no longer see the edges of.
+      crop: undefined,
     });
   };
 
@@ -404,7 +439,46 @@ export const MediaFramingSection: React.FC<MediaFramingControlsProps> = ({
       onReset={resetTransforms}
       resetTitle="Reset transforms to default fit and framing"
     >
-        {/* Fit Mode */}
+        {/*
+          Crop. The rectangle is dragged on the viewport, so this row opens the
+          marquee and reports what is committed — the one framing control whose
+          gesture does not fit in a slider.
+        */}
+        {onEnterCrop && (
+          <div className="control-row">
+            <span
+              className="control-label control-label-icon"
+              title="Choose the rectangle of the source to rasterize. The grid is spent entirely on what you keep, so cropping in gains detail."
+            >
+              <Scissors size={11} /> Crop
+            </span>
+            <div className="control-cluster">
+              <button
+                className={`btn btn-sm ${cropEditing ? 'btn-primary' : ''}`}
+                onClick={onEnterCrop}
+                title={cropEditing ? 'The marquee is open on the viewport' : 'Drag a rectangle on the viewport'}
+              >
+                {cropEditing ? 'EDITING' : cropActive(config.crop) ? 'ADJUST' : 'SET'}
+              </button>
+              <span className="numeral-badge" title="Kept area, as a share of the source">
+                {cropActive(config.crop)
+                  ? `${Math.round((config.crop!.w * config.crop!.h) * 100)}%`
+                  : 'FULL'}
+              </span>
+              {onResetCrop && (
+                <button
+                  className="btn btn-sm btn-icon-sq"
+                  onClick={onResetCrop}
+                  disabled={!cropActive(config.crop)}
+                  title="Clear the crop"
+                >
+                  <RotateCcw size={11} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="control-row">
           <span className="control-label">Fit Mode</span>
           <div className="btn-group">

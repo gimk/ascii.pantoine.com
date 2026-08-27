@@ -1519,6 +1519,32 @@ html, body, #root {
   background-color: var(--bg-control-hover);
 }
 
+/*
+ * An ON toggle keeps the accent even inside a deck title.
+ *
+ * `.tonal-subheading .btn` above is two classes deep and so outranks the
+ * single-class `.btn-primary`, which meant the identical ON/OFF button went
+ * accent in a control row and stayed grey in a subheading — the carrier
+ * toggle read as OFF while the carrier was running. Restated at the same depth
+ * rather than by promoting `.btn-primary` globally: plenty of buttons rely on
+ * a local rule beating it, and raising it would repaint all of them.
+ */
+.tonal-subheading .btn-primary,
+.section-subheading .btn-primary {
+  background-color: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.tonal-subheading .btn-primary:hover,
+.section-subheading .btn-primary:hover {
+  background-color: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+  filter: brightness(1.1);
+}
+
 .tonal-subheading:first-child,
 .section-subheading:first-child {
   margin-top: 0;
@@ -4675,11 +4701,62 @@ select:disabled {
   }
 }
 
-/* Nowhere to put it once the header stacks; the sidebar is gone by then too. */
+/*
+ * The compact form of the switch: one icon button in .header-actions, taking
+ * the slot SHORTCUTS gives up. Rendered at every width and hidden by default,
+ * so nothing has to measure the viewport in JS to decide which appears.
+ *
+ * Declared before the media query below, which reverses it. Same specificity,
+ * so position in the file is what decides.
+ */
+.header-mode-menu {
+  display: none;
+  position: relative;
+}
+
+/*
+ * The centred switch needs room for two labels between the brand and the
+ * header buttons, and below this width there is none. The sidebar is still
+ * there -- it stacks under the viewport rather than going away -- so the
+ * choice has to survive the switch, and .header-mode-menu picks it up.
+ */
 @media (max-width: 620px) {
   .header-mode-switch {
     display: none;
   }
+
+  /*
+   * Scoped to .header-actions to match the (0,2,0) of the button sizing rules
+   * at 820px and 500px, which set display: inline-flex on every .btn in here.
+   * A bare .header-btn-shortcuts is (0,1,0) and loses to them.
+   */
+  .header-actions .header-btn-shortcuts {
+    display: none;
+  }
+
+  .header-mode-menu {
+    display: block;
+  }
+}
+
+/*
+ * .zoom-menu opens upward from the viewport's bottom bar. This one hangs from
+ * a header button, so it drops down, and it right-aligns because the button is
+ * the last thing in the bar -- centring it would push it off the screen edge.
+ */
+.header-mode-menu-list {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+  transform: none;
+  min-width: 132px;
+}
+
+.header-mode-menu-item-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 /* ==========================================================================
@@ -4700,6 +4777,21 @@ select:disabled {
 @media (max-width: 850px) {
   .sidebar-pane-basic {
     width: 320px;
+  }
+}
+
+/*
+ * Full width once the workspace stacks.
+ *
+ * The fixed widths above are a column beside the viewport; below 768px there
+ * is no beside, and .sidebar-pane takes width: 100% for exactly that reason.
+ * This has to restate it because the two selectors are equally specific and
+ * this block comes later in the file, so the 320px above would otherwise win
+ * at every phone width and strand the panel in a third of the screen.
+ */
+@media (max-width: 768px) {
+  .sidebar-pane-basic {
+    width: 100%;
   }
 }
 
@@ -4953,4 +5045,152 @@ select:disabled {
 
 .render-settings-source .control-row {
   margin: 0;
+}
+
+/* ==========================================================================
+   CROP MARQUEE
+   --------------------------------------------------------------------------
+   The stage sits inside `.viewport-camera`, which is `pointer-events: none` so
+   a pan can be started anywhere on the picture. Everything interactive here
+   has to opt back in explicitly — the scrim included, or a drag that begins
+   just outside the rectangle would pan the camera instead of moving it.
+   ========================================================================== */
+
+.crop-stage-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  transform-origin: 0 0;
+}
+
+.crop-stage {
+  position: relative;
+}
+
+/* The uncropped source, framed by the engine. Below the marquee, above the
+   raster it deliberately covers while the marquee is open. */
+.crop-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+.crop-marquee {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Outside the rectangle. Dark rather than blurred: this is the region being
+   discarded, and it still has to be legible enough to judge the framing by. */
+.crop-scrim {
+  fill: rgba(0, 0, 0, 0.62);
+  pointer-events: auto;
+  cursor: default;
+}
+
+.crop-body {
+  fill: transparent;
+  pointer-events: auto;
+  cursor: move;
+}
+
+.crop-outline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.crop-third {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-opacity: 0.22;
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.crop-grip {
+  fill: var(--bg-panel);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: auto;
+}
+
+.crop-grip:hover {
+  fill: var(--accent);
+}
+
+/*
+ * Positioned entirely from the component, which sets `left`/`top` to the
+ * marquee's lower-left corner every render.
+ *
+ * No `bottom` and no transform here on purpose: an absolute element given both
+ * `top` and `bottom` is stretched between them, so the earlier stage-anchored
+ * rules turned the bar into a box the height of the whole raster once the
+ * component started setting `top`. `width: max-content` keeps it hugging its
+ * buttons rather than taking the stage's width for the same reason.
+ */
+.crop-toolbar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  height: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.crop-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+}
+
+.crop-readout-pct {
+  color: var(--text-dim);
+}
+
+/*
+ * The two-up row above the quarter-turns: CROP and RESET.
+ *
+ * Same grid as the four icon buttons below it, at half the column count, so
+ * the two rows line up on the same gutters and read as one framing block
+ * rather than as two unrelated toolbars.
+ */
+.basic-framing-pair {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.basic-framing + .basic-framing {
+  margin-top: 4px;
+}
+
+/* These two are wide enough to name themselves; the icon-only nudges are not. */
+.basic-framing-label {
+  margin-left: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }

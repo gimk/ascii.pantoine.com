@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { BlendMode } from '../types/ascii';
 
 /** Decimal places implied by a step, so 0.1 shows one and 5 shows none. */
 const decimalsForStep = (step: number): number => {
@@ -306,3 +308,108 @@ export const WorkflowStep: React.FC<{
     <div className="sidebar-workflow-line" />
   </div>
 );
+
+/**
+ * One flat list, ordered darken -> lighten -> contrast -> comparative ->
+ * component, and subtle to extreme inside each of those runs.
+ *
+ * The optgroup headings that used to carry that order were six unclickable
+ * rows in a sixteen-row dropdown, and the grouping is legible from the order
+ * itself. The order is the documentation now.
+ */
+export const BLEND_MODES: BlendMode[] = [
+  'normal',
+  'darken',
+  'multiply',
+  'color-burn',
+  'lighten',
+  'screen',
+  'color-dodge',
+  'overlay',
+  'soft-light',
+  'hard-light',
+  'difference',
+  'exclusion',
+  'hue',
+  'saturation',
+  'color',
+  'luminosity',
+];
+
+const BLEND_LABELS: Partial<Record<BlendMode, string>> = {
+  'color-dodge': 'Color Dodge',
+  'color-burn': 'Color Burn',
+  'hard-light': 'Hard Light',
+  'soft-light': 'Soft Light',
+};
+
+export const blendLabel = (m: BlendMode): string =>
+  BLEND_LABELS[m] || m.charAt(0).toUpperCase() + m.slice(1);
+
+/**
+ * The blend picker: a dropdown flanked by wrap-around steppers.
+ *
+ * A primitive rather than markup inside the compositing panel, because BASIC
+ * and ADVANCED both show it and the two had drifted — ADVANCED had the
+ * steppers and all sixteen modes, BASIC had a bare select over a shortlist of
+ * eight, which additionally mis-displayed any mode outside its own list. One
+ * component means the two cannot disagree about the control or about which
+ * modes exist.
+ *
+ * The arrows matter more than they look: stepping is how you actually audition
+ * blend modes — you compare neighbours against the picture, and reaching into
+ * a sixteen-row dropdown for each one loses your place every time. They wrap,
+ * so the list has no dead end in either direction.
+ */
+export const BlendModePicker: React.FC<{
+  value: BlendMode;
+  onChange: (mode: BlendMode) => void;
+  disabled?: boolean;
+}> = ({ value, onChange, disabled = false }) => {
+  const step = (delta: number) => {
+    const i = BLEND_MODES.indexOf(value);
+    // A value that is not in the list (an old link, a hand-edited preset)
+    // reads as index -1; treat the step as starting from the top rather than
+    // landing somewhere arbitrary.
+    const from = i === -1 ? 0 : i;
+    const next = (from + delta + BLEND_MODES.length) % BLEND_MODES.length;
+    onChange(BLEND_MODES[next]);
+  };
+
+  return (
+    <div className="control-cluster">
+      <button
+        type="button"
+        className="slider-nudge-btn btn-icon-sq"
+        disabled={disabled}
+        onClick={() => step(-1)}
+        title="Previous blend mode (wraps around)"
+      >
+        <ChevronLeft size={13} />
+      </button>
+
+      <select
+        className="number-input stepper-select"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value as BlendMode)}
+      >
+        {BLEND_MODES.map((m) => (
+          <option key={m} value={m}>
+            {blendLabel(m)}
+          </option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        className="slider-nudge-btn btn-icon-sq"
+        disabled={disabled}
+        onClick={() => step(1)}
+        title="Next blend mode (wraps around)"
+      >
+        <ChevronRight size={13} />
+      </button>
+    </div>
+  );
+};

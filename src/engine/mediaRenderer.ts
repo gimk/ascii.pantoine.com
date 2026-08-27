@@ -10,6 +10,9 @@ import {
   ResamplingMode,
   VectorConfig,
   VectorFrame,
+  CropRect,
+  CROP_FULL,
+  CROP_MIN_SPAN,
 } from '../types/ascii';
 import { MONOSPACE_CELL_ASPECT } from './renderer';
 import { processRasterFrame, toPipelineAdjustments, createToneCurveLUT, evaluateMonotoneCubicSpline, EMPTY_HISTOGRAM } from './rasterEngine';
@@ -78,7 +81,7 @@ function getOffscreenCanvas(width: number, height: number): { canvas: HTMLCanvas
 }
 
 /** Intrinsic pixel dimensions of whatever kind of element the media is. */
-function measureMedia(
+export function measureMedia(
   el: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement
 ): { width: number; height: number } {
   if (el instanceof HTMLImageElement) {
@@ -114,9 +117,160 @@ export interface FramedMediaOptions {
 }
 
 /**
- * Draw the media into the grid the way the raster pipeline sees it: fit mode,
- * scale, pan, rotation and flip, with the monospace cell squash applied at the
- * source (invariant 7).
+ * Where the source lands in the grid, as numbers rather than as a side effect
+ * on a context.
+ *
+ * Split out of `drawFramedMedia` because the crop marquee has to invert this
+ * transform to turn a pointer position on screen back into a point on the
+ * source, and a second copy of the maths in the viewport is a copy that
+ * drifts. The renderer applies it; the overlay inverts it; neither owns it.
+ *
+ * Everything is in **grid units** (columns and rows), before any
+ * `pixelsPerCell` pre-scale — that scale is uniform, so it composes on the
+ * outside and changes nothing here.
+ */
+export interface MediaFraming {
+  /** The `drawImage` source rect, in source pixels. */
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+  /**
+   * Destination box, centred on the origin, in *virtual* units — grid columns
+   * across, and rows-divided-by-cellAspect down. `scale(1, cellAspect)` turns
+   * the second into real rows.
+   */
+  drawW: number;
+  drawH: number;
+  /** Where that box is centred, in grid units. */
+  cx: number;
+  cy: number;
+  cellAspect: number;
+  rotation: number;
+  flipX: boolean;
+  flipY: boolean;
+}
+
+/** An absent, malformed or inverted crop all resolve to the whole frame. */
+export function resolveCrop(crop?: CropRect | null): CropRect {
+  if (!crop) return CROP_FULL;
+  const { x, y, w, h } = crop;
+  if (![x, y, w, h].every((n) => typeof n === 'number' && isFinite(n))) return CROP_FULL;
+  const cw = Math.min(1, Math.max(CROP_MIN_SPAN, w));
+  const ch = Math.min(1, Math.max(CROP_MIN_SPAN, h));
+  return {
+    x: Math.min(1 - cw, Math.max(0, x)),
+    y: Math.min(1 - ch, Math.max(0, y)),
+    w: cw,
+    h: ch,
+  };
+}
+
+/** Is this crop doing anything? Drives the badge and the reset affordance. */
+export function cropActive(crop?: CropRect | null): boolean {
+  const c = resolveCrop(crop);
+  return c.x > 0 || c.y > 0 || c.w < 1 || c.h < 1;
+}
+
+export function computeMediaFraming(
+  srcWidth: number,
+  srcHeight: number,
+  mediaConfig: MediaConfig,
+  opts: { cols: number; rows: number; cellAspect: number }
+): MediaFraming {
+  const { cols, rows, cellAspect } = opts;
+
+  /*
+   * The crop *is* the source from here down. Every length below reads from the
+   * rect rather than from the image, which is the whole trick: fit, scale, pan
+   * and rotation need no crop-aware branch, because as far as they can tell the
+   * picture simply has different dimensions.
+   */
+  const crop = resolveCrop(mediaConfig.crop);
+  const sw = Math.max(1, srcWidth * crop.w);
+  const sh = Math.max(1, srcHeight * crop.h);
+  const sx = srcWidth * crop.x;
+  const sy = srcHeight * crop.y;
+
+  const virtualCanvasWidth = cols;
+  const virtualCanvasHeight = rows / cellAspect;
+
+  let drawW = virtualCanvasWidth;
+  let drawH = virtualCanvasHeight;
+
+  const srcAspect = sw / Math.max(1, sh);
+
+  /*
+   * CONTAIN and COVER measure the *rotated* picture against the canvas.
+   *
+   * The fit used to be computed from the unrotated aspect and the rotation
+   * applied afterwards, which meant a quarter-turned image was sized to fill
+   * the box and then spun inside it — landing well short of every edge, with
+   * margin all round. What has to fit is what you end up looking at.
+   *
+   * The rotated bounding box of a `drawW x drawH` rectangle is
+   * `(drawW*cos + drawH*sin, drawW*sin + drawH*cos)` in absolute terms, and
+   * `drawH` is `drawW / srcAspect`, so each edge gives a bound on `drawW`:
+   * CONTAIN takes the tighter, COVER the looser. At zero degrees `cos` is 1
+   * and `sin` is 0, the two bounds collapse to `width` and `height*aspect`,
+   * and this reduces *exactly* to the aspect comparison it replaces — so an
+   * unrotated source, which is nearly all of them, is sized as before.
+   *
+   * All of it in virtual space, where the rotation actually happens: the
+   * `scale(1, cellAspect)` squash is applied after the rotate, not before.
+   */
+  const rad = (mediaConfig.rotation * Math.PI) / 180;
+  const cosR = Math.abs(Math.cos(rad));
+  const sinR = Math.abs(Math.sin(rad));
+  const widthBound = virtualCanvasWidth / Math.max(1e-6, cosR + sinR / srcAspect);
+  const heightBound = virtualCanvasHeight / Math.max(1e-6, sinR + cosR / srcAspect);
+
+  if (mediaConfig.fit === 'contain') {
+    drawW = Math.min(widthBound, heightBound);
+    drawH = drawW / srcAspect;
+  } else if (mediaConfig.fit === 'cover') {
+    drawW = Math.max(widthBound, heightBound);
+    drawH = drawW / srcAspect;
+  } else if (mediaConfig.fit === 'original') {
+    // 1:1 means one source pixel per cell, and the crop's pixels are the
+    // source's pixels — so a crop under this fit reveals more of the grid
+    // rather than magnifying what it kept.
+    drawW = sw;
+    drawH = sh;
+  } else {
+    /*
+     * STRETCH is the "ignore the aspect" mode, so there is no aspect to hold
+     * a rotated fit to and nothing here to solve for. It fills the box and a
+     * rotation spills over the edges, which is the honest result of asking for
+     * both.
+     */
+    drawW = virtualCanvasWidth;
+    drawH = virtualCanvasHeight;
+  }
+
+  drawW *= mediaConfig.scale || 1.0;
+  drawH *= mediaConfig.scale || 1.0;
+
+  return {
+    sx,
+    sy,
+    sw,
+    sh,
+    drawW,
+    drawH,
+    cx: cols / 2 + (mediaConfig.offsetX / 100) * (cols / 2),
+    cy: rows / 2 + (mediaConfig.offsetY / 100) * (rows / 2),
+    cellAspect,
+    rotation: mediaConfig.rotation,
+    flipX: mediaConfig.flipX,
+    flipY: mediaConfig.flipY,
+  };
+}
+
+/**
+ * Draw the media into the grid the way the raster pipeline sees it: crop, fit
+ * mode, scale, pan, rotation and flip, with the monospace cell squash applied
+ * at the source (invariant 7).
  *
  * Extracted so the source overlay registers with the raster by construction.
  * Any second copy of this maths is a copy that drifts, and a source layer half
@@ -133,45 +287,7 @@ export function drawFramedMedia(
   const ppcY = opts.pixelsPerCellY ?? 1;
 
   const { width: srcWidth, height: srcHeight } = measureMedia(mediaElement);
-
-  const virtualCanvasWidth = cols;
-  const virtualCanvasHeight = rows / cellAspect;
-
-  let drawW = virtualCanvasWidth;
-  let drawH = virtualCanvasHeight;
-
-  const srcAspect = srcWidth / Math.max(1, srcHeight);
-  const canvasAspect = virtualCanvasWidth / Math.max(1, virtualCanvasHeight);
-
-  if (mediaConfig.fit === 'contain') {
-    if (srcAspect > canvasAspect) {
-      drawW = virtualCanvasWidth;
-      drawH = virtualCanvasWidth / srcAspect;
-    } else {
-      drawH = virtualCanvasHeight;
-      drawW = virtualCanvasHeight * srcAspect;
-    }
-  } else if (mediaConfig.fit === 'cover') {
-    if (srcAspect > canvasAspect) {
-      drawH = virtualCanvasHeight;
-      drawW = virtualCanvasHeight * srcAspect;
-    } else {
-      drawW = virtualCanvasWidth;
-      drawH = virtualCanvasWidth / srcAspect;
-    }
-  } else if (mediaConfig.fit === 'original') {
-    drawW = srcWidth;
-    drawH = srcHeight;
-  } else {
-    drawW = virtualCanvasWidth;
-    drawH = virtualCanvasHeight;
-  }
-
-  drawW *= mediaConfig.scale || 1.0;
-  drawH *= mediaConfig.scale || 1.0;
-
-  const cx = cols / 2 + (mediaConfig.offsetX / 100) * (cols / 2);
-  const cy = rows / 2 + (mediaConfig.offsetY / 100) * (rows / 2);
+  const f = computeMediaFraming(srcWidth, srcHeight, mediaConfig, { cols, rows, cellAspect });
 
   ctx.imageSmoothingEnabled = resampling !== 'nearest';
   if (ctx.imageSmoothingEnabled) {
@@ -180,19 +296,34 @@ export function drawFramedMedia(
 
   ctx.save();
   if (ppcX !== 1 || ppcY !== 1) ctx.scale(ppcX, ppcY);
-  ctx.translate(cx, cy);
+  ctx.translate(f.cx, f.cy);
   ctx.scale(1, cellAspect);
-  if (mediaConfig.rotation !== 0) {
-    ctx.rotate((mediaConfig.rotation * Math.PI) / 180);
+  if (f.rotation !== 0) {
+    ctx.rotate((f.rotation * Math.PI) / 180);
   }
-  const scaleFactorX = mediaConfig.flipX ? -1 : 1;
-  const scaleFactorY = mediaConfig.flipY ? -1 : 1;
+  const scaleFactorX = f.flipX ? -1 : 1;
+  const scaleFactorY = f.flipY ? -1 : 1;
   if (scaleFactorX !== 1 || scaleFactorY !== 1) {
     ctx.scale(scaleFactorX, scaleFactorY);
   }
 
   try {
-    ctx.drawImage(mediaElement, -drawW / 2, -drawH / 2, drawW, drawH);
+    /*
+     * Always the nine-argument form. With a full crop the source rect is the
+     * whole image and this is identical to the five-argument call it replaced,
+     * so there is no cropped path and uncropped path to keep in agreement.
+     */
+    ctx.drawImage(
+      mediaElement,
+      f.sx,
+      f.sy,
+      f.sw,
+      f.sh,
+      -f.drawW / 2,
+      -f.drawH / 2,
+      f.drawW,
+      f.drawH
+    );
   } catch {
   }
   ctx.restore();

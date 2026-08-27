@@ -209,6 +209,38 @@ export type AppMode = 'synth' | 'media' | 'model';
 export type MediaSourceType = 'preset' | 'file' | 'url' | 'clipboard';
 export type MediaType = 'image' | 'video';
 export type MediaFitMode = 'contain' | 'cover' | 'stretch' | 'original';
+
+/**
+ * A rectangle of the source, in normalized source coordinates.
+ *
+ * Normalized rather than pixels so the same crop survives the source being
+ * swapped for a different resolution of the same picture, and so a share link
+ * carries a crop that means the same thing on the recipient's copy.
+ *
+ * This is the `drawImage` **source rect**, applied inside `drawFramedMedia`,
+ * which is what makes it a crop rather than a zoom: the grid is spent entirely
+ * on what the rectangle keeps, so cropping in *gains* cell detail instead of
+ * discarding cells already rasterized. Fit, scale, pan and rotation then treat
+ * the rectangle exactly as they treat a whole image — a crop whose aspect the
+ * grid does not share letterboxes under CONTAIN and overflows under COVER,
+ * same as any source. No new grid maths, so invariant 7 is untouched.
+ */
+export interface CropRect {
+  /** Left edge, 0..1 of source width. */
+  x: number;
+  /** Top edge, 0..1 of source height. */
+  y: number;
+  /** Width, 0..1 of source width. */
+  w: number;
+  /** Height, 0..1 of source height. */
+  h: number;
+}
+
+/** The whole frame — what an absent crop resolves to. */
+export const CROP_FULL: CropRect = { x: 0, y: 0, w: 1, h: 1 };
+
+/** Smallest crop the marquee will let you drag, as a fraction of the source. */
+export const CROP_MIN_SPAN = 0.02;
 // --- v1.6 Raster Modalities & Advanced Engine Types ---
 /**
  * What a processed frame is made of.
@@ -673,6 +705,14 @@ export interface MediaConfig {
   remoteUrl?: string;
   scale: number;
   fit: MediaFitMode;
+  /**
+   * Source rect, or absent for the whole frame.
+   *
+   * Optional rather than defaulted so every share link, preset and persisted
+   * blob written before crop existed keeps rendering identically: absent and
+   * `CROP_FULL` are the same picture.
+   */
+  crop?: CropRect;
   offsetX: number;
   offsetY: number;
   rotation: number; // in degrees

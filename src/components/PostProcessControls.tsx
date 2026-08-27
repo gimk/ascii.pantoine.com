@@ -1,15 +1,20 @@
 import React from 'react';
 import {
   AppMode,
-  BlendMode,
   PostProcessConfig,
   POST_PROCESS_DEFAULTS,
   RasterOutputMode,
 } from '../types/ascii';
-import { PrecisionSlider, DeferredColorInput, WorkflowStep } from './controlPrimitives';
+import {
+  PrecisionSlider,
+  DeferredColorInput,
+  WorkflowStep,
+  BlendModePicker,
+  blendLabel,
+} from './controlPrimitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { supportsCanvasFilter } from '../engine/postProcess';
-import { Layers, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Layers, Sparkles } from 'lucide-react';
 
 /**
  * `05 · COMPOSITING` — everything that happens to a frame after the raster
@@ -37,44 +42,6 @@ interface PostProcessControlsProps {
   /** Anchor for the sidebar rail to scroll to. */
   anchorRef?: React.Ref<HTMLDivElement>;
 }
-
-/**
- * One flat list, ordered darken -> lighten -> contrast -> comparative ->
- * component, and subtle to extreme inside each of those runs.
- *
- * The optgroup headings that used to carry that order were six unclickable
- * rows in a sixteen-row dropdown, and the grouping is legible from the order
- * itself. The order is the documentation now.
- */
-const BLEND_MODES: BlendMode[] = [
-  'normal',
-  'darken',
-  'multiply',
-  'color-burn',
-  'lighten',
-  'screen',
-  'color-dodge',
-  'overlay',
-  'soft-light',
-  'hard-light',
-  'difference',
-  'exclusion',
-  'hue',
-  'saturation',
-  'color',
-  'luminosity',
-];
-
-const BLEND_LABELS: Partial<Record<BlendMode, string>> = {
-  'color-dodge': 'Color Dodge',
-  'color-burn': 'Color Burn',
-  'hard-light': 'Hard Light',
-  'soft-light': 'Soft Light',
-};
-
-const blendLabel = (m: BlendMode): string =>
-  BLEND_LABELS[m] || m.charAt(0).toUpperCase() + m.slice(1);
-
 const QUALITY_STEPS: Array<1 | 2 | 4> = [1, 2, 4];
 
 export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
@@ -185,48 +152,11 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
             <span className="control-label control-fixed" title="How the two layers combine.">
               Blend
             </span>
-            <div className="control-cluster">
-              <button
-                type="button"
-                className="slider-nudge-btn btn-icon-sq"
-                disabled={overlayDisabled}
-                onClick={() => {
-                  const idx = BLEND_MODES.indexOf(overlay.blend);
-                  const prevIdx = (idx - 1 + BLEND_MODES.length) % BLEND_MODES.length;
-                  setOverlay({ blend: BLEND_MODES[prevIdx] });
-                }}
-                title="Previous blend mode (wraps around)"
-              >
-                <ChevronLeft size={13} />
-              </button>
-
-              <select
-                className="number-input stepper-select"
-                value={overlay.blend}
-                disabled={overlayDisabled}
-                onChange={(e) => setOverlay({ blend: e.target.value as BlendMode })}
-              >
-                {BLEND_MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {blendLabel(m)}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                type="button"
-                className="slider-nudge-btn btn-icon-sq"
-                disabled={overlayDisabled}
-                onClick={() => {
-                  const idx = BLEND_MODES.indexOf(overlay.blend);
-                  const nextIdx = (idx + 1) % BLEND_MODES.length;
-                  setOverlay({ blend: BLEND_MODES[nextIdx] });
-                }}
-                title="Next blend mode (wraps around)"
-              >
-                <ChevronRight size={13} />
-              </button>
-            </div>
+            <BlendModePicker
+              value={overlay.blend}
+              onChange={(blend) => setOverlay({ blend })}
+              disabled={overlayDisabled}
+            />
           </div>
 
           <div className="control-row">
