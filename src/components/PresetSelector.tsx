@@ -21,22 +21,10 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({
     <div className="tab-content">
       {/* 0. Large Randomize Synthesizer Button */}
       {onRandomize && (
-        <div style={{ marginBottom: '14px' }}>
+        <div className="btn-hero-wrap">
           <button
             type="button"
-            className="btn btn-randomize"
-            style={{
-              width: '100%',
-              padding: '11px 14px',
-              fontSize: '11.5px',
-              fontWeight: 800,
-              letterSpacing: '0.07em',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              borderRadius: '4px',
-            }}
+            className="btn btn-randomize btn-hero"
             onClick={onRandomize}
             title="Synthesize a completely new random parametric wave animation (Press R)"
           >

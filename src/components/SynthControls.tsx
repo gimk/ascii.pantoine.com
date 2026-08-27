@@ -209,7 +209,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
   };
 
   return (
-    <div className="tab-content" style={{ gap: '12px' }}>
+    <div className="tab-content">
       {/* ========================================================================= */}
       {/* SECTION 1: PARAMETRIC CONTROLS (SLIDERS) */}
       {/* ========================================================================= */}
@@ -219,13 +219,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         badge={
           isFormulaDivergent ? (
             <span
-              style={{
-                fontSize: '10px',
-                color: 'var(--accent)',
-                border: '1px solid var(--accent)',
-                padding: '1px 4px',
-                borderRadius: '2px',
-              }}
+              className="badge-outline"
             >
               OVERRIDDEN
             </span>
@@ -236,52 +230,32 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         {/* Custom Formula Divergence / Greyed out Notice */}
         {isFormulaDivergent && (
           <div
-            style={{
-              background: 'var(--accent-glow)',
-              border: '1px solid var(--accent)',
-              borderRadius: '4px',
-              padding: '10px 12px',
-              marginBottom: '12px',
-            }}
+            className="formula-notice"
           >
             <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                color: 'var(--accent)',
-                fontWeight: 700,
-                fontSize: '11px',
-                marginBottom: '3px',
-              }}
+              className="formula-notice-title"
             >
               <AlertTriangle size={12} />
               <span>CUSTOM FORMULA OVERRIDE ACTIVE</span>
             </div>
             <p
-              style={{
-                margin: 0,
-                fontSize: '10.5px',
-                lineHeight: '1.4',
-                color: 'var(--text-secondary)',
-              }}
+              className="formula-notice-body"
             >
               The visual output is currently driven by the custom JavaScript formula in the
               &quot;Advanced Formula&quot; section below. Sliders are disconnected from the canvas.
             </p>
             <button
               onClick={onOverrideFormulaWithSliders}
-              className="btn btn-sm btn-primary"
-              style={{ marginTop: '8px', width: '100%', fontSize: '10.5px' }}
+              className="btn btn-sm btn-primary formula-notice-action"
             >
-              <RefreshCw size={11} style={{ marginRight: '4px' }} />
+              <RefreshCw size={11} />
               Re-link Sliders (Reset to Parametric Mode)
             </button>
           </div>
         )}
 
         {/* Nested Wave Generators */}
-        <div className="collapsible-nest" style={{ marginTop: 0 }}>
+        <div className="collapsible-nest collapsible-nest-flush">
           <CollapsibleSection
             title="Global Dynamics"
             icon={<Sliders size={12} />}
@@ -308,7 +282,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Primary Radial Wave"
             icon={<CircleDot size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(dist)</span>}
+            badge={<span className="collapsible-badge-inline">sin(dist)</span>}
             persistKey="SynthControls-1-primary-radial-wave"
           >
             {renderSlider('Amplitude', 'radialAmp', 0.0, 3.0, 0.05)}
@@ -321,7 +295,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Secondary Harmonic Ripple"
             icon={<Waves size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Cell Interference</span>}
+            badge={<span className="collapsible-badge-inline">Cell Interference</span>}
             persistKey="SynthControls-2-secondary-harmonic-ripple"
           >
             {renderSlider('Amplitude', 'radial2Amp', 0.0, 3.0, 0.05)}
@@ -332,17 +306,17 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Directional Waves (X, Y, Diagonal)"
             icon={<Move size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Orthogonal / Plasma</span>}
+            badge={<span className="collapsible-badge-inline">Orthogonal / Plasma</span>}
             persistKey="SynthControls-3-directional-waves-x-y-diagonal"
           >
             {renderSlider('X Wave Amplitude', 'xAmp', 0.0, 3.0, 0.05)}
             {renderSlider('X Frequency', 'xFreq', 0.1, 40.0, 0.1)}
             {renderSlider('X Speed', 'xSpeed', -5.0, 5.0, 0.1)}
-            <div style={{ height: '4px' }} />
+            <div className="slider-gap" />
             {renderSlider('Y Wave Amplitude', 'yAmp', 0.0, 3.0, 0.05)}
             {renderSlider('Y Frequency', 'yFreq', 0.1, 40.0, 0.1)}
             {renderSlider('Y Speed', 'ySpeed', -5.0, 5.0, 0.1)}
-            <div style={{ height: '4px' }} />
+            <div className="slider-gap" />
             {renderSlider('Diagonal Amplitude', 'diagAmp', 0.0, 3.0, 0.05)}
             {renderSlider('Diagonal Frequency', 'diagFreq', 0.1, 40.0, 0.1)}
             {renderSlider('Diagonal Speed', 'diagSpeed', -5.0, 5.0, 0.1)}
@@ -351,7 +325,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Angular Spiral Vortex"
             icon={<RotateCw size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>sin(θ * arms)</span>}
+            badge={<span className="collapsible-badge-inline">sin(θ * arms)</span>}
             persistKey="SynthControls-4-angular-spiral-vortex"
           >
             {renderSlider('Spiral Amplitude', 'spiralAmp', 0.0, 3.0, 0.05)}
@@ -363,7 +337,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Wormhole Tunnel [1 / dist]"
             icon={<Eye size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>3D Perspective</span>}
+            badge={<span className="collapsible-badge-inline">3D Perspective</span>}
             persistKey="SynthControls-5-wormhole-tunnel-1-dist"
           >
             {renderSlider('Tunnel Amplitude', 'tunnelAmp', 0.0, 3.0, 0.05)}
@@ -374,7 +348,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Concentric Rings"
             icon={<Disc size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Harmonic Bands</span>}
+            badge={<span className="collapsible-badge-inline">Harmonic Bands</span>}
             persistKey="SynthControls-6-concentric-rings"
           >
             {renderSlider('Rings Amplitude', 'ringsAmp', 0.0, 3.0, 0.05)}
@@ -386,7 +360,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Dual Interference Moiré"
             icon={<Radio size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Dual Emitters</span>}
+            badge={<span className="collapsible-badge-inline">Dual Emitters</span>}
             persistKey="SynthControls-7-dual-interference-moir"
           >
             {renderSlider('Dual Amplitude', 'dualEmitterAmp', 0.0, 3.0, 0.05)}
@@ -398,7 +372,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
           <CollapsibleSection
             title="Starfield & Cosmic Sparkle"
             icon={<Sparkles size={12} />}
-            badge={<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Procedural Sky</span>}
+            badge={<span className="collapsible-badge-inline">Procedural Sky</span>}
             persistKey="SynthControls-8-starfield-cosmic-sparkle"
           >
             {renderSlider('Star Brightness', 'starfieldIntensity', 0.0, 2.0, 0.05)}
@@ -418,16 +392,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         badge={
           compileError ? (
             <span
-              style={{
-                fontSize: '10px',
-                color: 'var(--accent)',
-                border: '1px solid var(--accent)',
-                padding: '1px 4px',
-                borderRadius: '2px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '2px',
-              }}
+              className="badge-outline"
             >
               <AlertTriangle size={10} /> SYNTAX ERROR
             </span>
@@ -436,16 +401,15 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         persistKey="SynthControls-advanced-formula"
         defaultOpen={false}
       >
-        <div style={{ marginBottom: '6px' }}>
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+        <div className="formula-inputs">
+          <span>
             Inputs: <code>x, y, time, dist, dx, dy, cols, rows, angle, ctx</code>
           </span>
         </div>
 
         {/* Main Render Code Editor */}
         <textarea
-          className="code-editor-area"
-          style={{ minHeight: '220px', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
+          className="code-editor-area formula-editor-main"
           value={code}
           onChange={(e) => onChangeFormula(e.target.value, prepareCode)}
           spellCheck={false}
@@ -453,26 +417,18 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         />
 
         {compileError && (
-          <div className="code-error-box" style={{ marginTop: '6px' }}>
-            <AlertTriangle size={12} style={{ display: 'inline', marginRight: '4px' }} />
+          <div className="code-error-box">
+            <AlertTriangle size={12} />
             <strong>Runtime / Syntax Error:</strong> {compileError}
           </div>
         )}
 
         {/* Quick math helper buttons */}
-        <div style={{ marginTop: '8px' }}>
-          <div
-            style={{
-              fontSize: '10px',
-              color: 'var(--text-muted)',
-              marginBottom: '4px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-            }}
-          >
+        <div className="formula-snippets">
+          <div className="formula-snippets-title">
             Insert Wave Snippet
           </div>
-          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          <div className="btn-group btn-group-wrap">
             <button
               type="button"
               className="btn btn-sm"
@@ -535,13 +491,12 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
         </div>
 
         {/* Optional ctx.prepare frame state */}
-        <div style={{ marginTop: '10px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>
+        <div className="formula-prepare">
+          <div className="formula-prepare-title">
             Optional Frame State (<code>ctx.prepare</code>):
           </div>
           <textarea
-            className="code-editor-area"
-            style={{ minHeight: '55px', fontSize: '10.5px' }}
+            className="code-editor-area formula-editor-prepare"
             value={prepareCode || ''}
             onChange={(e) => onChangeFormula(code, e.target.value)}
             spellCheck={false}

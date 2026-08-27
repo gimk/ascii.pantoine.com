@@ -217,7 +217,7 @@ export const NToneRampEditor: React.FC<NToneRampEditorProps> = ({
 
       {/* 2. Tone Count Header with Quick Preset Chips & Stepper */}
       <div className="ntone-count-row">
-        <span className="control-label" style={{ margin: 0 }}>Tones</span>
+        <span className="control-label">Tones</span>
         <div className="ntone-count-controls">
           <div className="ntone-chip-group">
             {TONE_COUNT_PRESETS.map((num) => (

@@ -83,15 +83,7 @@ export const NumberInput: React.FC<{
   return (
     <input
       type="number"
-      className="number-input"
-      style={{
-        width: '54px',
-        padding: '2px 4px',
-        fontSize: '11px',
-        textAlign: 'right',
-        opacity: disabled ? 0.45 : 1,
-        cursor: disabled ? 'not-allowed' : 'text',
-      }}
+      className={`number-input number-input-sm${disabled ? ' control-disabled' : ''}`}
       disabled={disabled}
       min={min}
       max={max}
@@ -261,19 +253,10 @@ export const DeferredColorInput: React.FC<{
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+    <div className="control-inline">
       <div
-        style={{
-          width: '24px',
-          height: '22px',
-          borderRadius: '2px',
-          border: '1px solid var(--border-color)',
-          background: draft,
-          position: 'relative',
-          overflow: 'hidden',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.45 : 1,
-        }}
+        className={`color-swatch${disabled ? ' control-disabled' : ''}`}
+        style={{ background: draft }}
       >
         <input
           ref={colorInputRef}
@@ -286,28 +269,40 @@ export const DeferredColorInput: React.FC<{
             isPickingRef.current = true;
             setDraft(e.target.value);
           }}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            opacity: 0,
-            cursor: disabled ? 'not-allowed' : 'pointer',
-          }}
         />
       </div>
       {showHexField && (
         <input
           type="text"
-          className="text-input"
+          className="text-input color-hex-field"
           value={hexText}
           placeholder={fallback}
           disabled={disabled}
           onChange={(e) => handleHexChange(e.target.value)}
-          style={{ width: hexFieldWidth, fontSize: '10px' }}
+          style={{ width: hexFieldWidth }}
         />
       )}
     </div>
   );
 };
+
+/**
+ * A numbered rule across the sidebar — `01 · CONTENT MODE`, and so on.
+ *
+ * The sidebar is one continuous column in both UI modes now, so the step
+ * numbers are the only thing saying where you are in the walkthrough. Nine
+ * hand-written copies of this markup is how one of them ends up numbered
+ * wrong, so both modes render it from here.
+ */
+export const WorkflowStep: React.FC<{
+  n: string;
+  label: string;
+  /** Anchor for the sidebar rail to scroll to. */
+  anchorRef?: React.Ref<HTMLDivElement>;
+}> = ({ n, label, anchorRef }) => (
+  <div className="sidebar-workflow-title" ref={anchorRef}>
+    <span className="sidebar-workflow-step">{n}</span>
+    <span className="sidebar-workflow-label">{label}</span>
+    <div className="sidebar-workflow-line" />
+  </div>
+);

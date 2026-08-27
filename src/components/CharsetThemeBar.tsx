@@ -30,19 +30,18 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
         badge={activeCharsetName}
         defaultOpen={false}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+        <div className="charset-list">
           {CHARSETS.map((cs) => {
             const isSelected = currentCharset === cs.chars;
             return (
               <button
                 key={cs.id}
-                className={`preset-card ${isSelected ? 'active' : ''}`}
+                className={`preset-card charset-card ${isSelected ? 'active' : ''}`}
                 onClick={() => onChangeCharset(cs.chars)}
-                style={{ padding: '4px 6px' }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span className="preset-card-title" style={{ fontSize: '10px' }}>{cs.name}</span>
-                  <code style={{ fontSize: '10px', color: 'var(--accent)' }}>"{cs.chars}"</code>
+                <div className="charset-card-row">
+                  <span className="preset-card-title charset-card-name">{cs.name}</span>
+                  <code className="charset-card-chars">"{cs.chars}"</code>
                 </div>
               </button>
             );
@@ -51,8 +50,7 @@ export const CharsetThemeBar: React.FC<CharsetThemeBarProps> = ({
 
         <input
           type="text"
-          className="text-input"
-          style={{ width: '100%', fontSize: '10.5px' }}
+          className="text-input charset-custom-input"
           value={currentCharset}
           onChange={(e) => onChangeCharset(e.target.value || ' ')}
           placeholder="e.g.  .:-=+*#%@"

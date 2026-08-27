@@ -76,17 +76,9 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
         {overridden.length > 0 && (
           <button
             type="button"
-            className="btn btn-sm"
+            className="btn btn-sm btn-micro"
             onClick={reset}
             title={`Reset ${overridden.length} changed parameter${overridden.length > 1 ? 's' : ''}`}
-            style={{
-              padding: '1px 6px',
-              height: '18px',
-              fontSize: '9.5px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-            }}
           >
             <RotateCcw size={10} />
             <span>Reset</span>
@@ -100,22 +92,15 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
         if (spec.toggle) {
           const on = resolved[id] as boolean;
           return (
-            <div className="control-row" key={id} style={{ alignItems: 'center' }}>
+            <div className="control-row" key={id}>
               <span className="control-label" title={spec.hint}>
                 {spec.label}
               </span>
               <button
                 type="button"
-                className={`btn btn-sm ${on ? 'btn-primary' : ''}`}
+                className={`btn btn-sm btn-onoff ${on ? 'btn-primary' : ''}`}
                 onClick={() => set(id, !on)}
                 title={spec.hint}
-                style={{
-                  minWidth: '46px',
-                  height: '22px',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  fontFamily: 'var(--font-mono)',
-                }}
               >
                 {on ? 'ON' : 'OFF'}
               </button>

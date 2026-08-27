@@ -71,15 +71,7 @@ const NumberInput: React.FC<{
   return (
     <input
       type="number"
-      className="number-input"
-      style={{
-        width: '54px',
-        padding: '2px 4px',
-        fontSize: '11px',
-        textAlign: 'right',
-        opacity: disabled ? 0.45 : 1,
-        cursor: disabled ? 'not-allowed' : 'text',
-      }}
+      className={`number-input number-input-sm${disabled ? ' control-disabled' : ''}`}
       disabled={disabled}
       min={min}
       step={step}
@@ -307,14 +299,14 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               title="DPI / Resolution"
               icon={<Grid size={12} />}
               badge={
-                <span style={{ fontSize: '10px', color: 'var(--accent)' }}>
+                <span className="collapsible-badge-inline is-accent">
                   {cols}×{rows} px ({dpi ?? 72} DPI)
                 </span>
               }
               persistKey="OptimizeControls-pixel-dpi"
             >
               {/* DPI Slider */}
-              <div className="control-row" style={{ marginBottom: '10px' }}>
+              <div className="control-row control-row-spaced-below">
                 <span className="control-label">Input DPI</span>
                 <div className="control-input-wrapper">
                   <input
@@ -336,7 +328,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
 
               {/* Quick DPI Preset Chips */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginBottom: '10px' }}>
+              <div className="btn-grid-3 control-row-spaced-below">
                 {[
                   { label: '25 DPI', val: 25, desc: 'Lo-Fi Pixel' },
                   { label: '50 DPI', val: 50, desc: 'Retro 8-Bit' },
@@ -350,18 +342,11 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                     <button
                       key={p.label}
                       type="button"
-                      className={`btn btn-sm ${isActive ? 'btn-primary' : ''}`}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        padding: '4px 2px',
-                        gap: '2px',
-                      }}
+                      className={`btn btn-sm btn-stacked ${isActive ? 'btn-primary' : ''}`}
                       onClick={() => handleDpiChange(p.val)}
                     >
-                      <span style={{ fontWeight: 700, fontSize: '10.5px' }}>{p.label}</span>
-                      <span style={{ fontSize: '10px', opacity: 0.8 }}>{p.desc}</span>
+                      <span className="btn-stacked-main">{p.label}</span>
+                      <span className="btn-stacked-sub">{p.desc}</span>
                     </button>
                   );
                 })}
@@ -369,26 +354,17 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
 
               {/* Pixel Output Dimensions Info Card */}
               <div
-                style={{
-                  padding: '8px 10px',
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '3px',
-                  fontSize: '11px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                }}
+                className="info-card"
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Source Image:</span>
-                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+                <div className="info-card-row">
+                  <span className="info-card-label">Source Image:</span>
+                  <span className="info-card-value info-card-value-accent">
                     {srcWidth} × {srcHeight} px
                   </span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Output Canvas:</span>
-                  <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                <div className="info-card-row">
+                  <span className="info-card-label">Output Canvas:</span>
+                  <span className="info-card-value info-card-value-strong">
                     {cols} × {rows} px (1:1 Square)
                   </span>
                 </div>
@@ -400,7 +376,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               title="Grid Resolution"
               icon={<Grid size={12} />}
               badge={
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                <span className="collapsible-badge-inline">
                   {cols}×{rows} ({totalCells.toLocaleString()} chars)
                 </span>
               }
@@ -409,46 +385,35 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             >
               {/* Media Source & Ratio Info Card */}
               <div
-                style={{
-                  padding: '8px 10px',
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '3px',
-                  marginBottom: '10px',
-                }}
+                className="info-card control-row-spaced-below"
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Media File:</span>
-                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div className="info-card-row">
+                  <span className="info-card-label info-card-value-strong">Media File:</span>
+                  <span className="info-card-value info-card-value-accent info-card-value-truncate">
                     {mediaConfig?.fileName || `${srcWidth}×${srcHeight}px`}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Resolution:</span>
-                  <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+                <div className="info-card-row">
+                  <span className="info-card-label">Resolution:</span>
+                  <span className="info-card-value info-card-value-accent">
                     {srcWidth} × {srcHeight} px
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', marginBottom: '4px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Image Ratio:</span>
-                  <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                <div className="info-card-row">
+                  <span className="info-card-label">Image Ratio:</span>
+                  <span className="info-card-value">
                     {srcAspect >= 1 ? `${srcAspect.toFixed(2)}:1` : `1:${(1 / srcAspect).toFixed(2)}`}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Framing Fit:</span>
+                <div className="info-card-row">
+                  <span className="info-card-label">Framing Fit:</span>
                   <span
-                    style={{
-                      color: isRatioMatched ? 'var(--accent)' : 'var(--text-muted)',
-                      fontFamily: 'var(--font-mono)',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
+                    className={`info-card-value info-card-value-strong control-label-icon${
+                      isRatioMatched ? ' info-card-value-accent' : ''
+                    }`}
                   >
                     {isRatioMatched ? (
                       <>
@@ -462,28 +427,21 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
 
               {/* Fractional Scale Presets (1/2, 1/4, 1/5, 1/6, 1/8, 1/16, 1/32, FIT) */}
-              <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
+              <p className="control-hint control-row-spaced-below">
                 Scale resolutions proportional to image size with monospace aspect compensation:
               </p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px', marginBottom: '10px' }}>
+              <div className="btn-grid-4 control-row-spaced-below">
                 {mediaFractionPresets.map((preset) => {
                   const isActive = cols === preset.cols && rows === preset.rows;
                   return (
                     <button
                       key={preset.label}
-                      className={`btn btn-sm ${isActive ? 'btn-primary' : ''}`}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        padding: '5px 4px',
-                        gap: '2px',
-                      }}
+                      className={`btn btn-sm btn-stacked ${isActive ? 'btn-primary' : ''}`}
                       onClick={() => onChangeResolution(preset.cols, preset.rows)}
                     >
-                      <span style={{ fontWeight: 700, fontSize: '11px' }}>{preset.label}</span>
-                      <span style={{ fontSize: '10px', opacity: 0.8 }}>
+                      <span className="btn-stacked-main">{preset.label}</span>
+                      <span className="btn-stacked-sub">
                         {preset.cols}×{preset.rows}
                       </span>
                     </button>
@@ -491,28 +449,20 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 })}
                 {onMatchViewfinderRatio && (
                   <button
-                    className="btn btn-sm"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      padding: '5px 4px',
-                      gap: '2px',
-                    }}
+                    className="btn btn-sm btn-stacked"
                     onClick={onMatchViewfinderRatio}
                     title="Fit viewport aspect ratio"
                   >
-                    <span style={{ fontWeight: 700, fontSize: '11px' }}>FIT</span>
-                    <span style={{ fontSize: '10px', opacity: 0.8 }}>VIEWPORT</span>
+                    <span className="btn-stacked-main">FIT</span>
+                    <span className="btn-stacked-sub">VIEWPORT</span>
                   </button>
                 )}
               </div>
 
               {/* Match Aspect Ratio & Lock Ratio Toggle */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+              <div className="btn-group control-row-spaced-below">
                 <button
-                  className={`btn btn-sm ${lockAspectRatio ? 'btn-primary' : ''}`}
-                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  className={`btn btn-sm control-fill ${lockAspectRatio ? 'btn-primary' : ''}`}
                   onClick={() => setLockAspectRatio(!lockAspectRatio)}
                   title="When locked, changing columns automatically adjusts rows to maintain the image's exact ratio without borders"
                 >
@@ -522,7 +472,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
 
                 <button
                   className="btn btn-sm"
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
                   onClick={handleMatchRatio}
                   title="Instantly snap rows to match the image aspect ratio"
                 >
@@ -584,19 +533,18 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
           <CollapsibleSection
             title={isPixelMode ? 'Pixel Resolution' : 'Grid Resolution'}
             icon={<Grid size={12} />}
-            badge={<><span style={{ fontSize: '10px', color: isPixelMode ? 'var(--accent)' : 'var(--text-muted)' }}>
+            badge={<><span className={`collapsible-badge-inline${isPixelMode ? ' is-accent' : ''}`}>
                 {cols}x{rows} ({totalCells.toLocaleString()} {isPixelMode ? 'px' : 'chars'})
               </span></>}
             persistKey="OptimizeControls-grid-resolution"
             defaultOpen={false}
           >
             {/* Quick Resolution buttons */}
-            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px', opacity: autoRes ? 0.45 : 1 }}>
+            <div className={`btn-group btn-group-wrap control-row-spaced-below${autoRes ? ' control-disabled' : ''}`}>
               {synthResolutionPresets.map((preset) => (
                 <button
                   key={preset.label}
                   disabled={autoRes}
-                  style={{ cursor: autoRes ? 'not-allowed' : 'pointer' }}
                   className={`btn btn-sm ${cols === preset.c && rows === preset.r ? 'btn-primary' : ''}`}
                   onClick={() => onChangeResolution(preset.c, preset.r)}
                 >
@@ -607,15 +555,9 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
 
             {(onToggleAutoRes || onMatchViewfinderRatio) && (
               <button
-                className={`btn btn-sm ${autoRes ? 'btn-primary' : ''}`}
-                style={{
-                  width: '100%',
-                  marginBottom: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
+                className={`btn btn-sm btn-full control-row-spaced-below ${
+                  autoRes ? 'btn-primary' : ''
+                }`}
                 onClick={onToggleAutoRes || onMatchViewfinderRatio}
                 title={
                   autoRes
@@ -629,17 +571,11 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
             )}
 
             {/* Viewfinder Ratio Lock — inert while auto res drives the grid */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', opacity: autoRes ? 0.45 : 1 }}>
+            <div className={`btn-group control-row-spaced-below${autoRes ? ' control-disabled' : ''}`}>
               <button
-                className={`btn btn-sm ${!autoRes && lockViewfinderRatio ? 'btn-primary' : ''}`}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  cursor: autoRes ? 'not-allowed' : 'pointer',
-                }}
+                className={`btn btn-sm control-fill ${
+                  !autoRes && lockViewfinderRatio ? 'btn-primary' : ''
+                }`}
                 disabled={autoRes}
                 onClick={() => setLockViewfinderRatio(!lockViewfinderRatio)}
                 title={
@@ -654,7 +590,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
 
               <button
                 className="btn btn-sm"
-                style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: autoRes ? 'not-allowed' : 'pointer' }}
                 disabled={autoRes}
                 onClick={handleMatchViewfinder}
                 title="Snap rows to match the viewfinder aspect ratio at the current column count"
@@ -664,7 +599,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </button>
             </div>
 
-            <div className="control-row" style={{ opacity: autoRes ? 0.45 : 1 }}>
+            <div className={`control-row${autoRes ? ' control-disabled' : ''}`}>
               <span className="control-label">Columns (Width)</span>
               <div className="control-input-wrapper">
                 <input
@@ -675,7 +610,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   step={2}
                   value={draftCols}
                   disabled={autoRes}
-                  style={{ cursor: autoRes ? 'not-allowed' : 'pointer' }}
                   onChange={(e) => handleSynthColsChange(parseInt(e.target.value, 10) || 100)}
                 />
                 <NumberInput
@@ -688,7 +622,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
             </div>
 
-            <div className="control-row" style={{ opacity: autoRes ? 0.45 : 1 }}>
+            <div className={`control-row${autoRes ? ' control-disabled' : ''}`}>
               <span className="control-label">Rows (Height)</span>
               <div className="control-input-wrapper">
                 <input
@@ -699,7 +633,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   step={1}
                   value={draftRows}
                   disabled={autoRes}
-                  style={{ cursor: autoRes ? 'not-allowed' : 'pointer' }}
                   onChange={(e) => handleSynthRowsChange(parseInt(e.target.value, 10) || 50)}
                 />
                 <NumberInput
@@ -714,28 +647,16 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
 
             {/* High Resolution Confirmation Warning */}
             {isPendingHighRes && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '8px 10px',
-                  background: 'var(--accent-glow)',
-                  border: '1px solid var(--accent)',
-                  borderRadius: '3px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--accent)', fontWeight: 700, fontSize: '10.5px' }}>
+              <div className="warn-card">
+                <div className="warn-card-title">
                   <AlertTriangle size={12} />
                   <span>High Resolution Warning</span>
                 </div>
-                <p style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                <p className="warn-card-body">
                   {draftCols}x{draftRows} ({(draftCols * draftRows).toLocaleString()} {isPixelMode ? 'pixels' : 'characters'}) exceeds standard {liveColsCeiling}x{liveRowsCeiling}. Rendering high cell counts may reduce framerate on lower-powered devices.
                 </p>
                 <button
-                  className="btn btn-primary btn-sm"
-                  style={{ width: '100%', marginTop: '2px', fontWeight: 700 }}
+                  className="btn btn-primary btn-sm warn-card-action"
                   onClick={handleApplyPendingResolution}
                 >
                   APPLY RESOLUTION ({draftCols}x{draftRows})

@@ -256,7 +256,7 @@ export const ToneRampGroup: React.FC<{
   const { colors, weights } = resolveToneStops(config);
 
   return (
-    <div style={{ marginTop: '6px' }}>
+    <div className="control-row-spaced">
       <div className="tonal-subheading">
         <span>N-Tone Ramp Editor</span>
         <button
@@ -275,7 +275,7 @@ export const ToneRampGroup: React.FC<{
         </button>
       </div>
       {paletteActive && (
-        <div className="panel-note" style={{ marginBottom: '8px' }}>
+        <div className="panel-note">
           <span>
             A preset palette is driving colour. These stops and widths apply once
             it is turned off.
@@ -446,8 +446,8 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
   };
 
   return (
-    <div className="quantize-controls-section" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
-      <div className="tonal-subheading" style={{ marginTop: 0 }}>
+    <div className="quantize-controls-section subsection-divided">
+      <div className="tonal-subheading tonal-subheading-flush">
         <span>Quantize Depth</span>
         {!isMax && (
           <button
@@ -462,7 +462,7 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
       </div>
 
       {/* Quick Bit-Depth Preset Chips */}
-      <div className="quantize-chip-row" style={{ marginTop: '4px', marginBottom: '6px' }}>
+      <div className="quantize-chip-row quantize-chip-row-inset">
         {QUANTIZE_PRESETS.map((p) => {
           const isSelected = p.value === 256 ? isMax : normalizedVal === p.value;
           return (
@@ -480,7 +480,7 @@ export const QuantizeLevelsControl: React.FC<QuantizeLevelsControlProps> = ({
       </div>
 
       {/* Stepper + Warp Slider + Numeric Direct Entry */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div className="control-inline">
         <button
           type="button"
           className="slider-nudge-btn"
@@ -725,21 +725,19 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
       : null;
 
   return (
-    <div style={{ marginBottom: '20px' }}>
+    <div className="curve-section">
       <div className="tonal-subheading">
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span className="control-inline">
           <span>Tonal Transfer Curve</span>
           {activeOrHoveredPoint && (
-            <span style={{ color: 'var(--accent)', fontSize: '10px', fontWeight: 600 }}>
+            <span className="curve-readout">
               IN: {Math.round(activeOrHoveredPoint[0] * 255)} • OUT: {Math.round(activeOrHoveredPoint[1] * 255)}
             </span>
           )}
         </span>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-            {sortedPoints.length} PTS
-          </span>
+        <div className="control-inline">
+          <span className="curve-point-count">{sortedPoints.length} PTS</span>
           <button
             type="button"
             className="btn-reset"
@@ -752,17 +750,10 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
       </div>
 
       <div
-        style={{
-          padding: '10px',
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '3px',
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
+        className="framed-block"
       >
         {/* Quick Curve Presets Toolbar */}
-        <div className="curve-preset-bar" style={{ marginTop: 0 }}>
+        <div className="curve-preset-bar">
           {CURVE_PRESETS.map((cp) => (
             <button
               key={cp.name}
@@ -778,26 +769,12 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
 
         {/* SQUARED 1:1 Aspect Ratio Graph */}
         <div
-          style={{
-            width: '100%',
-            maxWidth: '260px',
-            aspectRatio: '1 / 1',
-            margin: '0 auto',
-            position: 'relative',
-            background: 'var(--bg-primary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '3px',
-            overflow: 'hidden',
-            cursor: activePointIdx !== null ? 'grabbing' : 'crosshair',
-            touchAction: 'none',
-            userSelect: 'none',
-          }}
+          className={`curve-graph${activePointIdx !== null ? ' is-dragging' : ''}`}
           onDoubleClick={handleReset}
         >
           <svg
             ref={svgRef}
             viewBox="0 0 100 100"
-            style={{ width: '100%', height: '100%', display: 'block' }}
             onPointerDown={handleSvgPointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -904,16 +881,7 @@ const ToneCurveGraph: React.FC<ToneCurveGraphProps> = ({ config, onChangeConfig 
 
         {/* Axis Reference Scale */}
         <div
-          style={{
-            width: '100%',
-            maxWidth: '260px',
-            margin: '4px auto 0',
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: '10px',
-            color: 'var(--text-dim)',
-            fontFamily: 'var(--font-mono)',
-          }}
+          className="curve-axis-scale"
         >
           <span>IN: 0</span>
           <span>128</span>
@@ -1046,7 +1014,7 @@ export const SimpleLevelsSlider: React.FC<SimpleLevelsSliderProps> = ({
       <g
         key={id}
         transform={`translate(${px(val).toFixed(2)}, 0)`}
-        style={{ cursor: 'ew-resize' }}
+        className="levels-handle"
         onDoubleClick={(e) => {
           e.stopPropagation();
           resetHandle(id);
@@ -1073,24 +1041,19 @@ export const SimpleLevelsSlider: React.FC<SimpleLevelsSliderProps> = ({
   };
 
   return (
-    <div className="simple-levels-section" style={{ marginBottom: '10px' }}>
-      <div className="tonal-subheading" style={{ marginTop: 0 }}>
+    <div className="simple-levels-section control-row-spaced-below">
+      <div className="tonal-subheading tonal-subheading-flush">
         <span>Levels</span>
       </div>
 
       <div
-        style={{
-          padding: '8px 10px 10px 10px',
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '3px',
-        }}
+        className="framed-block framed-block-tight"
       >
         <svg
           ref={svgRef}
           viewBox={`0 0 ${LV_W} 28`}
           preserveAspectRatio="none"
-          style={{ display: 'block', width: '100%', height: '28px', touchAction: 'none', cursor: 'ew-resize' }}
+          className="levels-scrubber"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -1142,17 +1105,10 @@ export const SimpleLevelsSlider: React.FC<SimpleLevelsSliderProps> = ({
         </svg>
 
         <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '8px',
-            marginTop: '6px',
-            fontSize: '10px',
-            fontFamily: 'var(--font-mono)',
-          }}
+          className="levels-readout"
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-dim)', fontSize: '9.5px', fontWeight: 600 }}>BLACK</span>
+          <div className="levels-readout-cell">
+            <span className="levels-readout-label">BLACK</span>
             <NumberInput
               value={black}
               min={0}
@@ -1162,8 +1118,8 @@ export const SimpleLevelsSlider: React.FC<SimpleLevelsSliderProps> = ({
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-dim)', fontSize: '9.5px', fontWeight: 600 }}>MID</span>
+          <div className="levels-readout-cell">
+            <span className="levels-readout-label">MID</span>
             <NumberInput
               value={mid}
               min={black + 1}
@@ -1178,8 +1134,8 @@ export const SimpleLevelsSlider: React.FC<SimpleLevelsSliderProps> = ({
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-dim)', fontSize: '9.5px', fontWeight: 600 }}>WHITE</span>
+          <div className="levels-readout-cell">
+            <span className="levels-readout-label">WHITE</span>
             <NumberInput
               value={white}
               min={black + 10}
@@ -1371,7 +1327,7 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
     <g
       key={id}
       transform={`translate(${px(val).toFixed(2)}, 0)`}
-      style={{ cursor: 'ew-resize' }}
+      className="levels-handle"
       onDoubleClick={(e) => {
         e.stopPropagation();
         resetHandle(id);
@@ -1396,25 +1352,11 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
   );
 
   return (
-    <div style={{ marginBottom: '20px' }}>
+    <div className="panel-group">
       <div className="tonal-subheading">
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span className="control-inline">
           <span>Levels &amp; Histogram</span>
-          {!isNeutral && (
-            <span
-              style={{
-                color: 'var(--accent)',
-                fontSize: '10px',
-                fontWeight: 700,
-                padding: '1px 4px',
-                background: 'var(--accent-glow)',
-                border: '1px solid var(--accent)',
-                borderRadius: '2px',
-              }}
-            >
-              ACTIVE
-            </span>
-          )}
+          {!isNeutral && <span className="badge-filled">ACTIVE</span>}
         </span>
         <button
           type="button"
@@ -1427,32 +1369,14 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
       </div>
 
       <div
-        style={{
-          padding: '10px',
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '3px',
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
+        className="framed-block"
       >
         {/* Histogram Box */}
-        <div
-          style={{
-            width: '100%',
-            maxWidth: '260px',
-            margin: '0 auto',
-            background: 'var(--bg-primary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '3px',
-            overflow: 'hidden',
-          }}
-        >
+        <div className="histogram-frame">
           <svg
             ref={svgRef}
             viewBox={`0 0 ${LV_W} ${LV_TRACK_Y + LV_TRACK_H + 2}`}
             preserveAspectRatio="none"
-            style={{ display: 'block', width: '100%', height: '84px', touchAction: 'none' }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -1507,25 +1431,11 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
 
         {/* Telemetry & Auto Levels */}
         <div
-          style={{
-            maxWidth: '260px',
-            margin: '6px auto 0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px',
-          }}
+          className="histogram-telemetry"
         >
-          <span
-            style={{
-              fontSize: '10px',
-              color: 'var(--text-dim)',
-              fontFamily: 'var(--font-mono)',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <span className="histogram-readout">
             {note ? (
-              <span style={{ color: 'var(--accent)' }}>{note}</span>
+              <span className="histogram-note">{note}</span>
             ) : (
               <>
                 BLACK {black.toFixed(0)} &bull; MID {mid.toFixed(0)} &bull; WHITE {white.toFixed(0)}
@@ -1535,12 +1445,11 @@ export const LevelsControl: React.FC<LevelsControlProps> = ({
           </span>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{ padding: '1px 8px', fontSize: '10px', height: '20px', whiteSpace: 'nowrap' }}
+            className="btn btn-sm btn-auto-levels"
             onClick={handleAuto}
             title="Set the black and white points from the image's own histogram, clipping 0.1% at each end"
           >
-            <BarChart3 size={10} style={{ marginRight: '3px' }} />
+            <BarChart3 size={10} />
             AUTO LEVELS
           </button>
         </div>
@@ -1676,7 +1585,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
           * levels black point stopped producing black. The panel now reads in
           * pipeline order, top to bottom.
           */}
-        <div className="tonal-subheading" style={{ marginTop: 0 }}>
+        <div className="tonal-subheading tonal-subheading-flush">
           <span>Exposure &amp; Contrast</span>
         </div>
         <AdjustSlider id="brightness" config={config} onChangeConfig={onChangeConfig} />
@@ -1704,7 +1613,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
 
         {/* Alpha Threshold */}
         {showAlphaCutoff && (
-          <div style={{ marginTop: '20px' }}>
+          <div className="panel-group-below">
             <div className="tonal-subheading">
               <span>Alpha Cutoff</span>
               <button

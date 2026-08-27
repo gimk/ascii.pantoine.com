@@ -22,6 +22,7 @@ import {
   VECTOR_CONFIG_DEFAULTS,
 } from '../types/ascii';
 import { MediaUploadControls } from './MediaFileControls';
+import { OutputModeCards } from './outputModes';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
 import { VectorControls } from './VectorControls';
 import { PaletteControls } from './PaletteControls';
@@ -37,7 +38,7 @@ import {
   SimpleLevelsSlider,
 } from './ImageAdjustControls';
 import { BUILTIN_PALETTES } from '../engine/palettes';
-import { PrecisionSlider } from './controlPrimitives';
+import { PrecisionSlider, WorkflowStep } from './controlPrimitives';
 import { ExportTab } from './ExportModal';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
@@ -108,15 +109,6 @@ const BASIC_BLEND_MODES: BlendMode[] = [
   'color',
   'luminosity',
 ];
-
-/** Numbered step header, matching the sidebar workflow titles. */
-const Step: React.FC<{ n: string; label: string }> = ({ n, label }) => (
-  <div className="sidebar-workflow-title">
-    <span className="sidebar-workflow-step">{n}</span>
-    <span className="sidebar-workflow-label">{label}</span>
-    <div className="sidebar-workflow-line" />
-  </div>
-);
 
 interface BasicPanelProps {
   mediaConfig: MediaConfig;
@@ -296,7 +288,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   return (
     <div className="basic-panel">
       {/* ================================================================ */}
-      <Step n="01" label="Import" />
+      <WorkflowStep n="01" label="Import" />
       <div className="basic-section">
         <MediaUploadControls
           config={mediaConfig}
@@ -346,41 +338,16 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <Step n="02" label="Output" />
+      <WorkflowStep n="02" label="Output" />
       <div className="basic-section">
-        <div className="basic-output-toggle">
-          <button
-            type="button"
-            className={`color-mode-tab ${isPixel ? 'active' : ''}`}
-            onClick={() => onChangeRasterMode('pixel')}
-            title="1:1 square pixel dither"
-          >
-            PIXEL
-          </button>
-          <button
-            type="button"
-            className={`color-mode-tab ${isAscii ? 'active' : ''}`}
-            onClick={() => onChangeRasterMode('ascii')}
-            title="Monospace character density ramp"
-          >
-            ASCII
-          </button>
-          <button
-            type="button"
-            className={`color-mode-tab ${isVector ? 'active' : ''}`}
-            onClick={() => onChangeRasterMode('vector')}
-            title="Rutt-Etra beam deflection, drawn as polylines"
-          >
-            VECTOR
-          </button>
-        </div>
+        <OutputModeCards value={rasterMode} onChange={onChangeRasterMode} compact />
       </div>
 
       {/* ================================================================ */}
-      <Step n="03" label="Dither" />
+      <WorkflowStep n="03" label="Dither" />
       <div className="basic-section">
         {/* 1. Resolution / Grid Density */}
-        <div className="tonal-subheading" style={{ marginTop: 0 }}>
+        <div className="tonal-subheading tonal-subheading-flush">
           <span
             title={
               isVector
@@ -399,7 +366,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           </span>
         </div>
 
-        <div className="basic-chip-row" style={{ marginBottom: '4px' }}>
+        <div className="basic-chip-row">
           {(isPixel ? DPI_PRESETS : isVector ? VECTOR_COLS_PRESETS : COLS_PRESETS).map((preset) => {
             const isActive = isPixel ? dpi === preset.value : cols === preset.value;
             return (
@@ -425,7 +392,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
         </div>
 
         {/* 2. Dithering Algorithm & Character Set */}
-        <div className="tonal-subheading" style={{ marginTop: '2px' }}>
+        <div className="tonal-subheading tonal-subheading-tight">
           <span>{isVector ? 'Beam Deflection' : isPixel ? 'Dither Pattern' : 'Dither & Glyphs'}</span>
         </div>
 
@@ -444,35 +411,23 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
         )}
 
         {isAscii && (
-          <div className="control-row" style={{ alignItems: 'center' }}>
-            <span className="control-label" style={{ flexShrink: 0 }}>
-              Charset
-            </span>
+          <div className="control-row">
+            <span className="control-label control-fixed">Charset</span>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+            <div className="control-cluster">
               {/* Previous */}
               <button
                 type="button"
-                className="slider-nudge-btn"
+                className="slider-nudge-btn btn-icon-sq"
                 onClick={() => handleStepCharset(-1)}
                 title="Previous charset (wraps around)"
-                style={{ width: '24px', height: '24px', padding: 0 }}
               >
                 <ChevronLeft size={13} />
               </button>
 
               {/* Select Dropdown */}
               <select
-                className="number-input"
-                style={{
-                  width: '165px',
-                  textAlign: 'left',
-                  padding: '2px 6px',
-                  fontSize: '11px',
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 700,
-                  height: '24px',
-                }}
+                className="number-input stepper-select"
                 value={activeCharsetId}
                 onChange={(e) => {
                   const cs = CHARSETS.find((c) => c.id === e.target.value);
@@ -492,10 +447,9 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
               {/* Next */}
               <button
                 type="button"
-                className="slider-nudge-btn"
+                className="slider-nudge-btn btn-icon-sq"
                 onClick={() => handleStepCharset(1)}
                 title="Next charset (wraps around)"
-                style={{ width: '24px', height: '24px', padding: 0 }}
               >
                 <ChevronRight size={13} />
               </button>
@@ -503,23 +457,13 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
               {/* Surprise Me / Randomizer Button */}
               <button
                 type="button"
-                className="slider-nudge-btn"
+                className={`slider-nudge-btn btn-icon-sq btn-dice${
+                  isCharsetRolling ? ' rolling' : ''
+                }`}
                 onClick={handleRandomizeCharset}
                 title="Surprise Me: pick a random charset"
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  padding: 0,
-                  color: 'var(--accent)',
-                }}
               >
-                <Dices
-                  size={13}
-                  style={{
-                    transform: isCharsetRolling ? 'rotate(360deg)' : 'none',
-                    transition: 'transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  }}
-                />
+                <Dices size={13} />
               </button>
             </div>
           </div>
@@ -527,14 +471,14 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <Step n="04" label="Adjust" />
+      <WorkflowStep n="04" label="Adjust" />
       <div className="basic-section">
         <SimpleLevelsSlider
           config={toneConfig}
           onChangeConfig={onChangeToneConfig}
         />
 
-        <div className="tonal-subheading" style={{ marginTop: '4px' }}>
+        <div className="tonal-subheading tonal-subheading-tight">
           <span>Detail &amp; Filtering</span>
         </div>
         <AdjustSlider id="sharpenStrength" config={viewConfig} onChangeConfig={updateAdjust} />
@@ -543,7 +487,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <Step n="05" label="Color" />
+      <WorkflowStep n="05" label="Color" />
       <div className="basic-section">
         <PaletteControls
           currentTheme={theme}
@@ -577,7 +521,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           }
         />
 
-        <div className="color-backdrop-section" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+        <div className="color-backdrop-section">
           <BackgroundRow
             value={viewConfig.background}
             onChange={(bg) => updateView('background', bg)}
@@ -591,9 +535,9 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
         picture. Detail, source layer and the optics tuning stay at whatever
         ADVANCED left them — this panel only ever hides.
       */}
-      <Step n="06" label="Post" />
+      <WorkflowStep n="06" label="Post" />
       <div className="basic-section">
-        <div className="control-row" style={{ alignItems: 'center' }}>
+        <div className="control-row">
           <span
             className="control-label"
             title="Bring the original back in over its own rasterization, framed identically."
@@ -602,7 +546,9 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           </span>
           <button
             type="button"
-            className={`btn btn-sm ${postProcess.sourceOverlay.enabled ? 'btn-primary' : ''}`}
+            className={`btn btn-sm btn-onoff ${
+              postProcess.sourceOverlay.enabled ? 'btn-primary' : ''
+            }`}
             onClick={() =>
               onChangePostProcess({
                 ...postProcess,
@@ -613,18 +559,17 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
               })
             }
             disabled={!mediaElement}
-            style={{ minWidth: '46px', height: '18px', fontSize: '9.5px', fontWeight: 700 }}
           >
             {postProcess.sourceOverlay.enabled ? 'ON' : 'OFF'}
           </button>
         </div>
 
-        <div className="control-row" style={{ alignItems: 'center' }}>
+        <div className="control-row">
           <span className="control-label" title="How the original and the raster combine.">
             Blend
           </span>
           <select
-            className="number-input"
+            className="number-input control-fill"
             value={postProcess.sourceOverlay.blend}
             disabled={!postProcess.sourceOverlay.enabled}
             onChange={(e) =>
@@ -636,7 +581,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
                 },
               })
             }
-            style={{ flex: 1, minWidth: 0, textAlign: 'left', height: '24px', padding: '2px 6px' }}
           >
             {BASIC_BLEND_MODES.map((m) => (
               <option key={m} value={m}>
@@ -682,7 +626,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       </div>
 
       {/* ================================================================ */}
-      <Step n="07" label="Export" />
+      <WorkflowStep n="07" label="Export" />
       <div className="basic-section">
         <button
           type="button"

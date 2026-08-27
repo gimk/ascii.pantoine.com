@@ -6,7 +6,7 @@ import {
   POST_PROCESS_DEFAULTS,
   RasterOutputMode,
 } from '../types/ascii';
-import { PrecisionSlider, DeferredColorInput } from './controlPrimitives';
+import { PrecisionSlider, DeferredColorInput, WorkflowStep } from './controlPrimitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { supportsCanvasFilter } from '../engine/postProcess';
 import { Layers, Sparkles } from 'lucide-react';
@@ -32,19 +32,37 @@ interface PostProcessControlsProps {
   /** No source loaded, so there is nothing for the overlay to bring back. */
   sourceUnavailable?: boolean;
   persistKeyPrefix: string;
+  /** Workflow number of this section, continuing the sidebar's own count. */
+  step: string;
+  /** Anchor for the sidebar rail to scroll to. */
+  anchorRef?: React.Ref<HTMLDivElement>;
 }
 
 /**
- * Grouped so the list reads as a set of intentions rather than sixteen
- * equivalent words. The order inside each group runs from subtle to extreme.
+ * One flat list, ordered darken -> lighten -> contrast -> comparative ->
+ * component, and subtle to extreme inside each of those runs.
+ *
+ * The optgroup headings that used to carry that order were six unclickable
+ * rows in a sixteen-row dropdown, and the grouping is legible from the order
+ * itself. The order is the documentation now.
  */
-const BLEND_GROUPS: { label: string; modes: BlendMode[] }[] = [
-  { label: 'Normal', modes: ['normal'] },
-  { label: 'Darken', modes: ['darken', 'multiply', 'color-burn'] },
-  { label: 'Lighten', modes: ['lighten', 'screen', 'color-dodge'] },
-  { label: 'Contrast', modes: ['overlay', 'soft-light', 'hard-light'] },
-  { label: 'Comparative', modes: ['difference', 'exclusion'] },
-  { label: 'Component', modes: ['hue', 'saturation', 'color', 'luminosity'] },
+const BLEND_MODES: BlendMode[] = [
+  'normal',
+  'darken',
+  'multiply',
+  'color-burn',
+  'lighten',
+  'screen',
+  'color-dodge',
+  'overlay',
+  'soft-light',
+  'hard-light',
+  'difference',
+  'exclusion',
+  'hue',
+  'saturation',
+  'color',
+  'luminosity',
 ];
 
 const BLEND_LABELS: Partial<Record<BlendMode, string>> = {
@@ -66,6 +84,8 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
   rasterMode,
   sourceUnavailable = false,
   persistKeyPrefix,
+  step,
+  anchorRef,
 }) => {
   const overlay = config.sourceOverlay;
   const glow = config.glow;
@@ -89,11 +109,7 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
 
   return (
     <>
-      <div className="sidebar-workflow-title">
-        <span className="sidebar-workflow-step">04</span>
-        <span className="sidebar-workflow-label">Post-Processing</span>
-        <div className="sidebar-workflow-line" />
-      </div>
+      <WorkflowStep n={step} label="Post-Processing" anchorRef={anchorRef} />
 
       {/*
         The decks sit in a `.tab-content`, like every other collapsible in the
@@ -110,7 +126,7 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
           onReset={() => setOverlay(POST_PROCESS_DEFAULTS.sourceOverlay)}
           resetTitle="Reset the overlay"
         >
-          <div className="control-row" style={{ alignItems: 'center' }}>
+          <div className="control-row">
             <span
               className="control-label"
               title="Bring the source back in over its own rasterization, framed identically."
@@ -119,17 +135,16 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
             </span>
             <button
               type="button"
-              className={`btn btn-sm ${overlay.enabled ? 'btn-primary' : ''}`}
+              className={`btn btn-sm btn-onoff ${overlay.enabled ? 'btn-primary' : ''}`}
               onClick={() => setOverlay({ enabled: !overlay.enabled })}
               disabled={sourceUnavailable}
-              style={{ minWidth: '46px', height: '18px', fontSize: '9.5px', fontWeight: 700 }}
             >
               {overlay.enabled ? 'ON' : 'OFF'}
             </button>
           </div>
 
           {sourceUnavailable && (
-            <div className="panel-note" style={{ margin: '6px 0' }}>
+            <div className="panel-note">
               {/*
                 One `<span>`, always. `.panel-note` is a flex row and only its
                 span gets `flex: 1`, so loose text nodes become separate flex
@@ -139,19 +154,19 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
             </div>
           )}
 
-          <div className="control-row" style={{ alignItems: 'center' }}>
+          <div className="control-row">
             <span
               className="control-label"
               title="Which layer carries the blend. Not a z-order swap: most of these modes are non-commutative, so the two give different pictures."
             >
               Placement
             </span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div className="btn-group">
               {(['under', 'over'] as const).map((p) => (
                 <button
                   key={p}
                   type="button"
-                  className={`btn btn-sm ${overlay.placement === p ? 'btn-primary' : ''}`}
+                  className={`btn btn-sm btn-toggle ${overlay.placement === p ? 'btn-primary' : ''}`}
                   onClick={() => setOverlay({ placement: p })}
                   disabled={overlayDisabled}
                   title={
@@ -159,7 +174,6 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
                       ? 'Source beneath; the raster blends onto it'
                       : 'Source on top, blending onto the raster'
                   }
-                  style={{ height: '22px', fontSize: '10px', minWidth: '48px' }}
                 >
                   {p.toUpperCase()}
                 </button>
@@ -167,25 +181,20 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
             </div>
           </div>
 
-          <div className="control-row" style={{ alignItems: 'center' }}>
+          <div className="control-row">
             <span className="control-label" title="How the two layers combine.">
               Blend
             </span>
             <select
-              className="number-input"
+              className="number-input control-fill"
               value={overlay.blend}
               disabled={overlayDisabled}
               onChange={(e) => setOverlay({ blend: e.target.value as BlendMode })}
-              style={{ flex: 1, minWidth: 0 }}
             >
-              {BLEND_GROUPS.map((g) => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.modes.map((m) => (
-                    <option key={m} value={m}>
-                      {blendLabel(m)}
-                    </option>
-                  ))}
-                </optgroup>
+              {BLEND_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {blendLabel(m)}
+                </option>
               ))}
             </select>
           </div>
@@ -203,22 +212,21 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
             />
           </div>
 
-          <div className="control-row" style={{ alignItems: 'center' }}>
+          <div className="control-row">
             <span
               className="control-label"
               title="Supersample of the raster's display box. An ASCII cell is six pixels wide, so 1x already gives a readable photograph behind the glyphs; a pixel cell is one, so raise it there."
             >
               Detail
             </span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div className="btn-group">
               {QUALITY_STEPS.map((q) => (
                 <button
                   key={q}
                   type="button"
-                  className={`btn btn-sm ${overlay.quality === q ? 'btn-primary' : ''}`}
+                  className={`btn btn-sm btn-toggle btn-toggle-narrow ${overlay.quality === q ? 'btn-primary' : ''}`}
                   onClick={() => setOverlay({ quality: q })}
                   disabled={overlayDisabled}
-                  style={{ height: '22px', fontSize: '10px', minWidth: '34px' }}
                 >
                   {q}×
                 </button>
@@ -226,17 +234,17 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
             </div>
           </div>
 
-          <div className="control-row" style={{ alignItems: 'center' }}>
+          <div className="control-row">
             <span
               className="control-label"
               title="The raw framed source, or the graded luminance field as it left tone mapping — the picture the dither quantized, one step before it was quantized."
             >
               Layer
             </span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div className="btn-group">
               <button
                 type="button"
-                className={`btn btn-sm ${overlay.source === 'original' ? 'btn-primary' : ''}`}
+                className={`btn btn-sm btn-toggle ${overlay.source === 'original' ? 'btn-primary' : ''}`}
                 onClick={() => setOverlay({ source: 'original' })}
                 disabled={overlayDisabled || !rawSourceAvailable}
                 title={
@@ -244,17 +252,15 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
                     ? 'The untouched source, framed as the raster framed it'
                     : 'A synth field has no source distinct from itself'
                 }
-                style={{ height: '22px', fontSize: '10px', minWidth: '58px' }}
               >
                 ORIGINAL
               </button>
               <button
                 type="button"
-                className={`btn btn-sm ${overlay.source === 'graded' ? 'btn-primary' : ''}`}
+                className={`btn btn-sm btn-toggle ${overlay.source === 'graded' ? 'btn-primary' : ''}`}
                 onClick={() => setOverlay({ source: 'graded' })}
                 disabled={overlayDisabled}
                 title="The graded greyscale, pre-dither"
-                style={{ height: '22px', fontSize: '10px', minWidth: '58px' }}
               >
                 GRADED
               </button>
@@ -277,7 +283,7 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
           resetTitle="Reset the optics"
         >
           {noFilter && (
-            <div className="panel-note" style={{ margin: '6px 0' }}>
+            <div className="panel-note">
               <span>This browser has no canvas blur, so the glow is skipped.</span>
             </div>
           )}
@@ -319,14 +325,14 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
               onChange={(v) => setGlow({ radius: v })}
             />
           </div>
-          <div className="control-row" style={{ alignItems: 'center' }}>
+          <div className="control-row">
             <span
               className="control-label"
               title="Empty keeps the frame's own colours in the halo, which is what a tinted beam actually does."
             >
               Tint
             </span>
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flex: 1, minWidth: 0 }}>
+            <div className="btn-group control-fill">
               <DeferredColorInput
                 value={glow.tint}
                 fallback="#ffffff"
@@ -335,11 +341,10 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
               />
               <button
                 type="button"
-                className={`btn btn-sm ${!glow.tint ? 'btn-primary' : ''}`}
+                className={`btn btn-sm btn-toggle ${!glow.tint ? 'btn-primary' : ''}`}
                 onClick={() => setGlow({ tint: '' })}
                 disabled={glow.amount <= 0}
                 title="Bloom in the frame's own colours"
-                style={{ height: '22px', fontSize: '10px' }}
               >
                 AUTO
               </button>
@@ -383,7 +388,7 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
           </div>
 
           {rasterMode === 'vector' && (
-            <div className="panel-note" style={{ margin: '6px 0' }}>
+            <div className="panel-note">
               {/*
                 One line. The full version of this — geometry versus pixels,
                 and which one survives into an SVG — is a paragraph, and a

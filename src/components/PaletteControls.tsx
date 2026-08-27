@@ -260,7 +260,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
       {/* INDEXED PALETTES */}
       {primaryMode === 'indexed' && (
         <div className="palette-subpanel" ref={dropdownRef}>
-          <div className="control-row" style={{ marginBottom: '6px' }}>
+          <div className="control-row control-row-tight">
             <span className="control-label">Preset Palette</span>
           </div>
 
@@ -364,7 +364,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
 
           {/* Palette Match Mode */}
           {activePalette && onChangeMediaColorConfig && (
-            <div className="control-row" style={{ marginTop: '8px' }}>
+            <div className="control-row control-row-spaced">
               <span className="control-label" title={paletteMatchHint}>
                 Palette Match
               </span>

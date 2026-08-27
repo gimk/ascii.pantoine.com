@@ -188,7 +188,6 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         </span>
         <span
           className="collapsible-header-right"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
         >
           {onReset && (
             <button
@@ -205,8 +204,8 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           )}
           {headerRight && (
             <div
+              className="collapsible-header-slot"
               onClick={(e) => e.stopPropagation()}
-              style={{ display: 'flex', alignItems: 'center' }}
             >
               {headerRight}
             </div>

@@ -102,34 +102,24 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
       <CollapsibleSection
         title="Online 3D Library"
         icon={<Globe size={12} />}
-        badge={<span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: 'bold' }}>KHRONOS &amp; THREE.JS</span>}
+        badge={<span className="collapsible-badge-inline is-accent">KHRONOS &amp; THREE.JS</span>}
         persistKey="ModelSettingsControls-online-3d-library"
       >
-        <p style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginBottom: '8px', lineHeight: 1.35 }}>
+        <p className="control-hint control-hint-dim control-row-spaced-below">
           Explore official Khronos glTF benchmark assets &amp; open 3D models. Click any model to render in ASCII.
         </p>
 
         {/* Search Input */}
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-          <div style={{ position: 'relative', flex: 1 }}>
+        <div className="model-search-row">
+          <div className="model-search-field">
             <input
               type="text"
               className="number-input"
-              style={{ width: '100%', textAlign: 'left', padding: '5px 8px 5px 24px', fontSize: '11px' }}
               placeholder="Search 3D models (duck, ferrari, robot, helmet)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <Search
-              size={12}
-              style={{
-                position: 'absolute',
-                left: '7px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--text-dim)',
-              }}
-            />
+            <Search size={12} className="model-search-icon" />
           </div>
           {searchQuery && (
             <button className="btn btn-sm" onClick={() => setSearchQuery('')} title="Clear search">
@@ -139,22 +129,12 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
         </div>
 
         {/* Category Pills */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '4px',
-            overflowX: 'auto',
-            paddingBottom: '4px',
-            marginBottom: '8px',
-            scrollbarWidth: 'none',
-          }}
-        >
+        <div className="model-category-rail">
           {KHRONOS_CATEGORIES.map((cat) => (
             <button
               key={cat}
-              className={`chip-btn ${selectedCategory === cat ? 'active' : ''}`}
+              className={`chip-btn model-category-chip ${selectedCategory === cat ? 'active' : ''}`}
               onClick={() => setSelectedCategory(cat)}
-              style={{ whiteSpace: 'nowrap', fontSize: '10px', padding: '2px 8px' }}
             >
               {cat}
             </button>
@@ -163,25 +143,16 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
 
         {/* Error message */}
         {errorMsg && (
-          <div className="alert-box alert-error" style={{ marginBottom: '8px', padding: '6px 8px', fontSize: '10px' }}>
+          <div className="alert-box alert-error alert-box-sm">
             <AlertCircle size={12} />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {/* Dense Text-List / Card Grid */}
-        <div
-          style={{
-            maxHeight: '220px',
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px',
-            paddingRight: '2px',
-          }}
-        >
+        <div className="model-result-list">
           {displayedOnlineModels.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-dim)', fontSize: '10px' }}>
+            <div className="model-result-empty">
               No models matched "{searchQuery}"
             </div>
           ) : (
@@ -195,51 +166,25 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
                 <div
                   key={model.id}
                   onClick={() => !isItemLoading && handleLoadRemote(model)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 8px',
-                    background: isSelected ? 'rgba(0, 255, 65, 0.08)' : 'var(--bg-control)',
-                    border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border-color)'}`,
-                    borderRadius: '3px',
-                    cursor: isItemLoading ? 'wait' : 'pointer',
-                    transition: 'all 0.12s ease-in-out',
-                    gap: '8px',
-                  }}
-                  className="online-model-item"
+                  className={`online-model-item${isSelected ? ' is-selected' : ''}${
+                    isItemLoading ? ' is-loading' : ''
+                  }`}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div className="online-model-main">
+                    <div className="control-inline">
                       <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: isSelected ? 700 : 500,
-                          color: isSelected ? 'var(--accent)' : 'var(--text-primary)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
+                        className="online-model-name"
                       >
                         {model.title}
                       </span>
                     </div>
-                    <span style={{ fontSize: '10px', color: 'var(--text-dim)', lineHeight: 1.2 }}>
+                    <span className="online-model-credit">
                       by {model.author} ({model.license})
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        color: 'var(--text-dim)',
-                        background: 'var(--bg-primary)',
-                        padding: '1px 4px',
-                        borderRadius: '2px',
-                        border: '1px solid var(--border-color)',
-                      }}
-                    >
+                  <div className="online-model-meta">
+                    <span className="online-model-tris">
                       {model.triCount.toLocaleString()} tris
                     </span>
                     {isItemLoading ? (
@@ -275,41 +220,30 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
           <input
             type="file"
             ref={fileInputRef}
-            style={{ display: 'none' }}
+            className="file-input-hidden"
             accept=".obj,.stl,.gltf,.glb,.ply"
             onChange={handleFileChange}
           />
           {isLoadingFile ? (
-            <Loader2 size={24} className="dice-spin" color="var(--accent)" style={{ marginBottom: '8px' }} />
+            <Loader2 size={24} className="dice-spin dropzone-icon" color="var(--accent)" />
           ) : (
-            <FileCode size={24} color="var(--accent)" style={{ marginBottom: '8px' }} />
+            <FileCode size={24} className="dropzone-icon" color="var(--accent)" />
           )}
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
+          <div className="dropzone-title">
             {isLoadingFile ? 'PARSING 3D GEOMETRY...' : 'DROP 3D MODEL FILE HERE'}
           </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+          <div className="dropzone-hint">
             Supports .OBJ, .STL, .GLTF, .GLB, .PLY or click to browse
           </div>
         </div>
 
         {/* Current Active Geometry & Polycount Specs */}
-        <div
-          style={{
-            marginTop: '8px',
-            padding: '8px 10px',
-            background: 'var(--bg-control)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '3px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }} title={config.fileName || 'Default Mesh'}>
+        <div className="geometry-card">
+          <div className="info-card-row">
+            <span className="geometry-card-name" title={config.fileName || 'Default Mesh'}>
               {config.fileName || (config.sourceType === 'url' ? 'Online 3D Model' : 'Built-in 3D Model')}
             </span>
-            <span className="brand-badge" style={{ fontSize: '10px' }}>
+            <span className="brand-badge geometry-card-badge">
               {config.sourceType === 'file'
                 ? config.fileType?.toUpperCase()
                 : config.sourceType === 'url'
@@ -318,7 +252,7 @@ export const ModelImportControls: React.FC<ModelImportControlsProps> = ({
             </span>
           </div>
           {config.polyStats && (
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', gap: '12px' }}>
+            <div className="geometry-card-stats">
               <span>VERTICES: <strong>{config.polyStats.vertices.toLocaleString()}</strong></span>
               <span>FACES: <strong>{config.polyStats.faces.toLocaleString()}</strong></span>
             </div>
@@ -552,8 +486,7 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
         <div className="control-row">
           <span className="control-label">Auto Center Mesh</span>
           <button
-            className={`btn btn-sm ${config.autoCenter ? 'btn-primary' : ''}`}
-            style={{ minWidth: '80px' }}
+            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.autoCenter ? 'btn-primary' : ''}`}
             onClick={() => update('autoCenter', !config.autoCenter)}
           >
             {config.autoCenter ? 'ENABLED' : 'DISABLED'}
@@ -563,8 +496,7 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
         <div className="control-row">
           <span className="control-label">Normalize Bounding Size</span>
           <button
-            className={`btn btn-sm ${config.normalizeSize ? 'btn-primary' : ''}`}
-            style={{ minWidth: '80px' }}
+            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.normalizeSize ? 'btn-primary' : ''}`}
             onClick={() => update('normalizeSize', !config.normalizeSize)}
           >
             {config.normalizeSize ? 'ENABLED' : 'DISABLED'}
@@ -574,8 +506,7 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
         <div className="control-row">
           <span className="control-label">Flat Shading (Faceted Normals)</span>
           <button
-            className={`btn btn-sm ${config.flatShading ? 'btn-primary' : ''}`}
-            style={{ minWidth: '80px' }}
+            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.flatShading ? 'btn-primary' : ''}`}
             onClick={() => update('flatShading', !config.flatShading)}
           >
             {config.flatShading ? 'FLAT' : 'SMOOTH'}
@@ -585,8 +516,7 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
         <div className="control-row">
           <span className="control-label">Wireframe Edges Mode</span>
           <button
-            className={`btn btn-sm ${config.wireframe ? 'btn-primary' : ''}`}
-            style={{ minWidth: '80px' }}
+            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.wireframe ? 'btn-primary' : ''}`}
             onClick={() => update('wireframe', !config.wireframe)}
           >
             {config.wireframe ? 'ON' : 'OFF'}
@@ -596,8 +526,7 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
         <div className="control-row">
           <span className="control-label">Double-Sided Faces</span>
           <button
-            className={`btn btn-sm ${config.doubleSided ? 'btn-primary' : ''}`}
-            style={{ minWidth: '80px' }}
+            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.doubleSided ? 'btn-primary' : ''}`}
             onClick={() => update('doubleSided', !config.doubleSided)}
           >
             {config.doubleSided ? 'ON' : 'OFF'}
@@ -608,7 +537,6 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
           <span className="control-label">Invert Face Normals</span>
           <button
             className={`btn btn-sm ${config.invertNormals ? 'btn-primary' : ''}`}
-            style={{ minWidth: '80px' }}
             onClick={() => update('invertNormals', !config.invertNormals)}
           >
             {config.invertNormals ? 'INVERTED' : 'NORMAL'}

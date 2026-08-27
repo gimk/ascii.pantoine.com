@@ -432,23 +432,21 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
         <span className="control-label" title="Which way the beams sweep.">
           Scan Axis
         </span>
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div className="btn-group">
           <button
             type="button"
-            className={`btn btn-sm ${config.direction === 'vertical' ? 'btn-primary' : ''}`}
+            className={`btn btn-sm btn-toggle ${config.direction === 'vertical' ? 'btn-primary' : ''}`}
             onClick={() => set('direction', 'vertical')}
             title="Vertical beams deflected sideways"
-            style={{ height: '22px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}
           >
             <MoveVertical size={10} />
             <span>VERT</span>
           </button>
           <button
             type="button"
-            className={`btn btn-sm ${config.direction === 'horizontal' ? 'btn-primary' : ''}`}
+            className={`btn btn-sm btn-toggle ${config.direction === 'horizontal' ? 'btn-primary' : ''}`}
             onClick={() => set('direction', 'horizontal')}
             title="Horizontal beams deflected upward — the Rutt-Etra relief"
-            style={{ height: '22px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}
           >
             <MoveHorizontal size={10} />
             <span>HORIZ</span>
@@ -458,7 +456,7 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
 
       {renderRows(compact ? compactRows : GEOMETRY_ROWS)}
 
-      <div className="control-row" style={{ alignItems: 'center' }}>
+      <div className="control-row">
         <span
           className="control-label"
           title="Hide what is behind a nearer ridge. Which side the stack faces follows the sign of Deflection. Applies to the beams that stayed continuous."
@@ -467,9 +465,8 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
         </span>
         <button
           type="button"
-          className={`btn btn-sm ${config.occlusion ? 'btn-primary' : ''}`}
+          className={`btn btn-sm btn-onoff ${config.occlusion ? 'btn-primary' : ''}`}
           onClick={() => set('occlusion', !config.occlusion)}
-          style={{ minWidth: '46px', height: '22px', fontSize: '10px', fontWeight: 700 }}
         >
           {config.occlusion ? 'ON' : 'OFF'}
         </button>
@@ -486,10 +483,9 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
             <span>Carrier Modulation</span>
             <button
               type="button"
-              className={`btn btn-sm ${config.carrierEnabled ? 'btn-primary' : ''}`}
+              className={`btn btn-sm btn-onoff ${config.carrierEnabled ? 'btn-primary' : ''}`}
               onClick={() => set('carrierEnabled', !config.carrierEnabled)}
               title="Break the beam into pulses where the image is dark"
-              style={{ minWidth: '46px', height: '18px', fontSize: '9.5px', fontWeight: 700 }}
             >
               {config.carrierEnabled ? 'ON' : 'OFF'}
             </button>

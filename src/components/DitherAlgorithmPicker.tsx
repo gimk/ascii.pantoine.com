@@ -92,37 +92,25 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
   }, [selectedFamily]);
 
   return (
-    <div className="dither-picker-container" style={{ marginBottom: compact ? 0 : '10px' }}>
+    <div className={`dither-picker-container${compact ? ' compact' : ''}`}>
       {/* 1. Main Stepper, Dropdown & Surprise Me Bar */}
-      <div className="control-row" style={{ marginBottom: compact ? 0 : '8px', alignItems: 'center' }}>
-        <span className="control-label" style={{ flexShrink: 0 }}>
-          Algorithm
-        </span>
+      <div className="control-row">
+        <span className="control-label control-fixed">Algorithm</span>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+        <div className="control-cluster">
           {/* Previous */}
           <button
             type="button"
-            className="slider-nudge-btn"
+            className="slider-nudge-btn btn-icon-sq"
             onClick={() => handleStep(-1)}
             title="Previous algorithm (wraps around)"
-            style={{ width: '24px', height: '24px', padding: 0 }}
           >
             <ChevronLeft size={13} />
           </button>
 
           {/* Grouped Select Dropdown */}
           <select
-            className="number-input"
-            style={{
-              width: '165px',
-              textAlign: 'left',
-              padding: '2px 6px',
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              fontWeight: 700,
-              height: '24px',
-            }}
+            className="number-input stepper-select"
             value={value}
             onChange={(e) => onChange(e.target.value as DitherAlgorithm)}
           >
@@ -140,10 +128,9 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
           {/* Next */}
           <button
             type="button"
-            className="slider-nudge-btn"
+            className="slider-nudge-btn btn-icon-sq"
             onClick={() => handleStep(1)}
             title="Next algorithm (wraps around)"
-            style={{ width: '24px', height: '24px', padding: 0 }}
           >
             <ChevronRight size={13} />
           </button>
@@ -151,23 +138,11 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
           {/* Surprise Me / Randomizer Button */}
           <button
             type="button"
-            className="slider-nudge-btn"
+            className={`slider-nudge-btn btn-icon-sq btn-dice${isRolling ? ' rolling' : ''}`}
             onClick={handleRandomize}
             title="Surprise Me: pick a random algorithm"
-            style={{
-              width: '24px',
-              height: '24px',
-              padding: 0,
-              color: 'var(--accent)',
-            }}
           >
-            <Dices
-              size={13}
-              style={{
-                transform: isRolling ? 'rotate(360deg)' : 'none',
-                transition: 'transform 0.45s ease',
-              }}
-            />
+            <Dices size={13} />
           </button>
         </div>
       </div>
@@ -220,10 +195,11 @@ export const DitherAlgorithmPicker: React.FC<DitherAlgorithmPickerProps> = ({
         </button>
         <button
           type="button"
-          className={`dither-family-tab ${selectedFamily === 'all' ? 'active' : ''}`}
+          className={`dither-family-tab dither-family-tab-all ${
+            selectedFamily === 'all' ? 'active' : ''
+          }`}
           onClick={() => setSelectedFamily('all')}
           title="Show all 44 algorithms"
-          style={{ fontWeight: 800 }}
         >
           ALL ({familyCounts['all']})
         </button>

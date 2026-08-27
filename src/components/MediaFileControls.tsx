@@ -184,7 +184,7 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
       <>
         <button
           type="button"
-          className="btn btn-randomize basic-paste-btn"
+          className="btn btn-randomize btn-hero"
           onClick={handleClipboardPaste}
           title="Paste image directly from clipboard"
         >
@@ -193,29 +193,28 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
         </button>
 
         <div
-          className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
+          className={`model-dropzone dropzone-lg ${isDragging ? 'dragging' : ''}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          style={{ minHeight: '85px', padding: '12px 10px' }}
         >
           <input
             type="file"
             ref={fileInputRef}
-            style={{ display: 'none' }}
+            className="file-input-hidden"
             accept="image/*,video/mp4,video/webm,video/ogg,video/quicktime,.gif,.svg"
             onChange={handleFileInputChange}
           />
           {config.mediaType === 'video' ? (
-            <Video size={22} color="var(--accent)" style={{ marginBottom: '6px' }} />
+            <Video size={22} color="var(--accent)" className="dropzone-icon" />
           ) : (
-            <ImageIcon size={22} color="var(--accent)" style={{ marginBottom: '6px' }} />
+            <ImageIcon size={22} color="var(--accent)" className="dropzone-icon" />
           )}
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
+          <div className="dropzone-title">
             DROP IMAGE OR VIDEO HERE
           </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+          <div className="dropzone-hint">
             or click to browse
           </div>
         </div>
@@ -226,22 +225,10 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
   return (
     <div className="tab-content">
       {/* Large Clipboard Paste Hero Button */}
-      <div style={{ marginBottom: '14px' }}>
+      <div className="btn-hero-wrap">
         <button
           type="button"
-          className="btn btn-randomize"
-          style={{
-            width: '100%',
-            padding: '11px 14px',
-            fontSize: '11.5px',
-            fontWeight: 800,
-            letterSpacing: '0.07em',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            borderRadius: '4px',
-          }}
+          className="btn btn-randomize btn-hero"
           onClick={handleClipboardPaste}
           title="Paste image directly from clipboard (or press Cmd+V / Ctrl+V)"
         >
@@ -253,75 +240,52 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
       {/* File Upload & Source Dropzone */}
       <CollapsibleSection title="Import From File / URL" icon={<Upload size={12} />} persistKey="MediaFileControls-import-from-file-url" defaultOpen={true}>
         <div
-          className={`model-dropzone ${isDragging ? 'dragging' : ''}`}
+          className={`model-dropzone dropzone-lg ${isDragging ? 'dragging' : ''}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          style={{ minHeight: '85px', padding: '12px 10px' }}
         >
           <input
             type="file"
             ref={fileInputRef}
-            style={{ display: 'none' }}
+            className="file-input-hidden"
             accept="image/*,video/mp4,video/webm,video/ogg,video/quicktime,.gif,.svg"
             onChange={handleFileInputChange}
           />
           {config.mediaType === 'video' ? (
-            <Video size={22} color="var(--accent)" style={{ marginBottom: '6px' }} />
+            <Video size={22} color="var(--accent)" className="dropzone-icon" />
           ) : (
-            <ImageIcon size={22} color="var(--accent)" style={{ marginBottom: '6px' }} />
+            <ImageIcon size={22} color="var(--accent)" className="dropzone-icon" />
           )}
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
+          <div className="dropzone-title">
             DROP IMAGE OR VIDEO HERE
           </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+          <div className="dropzone-hint">
             PNG, JPG, WebP, GIF, SVG, MP4, WebM, MOV or click to browse
           </div>
         </div>
 
         {/* Current File Info */}
-        <div
-          style={{
-            marginTop: '8px',
-            padding: '6px 8px',
-            background: 'var(--bg-control)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '3px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: '10px',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden', flex: 1, minWidth: 0 }}>
-            {config.mediaType === 'video' ? <Film size={12} color="var(--accent)" style={{ flexShrink: 0 }} /> : <ImageIcon size={12} color="var(--accent)" style={{ flexShrink: 0 }} />}
-            <span
-              style={{
-                color: 'var(--text-primary)',
-                fontWeight: 600,
-                textOverflow: 'ellipsis',
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                minWidth: 0,
-              }}
-              title={config.fileName || 'Active Media File'}
-            >
+        <div className="media-file-card">
+          <div className="media-file-card-left">
+            {config.mediaType === 'video' ? (
+              <Film size={12} color="var(--accent)" className="control-fixed" />
+            ) : (
+              <ImageIcon size={12} color="var(--accent)" className="control-fixed" />
+            )}
+            <span className="media-file-name" title={config.fileName || 'Active Media File'}>
               {config.fileName || 'Active Media File'}
             </span>
           </div>
-          <span className="brand-version" style={{ fontSize: '10px', textTransform: 'uppercase', flexShrink: 0 }}>
-            {config.sourceType}
-          </span>
+          <span className="brand-version media-file-source">{config.sourceType}</span>
         </div>
 
         {/* URL Import */}
-        <form onSubmit={handleUrlSubmit} style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+        <form onSubmit={handleUrlSubmit} className="media-url-form">
           <input
             type="text"
-            className="number-input"
-            style={{ flex: 1, textAlign: 'left', padding: '4px 6px', fontSize: '10.5px' }}
+            className="number-input media-url-input"
             placeholder="Load media from URL (http://...)"
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
@@ -336,7 +300,7 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
       {/* Video Playback & Timeline Controls (if video source) */}
       {isVideo && (
         <CollapsibleSection title="Video Playback" icon={<Film size={12} />} persistKey="MediaFileControls-video-playback">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <div className="video-transport">
             <button className="btn btn-primary btn-sm" onClick={toggleVideoPlayback}>
               {isVideoPlaying ? <Pause size={12} /> : <Play size={12} />}
               {isVideoPlaying ? 'PAUSE' : 'PLAY'}
@@ -353,14 +317,14 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
               LOOP {config.loop ? '[ON]' : '[OFF]'}
             </button>
 
-            <div style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            <div className="video-timecode">
               {formatTime(videoCurrentTime)} / {formatTime(videoDuration)}
             </div>
           </div>
 
           {/* Timeline scrubber */}
           <div className="control-row">
-            <span className="control-label" style={{ flex: 'none', width: '50px' }}>Timeline</span>
+            <span className="control-label video-timeline-label">Timeline</span>
             <input
               type="range"
               className="range-slider"
@@ -373,9 +337,9 @@ export const MediaUploadControls: React.FC<MediaUploadControlsProps> = ({
           </div>
 
           {/* Playback speed */}
-          <div className="control-row" style={{ marginTop: '6px' }}>
+          <div className="control-row control-row-tight">
             <span className="control-label">Speed</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div className="btn-group">
               {[0.5, 1.0, 1.5, 2.0].map((spd) => (
                 <button
                   key={spd}
@@ -440,7 +404,7 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
         {/* Fit Mode */}
         <div className="control-row">
           <span className="control-label">Fit Mode</span>
-          <div style={{ display: 'flex', gap: '3px' }}>
+          <div className="btn-group">
             {[
               { id: 'contain', label: 'CONTAIN' },
               { id: 'cover', label: 'COVER' },
@@ -460,7 +424,7 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
 
         {/* Scale / Zoom */}
         <div className="control-row">
-          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span className="control-label control-label-icon">
             <ZoomIn size={11} /> Scale (Zoom)
           </span>
           <div className="control-input-wrapper">
@@ -481,7 +445,7 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
 
         {/* Pan Offset X */}
         <div className="control-row">
-          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span className="control-label control-label-icon">
             <Move size={11} /> Pan Offset X
           </span>
           <div className="control-input-wrapper">
@@ -502,7 +466,7 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
 
         {/* Pan Offset Y */}
         <div className="control-row">
-          <span className="control-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span className="control-label control-label-icon">
             <Move size={11} /> Pan Offset Y
           </span>
           <div className="control-input-wrapper">
@@ -541,16 +505,15 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
         </div>
 
         {/* Quick Rotation & Flip Action Buttons */}
-        <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
-          <button className="btn btn-sm" style={{ flex: 1 }} onClick={() => rotateBy(-90)} title="Rotate Left 90°">
+        <div className="btn-group btn-row-even control-row-spaced">
+          <button className="btn btn-sm" onClick={() => rotateBy(-90)} title="Rotate Left 90°">
             <RotateCcw size={11} /> -90°
           </button>
-          <button className="btn btn-sm" style={{ flex: 1 }} onClick={() => rotateBy(90)} title="Rotate Right 90°">
+          <button className="btn btn-sm" onClick={() => rotateBy(90)} title="Rotate Right 90°">
             <RotateCw size={11} /> +90°
           </button>
           <button
             className={`btn btn-sm ${config.flipX ? 'btn-primary' : ''}`}
-            style={{ flex: 1 }}
             onClick={() => update('flipX', !config.flipX)}
             title="Flip Horizontal"
           >
@@ -558,7 +521,6 @@ export const MediaFramingControls: React.FC<MediaFramingControlsProps> = ({
           </button>
           <button
             className={`btn btn-sm ${config.flipY ? 'btn-primary' : ''}`}
-            style={{ flex: 1 }}
             onClick={() => update('flipY', !config.flipY)}
             title="Flip Vertical"
           >

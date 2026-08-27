@@ -23,6 +23,22 @@
   --accent-glow: rgba(0, 255, 102, 0.11);
   
   --font-mono: 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* ------------------------------------------------------------------------
+     Sidebar rhythm
+
+     The sidebar is one continuous column in both UI modes, so the numbered
+     rules are the only thing marking where one step ends and the next begins.
+     These two numbers own that: `--section-gap` is the air above every rule,
+     `--section-tail` the air every section leaves under its last control.
+     Every block that can sit between two rules ends on `--section-tail`, so
+     the gap is the same whichever kind of block precedes it.
+     ------------------------------------------------------------------------ */
+  --sidebar-gutter: 14px;
+  --section-gap: 26px;
+  --section-tail: 10px;
+  /* Height of the sticky rail, so a jump lands the rule below it. */
+  --sidebar-rail-height: 46px;
 }
 
 /* Theme Variations */
@@ -177,6 +193,7 @@ html, body, #root {
 
 .brand-logo {
   font-size: 14px;
+  color: var(--accent);
 }
 
 .brand-version {
@@ -1160,7 +1177,8 @@ html, body, #root {
 
 /* Tab Content */
 .tab-content {
-  padding: 14px;
+  /* Bottom is --section-tail, so every seam above a rule measures the same. */
+  padding: 14px var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1219,6 +1237,12 @@ html, body, #root {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* Caller-supplied control in the header, kept off the disclosure's click. */
+.collapsible-header-slot {
+  display: flex;
+  align-items: center;
 }
 
 .collapsible-header:hover {
@@ -1324,12 +1348,30 @@ html, body, #root {
 /*
  * Sidebar Workflow Navigation & Step Banners
  */
+/* ---------------------------------------------------------------------------
+   Numbered section rule
+
+   The one place the space above a section is set. It used to come out of
+   whatever the preceding block happened to pad with — 4px after a card grid,
+   14px after a collapsible deck — which is why the column read as unevenly
+   spaced. Now the rule owns the gap above and the blocks all end on
+   `--section-tail`, so every seam is the same size.
+   --------------------------------------------------------------------------- */
 .sidebar-workflow-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px 4px 14px;
+  margin-top: var(--section-gap);
+  padding: 0 var(--sidebar-gutter) 8px var(--sidebar-gutter);
+  /* Clears the sticky rail when the rail scrolls to this rule. */
+  scroll-margin-top: calc(var(--sidebar-rail-height) + 10px);
   user-select: none;
+}
+
+/* Nothing above the first rule but the rail, which draws its own border. */
+.tab-nav + .sidebar-workflow-title,
+.basic-panel > .sidebar-workflow-title:first-child {
+  margin-top: 14px;
 }
 
 .sidebar-workflow-step {
@@ -1338,7 +1380,8 @@ html, body, #root {
   font-family: var(--font-mono);
   color: var(--accent);
   background: var(--bg-control);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
   padding: 1px 5px;
   border-radius: 2px;
   letter-spacing: 0.6px;
@@ -1349,7 +1392,7 @@ html, body, #root {
   font-weight: 800;
   font-family: var(--font-mono);
   letter-spacing: 0.8px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   text-transform: uppercase;
 }
 
@@ -1357,7 +1400,6 @@ html, body, #root {
   flex: 1;
   height: 1px;
   background: var(--border-color);
-  opacity: 0.6;
 }
 
 /*
@@ -1365,7 +1407,7 @@ html, body, #root {
  * Sits permanently at the top of the CONTENT panel without disclosures.
  */
 .source-selector-wrapper {
-  padding: 8px 14px 4px 14px;
+  padding: 0 var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
 }
 
 .source-mode-frame {
@@ -1578,15 +1620,66 @@ html, body, #root {
   color: var(--accent);
 }
 
-/* Render Output Mode Selector — high hierarchy command cards matching content source picker */
-.render-mode-selector-wrapper {
-  padding: 14px 14px 4px 14px;
-}
-
+/* Render Output Mode Selector — the same command cards as the content picker,
+   rendered from `OutputModeCards` in both UI modes. */
 .render-mode-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.render-mode-grid-compact {
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+   .source-card-mini — the BASIC-sized command card
+
+   Same card as above, and deliberately so: it inherits every hover and active
+   rule, so the accent fill on the icon and the glow on selection are the ones
+   ADVANCED already taught. What comes off is the description, the corner badge
+   and the ACTIVE/READY footer — about half the height and, at three tiles in a
+   360px column, none of the meaning. The live dot survives, moved to the
+   corner the badge vacated.
+   --------------------------------------------------------------------------- */
+.source-card-mini {
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 10px 6px 9px 6px;
+  text-align: center;
+}
+
+.source-card-mini .source-card-header {
+  justify-content: center;
+  margin-bottom: 0;
+}
+
+.source-card-mini .source-card-icon-wrap {
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+}
+
+.source-card-mini .source-card-body {
+  align-items: center;
+  margin: 0;
+  gap: 0;
+}
+
+.source-card-mini .source-card-name {
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+/* Where the badge used to sit, so an active tile still reads at a glance. */
+.source-card-mini > .source-card-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 5px;
+  height: 5px;
 }
 
 /* Sub-group Headings for Tonal & Effect Controls */
@@ -1642,6 +1735,21 @@ html, body, #root {
   margin-top: 0;
 }
 
+/*
+ * Two overrides for a subheading that is not opening a fresh block of air: it
+ * either leads its container outright, or follows a control that already left
+ * a gap. The 16px default would read as a paragraph break in both cases.
+ */
+.tonal-subheading-flush,
+.section-subheading-flush {
+  margin-top: 0;
+}
+
+.tonal-subheading-tight,
+.section-subheading-tight {
+  margin-top: 4px;
+}
+
 /* Quantize Levels UI */
 .quantize-chip-row {
   display: grid;
@@ -1680,6 +1788,25 @@ html, body, #root {
 }
 
 /* Dither Algorithm Explorer Styles */
+
+/*
+ * The picker is a section of its own in ADVANCED and one row of a step in
+ * BASIC, which is the whole of the difference between the two: the compact
+ * form gives up its trailing air rather than any control.
+ */
+.dither-picker-container {
+  margin-bottom: 10px;
+}
+
+.dither-picker-container > .control-row {
+  margin-bottom: 8px;
+}
+
+.dither-picker-container.compact,
+.dither-picker-container.compact > .control-row {
+  margin-bottom: 0;
+}
+
 .dither-family-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1708,6 +1835,11 @@ html, body, #root {
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ALL is the escape hatch out of the families, so it carries a touch more. */
+.dither-family-tab-all {
+  font-weight: 800;
 }
 
 .dither-family-tab:hover {
@@ -1963,6 +2095,199 @@ html, body, #root {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--bg-control-hover);
+}
+
+/* ---------------------------------------------------------------------------
+   Tone curve & levels — the two graph controls
+
+   Both are a framed block with a square-ish graph and a readout under it, and
+   both used to spell every measurement out at the call site.
+   --------------------------------------------------------------------------- */
+
+/* A recessed frame around a graph or a group of controls. */
+.framed-block {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.framed-block-tight {
+  padding: 8px 10px 10px 10px;
+}
+
+.curve-graph {
+  position: relative;
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.curve-graph.is-dragging {
+  cursor: grabbing;
+}
+
+.curve-graph > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.curve-axis-scale {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 260px;
+  margin: 4px auto 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.curve-readout {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.curve-point-count {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.curve-section {
+  margin-bottom: 20px;
+}
+
+/* The histogram sibling of `.curve-graph` — same frame, fixed height. */
+.histogram-frame {
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.histogram-frame > svg {
+  display: block;
+  width: 100%;
+  height: 84px;
+  touch-action: none;
+}
+
+.histogram-telemetry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  max-width: 260px;
+  margin: 6px auto 0;
+}
+
+.histogram-readout {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.histogram-note {
+  color: var(--accent);
+}
+
+.btn-auto-levels {
+  height: 20px;
+  min-height: 20px;
+  padding: 1px 8px;
+  font-size: 10px;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+/* A filled state chip beside a subheading — ACTIVE, ON. */
+.badge-filled {
+  padding: 1px 4px;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* A group that opens its own stretch of the panel. */
+.panel-group {
+  margin-bottom: 20px;
+}
+
+.panel-group-below {
+  margin-top: 20px;
+}
+
+.quantize-chip-row-inset {
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
+/* The BLACK / MID / WHITE trio under the levels histogram. */
+.levels-readout {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.levels-readout-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.levels-readout-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.levels-scrubber {
+  display: block;
+  width: 100%;
+  height: 28px;
+  touch-action: none;
+  cursor: ew-resize;
+}
+
+/* The draggable black / mid / white marks on both levels scrubbers. */
+.levels-handle {
+  cursor: ew-resize;
+}
+
+/* A group that hangs off the control above it, behind a hairline. */
+.subsection-divided {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* An inline cluster at the sidebar's standard 6px. */
+.control-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* Curve Quick Preset Toolbar */
@@ -2412,7 +2737,770 @@ select:disabled {
 
 .btn-group {
   display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Control-row button variants
+
+   The right-hand side of a `.control-row` is a fixed vocabulary: a segmented
+   choice, or a single ON/OFF pill. Both used to be spelled out inline at every
+   call site, which is why the pill was 18px tall in three places and 22px in a
+   fourth. One height each, declared once.
+   --------------------------------------------------------------------------- */
+
+/* Segmented choice — UNDER/OVER, 1x/2x/4x, ORIGINAL/GRADED, VERT/HORIZ. */
+.btn-toggle {
+  height: 22px;
+  min-height: 22px;
+  min-width: 46px;
+  padding: 0 8px;
+  font-size: 10px;
+  gap: 3px;
+}
+
+/* Two or three glyphs, where 46px would leave the label swimming. */
+.btn-toggle-narrow {
+  min-width: 32px;
+  padding: 0 6px;
+}
+
+/* A whole word either way — ENABLED/DISABLED, FLAT/SMOOTH. */
+.btn-toggle-wide {
+  min-width: 80px;
+}
+
+/* The binary pill. Shorter than a segmented choice: it is one word, not a set. */
+.btn-onoff {
+  height: 20px;
+  min-height: 20px;
+  min-width: 46px;
+  padding: 0 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+/* The smallest button in the app: an inline RESET beside a deck title. */
+.btn-micro {
+  height: 18px;
+  min-height: 18px;
+  padding: 1px 6px;
+  font-size: 9.5px;
+  gap: 3px;
+}
+
+/* ---------------------------------------------------------------------------
+   Colour swatch + hex field
+   --------------------------------------------------------------------------- */
+.color-swatch {
+  position: relative;
+  width: 24px;
+  height: 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* The real <input type="color">, sized over the swatch and made invisible. */
+.color-swatch > input[type='color'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.color-swatch.control-disabled,
+.color-swatch.control-disabled > input[type='color'] {
+  cursor: not-allowed;
+}
+
+.color-hex-field {
+  font-size: 10px;
+}
+
+/* Square icon button — charset steppers, dice, and the +/- nudges. */
+.btn-icon-sq {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Control-row layout helpers
+
+   `.control-label` takes `flex: 1`, so anything on the right that must absorb
+   the remaining width has to say so. These are the ways it does.
+   --------------------------------------------------------------------------- */
+
+/* Grow into the row, and ellipsize rather than push the row wide. */
+.control-fill {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hold your natural width against a `flex: 1` neighbour. */
+.control-fixed {
+  flex-shrink: 0;
+}
+
+/* A cluster of small controls that must stay on one line. */
+.control-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+/* Two rows that belong together, and one that starts a new thought. */
+.control-row-tight {
+  margin-bottom: 6px;
+}
+
+.control-row-spaced {
+  margin-top: 8px;
+}
+
+/* A block that closes a thought, with the next one starting under it. */
+.control-row-spaced-below {
+  margin-bottom: 10px;
+}
+
+/* A live readout in a collapsible's badge slot. */
+.collapsible-badge-inline {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.collapsible-badge-inline.is-accent {
+  color: var(--accent);
+}
+
+/* An accent-outlined state chip in a badge slot — OVERRIDDEN, DIVERGENT. */
+.badge-outline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Formula editor — the synth's custom-code deck
+   --------------------------------------------------------------------------- */
+.formula-notice {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+
+.formula-notice-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.formula-notice-body {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.formula-notice-action {
+  width: 100%;
+  margin-top: 8px;
+  font-size: 10.5px;
+}
+
+.formula-inputs {
+  margin-bottom: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.formula-editor-main {
+  min-height: 220px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.formula-editor-prepare {
+  min-height: 55px;
+  font-size: 10.5px;
+}
+
+.formula-snippets {
+  margin-top: 8px;
+}
+
+.formula-snippets-title,
+.formula-prepare-title {
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.formula-prepare {
+  margin-top: 10px;
+}
+
+.formula-prepare-title {
+  margin-bottom: 3px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Blank line between two runs of sliders inside one deck. */
+.slider-gap {
+  height: 4px;
+}
+
+/* Half of --section-tail, for a block that follows its control closely. */
+.control-row-spaced-tight {
+  margin-top: 6px;
+}
+
+/* A nest that opens its section rather than following a control. */
+.collapsible-nest-flush {
+  margin-top: 0;
+}
+
+/* An explanatory line under the control it explains. */
+.control-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/* Quieter still, for a lede that introduces a whole deck. */
+.control-hint-dim {
+  color: var(--text-dim);
+}
+
+/* A hairline between two groups of rows inside one section body. */
+.control-separator {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border-color);
+  opacity: 0.7;
+}
+
+/* Even button grids — shading modes, orientation strips, export rows. */
+.btn-grid-2,
+.btn-grid-3,
+.btn-grid-4 {
+  display: grid;
+  gap: 4px;
+}
+
+.btn-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.btn-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.btn-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* A row of equal-width buttons that share the row rather than a grid. */
+.btn-row-even > .btn {
+  flex: 1;
+}
+
+/* Let a long run of chips wrap instead of overflowing the sidebar. */
+.btn-group-wrap {
+  flex-wrap: wrap;
+}
+
+/* An action that spans its section. */
+.btn-full {
+  width: 100%;
+}
+
+/* A label that leads with an icon. */
+.control-label-icon {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The file input behind a dropzone. */
+.file-input-hidden {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Media dropzone & the file card under it
+   --------------------------------------------------------------------------- */
+.dropzone-lg {
+  min-height: 85px;
+  padding: 12px 10px;
+}
+
+.dropzone-icon {
+  margin-bottom: 6px;
+}
+
+.dropzone-title {
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dropzone-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.media-file-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.media-file-card-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.media-file-name {
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-file-source {
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------------------
+   Online 3D model browser
+
+   A search field, a scrolling category rail and a dense result list. All of it
+   was inline, including a literal `rgba(0, 255, 65, 0.08)` on the selected row
+   — a green that stayed green in the amber, cyan, blood and paper themes.
+   --------------------------------------------------------------------------- */
+/*
+ * `.alert-box` / `.alert-error` were applied in the markup but never defined —
+ * the whole appearance was inline, so the class carried nothing.
+ */
+.alert-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.alert-box-sm {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  font-size: 10px;
+}
+
+.alert-error {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.alert-error svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.model-search-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.model-search-field {
+  position: relative;
+  flex: 1;
+}
+
+.model-search-field input {
+  width: 100%;
+  padding: 5px 8px 5px 24px;
+  font-size: 11px;
+  text-align: left;
+}
+
+.model-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 7px;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+}
+
+.model-category-rail {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.model-category-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.model-category-chip {
+  padding: 2px 8px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.model-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  padding-right: 2px;
+  overflow-y: auto;
+}
+
+.model-result-empty {
+  padding: 16px 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.online-model-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease-in-out;
+}
+
+.online-model-item:hover {
+  background: var(--bg-control-hover);
+  border-color: var(--border-active);
+}
+
+.online-model-item.is-selected {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+}
+
+.online-model-item.is-loading {
+  cursor: wait;
+}
+
+.online-model-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.online-model-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.online-model-item.is-selected .online-model-name {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.online-model-credit {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-dim);
+}
+
+.online-model-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.online-model-tris {
+  padding: 1px 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* The active geometry summary under the 3D dropzone. */
+.geometry-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.geometry-card-name {
+  max-width: 200px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geometry-card-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.geometry-card-badge {
+  font-size: 10px;
+}
+
+.media-url-form {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.media-url-input {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 10.5px;
+  text-align: left;
+}
+
+/* ---------------------------------------------------------------------------
+   Video transport
+   --------------------------------------------------------------------------- */
+.video-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.video-timecode {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.video-timeline-label {
+  flex: none;
+  width: 50px;
+}
+
+/* ---------------------------------------------------------------------------
+   Character density ramp — a stack of preset cards, each showing its glyphs
+   --------------------------------------------------------------------------- */
+.charset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.charset-card {
+  padding: 4px 6px;
+}
+
+.charset-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.charset-card-name {
+  font-size: 10px;
+}
+
+.charset-card-chars {
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.charset-custom-input {
+  width: 100%;
+  font-size: 10.5px;
+}
+
+/* ---------------------------------------------------------------------------
+   Read-only info card — one fact per row, label left, value right
+
+   Four hand-written copies of this lived in OptimizeControls alone, each
+   respelling the same border, padding and 11px.
+   --------------------------------------------------------------------------- */
+.info-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.info-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.info-card-label {
+  color: var(--text-muted);
+}
+
+.info-card-value {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.info-card-value-accent {
+  color: var(--accent);
+}
+
+.info-card-value-strong {
+  font-weight: 600;
+}
+
+.info-card-value-truncate {
+  max-width: 160px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------------------
+   Warning card — the accent-tinted sibling of `.info-card`
+   --------------------------------------------------------------------------- */
+.warn-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+}
+
+.warn-card-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.warn-card-body {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.warn-card-action {
+  width: 100%;
+  margin-top: 2px;
+  font-weight: 700;
+}
+
+/* A preset button that stacks a value over what it means. */
+.btn-stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 4px;
+}
+
+.btn-stacked-main {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.btn-stacked-sub {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+/* The compact numeric field the resolution rows pair with their sliders. */
+.number-input-sm {
+  width: 54px;
+  padding: 2px 4px;
+  font-size: 11px;
+  text-align: right;
+}
+
+/*
+ * Held-back-but-still-readable, for a control that AUTO has taken over.
+ * `:disabled` covers the input itself; this covers the row around it.
+ */
+.control-disabled {
+  opacity: 0.45;
+}
+
+.control-disabled,
+.control-disabled input,
+.control-disabled .btn {
+  cursor: not-allowed;
 }
 
 /* Chip Buttons (Pills, Filter Tabs, Step Selectors) */
@@ -3079,22 +4167,7 @@ select:disabled {
   100% { transform: rotate(360deg) scale(1); }
 }
 
-.btn-sm {
-  padding: 3px 8px;
-  font-size: 10px;
-}
-
-.btn-label-sm {
-  margin-left: 2px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.btn-group {
-  display: flex;
-  gap: 4px;
-}
+/* `.btn-sm`, `.btn-label-sm` and `.btn-group` are defined once, up in Buttons. */
 
 /* Presets Grid */
 .presets-grid {
@@ -3158,13 +4231,28 @@ select:disabled {
   outline: none;
 }
 
+/*
+ * A fixed red rather than a themed one: this is an error, and the accent is
+ * the studio's phosphor colour — in the green and cyan themes an accent-tinted
+ * error box reads as a success message.
+ */
 .code-error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 6px 8px;
   background-color: rgba(255, 51, 68, 0.1);
   border: 1px solid #ff3344;
+  border-radius: 3px;
   color: #ff3344;
-  padding: 6px 8px;
   font-size: 10px;
-  margin-top: 6px;
+  line-height: 1.35;
+}
+
+.code-error-box svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 /* Custom Modal */
@@ -3528,6 +4616,18 @@ select:disabled {
   flex-shrink: 0;
 }
 
+/*
+ * Inside the pinned export bar the credits are a footnote to it, not the
+ * sidebar's own footer: the bar already draws the rule and owns the padding.
+ */
+.sidebar-floating-export .sidebar-credits {
+  height: auto;
+  min-height: 0;
+  margin-top: 2px;
+  padding: 6px 0 0 0;
+  border-top: none;
+}
+
 .sidebar-credits a {
   color: var(--text-muted);
   text-decoration: underline;
@@ -3826,7 +4926,7 @@ select:disabled {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 6px 14px 12px 14px;
+  padding: 0 var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
 }
 
 /* Orientation strip: four icon buttons, no label — the icons say it. */
@@ -3843,23 +4943,34 @@ select:disabled {
   padding: 5px 0;
 }
 
-.basic-paste-btn {
+/*
+ * The full-width action that opens a step — paste from clipboard, randomize
+ * the wave. Three call sites had three hand-written copies that disagreed on
+ * padding and size by half a pixel each.
+ */
+.btn-hero {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 14px;
-  font-size: 11px;
+  padding: 11px 14px;
+  font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0.07em;
   border-radius: 4px;
+}
+
+.btn-hero-wrap {
+  margin-bottom: 14px;
 }
 
 .panel-note {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Always sits between control rows, and every call site was saying so. */
+  margin: 6px 0;
   padding: 7px 9px;
   background-color: var(--bg-control);
   border: 1px solid var(--border-color);
@@ -3909,18 +5020,41 @@ select:disabled {
   letter-spacing: 0.4px;
 }
 
-.basic-output-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-}
+/* ---------------------------------------------------------------------------
+   The stepper cluster: [<] [ select ] [>] [dice]
 
-.basic-select {
+   Shared by the charset picker in BASIC and the algorithm picker in ADVANCED,
+   which had two hand-written copies of the same measurements and two different
+   easings on the same dice spin.
+   --------------------------------------------------------------------------- */
+.stepper-select {
   width: 165px;
   height: 24px;
   padding: 2px 6px;
+  font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 700;
   text-align: left;
+}
+
+.btn-dice {
+  color: var(--accent);
+}
+
+.btn-dice svg {
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-dice.rolling svg {
+  transform: rotate(360deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-dice svg,
+  .btn-dice.rolling svg {
+    transition: none;
+    transform: none;
+  }
 }
 
 /* --- Export ------------------------------------------------------------- */

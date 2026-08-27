@@ -151,8 +151,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
               Resampling
             </span>
             <select
-              className="number-input"
-              style={{ width: '165px', textAlign: 'left', padding: '2px 6px', fontSize: '11px', height: '24px' }}
+              className="number-input stepper-select"
               value={config.resampling || 'preserve-details'}
               onChange={(e) => update('resampling', e.target.value as ResamplingMode)}
             >

@@ -121,7 +121,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             </div>
 
             {/* Separator */}
-            <div style={{ borderTop: '1px solid var(--border-color)', margin: '6px 0', opacity: 0.7 }} />
+            <div className="control-separator" />
 
             {/* Manual Angle Adjustments */}
             <div className="control-row">
@@ -312,7 +312,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             </div>
 
             {/* Outline / Edge Extraction */}
-            <div className="control-row" style={{ marginTop: '8px' }}>
+            <div className="control-row control-row-spaced">
               <span className="control-label">Edge Outline Boost</span>
               <div className="control-input-wrapper">
                 <input
@@ -416,7 +416,7 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             badge={shadingModes.find((s) => s.mode === config.shadingMode)?.label}
             defaultOpen={false}
           >
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
+            <div className="btn-grid-3">
               {shadingModes.map((item) => (
                 <button
                   key={item.mode}

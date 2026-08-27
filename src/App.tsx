@@ -95,6 +95,8 @@ import { CollapsibleSection, AccordionProvider } from './components/CollapsibleS
 import { BasicPanel } from './components/BasicPanel';
 import { UiModeSwitch } from './components/UiModeSwitch';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
+import { OutputModeCards } from './components/outputModes';
+import { WorkflowStep } from './components/controlPrimitives';
 import { VectorControls } from './components/VectorControls';
 import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
@@ -118,12 +120,10 @@ import {
   Redo2,
   Box,
   Image as ImageIcon,
-  Type,
-  Grid,
   Settings,
   Keyboard,
+  Sparkles,
   X,
-  Activity,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
@@ -269,40 +269,42 @@ const SOURCES: {
 ];
 
 /**
- * The output rasterization modes (ASCII monospace text vs 1:1 Pixel dither).
- * Sits permanently at the top of the RENDER panel as a high hierarchy selector.
+ * The ADVANCED sidebar's three stretches, and the rail that jumps between them.
+ *
+ * These are headings in one scrolling column, not tabs: the rail scrolls to
+ * them and highlights whichever is nearest the top. `step` is the workflow
+ * number the section opens on, so the rail and the rules down the column agree
+ * on where 04 starts.
  */
-const OUTPUT_MODES: {
-  id: RasterOutputMode;
-  name: string;
-  badge: string;
-  description: string;
+type SidebarSection = 'content' | 'render' | 'post';
+
+const SIDEBAR_SECTIONS: {
+  id: SidebarSection;
+  step: string;
+  label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   title: string;
 }[] = [
   {
-    id: 'pixel',
-    name: 'PIXEL',
-    badge: 'DITHER',
-    description: '1:1 Square Pixel Grid',
-    icon: Grid,
-    title: 'Direct square hardware dither rasterization',
+    id: 'content',
+    step: '01',
+    label: 'CONTENT',
+    icon: Layers,
+    title: 'Content source, import & framing [Hotkey: 1]',
   },
   {
-    id: 'ascii',
-    name: 'ASCII',
-    badge: 'TEXT',
-    description: 'Monospace Density Ramp',
-    icon: Type,
-    title: 'Monospace ASCII character density rasterization',
+    id: 'render',
+    step: '04',
+    label: 'RENDER',
+    icon: Palette,
+    title: 'Output mode, resolution, shading & palette [Hotkey: 2]',
   },
   {
-    id: 'vector',
-    name: 'VECTOR',
-    badge: 'BEAM',
-    description: 'Rutt-Etra Scanline Relief',
-    icon: Activity,
-    title: 'Oscilloscope beam deflection and carrier modulation, as polylines',
+    id: 'post',
+    step: '07',
+    label: 'POST',
+    icon: Sparkles,
+    title: 'Overlay, glow & optics — the composite stage [Hotkey: 3]',
   },
 ];
 
@@ -832,12 +834,26 @@ export const App: React.FC = () => {
 
   // UI state
   /**
-   * The sidebar panel, shared across every content source.
+   * Which sidebar section the rail is pointing at.
    *
-   * Previously this was three independent variables (one per source), so
-   * switching source silently threw away which panel you were on.
+   * CONTENT and RENDER used to be two tabs, and choosing an image meant
+   * leaving the controls that made it look like anything — a round trip you
+   * paid on every adjustment. They are one scrolling column now, so this is no
+   * longer a filter on what renders: it is scroll position, read back from the
+   * headings, and the rail scrolls to them rather than swapping them in.
    */
-  const [panel, setPanel] = useState<'content' | 'render'>('content');
+  const [activeSection, setActiveSection] = useState<SidebarSection>('content');
+  const sectionRefs: Record<SidebarSection, React.RefObject<HTMLDivElement | null>> = {
+    content: useRef<HTMLDivElement>(null),
+    render: useRef<HTMLDivElement>(null),
+    post: useRef<HTMLDivElement>(null),
+  };
+
+  const scrollToSection = useCallback((id: SidebarSection) => {
+    setActiveSection(id);
+    sectionRefs[id].current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ======================================================================
      Luminance histogram, for the Levels control.
@@ -870,19 +886,60 @@ export const App: React.FC = () => {
     []
   );
 
-  const isRenderPanelOpen = panel === 'render';
+  /* The rail only exists in the ADVANCED sidebar, and only in the editor. */
+  const hasSidebarRail = viewMode === 'editor' && uiMode === 'advanced';
+
+  /*
+   * The Levels readout lives in RENDER, which is now a stretch of one column
+   * rather than a tab that had to be opened — so "is that panel open" becomes
+   * "has the column been scrolled that far".
+   *
+   * Still a gate rather than always-on: a synth loop runs at 60fps, and each
+   * push copies 256 bins into state and re-renders the whole sidebar. Paying
+   * that five times a second while the reader is up in CONTENT, looking at a
+   * histogram that is a screen and a half below them, buys nothing.
+   */
+  const wantsHistogram = hasSidebarRail && activeSection !== 'content';
   useEffect(() => {
-    wantsHistogramRef.current = isRenderPanelOpen;
-    if (!isRenderPanelOpen) return;
+    wantsHistogramRef.current = wantsHistogram;
+    if (!wantsHistogram) return;
     /*
-     * A static image renders once and then sits there, so opening the panel
-     * would otherwise show an empty histogram until something else happened to
-     * invalidate the frame. Force one pass; the throttle guard is reset so it
-     * is not swallowed.
+     * A static image renders once and then sits there, so the histogram would
+     * otherwise stay empty until something else happened to invalidate the
+     * frame. Force one pass; the throttle guard is reset so it is not
+     * swallowed.
      */
     lastHistogramPushRef.current = 0;
     triggerMediaRender();
-  }, [isRenderPanelOpen, triggerMediaRender]);
+  }, [wantsHistogram, triggerMediaRender]);
+
+  /*
+   * Which heading the rail lights up.
+   *
+   * The band is a thin strip below the sticky rail: at most one heading is
+   * inside it, and while a long section scrolls past none are, which is what
+   * keeps the highlight on that section rather than flickering off.
+   */
+  useEffect(() => {
+    if (!hasSidebarRail) return;
+    const observed = SIDEBAR_SECTIONS.map((s) => sectionRefs[s.id].current).filter(
+      (el): el is HTMLDivElement => Boolean(el)
+    );
+    if (!observed.length || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.find((e) => e.isIntersecting);
+        if (!hit) return;
+        const match = SIDEBAR_SECTIONS.find((s) => sectionRefs[s.id].current === hit.target);
+        if (match) setActiveSection(match.id);
+      },
+      { rootMargin: '-52px 0px -78% 0px', threshold: 0 }
+    );
+    observed.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSidebarRail, appMode]);
 
   /*
    * Landing a media file is the moment the render controls become the
@@ -912,16 +969,16 @@ export const App: React.FC = () => {
   }, [hasMediaSource]);
 
   /*
-   * Arriving at the panel is the hint succeeding, so retire it for good --
-   * here rather than on the tab's onClick, so the `2` hotkey and any other
-   * route to the panel count too.
+   * Scrolling as far as RENDER is the hint succeeding, so retire it for good --
+   * here rather than on the rail button's onClick, so the `2` hotkey and a
+   * plain scroll down the column count too.
    */
   useEffect(() => {
-    if (panel === 'render' && showRenderHint) dismissRenderHint();
-  }, [panel, showRenderHint, dismissRenderHint]);
+    if (activeSection !== 'content' && showRenderHint) dismissRenderHint();
+  }, [activeSection, showRenderHint, dismissRenderHint]);
 
-  // Pointless once they are already looking at the panel it points to.
-  const isRenderHintVisible = showRenderHint && panel !== 'render';
+  // Pointless once they are already looking at the section it points to.
+  const isRenderHintVisible = showRenderHint && activeSection === 'content';
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [exportInitialTab, setExportInitialTab] = useState<ExportTab>('image');
   const [isRandomizing, setIsRandomizing] = useState<boolean>(false);
@@ -2705,20 +2762,26 @@ export const App: React.FC = () => {
           handleRandomize();
         }
       } else if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        /* BASIC has no panels to switch between, so 1/2 do nothing there. */
+        /* BASIC is one flat column with no rail, so 1/2/3 do nothing there. */
         if (uiMode === 'basic') return;
-        if (e.key === '1') {
+        const jump = SIDEBAR_SECTIONS[Number(e.key) - 1];
+        if (jump && e.key >= '1' && e.key <= '3') {
           e.preventDefault();
-          setPanel('content');
-        } else if (e.key === '2') {
-          e.preventDefault();
-          setPanel('render');
+          scrollToSection(jump.id);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, handleRandomize, appMode, mediaConfig.mediaType, setPanel, uiMode]);
+  }, [
+    handleUndo,
+    handleRedo,
+    handleRandomize,
+    appMode,
+    mediaConfig.mediaType,
+    scrollToSection,
+    uiMode,
+  ]);
 
   // Toggle between editor and fullscreen viewfinder
   const handleToggleViewMode = useCallback(() => {
@@ -2990,7 +3053,7 @@ export const App: React.FC = () => {
       {/* Top Header */}
       <header className="app-header">
         <div className="brand-title">
-          <span className="brand-logo" style={{ color: 'var(--accent)' }}>▓▒░</span>
+          <span className="brand-logo">▓▒░</span>
           <div className="brand-text-block">
             <div className="brand-main">
               <span className="brand-full">DITHER STUDIO</span>
@@ -3019,7 +3082,6 @@ export const App: React.FC = () => {
                 className="btn btn-sm header-btn-undo"
                 onClick={handleUndo}
                 disabled={!canUndo}
-                style={{ opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'not-allowed' }}
                 title={typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)'}
               >
                 <Undo2 size={13} className="header-btn-icon" />
@@ -3029,7 +3091,6 @@ export const App: React.FC = () => {
                 className="btn btn-sm header-btn-redo"
                 onClick={handleRedo}
                 disabled={!canRedo}
-                style={{ opacity: canRedo ? 1 : 0.4, cursor: canRedo ? 'pointer' : 'not-allowed' }}
                 title={typeof navigator !== 'undefined' && /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || '') ? 'Redo (⇧⌘Z)' : 'Redo (Ctrl+Shift+Z / Ctrl+Y)'}
               >
                 <Redo2 size={13} className="header-btn-icon" />
@@ -3176,58 +3237,60 @@ export const App: React.FC = () => {
                 />
             ) : (
             <AccordionProvider autoCollapse={!!uiThemeSettings.autoCollapsePanels}>
-              <div className="tab-nav">
-              <button
-                className={`tab-btn ${panel === 'content' ? 'active' : ''}`}
-                onClick={() => setPanel('content')}
-                title="Choose content source, presets & setup [Hotkeys: 1]"
-              >
-                <span className="tab-btn-index">1</span>
-                <Layers size={12} className="tab-btn-icon" />
-                <span className="tab-btn-label">CONTENT</span>
-              </button>
-              <button
-                className={`tab-btn ${panel === 'render' ? 'active' : ''} ${
-                  isRenderHintVisible ? 'tab-btn-hint' : ''
-                }`}
-                onClick={() => setPanel('render')}
-                title="Shading, styling, palettes, charsets & resolution [Hotkeys: 2]"
-              >
-                <span className="tab-btn-index">2</span>
-                <Palette size={12} className="tab-btn-icon" />
-                <span className="tab-btn-label">RENDER</span>
-                <span className="tab-btn-subbadge">{appMode.toUpperCase()}</span>
-              </button>
+              {/*
+                A rail, not a tab strip. Everything below stays mounted — these
+                scroll to their heading and light up whichever one the column
+                is currently sitting on.
+              */}
+              <nav className="tab-nav" aria-label="Sidebar sections">
+                {SIDEBAR_SECTIONS.map((section) => {
+                  const Icon = section.icon;
+                  const isHinted = section.id === 'render' && isRenderHintVisible;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      className={`tab-btn${activeSection === section.id ? ' active' : ''}${
+                        isHinted ? ' tab-btn-hint' : ''
+                      }`}
+                      onClick={() => scrollToSection(section.id)}
+                      title={section.title}
+                      aria-current={activeSection === section.id}
+                    >
+                      <span className="tab-btn-index">{section.step}</span>
+                      <Icon size={12} className="tab-btn-icon" />
+                      <span className="tab-btn-label">{section.label}</span>
+                      {section.id === 'render' && (
+                        <span className="tab-btn-subbadge">{appMode.toUpperCase()}</span>
+                      )}
+                    </button>
+                  );
+                })}
 
-              {isRenderHintVisible && (
-                <div className="tab-hint" role="status">
-                  <span className="tab-hint-text">
-                    Media loaded. Style it in <strong>RENDER</strong> &mdash; dithering, palette,
-                    tone &amp; resolution.
-                  </span>
-                  <button
-                    type="button"
-                    className="tab-hint-close"
-                    onClick={dismissRenderHint}
-                    title="Dismiss"
-                    aria-label="Dismiss hint"
-                  >
-                    <X size={11} />
-                  </button>
-                </div>
-              )}
-            </div>
+                {isRenderHintVisible && (
+                  <div className="tab-hint" role="status">
+                    <span className="tab-hint-text">
+                      Media loaded. Style it further down in <strong>RENDER</strong> &mdash;
+                      dithering, palette, tone &amp; resolution.
+                    </span>
+                    <button
+                      type="button"
+                      className="tab-hint-close"
+                      onClick={dismissRenderHint}
+                      title="Dismiss"
+                      aria-label="Dismiss hint"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
+              </nav>
 
             {/* ---------------------------------------------------------- */}
             {/* CONTENT: define & configure the visual subject             */}
             {/* ---------------------------------------------------------- */}
-            {panel === 'content' && (
-              <>
-                <div className="sidebar-workflow-title">
-                  <span className="sidebar-workflow-step">01</span>
-                  <span className="sidebar-workflow-label">Content Mode</span>
-                  <div className="sidebar-workflow-line" />
-                </div>
+            <>
+                <WorkflowStep n="01" label="Content Mode" anchorRef={sectionRefs.content} />
 
                 <div className="source-selector-wrapper">
                   <div className="source-grid">
@@ -3263,11 +3326,7 @@ export const App: React.FC = () => {
 
                 {appMode === 'media' && (
                   <>
-                    <div className="sidebar-workflow-title">
-                      <span className="sidebar-workflow-step">02</span>
-                      <span className="sidebar-workflow-label">Media Upload</span>
-                      <div className="sidebar-workflow-line" />
-                    </div>
+                    <WorkflowStep n="02" label="Media Upload" />
 
                     <MediaUploadControls
                       config={mediaConfig}
@@ -3277,11 +3336,7 @@ export const App: React.FC = () => {
                       onUrlLoad={handleMediaUrlLoad}
                     />
 
-                    <div className="sidebar-workflow-title">
-                      <span className="sidebar-workflow-step">03</span>
-                      <span className="sidebar-workflow-label">Adapt &amp; Frame</span>
-                      <div className="sidebar-workflow-line" />
-                    </div>
+                    <WorkflowStep n="03" label="Adapt &amp; Frame" />
 
                     <MediaFramingControls
                       config={mediaConfig}
@@ -3292,11 +3347,7 @@ export const App: React.FC = () => {
 
                 {appMode === 'synth' && (
                   <>
-                    <div className="sidebar-workflow-title">
-                      <span className="sidebar-workflow-step">02</span>
-                      <span className="sidebar-workflow-label">Synth Generator</span>
-                      <div className="sidebar-workflow-line" />
-                    </div>
+                    <WorkflowStep n="02" label="Synth Generator" />
 
                     <PresetSelector
                       activePresetId={activePreset.id}
@@ -3325,11 +3376,7 @@ export const App: React.FC = () => {
                       onOverrideFormulaWithSliders={handleOverrideFormulaWithSliders}
                     />
 
-                    <div className="sidebar-workflow-title">
-                      <span className="sidebar-workflow-step">03</span>
-                      <span className="sidebar-workflow-label">Particle Physics</span>
-                      <div className="sidebar-workflow-line" />
-                    </div>
+                    <WorkflowStep n="03" label="Particle Physics" />
 
                     <ParticleControls
                       config={particleConfig}
@@ -3343,11 +3390,7 @@ export const App: React.FC = () => {
 
                 {appMode === 'model' && (
                   <>
-                    <div className="sidebar-workflow-title">
-                      <span className="sidebar-workflow-step">02</span>
-                      <span className="sidebar-workflow-label">3D Model Import</span>
-                      <div className="sidebar-workflow-line" />
-                    </div>
+                    <WorkflowStep n="02" label="3D Model Import" />
 
                     <ModelImportControls
                       config={modelConfig}
@@ -3362,11 +3405,7 @@ export const App: React.FC = () => {
                       onEndLoading={() => setIsModelLoading(false)}
                     />
 
-                    <div className="sidebar-workflow-title">
-                      <span className="sidebar-workflow-step">03</span>
-                      <span className="sidebar-workflow-label">Transforms &amp; Mesh</span>
-                      <div className="sidebar-workflow-line" />
-                    </div>
+                    <WorkflowStep n="03" label="Transforms &amp; Mesh" />
 
                     <ModelMeshControls
                       config={modelConfig}
@@ -3374,59 +3413,24 @@ export const App: React.FC = () => {
                     />
                   </>
                 )}
-              </>
-            )}
+            </>
 
             {/* ---------------------------------------------------------- */}
             {/* RENDER: shading, effects, palettes, charsets & resolution  */}
             {/* ---------------------------------------------------------- */}
-            {panel === 'render' && (
-              <>
+            <>
                 {/* 1. Output Mode Command Selector (ASCII vs PIXEL) */}
-                <div className="sidebar-workflow-title">
-                  <span className="sidebar-workflow-step">01</span>
-                  <span className="sidebar-workflow-label">Output Mode</span>
-                  <div className="sidebar-workflow-line" />
-                </div>
+                <WorkflowStep n="04" label="Output Mode" anchorRef={sectionRefs.render} />
 
                 <div className="source-selector-wrapper">
-                  <div className="render-mode-grid">
-                    {OUTPUT_MODES.map((mode) => {
-                      const Icon = mode.icon;
-                      const isActive = currentRasterMode === mode.id;
-                      return (
-                        <button
-                          key={mode.id}
-                          className={`source-card ${isActive ? 'active' : ''}`}
-                          onClick={() => handleSelectRasterMode(mode.id)}
-                          title={mode.title}
-                        >
-                          <div className="source-card-header">
-                            <div className="source-card-icon-wrap">
-                              <Icon size={14} />
-                            </div>
-                            <span className="source-card-badge">{mode.badge}</span>
-                          </div>
-                          <div className="source-card-body">
-                            <span className="source-card-name">{mode.name}</span>
-                            <span className="source-card-desc">{mode.description}</span>
-                          </div>
-                          <div className="source-card-footer">
-                            <span className="source-card-dot" />
-                            <span className="source-card-status">{isActive ? 'ACTIVE' : 'READY'}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <OutputModeCards
+                    value={currentRasterMode}
+                    onChange={handleSelectRasterMode}
+                  />
                 </div>
 
                 {/* 2. Top-level Resolution & DPI */}
-                <div className="sidebar-workflow-title">
-                  <span className="sidebar-workflow-step">02</span>
-                  <span className="sidebar-workflow-label">Resolution &amp; Density</span>
-                  <div className="sidebar-workflow-line" />
-                </div>
+                <WorkflowStep n="05" label="Resolution &amp; Density" />
 
                 <OptimizeControls
                   cols={cols}
@@ -3447,11 +3451,7 @@ export const App: React.FC = () => {
                 {densityRampSection}
 
                 {/* 3. Mode-specific Shading, Color & Optics */}
-                <div className="sidebar-workflow-title">
-                  <span className="sidebar-workflow-step">03</span>
-                  <span className="sidebar-workflow-label">Shading, Color &amp; Optics</span>
-                  <div className="sidebar-workflow-line" />
-                </div>
+                <WorkflowStep n="06" label="Shading, Color &amp; Optics" />
 
                 {appMode === 'media' && (
                   <MediaViewControls
@@ -3669,14 +3669,15 @@ export const App: React.FC = () => {
                   rasterMode={currentRasterMode}
                   sourceUnavailable={appMode === 'media' && !mediaElementRef.current}
                   persistKeyPrefix={`${appMode}-post`}
+                  step="07"
+                  anchorRef={sectionRefs.post}
                 />
-              </>
-            )}
+            </>
             </AccordionProvider>
             )}
 
             {/* Bottom Footer Area */}
-            {uiMode === 'advanced' && panel === 'render' ? (
+            {uiMode === 'advanced' ? (
               <div className="sidebar-floating-export">
                 <button
                   type="button"
@@ -3725,7 +3726,7 @@ export const App: React.FC = () => {
                     PLATES
                   </button>
                 </div>
-                <div className="sidebar-credits" style={{ borderTop: 'none', height: 'auto', minHeight: 'unset', padding: '6px 0 0 0', marginTop: '2px' }}>
+                <div className="sidebar-credits">
                   <span>
                     Made with dedication by{' '}
                     <a

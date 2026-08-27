@@ -53,7 +53,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
           </button>
         </div>
 
-        <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.3 }}>
+        <p className="control-hint">
           Particles automatically evaluate and follow the vector flow of the active simulation wave.
         </p>
         <div className="collapsible-nest">
@@ -162,7 +162,7 @@ export const ParticleControls: React.FC<ParticleControlsProps> = ({
               </div>
             </div>
 
-            <hr style={{ borderColor: 'var(--border-color)', margin: '6px 0' }} />
+            <div className="control-separator" />
 
             <div className="control-row">
               <span className="control-label">Click Burst Count</span>
