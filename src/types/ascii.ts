@@ -210,9 +210,18 @@ export type MediaSourceType = 'preset' | 'file' | 'url' | 'clipboard';
 export type MediaType = 'image' | 'video';
 export type MediaFitMode = 'contain' | 'cover' | 'stretch' | 'original';
 // --- v1.6 Raster Modalities & Advanced Engine Types ---
+/**
+ * What a processed frame is made of.
+ *
+ * `ascii` and `pixel` are both *cell* modes: one glyph or one block per grid
+ * cell, tone quantized to the grid. `vector` is not — it leaves the raster
+ * pipeline at step 3.5 and returns polylines in continuous grid space. See
+ * vector-pipeline.md for why the deflection look cannot be a dither algorithm.
+ */
 export type RasterOutputMode =
   | 'ascii'
-  | 'pixel';
+  | 'pixel'
+  | 'vector';
 
 export type DitherFamily = 'error-diffusion' | 'ordered' | 'blue-noise' | 'algorithmic' | 'modulation';
 
@@ -291,6 +300,104 @@ export type DitherAlgorithm =
   | 'bytewave'
   | 'concentric-rings'
   | 'cellular-circuit';
+
+// --- Vector Modulation (Rutt-Etra / oscilloscope deflection) ---
+
+/**
+ * One continuous stroke of the beam.
+ *
+ * Points are flat `x0,y0,x1,y1,…` in grid space rather than `{x,y}[]`: a
+ * 54-line frame at 400 samples is 21,600 points, and the phase animation
+ * re-traces every one of them every frame.
+ *
+ * A carrier break, a blanking, or a transparent cell ends the polyline and
+ * starts a new one, so a single scan line yields 1..n entries.
+ */
+export interface VectorPolyline {
+  points: Float32Array;
+  color: string;
+  width: number;
+  /**
+   * Close down to the baseline and fill with the background before stroking —
+   * painter's-algorithm occlusion, so a near ridge hides the line behind it.
+   * Only ever set on an unbroken polyline; a dashed beam has no interior.
+   */
+  filled?: boolean;
+}
+
+export interface VectorFrame {
+  /** Grid space, matching `cols` / `rows`. Polylines are painted into this box. */
+  width: number;
+  height: number;
+  polylines: VectorPolyline[];
+  bgColor: string;
+  /** Canvas shadowBlur for the phosphor halo, carried through to every painter. */
+  glow: number;
+  glowColor: string;
+  /**
+   * Composite the strokes additively. Set when chromatic aberration split the
+   * beam into channel passes, which have to recombine to white where they
+   * coincide rather than the last one covering the others.
+   */
+  additive: boolean;
+}
+
+/**
+ * Beam deflection parameters.
+ *
+ * Deliberately *not* an extension of `DitherParams`. That bag has six fields
+ * shared across 44 algorithms and `getDitherParamIds` derives each algorithm's
+ * controls from it; pushing fifteen more fields through it would hand 43
+ * algorithms sliders that do nothing.
+ */
+export interface VectorConfig {
+  direction: 'vertical' | 'horizontal';
+  /** Number of scan lines across the image. */
+  lineCount: number;
+  /** Grid cells between samples along a line. Higher is coarser and faster. */
+  sampleStep: number;
+  /** Peak deflection in grid cells. Negative inverts the relief. */
+  amplitude: number;
+  /** Luminance that deflects to zero. 0.5 is bipolar, 0 is unidirectional. */
+  bias: number;
+  occlusion: boolean;
+  carrierEnabled: boolean;
+  carrierFreq: number;
+  carrierThreshold: number;
+  /** Pulse-width factor: how fast the carrier duty cycle opens with luminance. */
+  pwm: number;
+  rippleAmp: number;
+  rippleFreq: number;
+  /** Animation input in radians, driven by the render loop rather than stored. */
+  phase: number;
+  strokeWidth: number;
+  glow: number;
+  /** Chromatic aberration offset in grid cells; 0 disables the extra passes. */
+  chroma: number;
+}
+
+/**
+ * Mirrors the studio's opening state, so a fresh vector mode looks like
+ * `rutt_etra_scanline_dither_studio.html` on first paint.
+ */
+export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
+  direction: 'vertical',
+  lineCount: 54,
+  sampleStep: 2,
+  amplitude: 65,
+  bias: 0.5,
+  occlusion: false,
+  carrierEnabled: true,
+  carrierFreq: 0.45,
+  carrierThreshold: 0.32,
+  pwm: 1.2,
+  rippleAmp: 0,
+  rippleFreq: 1.2,
+  phase: 0,
+  strokeWidth: 1.2,
+  glow: 0,
+  chroma: 0,
+};
 
 export type PaletteCategory = 'retro' | 'print' | 'design' | 'ramp' | 'custom';
 
@@ -535,6 +642,7 @@ export interface MediaViewConfig extends ImageAdjustConfig {
   algorithm: DitherAlgorithm;
   ditherParams?: DitherParams;
   rasterMode?: RasterOutputMode;
+  vectorConfig?: VectorConfig;
   dpi?: number; // 10 to 300, default 72
   /*
    * Levels lives in toneConfig above, as levelsBlack / levelsMidtones /
@@ -620,6 +728,7 @@ export interface ModelViewConfig {
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
 }
 
@@ -658,6 +767,7 @@ export interface RenderSettings {
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }

@@ -17,6 +17,8 @@ import {
   DitherParams,
   ToneMappingConfig,
   ImageAdjustConfig,
+  VectorConfig,
+  VectorFrame,
 } from '../types/ascii';
 import { renderSynthFrameData, MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from './renderer';
 import { ProcessedRasterResult } from './rasterEngine';
@@ -25,6 +27,7 @@ import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectGifComment } from './mediaMetadata';
 import { drawPixelRasterToCanvas } from './pixelRasterRenderer';
+import { paintVectorFrame } from './vectorEngine';
 
 export interface GifExportOptions {
   name: string;
@@ -54,6 +57,7 @@ export interface GifExportOptions {
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -61,6 +65,8 @@ export interface GifExportOptions {
 /** Minimal shape every render mode returns, used to paint export frames. */
 type ExportFrameResult = Pick<ProcessedRasterResult, 'text' | 'colors' | 'bgColor' | 'isColored'> & {
   luminance?: Float32Array | null;
+  /** Beam geometry in vector mode. Painted instead of text or cells. */
+  vector?: VectorFrame | null;
 };
 
 const THEME_COLORS: Record<PhosphorTheme, { bg: string; text: string }> = {
@@ -125,10 +131,11 @@ export async function exportAnimatedGif(
 
   const rasterMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
   const isPixel = rasterMode === 'pixel';
-  const showScanlines = !isPixel && (crtConfig ? crtConfig.scanlines : true);
-  const showCrtGlow = !isPixel && (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
-  const showVignette = !isPixel && (crtConfig ? crtConfig.vignette : false);
-  const showPhosphorBloom = !isPixel && (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
+  const isVector = rasterMode === 'vector';
+  const showScanlines = !isPixel && !isVector && (crtConfig ? crtConfig.scanlines : true);
+  const showCrtGlow = !isPixel && !isVector && (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
+  const showVignette = !isPixel && !isVector && (crtConfig ? crtConfig.vignette : false);
+  const showPhosphorBloom = !isPixel && !isVector && (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
 
   // Wait for fonts to be ready so canvas typography is crisp
   if (typeof document !== 'undefined' && document.fonts) {
@@ -142,8 +149,8 @@ export async function exportAnimatedGif(
   const delayMs = Math.round(1000 / fps);
 
   // Character cell dimensions on canvas (1:1 square for pixel mode, 0.6015 monospace aspect for ASCII)
-  const charWidth = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
-  const charHeight = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
+  const charWidth = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -206,6 +213,7 @@ export async function exportAnimatedGif(
         rasterMode,
         algorithm: opts.ditherAlgorithm,
         ditherParams: opts.ditherParams,
+        vectorConfig: opts.vectorConfig,
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
       });
@@ -221,6 +229,7 @@ export async function exportAnimatedGif(
         rasterMode,
         algorithm: opts.ditherAlgorithm,
         ditherParams: opts.ditherParams,
+        vectorConfig: opts.vectorConfig || opts.mediaViewConfig.vectorConfig,
         toneConfig: opts.toneConfig,
       });
     } else {
@@ -239,6 +248,7 @@ export async function exportAnimatedGif(
         rasterMode,
         algorithm: opts.ditherAlgorithm,
         ditherParams: opts.ditherParams,
+        vectorConfig: opts.vectorConfig,
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
       });
@@ -248,7 +258,21 @@ export async function exportAnimatedGif(
     const isColored = Boolean(frameResult?.isColored && frameResult?.colors);
     const effectiveBg = isColored && frameResult ? frameResult.bgColor : bg;
 
-    if (isPixel && frameResult?.luminance) {
+    if (isVector) {
+      /*
+       * Re-strokes per frame at export scale. Phase is advanced by the caller
+       * through vectorConfig, so the carrier and ripple drift across the
+       * animation instead of every frame being identical.
+       */
+      ctx.fillStyle = effectiveBg;
+      ctx.fillRect(0, 0, width, height);
+      if (frameResult?.vector) {
+        ctx.save();
+        ctx.scale(scale, scale);
+        paintVectorFrame(ctx, frameResult.vector, { glowScale: scale });
+        ctx.restore();
+      }
+    } else if (isPixel && frameResult?.luminance) {
       drawPixelRasterToCanvas({
         ctx,
         cols,

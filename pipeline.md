@@ -15,6 +15,9 @@ produce the raw frame that goes in, and in how the result is painted afterwards.
   model ────────►│   6 stages        │                            ├──► colour separation
                  └───────────────────┘                            ├──► GIF export
                           ▲                                       └──► video export
+                          │
+                    ascii | pixel run all six. **vector** forks after step 3
+                    and returns polylines instead — see §2.3.6.
                     all state arrives as
                     UnifiedPipelineOptions
 
@@ -352,6 +355,36 @@ Neutral itself is defined once, by the engine (`TONE_WEIGHT_NEUTRAL`), and
 re-exported down the chain. A UI that disagreed about which value is neutral
 would leave the warp quietly switched on after a "reset".
 
+#### The vector fork
+
+**Vector output leaves the pipeline here**, immediately after `resolveRampStops`
+and before the depth resolution above — tone fully graded, nothing quantized. It
+returns a `VectorFrame` of polylines instead of `text` and `colors`, and
+everything below this point (depth, the band warp, the dither, the colour buffer,
+the glyph ramp) is cell machinery with no vector meaning.
+
+The seam sits at 3.5 rather than at the top of the function because steps 1–3 are
+*exactly* the field a beam wants to read: vector mode inherits the tone curve,
+levels, AUTO LEVELS, blur, sharpen and Sobel edges without a line of new code.
+`luminance` and `histogram` still ride out on the result, so the histogram tap
+keeps working — it is upstream of the fork and never depended on the quantizer.
+
+In that mode `cols × rows` stops being a display raster and becomes the
+resolution the beam *samples* luminance at, and the coordinate space the
+polylines live in. Cells are square, and the grid is much larger (800 across for
+media, a 400k auto-resolution budget against pixel mode's 40k) because only
+steps 1–3 run over it.
+
+Colour is resolved once per beam, from the run's mean luminance, through the same
+single selector every other mode reads (§4): the tint for mono, a ramp stop, or
+the palette's tone match. Hue matching does not apply — it needs per-cell RGB to
+compare against, and a beam's colour is a property of the whole run.
+
+Full argument, the divergences from the reference studio, and every call site the
+third output mode touched: [`vector-pipeline.md`](vector-pipeline.md).
+
+---
+
 ### Step 4 — Colour
 
 Exactly one branch runs, chosen by `paletteMode` (from `MediaColorConfig`) and
@@ -472,12 +505,25 @@ engine.
 
 ### 3.1 Viewport ([`AsciiViewport.tsx`](src/components/AsciiViewport.tsx))
 
-Two mutually exclusive paths, chosen by `isColoredView` (`result.isColored`):
+Three mutually exclusive paths. `isColoredView` picks DOM from canvas, and it
+is true whenever the frame carries a colour buffer **or** the raster mode is
+pixel or vector — vector has no colour buffer at all, so neither of the other
+tests would catch it.
 
 **Mono → DOM.** `text` is written to a `<pre>`, CSS-scaled by zoom. Colour comes from
 CSS custom properties, which is what makes phosphor tints, gradients, glow, bloom,
 scanlines and vignette possible. An optional second `<pre>` sits underneath as a
 blurred bloom layer.
+
+**Vector → canvas, re-stroked.** `drawVector` paints the polylines under the
+view transform. Unlike the two cell paths it **repaints on every zoom** rather
+than magnifying a bitmap — that is the whole point of the mode, and a bitmap
+cache here would throw it away. A *pan* is still free: the canvas holds the whole
+raster and carries the translate in CSS, and only past `MAX_BACKING_DIM` does it
+fall back to a viewport-sized canvas that repaints as it moves. CSS CRT effects
+do not reach a canvas, so the phosphor halo is `ctx.shadowBlur` instead, scaled
+by the zoom because canvas measures shadow radius in device pixels and ignores
+the transform.
 
 **Coloured → canvas.** `drawCanvas` has two branches:
 
@@ -623,6 +669,7 @@ beneath it. An ink-style layered SVG gets its white ground on the root instead.
 | `mono` | `colors === null` — the 1color path leaves colour to CSS (§2.4) | pick a palette or duotone in COLORS |
 | `too-many` | more than `MAX_PLATES` (64) distinct colours | choose an indexed palette, or set Quantize Levels |
 | `empty` | nothing opaque in the frame | — |
+| `vector` | the frame is beam geometry, which has no cells to partition | export the SVG, which is already one path per stroke colour |
 
 In practice the count is right by construction: an indexed palette yields exactly its
 own entries, `2color`/`3color` yield 2 or 3, pixel output with an explicit
@@ -829,8 +876,9 @@ declaration is what stops their ranges from drifting apart.
 The **Render** tab follows a strict vertical workflow across all three input sources:
 
 1. **Output Mode Command Selector** ([`App.tsx`](src/App.tsx))
-   - Permanent 2-card tactical grid at the top: `ASCII` (`TEXT`) vs `PIXEL` (`DITHER`).
-   - Switches `rasterMode` universally. In media mode, switching mode triggers `autoSetMediaResolution` to adapt the virtual canvas aspect ratio between monospace (`~0.6015`) and square (`1.0`).
+   - Permanent 3-card tactical grid at the top: `ASCII` (`TEXT`), `PIXEL` (`DITHER`), `VECTOR` (`BEAM`).
+   - Switches `rasterMode` universally. In media mode, switching mode triggers `autoSetMediaResolution` to adapt the virtual canvas aspect ratio between monospace (`~0.6015`) and square (`1.0`) — and, for vector, to resize the grid to the beam sampling width (800 columns).
+   - In VECTOR the Dither Algorithm Picker below is replaced by [`VectorControls`](src/components/VectorControls.tsx), and Quantize Depth and the charset ramp are hidden. All three are **hidden, not reset**: the state stays put and switching back restores it, the same invariant BASIC and ADVANCED hold (§4).
 
 2. **Resolution & DPI Optimizer** ([`OptimizeControls.tsx`](src/components/OptimizeControls.tsx))
    - Placed directly under the Output Mode selector.

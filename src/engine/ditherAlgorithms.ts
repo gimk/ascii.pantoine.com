@@ -67,7 +67,7 @@ export const DITHER_ALGORITHMS: DitherAlgorithmMeta[] = [
   { id: 'r-sequence', name: 'R-Sequence Quasi-Random', family: 'algorithmic', description: 'Low-discrepancy 2D metallic ratio quasi-random sequence', badge: 'Metallic Ratio', tags: ['Quasi-Random', 'Metallic', 'Math'], patternType: 'fractal', highlight: true },
 
   // --- Modulation & Generative (9) ---
-  { id: 'rutt-etra', name: 'Rutt-Etra / Joy Division', family: 'modulation', description: 'Rutt-Etra & Joy Division Unknown Pleasures scanline relief displacement and oscilloscope wave modulation', badge: 'Rutt-Etra', tags: ['Joy Division', 'Rutt-Etra', 'Scanline', 'Relief', 'Oscilloscope'], patternType: 'lines', highlight: true },
+  { id: 'rutt-etra', name: 'Rutt-Etra / Joy Division', family: 'modulation', description: 'Scanline relief as a cell pattern. For true beam deflection — occlusion, sub-cell strokes, SVG paths — use VECTOR output mode', badge: 'Rutt-Etra', tags: ['Joy Division', 'Rutt-Etra', 'Scanline', 'Relief', 'Oscilloscope'], patternType: 'lines', highlight: true },
   { id: 'scanline-shift', name: 'Scanline Phase Shift', family: 'modulation', description: 'Vertical stripes offset half a period on alternate rows', badge: 'Interlace CRT', tags: ['Scanline', 'CRT', 'Analog'], patternType: 'lines' },
   { id: 'sine-drift', name: 'Analog Sine Drift', family: 'modulation', description: 'CRT analog sinusoidal drift modulation', badge: 'Analog Sine', tags: ['CRT Drift', 'Wavy', 'Warp'], patternType: 'wave' },
   { id: 'glitch-displacement', name: 'Glitch Pixel Tear', family: 'modulation', description: 'Horizontal raster displacement jitter', badge: 'Cyberpunk Tear', tags: ['Glitch', 'Tear', 'Jitter'], patternType: 'glitch', highlight: true },

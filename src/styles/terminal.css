@@ -1558,8 +1558,8 @@ html, body, #root {
 
 .render-mode-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 }
 
 /* Sub-group Headings for Tonal & Effect Controls */
@@ -3953,4 +3953,28 @@ select:disabled {
   box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.45);
   z-index: 15;
   margin-top: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Vector mode — beam deflection presets
+   Four chips in a 2x2 block above the sliders, so the studio's named looks are
+   one click away and the parameters underneath read as "and here is why".
+   --------------------------------------------------------------------------- */
+.vector-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  margin: 6px 0 8px;
+}
+
+.vector-preset-chip {
+  height: 22px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

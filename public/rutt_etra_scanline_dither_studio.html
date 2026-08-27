@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rutt-Etra & Carrier Modulation Dithering Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Custom scrollbar and range slider styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 5px;
+      border-radius: 4px;
+      background: #334155;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      box-shadow: 0 0 6px #38bdf8;
+      transition: transform 0.1s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+    .crt-screen {
+      background: radial-gradient(circle at center, #0a0f1d 0%, #020617 100%);
+      box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.9), 0 0 25px rgba(56, 189, 248, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans select-none antialiased">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur px-4 py-3 flex items-center justify-between z-10">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.3)]">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="font-bold text-base md:text-lg tracking-tight text-white flex items-center gap-2">
+          Rutt-Etra & Scanline Dither Studio
+          <span class="text-xs font-medium px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/30">v2.5</span>
+        </h1>
+        <p class="text-xs text-slate-400 hidden sm:block">Analog raster deflection, carrier modulation & CRT synthesis</p>
+      </div>
+    </div>
+
+    <!-- Top Presets & Actions -->
+    <div class="flex items-center gap-2">
+      <label class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition flex items-center gap-1.5 shadow-sm">
+        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <span>Upload Image</span>
+        <input type="file" id="imageInput" accept="image/*" class="hidden" />
+      </label>
+
+      <button id="exportPngBtn" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white transition flex items-center gap-1.5 shadow-[0_0_12px_rgba(56,189,248,0.25)]">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        <span>PNG</span>
+      </button>
+
+      <button id="exportSvgBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+        <span>SVG Vector</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+
+    <!-- Controls Sidebar -->
+    <aside class="w-full lg:w-80 xl:w-96 bg-slate-900/90 border-r border-slate-800/80 flex flex-col overflow-y-auto shrink-0 order-2 lg:order-1 max-h-[45vh] lg:max-h-none">
+      
+      <!-- Presets Banner -->
+      <div class="p-4 border-b border-slate-800 bg-slate-900/40">
+        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Style Presets</div>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="presetRef1" class="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-sky-950/60 border border-slate-700 hover:border-sky-500/50 text-left transition group">
+            <div class="text-xs font-bold text-white group-hover:text-sky-300">1-Bit Carrier Dots</div>
+            <div class="text-[10px] text-slate-400">Vertical dot-chopped (Ref 1)</div>
+          </button>
+
+          <button id="presetRef2" class="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-purple-950/60 border border-slate-700 hover:border-purple-500/50 text-left transition group">
+            <div class="text-xs font-bold text-white group-hover:text-purple-300">Rutt-Etra Synth</div>
+            <div class="text-[10px] text-slate-400">Horizontal ripples (Ref 2)</div>
+          </button>
+
+          <button id="presetPulsar" class="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition">
+            <div class="text-xs font-bold text-white">Joy Division Wave</div>
+            <div class="text-[10px] text-slate-400">Topographic hidden-line</div>
+          </button>
+
+          <button id="presetAmber" class="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition">
+            <div class="text-xs font-bold text-white">Amber Oscilloscope</div>
+            <div class="text-[10px] text-slate-400">Phosphor glow CRT</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings Sections -->
+      <div class="p-4 space-y-5 flex-1">
+
+        <!-- 1. Geometry & Raster Structure -->
+        <section class="space-y-3">
+          <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-sky-400">
+            <span>1. Raster Geometry</span>
+            <span id="linesCountVal" class="text-slate-300">54 lines</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <button id="dirVertical" class="py-1.5 px-2 rounded font-medium bg-sky-600 text-white border border-sky-400/50 flex items-center justify-center gap-1">
+              <span>Vertical Lines</span>
+            </button>
+            <button id="dirHorizontal" class="py-1.5 px-2 rounded font-medium bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center gap-1">
+              <span>Horizontal Lines</span>
+            </button>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Scanline Density</label>
+              <span id="lineCountLabel">54</span>
+            </div>
+            <input id="lineCountSlider" type="range" min="16" max="180" step="1" value="54" class="w-full" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Sample Step (Smoothness)</label>
+              <span id="sampleStepLabel">2 px</span>
+            </div>
+            <input id="sampleStepSlider" type="range" min="1" max="6" step="1" value="2" class="w-full" />
+          </div>
+        </section>
+
+        <!-- 2. Deflection & Z-Displacement -->
+        <section class="space-y-3 pt-3 border-t border-slate-800">
+          <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-sky-400">
+            <span>2. Deflection (Z-Modulation)</span>
+            <span id="ampVal" class="text-slate-300">65px</span>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Deflection Gain ($\alpha$)</label>
+              <span id="ampLabel">65</span>
+            </div>
+            <input id="ampSlider" type="range" min="-180" max="180" step="1" value="65" class="w-full" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Center Bias ($\beta$)</label>
+              <span id="biasLabel">0.0 (Unidirectional)</span>
+            </div>
+            <input id="biasSlider" type="range" min="0" max="1" step="0.05" value="0.5" class="w-full" />
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-slate-300">
+            <label for="maskOcclusion">Mask Underneath (3D Occlusion)</label>
+            <input type="checkbox" id="maskOcclusion" class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-4 h-4 cursor-pointer" />
+          </div>
+        </section>
+
+        <!-- 3. High-Frequency Carrier (Dither / Dots) -->
+        <section class="space-y-3 pt-3 border-t border-slate-800">
+          <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-sky-400">
+            <span>3. Carrier & Dither Pulse</span>
+            <span id="carrierVal" class="text-slate-300">ON</span>
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-slate-300">
+            <label for="carrierToggle">Enable Carrier Modulation</label>
+            <input type="checkbox" id="carrierToggle" checked class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-4 h-4 cursor-pointer" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Carrier Frequency ($f_c$)</label>
+              <span id="freqLabel">0.45</span>
+            </div>
+            <input id="freqSlider" type="range" min="0.05" max="1.5" step="0.01" value="0.45" class="w-full" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Pulse Threshold ($\tau$)</label>
+              <span id="thresholdLabel">0.32</span>
+            </div>
+            <input id="thresholdSlider" type="range" min="0.0" max="0.9" step="0.02" value="0.32" class="w-full" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>PWM Pulse Width</label>
+              <span id="pwmLabel">1.2</span>
+            </div>
+            <input id="pwmSlider" type="range" min="0.2" max="2.5" step="0.1" value="1.2" class="w-full" />
+          </div>
+        </section>
+
+        <!-- 4. Analog Ripple Noise & Jitter -->
+        <section class="space-y-3 pt-3 border-t border-slate-800">
+          <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-sky-400">
+            <span>4. Analog Noise & Ripple</span>
+            <span id="noiseVal" class="text-slate-300">Low</span>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Ripple Amplitude ($\eta$)</label>
+              <span id="noiseAmpLabel">0.0 px</span>
+            </div>
+            <input id="noiseAmpSlider" type="range" min="0" max="20" step="0.5" value="0" class="w-full" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Ripple Frequency ($f_{\text{noise}}$)</label>
+              <span id="noiseFreqLabel">1.2</span>
+            </div>
+            <input id="noiseFreqSlider" type="range" min="0.1" max="5.0" step="0.1" value="1.2" class="w-full" />
+          </div>
+
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-300">Oscilloscope Sweep Live</span>
+            <button id="animateBtn" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-700">
+              Play Animation
+            </button>
+          </div>
+        </section>
+
+        <!-- 5. CRT Optics & Color Grading -->
+        <section class="space-y-3 pt-3 border-t border-slate-800 pb-4">
+          <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-sky-400">
+            <span>5. CRT Optics & Color</span>
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="text-xs text-slate-300">Phosphor / Color Theme</label>
+            <select id="paletteSelect" class="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 focus:outline-none">
+              <option value="mono">Monochrome White (Reference 1)</option>
+              <option value="synthwave">Synthwave Purple/Blue (Reference 2)</option>
+              <option value="green">P1 Phosphor (Matrix Green)</option>
+              <option value="amber">P3 Phosphor (Amber)</option>
+              <option value="cyan">Radar Cyan</option>
+            </select>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>RGB Chromatic Aberration</label>
+              <span id="chromaLabel">0 px</span>
+            </div>
+            <input id="chromaSlider" type="range" min="0" max="8" step="0.5" value="0" class="w-full" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>CRT Phosphor Bloom / Glow</label>
+              <span id="glowLabel">0 px</span>
+            </div>
+            <input id="glowSlider" type="range" min="0" max="25" step="1" value="0" class="w-full" />
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs text-slate-300">
+              <label>Stroke Width</label>
+              <span id="strokeLabel">1.2 px</span>
+            </div>
+            <input id="strokeSlider" type="range" min="0.5" max="4.0" step="0.1" value="1.2" class="w-full" />
+          </div>
+
+          <!-- Image Preprocessing -->
+          <div class="grid grid-cols-2 gap-2 pt-2 text-xs">
+            <div>
+              <div class="flex justify-between text-slate-400">
+                <label>Contrast</label>
+                <span id="contrastLabel">1.2</span>
+              </div>
+              <input id="contrastSlider" type="range" min="0.5" max="3.0" step="0.1" value="1.2" class="w-full" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-slate-400">
+                <label>Brightness</label>
+                <span id="brightLabel">0.0</span>
+              </div>
+              <input id="brightSlider" type="range" min="-0.5" max="0.5" step="0.05" value="0.0" class="w-full" />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-slate-300 pt-1">
+            <label for="invertLuma">Invert Luminance</label>
+            <input type="checkbox" id="invertLuma" class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 w-4 h-4 cursor-pointer" />
+          </div>
+        </section>
+
+      </div>
+    </aside>
+
+    <!-- Main Canvas Viewport -->
+    <main class="flex-1 flex flex-col items-center justify-center p-4 md:p-6 bg-slate-950 relative overflow-hidden order-1 lg:order-2">
+      
+      <!-- CRT Bezel Container -->
+      <div class="relative w-full h-full max-w-4xl max-h-[85vh] flex items-center justify-center">
+        <div class="crt-screen relative rounded-2xl border-4 md:border-8 border-slate-900 overflow-hidden flex items-center justify-center shadow-2xl w-full h-full p-2">
+          
+          <!-- Rendering Canvas -->
+          <canvas id="outputCanvas" class="max-w-full max-h-full object-contain rounded"></canvas>
+          
+          <!-- Subtle CRT scanline overlay -->
+          <div class="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.3)_50%)] bg-[length:100%_4px] opacity-40"></div>
+          
+          <!-- Subtle curved screen glare -->
+          <div class="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-sky-500/[0.02] to-white/[0.04]"></div>
+
+          <!-- Drag and Drop Dropzone Indicator -->
+          <div id="dropOverlay" class="absolute inset-0 bg-sky-950/80 border-2 border-dashed border-sky-400 rounded-xl flex items-center justify-center text-sky-200 font-semibold text-sm transition-opacity opacity-0 pointer-events-none">
+            Drop image here to process
+          </div>
+        </div>
+      </div>
+
+      <!-- Info bar / Resolution metrics -->
+      <div class="mt-2 text-center text-xs text-slate-500 flex items-center gap-4">
+        <span id="canvasDims">Canvas: 700 × 900</span>
+        <span>•</span>
+        <span>Hardware-accelerated 2D Vector Rasterizer</span>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // --- State & Parameters ---
+    const state = {
+      direction: 'vertical', // 'vertical' | 'horizontal'
+      lineCount: 54,
+      sampleStep: 2,
+      amplitude: 65,
+      bias: 0.5,
+      maskOcclusion: false,
+      
+      carrierEnabled: true,
+      carrierFreq: 0.45,
+      threshold: 0.32,
+      pwmFactor: 1.2,
+      
+      noiseAmp: 0,
+      noiseFreq: 1.2,
+      timePhase: 0,
+      isAnimating: false,
+      
+      palette: 'mono', // 'mono', 'synthwave', 'green', 'amber', 'cyan'
+      chroma: 0,
+      glow: 0,
+      strokeWidth: 1.2,
+      
+      contrast: 1.2,
+      brightness: 0.0,
+      invert: false
+    };
+
+    // DOM Elements
+    const canvas = document.getElementById('outputCanvas');
+    const ctx = canvas.getContext('2d');
+    const imageInput = document.getElementById('imageInput');
+    const dropOverlay = document.getElementById('dropOverlay');
+    const canvasDimsLabel = document.getElementById('canvasDims');
+
+    // Working hidden canvas for sampling pixel luminance
+    const sampleCanvas = document.createElement('canvas');
+    const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+
+    let sourceImage = null;
+    let animFrameId = null;
+
+    // --- Generate Default Geometric Synthetic Test Image ---
+    function generateDefaultTestImage() {
+      const w = 600;
+      const h = 760;
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = w;
+      offCanvas.height = h;
+      const offCtx = offCanvas.getContext('2d');
+
+      // Black background
+      offCtx.fillStyle = '#000000';
+      offCtx.fillRect(0, 0, w, h);
+
+      // Central Shaded 3D Sphere / Face Contour
+      const cx = w * 0.52;
+      const cy = h * 0.45;
+      const radius = 175;
+
+      const grad = offCtx.createRadialGradient(cx - 45, cy - 45, 10, cx, cy, radius);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.3, '#d4d4d4');
+      grad.addColorStop(0.7, '#4b5563');
+      grad.addColorStop(0.95, '#111827');
+      grad.addColorStop(1, '#000000');
+
+      offCtx.fillStyle = grad;
+      offCtx.beginPath();
+      offCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+      offCtx.fill();
+
+      // Additional concentric rings / depth structures (to mimic reference 1)
+      offCtx.lineWidth = 14;
+      offCtx.strokeStyle = '#334155';
+      offCtx.beginPath();
+      offCtx.arc(cx, cy, radius + 35, 0, Math.PI * 2);
+      offCtx.stroke();
+
+      const img = new Image();
+      img.src = offCanvas.toDataURL();
+      img.onload = () => {
+        sourceImage = img;
+        updateSourceBuffer();
+        render();
+      };
+    }
+
+    // Update the sampling buffer whenever image changes or pre-processing values change
+    let sampleData = null;
+    let sWidth = 0;
+    let sHeight = 0;
+
+    function updateSourceBuffer() {
+      if (!sourceImage) return;
+
+      const targetWidth = Math.min(800, sourceImage.width || 600);
+      const aspect = (sourceImage.height || 800) / (sourceImage.width || 600);
+      const targetHeight = Math.round(targetWidth * aspect);
+
+      sWidth = targetWidth;
+      sHeight = targetHeight;
+
+      sampleCanvas.width = sWidth;
+      sampleCanvas.height = sHeight;
+      canvas.width = sWidth;
+      canvas.height = sHeight;
+
+      canvasDimsLabel.textContent = `Raster: ${sWidth} × ${sHeight} px`;
+
+      // Draw source to sampling canvas
+      sampleCtx.drawImage(sourceImage, 0, 0, sWidth, sHeight);
+      
+      const imgData = sampleCtx.getImageData(0, 0, sWidth, sHeight);
+      const data = imgData.data;
+
+      // Extract preprocessed luminance buffer for ultra-fast sampling
+      sampleData = new Float32Array(sWidth * sHeight);
+
+      const contrast = state.contrast;
+      const brightness = state.brightness;
+      const invert = state.invert;
+
+      for (let i = 0; i < data.length; i += 4) {
+        let r = data[i] / 255;
+        let g = data[i + 1] / 255;
+        let b = data[i + 2] / 255;
+
+        // Rec. 709 luminance
+        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+        // Apply contrast & brightness
+        lum = (lum - 0.5) * contrast + 0.5 + brightness;
+        lum = Math.max(0, Math.min(1, lum));
+
+        if (invert) lum = 1.0 - lum;
+
+        sampleData[i / 4] = lum;
+      }
+    }
+
+    // Fast luminance lookup with coordinate clamping
+    function getLuma(x, y) {
+      const ix = Math.floor(Math.max(0, Math.min(sWidth - 1, x)));
+      const iy = Math.floor(Math.max(0, Math.min(sHeight - 1, y)));
+      return sampleData[iy * sWidth + ix] || 0;
+    }
+
+    // --- Main Rendering Engine ---
+    function render() {
+      if (!sampleData) return;
+
+      ctx.save();
+      // Clear black background
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const isVert = state.direction === 'vertical';
+      const N = state.lineCount;
+      const step = state.sampleStep;
+      const amp = state.amplitude;
+      const bias = state.bias;
+      const carrierOn = state.carrierEnabled;
+      const freq = state.carrierFreq;
+      const threshold = state.threshold;
+      const pwm = state.pwmFactor;
+      const nAmp = state.noiseAmp;
+      const nFreq = state.noiseFreq;
+      const phase = state.timePhase;
+      const chroma = state.chroma;
+
+      // Color scheme setup
+      let strokeStyles = ['#ffffff'];
+      if (state.palette === 'synthwave') {
+        strokeStyles = ['#ec4899', '#8b5cf6', '#38bdf8']; // Pink, Purple, Cyan
+      } else if (state.palette === 'green') {
+        strokeStyles = ['#22c55e']; // Phosphor green
+      } else if (state.palette === 'amber') {
+        strokeStyles = ['#f59e0b']; // P3 Amber
+      } else if (state.palette === 'cyan') {
+        strokeStyles = ['#06b6d4'];
+      }
+
+      // Handle Phosphor Glow
+      if (state.glow > 0) {
+        ctx.shadowBlur = state.glow;
+        ctx.shadowColor = strokeStyles[0];
+      } else {
+        ctx.shadowBlur = 0;
+      }
+
+      ctx.lineWidth = state.strokeWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // Chromatic Aberration passes
+      const passes = chroma > 0 ? [-chroma, 0, chroma] : [0];
+
+      passes.forEach((chromaOffset, passIndex) => {
+        if (state.palette === 'synthwave' && chroma > 0) {
+          ctx.strokeStyle = strokeStyles[passIndex % strokeStyles.length];
+        } else if (state.palette === 'mono' && chroma > 0) {
+          ctx.strokeStyle = passIndex === 0 ? '#ef4444' : (passIndex === 1 ? '#22c55e' : '#3b82f6');
+          ctx.globalCompositeOperation = passIndex === 0 ? 'source-over' : 'lighter';
+        } else {
+          ctx.strokeStyle = strokeStyles[0];
+        }
+
+        if (isVert) {
+          // --- Vertical Scanlines (Image 1 Style) ---
+          const colSpacing = sWidth / (N + 1);
+
+          for (let i = 1; i <= N; i++) {
+            const baseX = i * colSpacing + chromaOffset;
+            let isDrawingSegment = false;
+            let segStartX = baseX, segStartY = 0;
+
+            for (let y = 0; y < sHeight; y += step) {
+              const lum = getLuma(baseX - chromaOffset, y);
+
+              // 1. Z-Deflection displacement
+              const xOffset = (lum - bias) * amp;
+
+              // 2. Analog high-frequency noise ripple
+              const ripple = nAmp > 0 ? Math.sin(y * nFreq * 0.1 + phase + i) * nAmp * (1.0 - lum * 0.5) : 0;
+              const currentX = baseX + xOffset + ripple;
+
+              // 3. Carrier modulation thresholding (breaking lines into dots/pulses)
+              let drawPixel = true;
+              if (carrierOn) {
+                const carrier = (Math.sin(y * freq + phase) + 1.0) * 0.5;
+                const dynamicThreshold = Math.max(0.01, 1.0 - lum * pwm);
+                
+                // If dark, carrier isolates discrete dots. If bright, line remains continuous.
+                if (lum < 0.7 && carrier < dynamicThreshold * (1.0 - threshold)) {
+                  drawPixel = false;
+                }
+              }
+
+              if (lum <= 0.02 && carrierOn) {
+                drawPixel = false; // Blanking beam
+              }
+
+              // Draw segments or dots
+              if (drawPixel) {
+                if (!isDrawingSegment) {
+                  isDrawingSegment = true;
+                  segStartX = currentX;
+                  segStartY = y;
+                }
+                ctx.beginPath();
+                ctx.moveTo(segStartX, segStartY);
+                ctx.lineTo(currentX, y + step);
+                ctx.stroke();
+                segStartX = currentX;
+                segStartY = y + step;
+              } else {
+                isDrawingSegment = false;
+              }
+            }
+          }
+
+        } else {
+          // --- Horizontal Scanlines (Image 2 Rutt-Etra / Mountain Style) ---
+          const rowSpacing = sHeight / (N + 1);
+
+          for (let i = 1; i <= N; i++) {
+            const baseY = i * rowSpacing;
+            let pathStarted = false;
+
+            ctx.beginPath();
+
+            for (let x = 0; x < sWidth; x += step) {
+              const lum = getLuma(x, baseY);
+
+              // Upward Z-deflection (mountain peak)
+              const yOffset = -(lum - (1.0 - bias)) * amp;
+              const ripple = nAmp > 0 ? Math.sin(x * nFreq * 0.1 + phase + i * 0.5) * nAmp * (1.0 - lum * 0.4) : 0;
+              const currentY = baseY + yOffset + ripple + chromaOffset;
+
+              // Carrier pulse logic
+              let showPoint = true;
+              if (carrierOn) {
+                const carrier = (Math.sin(x * freq + phase) + 1.0) * 0.5;
+                const dynamicThreshold = Math.max(0.02, 1.0 - lum * pwm);
+                if (lum < 0.65 && carrier < dynamicThreshold * (1.0 - threshold)) {
+                  showPoint = false;
+                }
+              }
+
+              if (showPoint) {
+                if (!pathStarted) {
+                  ctx.moveTo(x, currentY);
+                  pathStarted = true;
+                } else {
+                  ctx.lineTo(x, currentY);
+                }
+              } else {
+                pathStarted = false;
+              }
+            }
+
+            // Optional 3D terrain occlusion mask
+            if (state.maskOcclusion && !carrierOn) {
+              ctx.lineTo(sWidth, sHeight);
+              ctx.lineTo(0, sHeight);
+              ctx.closePath();
+              ctx.fillStyle = '#020617';
+              ctx.fill();
+            }
+
+            ctx.stroke();
+          }
+        }
+      });
+
+      ctx.restore();
+    }
+
+    // --- Vector SVG Exporter ---
+    function exportSVG() {
+      if (!sampleData) return;
+
+      const isVert = state.direction === 'vertical';
+      const N = state.lineCount;
+      const step = state.sampleStep;
+      const amp = state.amplitude;
+      const bias = state.bias;
+      const carrierOn = state.carrierEnabled;
+      const freq = state.carrierFreq;
+      const threshold = state.threshold;
+      const pwm = state.pwmFactor;
+      const nAmp = state.noiseAmp;
+      const nFreq = state.noiseFreq;
+      const strokeColor = state.palette === 'synthwave' ? '#8b5cf6' : (state.palette === 'green' ? '#22c55e' : (state.palette === 'amber' ? '#f59e0b' : '#ffffff'));
+
+      let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${sWidth}" height="${sHeight}" viewBox="0 0 ${sWidth} ${sHeight}" style="background:#020617">\n`;
+
+      if (isVert) {
+        const colSpacing = sWidth / (N + 1);
+        for (let i = 1; i <= N; i++) {
+          const baseX = i * colSpacing;
+          let currentD = '';
+          for (let y = 0; y < sHeight; y += step) {
+            const lum = getLuma(baseX, y);
+            const xOffset = (lum - bias) * amp;
+            const ripple = nAmp > 0 ? Math.sin(y * nFreq * 0.1 + state.timePhase + i) * nAmp * (1.0 - lum * 0.5) : 0;
+            const currentX = baseX + xOffset + ripple;
+
+            let drawPixel = true;
+            if (carrierOn) {
+              const carrier = (Math.sin(y * freq + state.timePhase) + 1.0) * 0.5;
+              const dynamicThreshold = Math.max(0.01, 1.0 - lum * pwm);
+              if (lum < 0.7 && carrier < dynamicThreshold * (1.0 - threshold)) drawPixel = false;
+            }
+            if (lum <= 0.02 && carrierOn) drawPixel = false;
+
+            if (drawPixel) {
+              if (!currentD.length || currentD.endsWith('Z ')) {
+                currentD += `M ${currentX.toFixed(1)} ${y.toFixed(1)} `;
+              } else {
+                currentD += `L ${currentX.toFixed(1)} ${(y + step).toFixed(1)} `;
+              }
+            } else if (currentD.length && !currentD.endsWith('Z ')) {
+              currentD += ' ';
+            }
+          }
+          if (currentD.trim().length > 0) {
+            svg += `  <path d="${currentD.trim()}" stroke="${strokeColor}" stroke-width="${state.strokeWidth}" fill="none" stroke-linecap="round" />\n`;
+          }
+        }
+      } else {
+        const rowSpacing = sHeight / (N + 1);
+        for (let i = 1; i <= N; i++) {
+          const baseY = i * rowSpacing;
+          let currentD = '';
+          for (let x = 0; x < sWidth; x += step) {
+            const lum = getLuma(x, baseY);
+            const yOffset = -(lum - (1.0 - bias)) * amp;
+            const ripple = nAmp > 0 ? Math.sin(x * nFreq * 0.1 + state.timePhase + i * 0.5) * nAmp * (1.0 - lum * 0.4) : 0;
+            const currentY = baseY + yOffset + ripple;
+
+            let showPoint = true;
+            if (carrierOn) {
+              const carrier = (Math.sin(x * freq + state.timePhase) + 1.0) * 0.5;
+              const dynamicThreshold = Math.max(0.02, 1.0 - lum * pwm);
+              if (lum < 0.65 && carrier < dynamicThreshold * (1.0 - threshold)) showPoint = false;
+            }
+
+            if (showPoint) {
+              if (!currentD.length || currentD.endsWith('Z ')) {
+                currentD += `M ${x.toFixed(1)} ${currentY.toFixed(1)} `;
+              } else {
+                currentD += `L ${x.toFixed(1)} ${currentY.toFixed(1)} `;
+              }
+            } else if (currentD.length && !currentD.endsWith('Z ')) {
+              currentD += ' ';
+            }
+          }
+          if (currentD.trim().length > 0) {
+            svg += `  <path d="${currentD.trim()}" stroke="${strokeColor}" stroke-width="${state.strokeWidth}" fill="none" stroke-linecap="round" />\n`;
+          }
+        }
+      }
+
+      svg += `</svg>`;
+
+      const blob = new Blob([svg], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rutt_etra_${Date.now()}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // --- UI Event Listeners & Binding ---
+    function bindInputs() {
+      // Direction
+      const btnVert = document.getElementById('dirVertical');
+      const btnHoriz = document.getElementById('dirHorizontal');
+
+      btnVert.addEventListener('click', () => {
+        state.direction = 'vertical';
+        btnVert.className = 'py-1.5 px-2 rounded font-medium bg-sky-600 text-white border border-sky-400/50 flex items-center justify-center gap-1';
+        btnHoriz.className = 'py-1.5 px-2 rounded font-medium bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center gap-1';
+        render();
+      });
+
+      btnHoriz.addEventListener('click', () => {
+        state.direction = 'horizontal';
+        btnHoriz.className = 'py-1.5 px-2 rounded font-medium bg-sky-600 text-white border border-sky-400/50 flex items-center justify-center gap-1';
+        btnVert.className = 'py-1.5 px-2 rounded font-medium bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center gap-1';
+        render();
+      });
+
+      // Line Count
+      const lineSlider = document.getElementById('lineCountSlider');
+      const lineLabel = document.getElementById('lineCountLabel');
+      const linesCountVal = document.getElementById('linesCountVal');
+      lineSlider.addEventListener('input', (e) => {
+        state.lineCount = parseInt(e.target.value);
+        lineLabel.textContent = state.lineCount;
+        linesCountVal.textContent = `${state.lineCount} lines`;
+        render();
+      });
+
+      // Sample Step
+      const stepSlider = document.getElementById('sampleStepSlider');
+      const stepLabel = document.getElementById('sampleStepLabel');
+      stepSlider.addEventListener('input', (e) => {
+        state.sampleStep = parseInt(e.target.value);
+        stepLabel.textContent = `${state.sampleStep} px`;
+        render();
+      });
+
+      // Amplitude
+      const ampSlider = document.getElementById('ampSlider');
+      const ampLabel = document.getElementById('ampLabel');
+      const ampVal = document.getElementById('ampVal');
+      ampSlider.addEventListener('input', (e) => {
+        state.amplitude = parseFloat(e.target.value);
+        ampLabel.textContent = state.amplitude;
+        ampVal.textContent = `${state.amplitude}px`;
+        render();
+      });
+
+      // Bias
+      const biasSlider = document.getElementById('biasSlider');
+      const biasLabel = document.getElementById('biasLabel');
+      biasSlider.addEventListener('input', (e) => {
+        state.bias = parseFloat(e.target.value);
+        biasLabel.textContent = state.bias === 0 ? '0.0 (Unidirectional)' : (state.bias === 0.5 ? '0.5 (Centered)' : state.bias.toFixed(2));
+        render();
+      });
+
+      // Mask Occlusion
+      const maskOcclusion = document.getElementById('maskOcclusion');
+      maskOcclusion.addEventListener('change', (e) => {
+        state.maskOcclusion = e.target.checked;
+        render();
+      });
+
+      // Carrier Toggle
+      const carrierToggle = document.getElementById('carrierToggle');
+      const carrierVal = document.getElementById('carrierVal');
+      carrierToggle.addEventListener('change', (e) => {
+        state.carrierEnabled = e.target.checked;
+        carrierVal.textContent = state.carrierEnabled ? 'ON' : 'OFF';
+        render();
+      });
+
+      // Carrier Freq
+      const freqSlider = document.getElementById('freqSlider');
+      const freqLabel = document.getElementById('freqLabel');
+      freqSlider.addEventListener('input', (e) => {
+        state.carrierFreq = parseFloat(e.target.value);
+        freqLabel.textContent = state.carrierFreq.toFixed(2);
+        render();
+      });
+
+      // Threshold
+      const thresholdSlider = document.getElementById('thresholdSlider');
+      const thresholdLabel = document.getElementById('thresholdLabel');
+      thresholdSlider.addEventListener('input', (e) => {
+        state.threshold = parseFloat(e.target.value);
+        thresholdLabel.textContent = state.threshold.toFixed(2);
+        render();
+      });
+
+      // PWM
+      const pwmSlider = document.getElementById('pwmSlider');
+      const pwmLabel = document.getElementById('pwmLabel');
+      pwmSlider.addEventListener('input', (e) => {
+        state.pwmFactor = parseFloat(e.target.value);
+        pwmLabel.textContent = state.pwmFactor.toFixed(1);
+        render();
+      });
+
+      // Noise Amplitude & Freq
+      const noiseAmpSlider = document.getElementById('noiseAmpSlider');
+      const noiseAmpLabel = document.getElementById('noiseAmpLabel');
+      const noiseVal = document.getElementById('noiseVal');
+      noiseAmpSlider.addEventListener('input', (e) => {
+        state.noiseAmp = parseFloat(e.target.value);
+        noiseAmpLabel.textContent = `${state.noiseAmp.toFixed(1)} px`;
+        noiseVal.textContent = state.noiseAmp > 0 ? `${state.noiseAmp}px` : 'OFF';
+        render();
+      });
+
+      const noiseFreqSlider = document.getElementById('noiseFreqSlider');
+      const noiseFreqLabel = document.getElementById('noiseFreqLabel');
+      noiseFreqSlider.addEventListener('input', (e) => {
+        state.noiseFreq = parseFloat(e.target.value);
+        noiseFreqLabel.textContent = state.noiseFreq.toFixed(1);
+        render();
+      });
+
+      // Animation Live Sweep
+      const animateBtn = document.getElementById('animateBtn');
+      animateBtn.addEventListener('click', () => {
+        state.isAnimating = !state.isAnimating;
+        if (state.isAnimating) {
+          animateBtn.textContent = 'Pause';
+          animateBtn.className = 'px-2.5 py-1 rounded bg-sky-600 text-[11px] font-semibold text-white border border-sky-400/50 shadow-[0_0_8px_rgba(56,189,248,0.4)]';
+          function loop() {
+            state.timePhase += 0.15;
+            render();
+            if (state.isAnimating) animFrameId = requestAnimationFrame(loop);
+          }
+          loop();
+        } else {
+          animateBtn.textContent = 'Play Animation';
+          animateBtn.className = 'px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-700';
+          cancelAnimationFrame(animFrameId);
+        }
+      });
+
+      // Palette
+      const paletteSelect = document.getElementById('paletteSelect');
+      paletteSelect.addEventListener('change', (e) => {
+        state.palette = e.target.value;
+        render();
+      });
+
+      // Chromatic Aberration
+      const chromaSlider = document.getElementById('chromaSlider');
+      const chromaLabel = document.getElementById('chromaLabel');
+      chromaSlider.addEventListener('input', (e) => {
+        state.chroma = parseFloat(e.target.value);
+        chromaLabel.textContent = `${state.chroma.toFixed(1)} px`;
+        render();
+      });
+
+      // Glow / Bloom
+      const glowSlider = document.getElementById('glowSlider');
+      const glowLabel = document.getElementById('glowLabel');
+      glowSlider.addEventListener('input', (e) => {
+        state.glow = parseInt(e.target.value);
+        glowLabel.textContent = `${state.glow} px`;
+        render();
+      });
+
+      // Stroke Width
+      const strokeSlider = document.getElementById('strokeSlider');
+      const strokeLabel = document.getElementById('strokeLabel');
+      strokeSlider.addEventListener('input', (e) => {
+        state.strokeWidth = parseFloat(e.target.value);
+        strokeLabel.textContent = `${state.strokeWidth.toFixed(1)} px`;
+        render();
+      });
+
+      // Contrast & Brightness
+      const contrastSlider = document.getElementById('contrastSlider');
+      const contrastLabel = document.getElementById('contrastLabel');
+      contrastSlider.addEventListener('input', (e) => {
+        state.contrast = parseFloat(e.target.value);
+        contrastLabel.textContent = state.contrast.toFixed(1);
+        updateSourceBuffer();
+        render();
+      });
+
+      const brightSlider = document.getElementById('brightSlider');
+      const brightLabel = document.getElementById('brightLabel');
+      brightSlider.addEventListener('input', (e) => {
+        state.brightness = parseFloat(e.target.value);
+        brightLabel.textContent = state.brightness.toFixed(2);
+        updateSourceBuffer();
+        render();
+      });
+
+      // Invert
+      const invertLuma = document.getElementById('invertLuma');
+      invertLuma.addEventListener('change', (e) => {
+        state.invert = e.target.checked;
+        updateSourceBuffer();
+        render();
+      });
+
+      // File upload
+      imageInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          loadFile(e.target.files[0]);
+        }
+      });
+
+      // Drag and drop handling
+      window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropOverlay.classList.remove('opacity-0', 'pointer-events-none');
+        dropOverlay.classList.add('opacity-100');
+      });
+
+      window.addEventListener('dragleave', (e) => {
+        if (e.clientX === 0 || e.clientY === 0) {
+          dropOverlay.classList.add('opacity-0', 'pointer-events-none');
+          dropOverlay.classList.remove('opacity-100');
+        }
+      });
+
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropOverlay.classList.add('opacity-0', 'pointer-events-none');
+        dropOverlay.classList.remove('opacity-100');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          loadFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Exports
+      document.getElementById('exportPngBtn').addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = `rutt_etra_${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
+
+      document.getElementById('exportSvgBtn').addEventListener('click', exportSVG);
+
+      // --- Style Presets ---
+      // Preset 1: Reference Image 1 (Vertical 1-Bit Dot Matrix)
+      document.getElementById('presetRef1').addEventListener('click', () => {
+        state.direction = 'vertical';
+        btnVert.click();
+        state.lineCount = 52;
+        lineSlider.value = 52;
+        lineLabel.textContent = '52';
+
+        state.sampleStep = 2;
+        stepSlider.value = 2;
+        stepLabel.textContent = '2 px';
+
+        state.amplitude = 65;
+        ampSlider.value = 65;
+        ampLabel.textContent = '65';
+
+        state.bias = 0.5;
+        biasSlider.value = 0.5;
+        biasLabel.textContent = '0.5 (Centered)';
+
+        state.carrierEnabled = true;
+        carrierToggle.checked = true;
+
+        state.carrierFreq = 0.45;
+        freqSlider.value = 0.45;
+        freqLabel.textContent = '0.45';
+
+        state.threshold = 0.32;
+        thresholdSlider.value = 0.32;
+        thresholdLabel.textContent = '0.32';
+
+        state.pwmFactor = 1.25;
+        pwmSlider.value = 1.25;
+        pwmLabel.textContent = '1.25';
+
+        state.noiseAmp = 0;
+        noiseAmpSlider.value = 0;
+        noiseAmpLabel.textContent = '0.0 px';
+
+        state.palette = 'mono';
+        paletteSelect.value = 'mono';
+
+        state.chroma = 0;
+        chromaSlider.value = 0;
+        chromaLabel.textContent = '0 px';
+
+        state.glow = 0;
+        glowSlider.value = 0;
+        glowLabel.textContent = '0 px';
+
+        state.strokeWidth = 1.3;
+        strokeSlider.value = 1.3;
+        strokeLabel.textContent = '1.3 px';
+
+        state.maskOcclusion = false;
+        maskOcclusion.checked = false;
+
+        render();
+      });
+
+      // Preset 2: Reference Image 2 (Rutt-Etra Synthwave)
+      document.getElementById('presetRef2').addEventListener('click', () => {
+        state.direction = 'horizontal';
+        btnHoriz.click();
+        state.lineCount = 75;
+        lineSlider.value = 75;
+        lineLabel.textContent = '75';
+
+        state.sampleStep = 2;
+        stepSlider.value = 2;
+        stepLabel.textContent = '2 px';
+
+        state.amplitude = 85;
+        ampSlider.value = 85;
+        ampLabel.textContent = '85';
+
+        state.bias = 1.0;
+        biasSlider.value = 1.0;
+        biasLabel.textContent = '1.0';
+
+        state.carrierEnabled = false;
+        carrierToggle.checked = false;
+        carrierVal.textContent = 'OFF';
+
+        state.noiseAmp = 4.5;
+        noiseAmpSlider.value = 4.5;
+        noiseAmpLabel.textContent = '4.5 px';
+
+        state.noiseFreq = 1.8;
+        noiseFreqSlider.value = 1.8;
+        noiseFreqLabel.textContent = '1.8';
+
+        state.palette = 'synthwave';
+        paletteSelect.value = 'synthwave';
+
+        state.chroma = 2.5;
+        chromaSlider.value = 2.5;
+        chromaLabel.textContent = '2.5 px';
+
+        state.glow = 8;
+        glowSlider.value = 8;
+        glowLabel.textContent = '8 px';
+
+        state.strokeWidth = 1.2;
+        strokeSlider.value = 1.2;
+        strokeLabel.textContent = '1.2 px';
+
+        state.maskOcclusion = false;
+        maskOcclusion.checked = false;
+
+        render();
+      });
+
+      // Preset 3: Joy Division Wave (Topographic Hidden-Line)
+      document.getElementById('presetPulsar').addEventListener('click', () => {
+        state.direction = 'horizontal';
+        btnHoriz.click();
+        state.lineCount = 50;
+        lineSlider.value = 50;
+        lineLabel.textContent = '50';
+
+        state.amplitude = 60;
+        ampSlider.value = 60;
+        ampLabel.textContent = '60';
+
+        state.bias = 1.0;
+        biasSlider.value = 1.0;
+        biasLabel.textContent = '1.0';
+
+        state.carrierEnabled = false;
+        carrierToggle.checked = false;
+        carrierVal.textContent = 'OFF';
+
+        state.noiseAmp = 1.5;
+        noiseAmpSlider.value = 1.5;
+        noiseAmpLabel.textContent = '1.5 px';
+
+        state.palette = 'mono';
+        paletteSelect.value = 'mono';
+
+        state.chroma = 0;
+        chromaSlider.value = 0;
+        chromaLabel.textContent = '0 px';
+
+        state.glow = 0;
+        glowSlider.value = 0;
+        glowLabel.textContent = '0 px';
+
+        state.maskOcclusion = true;
+        maskOcclusion.checked = true;
+
+        render();
+      });
+
+      // Preset 4: Amber Oscilloscope
+      document.getElementById('presetAmber').addEventListener('click', () => {
+        state.direction = 'vertical';
+        btnVert.click();
+        state.lineCount = 60;
+        lineSlider.value = 60;
+        lineLabel.textContent = '60';
+
+        state.amplitude = 70;
+        ampSlider.value = 70;
+        ampLabel.textContent = '70';
+
+        state.carrierEnabled = true;
+        carrierToggle.checked = true;
+        carrierVal.textContent = 'ON';
+
+        state.carrierFreq = 0.55;
+        freqSlider.value = 0.55;
+        freqLabel.textContent = '0.55';
+
+        state.palette = 'amber';
+        paletteSelect.value = 'amber';
+
+        state.glow = 14;
+        glowSlider.value = 14;
+        glowLabel.textContent = '14 px';
+
+        state.chroma = 1.5;
+        chromaSlider.value = 1.5;
+        chromaLabel.textContent = '1.5 px';
+
+        state.maskOcclusion = false;
+        maskOcclusion.checked = false;
+
+        render();
+      });
+    }
+
+    function loadFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.src = e.target.result;
+        img.onload = () => {
+          sourceImage = img;
+          updateSourceBuffer();
+          render();
+        };
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Initialize application
+    window.addEventListener('DOMContentLoaded', () => {
+      bindInputs();
+      generateDefaultTestImage();
+    });
+  </script>
+</body>
+</html>

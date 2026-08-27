@@ -8,6 +8,7 @@ import {
   ToneMappingConfig,
   ImageAdjustConfig,
   MediaColorConfig,
+  VectorConfig,
 } from '../types/ascii';
 import { processRasterFrame, toPipelineAdjustments, emptyRasterResult, ProcessedRasterResult } from './rasterEngine';
 
@@ -24,6 +25,7 @@ export interface ModelRenderContext {
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -549,6 +551,7 @@ class HeadlessModelRenderer {
         rasterMode: ctx.rasterMode || viewConfig.rasterMode || 'ascii',
         ditherAlgorithm: ctx.algorithm || viewConfig.algorithm || 'none',
         ditherParams: ctx.ditherParams || viewConfig.ditherParams,
+        vectorConfig: ctx.vectorConfig || viewConfig.vectorConfig,
         toneConfig: ctx.toneConfig || viewConfig.toneConfig,
         colorConfig: ctx.colorConfig,
         monoTint: ctx.colorConfig?.monoTint,

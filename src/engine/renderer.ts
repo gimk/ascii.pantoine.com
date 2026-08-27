@@ -6,6 +6,7 @@ import {
   ToneMappingConfig,
   MediaColorConfig,
   ImageAdjustConfig,
+  VectorConfig,
 } from '../types/ascii';
 import { evaluateParametricWave } from './math';
 import { processRasterFrame, toPipelineAdjustments, emptyRasterResult, ProcessedRasterResult } from './rasterEngine';
@@ -73,6 +74,7 @@ export interface SynthRenderOptions extends RenderContext {
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -95,6 +97,7 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
     rasterMode = 'ascii',
     algorithm = 'none',
     ditherParams,
+    vectorConfig,
     toneConfig,
     adjustConfig,
   } = ctx;
@@ -233,6 +236,7 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
       rasterMode,
       ditherAlgorithm: algorithm,
       ditherParams,
+      vectorConfig,
       toneConfig,
       colorConfig: ctx.colorConfig,
       monoTint: ctx.colorConfig?.monoTint,

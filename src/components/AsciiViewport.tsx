@@ -7,12 +7,14 @@ import {
   OptimizeConfig,
   RasterOutputMode,
   UiThemeSettings,
+  VectorFrame,
 } from '../types/ascii';
 
 import { AsciiLoadingSpinner } from './AsciiLoadingSpinner';
 import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
 import { resolvePhosphorTint } from '../engine/palettes';
+import { paintVectorFrame } from '../engine/vectorEngine';
 
 const hexToRgb = (hex: string): [number, number, number] => {
   let cleaned = hex.replace('#', '').trim();
@@ -102,7 +104,8 @@ export interface AsciiViewportHandle {
     fps: number,
     colors?: Uint8ClampedArray | null,
     bgColor?: string,
-    rasterMode?: RasterOutputMode
+    rasterMode?: RasterOutputMode,
+    vector?: VectorFrame | null
   ) => void;
   getFrameText: () => string;
   autoFit: () => void;
@@ -224,6 +227,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const latestFrameTextRef = useRef<string>('');
   const latestColorsRef = useRef<Uint8ClampedArray | null>(null);
   const latestBgColorRef = useRef<string | undefined>(undefined);
+  const latestVectorRef = useRef<VectorFrame | null>(null);
   
   const [isColoredView, setIsColoredView] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -254,14 +258,22 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      * budget, then fill the viewport at that scale. Whole-number scaling is
      * what drawCanvas snaps to anyway, so the result blits without resampling.
      */
-    if (activeRasterMode === 'pixel') {
+    if (activeRasterMode === 'pixel' || activeRasterMode === 'vector') {
       const pad = 20;
       const availableWidth = Math.max(80, clientWidth - pad);
       const availableHeight = Math.max(60, clientHeight - pad);
 
-      // Ceiling on live cells. Synth and model re-dither every frame, so this
-      // trades raster detail against holding framerate on a full-screen grid.
-      const MAX_PIXEL_CELLS = 40000;
+      /*
+       * Ceiling on live cells. Synth and model re-dither every frame, so this
+       * trades raster detail against holding framerate on a full-screen grid.
+       *
+       * Vector gets far more, because in that mode the grid is not a display
+       * raster at all -- it is the resolution the beam samples luminance at,
+       * and a coarse one makes a deflected line visibly faceted. Only steps 1-3
+       * run over it (there is no dither, no colour buffer and no glyph pass),
+       * so the extra cells are much cheaper than they look.
+       */
+      const MAX_PIXEL_CELLS = activeRasterMode === 'vector' ? 400000 : 40000;
       const scale = Math.max(
         2,
         Math.min(
@@ -333,9 +345,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
    */
   const getContentSize = useCallback(
     (scale: number) => {
-      const isPixel = latestRasterModeRef.current === 'pixel';
-      const cellW = isPixel ? 1 : MONOSPACE_CELL_WIDTH;
-      const cellH = isPixel ? 1 : MONOSPACE_CELL_HEIGHT;
+      const square = latestRasterModeRef.current !== 'ascii';
+      const cellW = square ? 1 : MONOSPACE_CELL_WIDTH;
+      const cellH = square ? 1 : MONOSPACE_CELL_HEIGHT;
       return { w: cols * cellW * scale, h: rows * cellH * scale };
     },
     [cols, rows]
@@ -684,9 +696,15 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return;
 
+    /*
+     * Vector shares pixel's 1:1 cell geometry -- polylines live in grid space
+     * and a 0.6 cell would shear them -- but not its scale snapping below: a
+     * beam is continuous, so there is no cell edge to keep hard.
+     */
     const isPixel = latestRasterModeRef.current === 'pixel';
-    const charWidth = isPixel ? 1 : MONOSPACE_CELL_WIDTH;
-    const charHeight = isPixel ? 1 : MONOSPACE_CELL_HEIGHT;
+    const square = latestRasterModeRef.current !== 'ascii';
+    const charWidth = square ? 1 : MONOSPACE_CELL_WIDTH;
+    const charHeight = square ? 1 : MONOSPACE_CELL_HEIGHT;
     const unscaledWidth = cols * charWidth;
     const unscaledHeight = rows * charHeight;
 
@@ -778,17 +796,137 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     rows: number;
   } | null>(null);
 
+  /**
+   * Paint a traced beam.
+   *
+   * Unlike the two cell paths this **re-strokes on every zoom** rather than
+   * magnifying a bitmap, which is the whole reason vector output exists: the
+   * geometry is resolution-independent, so a line is re-rasterized crisply at
+   * whatever scale it is being viewed at instead of turning into a staircase.
+   * Deliberately no bitmap cache here — it would throw that away.
+   *
+   * A *pan* is still free: the canvas holds the whole raster and carries the
+   * translate in CSS, exactly as the cell paths do. Only past the backing-store
+   * limit does it fall back to a viewport-sized canvas that repaints as it
+   * moves, and at that magnification only a handful of lines are on screen.
+   */
+  const drawVector = useCallback(
+    (
+      canvas: HTMLCanvasElement,
+      container: HTMLDivElement,
+      frame: VectorFrame | null,
+      bgColor: string | undefined,
+      v: ViewTransform
+    ) => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      if (!frame || frame.polylines.length === 0) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        lastDrawRef.current = null;
+        return;
+      }
+
+      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      const scale = v.scale;
+      /* One grid cell is one unit; the beam was traced in exactly this space. */
+      const unscaledW = Math.max(1, frame.width);
+      const unscaledH = Math.max(1, frame.height);
+      const culled = Math.max(unscaledW, unscaledH) * scale * dpr > MAX_BACKING_DIM;
+
+      const prev = lastDrawRef.current;
+      const sameContent =
+        prev !== null &&
+        prev.seq === frameSeqRef.current &&
+        prev.scale === scale &&
+        prev.mode === 'vector' &&
+        prev.culled === culled &&
+        prev.cols === frame.width &&
+        prev.rows === frame.height;
+
+      if (sameContent && !culled) {
+        const translate = `translate3d(${v.tx}px, ${v.ty}px, 0)`;
+        if (canvas.style.transform !== translate) canvas.style.transform = translate;
+        return;
+      }
+
+      lastDrawRef.current = {
+        seq: frameSeqRef.current,
+        scale,
+        mode: 'vector',
+        culled,
+        cols: frame.width,
+        rows: frame.height,
+      };
+
+      const viewW = container.clientWidth;
+      const viewH = container.clientHeight;
+      const originX = culled ? v.tx : 0;
+      const originY = culled ? v.ty : 0;
+      const cssW = culled ? viewW : Math.round(unscaledW * scale);
+      const cssH = culled ? viewH : Math.round(unscaledH * scale);
+
+      const cssWpx = `${cssW}px`;
+      const cssHpx = `${cssH}px`;
+      if (canvas.style.width !== cssWpx) canvas.style.width = cssWpx;
+      if (canvas.style.height !== cssHpx) canvas.style.height = cssHpx;
+      const translate = culled ? 'none' : `translate3d(${v.tx}px, ${v.ty}px, 0)`;
+      if (canvas.style.transform !== translate) canvas.style.transform = translate;
+
+      const backingW = Math.max(1, Math.round(cssW * dpr));
+      const backingH = Math.max(1, Math.round(cssH * dpr));
+      if (canvas.width !== backingW || canvas.height !== backingH) {
+        canvas.width = backingW;
+        canvas.height = backingH;
+      }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.clearRect(0, 0, cssW, cssH);
+
+      const ground = bgColor || frame.bgColor;
+      ctx.save();
+      ctx.translate(originX, originY);
+      ctx.scale(scale, scale);
+      if (ground && ground !== 'transparent') {
+        ctx.fillStyle = ground;
+        ctx.fillRect(0, 0, unscaledW, unscaledH);
+      }
+      /*
+       * strokeScale stays 1, so a stroke grows with the zoom the way a vector
+       * document does and the viewport matches what an export at that scale
+       * produces. glowScale compensates for shadowBlur being measured in
+       * device pixels rather than user space, so the halo scales with it.
+       */
+      paintVectorFrame(ctx, frame, { glowScale: scale * dpr });
+      ctx.restore();
+    },
+    []
+  );
+
   const drawCanvas = useCallback(
     (
       frameText: string,
       colors: Uint8ClampedArray | null,
       bgColor: string | undefined,
       v: ViewTransform,
-      rasterMode: RasterOutputMode = 'ascii'
+      rasterMode: RasterOutputMode = 'ascii',
+      vector: VectorFrame | null = null
     ) => {
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (!canvas || !container) return;
+
+      /*
+       * Vector output goes first, before the colour-buffer check below: it has
+       * no colour buffer by construction, and falling through would wipe the
+       * canvas and blank the beam.
+       */
+      if (rasterMode === 'vector') {
+        drawVector(canvas, container, vector, bgColor, v);
+        return;
+      }
 
       /*
        * No content: wipe rather than return. Bailing out left whatever was
@@ -1033,13 +1171,19 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
    * translate moved, so the uncelled case stays free.
    */
   useEffect(() => {
-    if (isColoredView && latestFrameTextRef.current) {
+    // Vector carries no frame text, so gate on having geometry instead.
+    const hasContent =
+      latestRasterModeRef.current === 'vector'
+        ? Boolean(latestVectorRef.current)
+        : Boolean(latestFrameTextRef.current);
+    if (isColoredView && hasContent) {
       drawCanvas(
         latestFrameTextRef.current,
         latestColorsRef.current,
         latestBgColorRef.current,
         view,
-        latestRasterModeRef.current
+        latestRasterModeRef.current,
+        latestVectorRef.current
       );
     }
   }, [view, drawCanvas, isColoredView, resizeTick]);
@@ -1052,7 +1196,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       fps: number,
       colors?: Uint8ClampedArray | null,
       bgColor?: string,
-      rasterMode?: RasterOutputMode
+      rasterMode?: RasterOutputMode,
+      vector?: VectorFrame | null
     ) => {
       // A new frame, by definition: invalidates the pan short-circuit in
       // drawCanvas regardless of whether the buffers came back identical.
@@ -1060,6 +1205,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       latestFrameTextRef.current = frameText;
       latestColorsRef.current = colors || null;
       latestBgColorRef.current = bgColor;
+      latestVectorRef.current = vector || null;
       if (rasterMode) {
         latestRasterModeRef.current = rasterMode;
         // Mirror into state so auto-resolution and auto-fit, which size the
@@ -1071,7 +1217,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         }
       }
 
-      const isCanvasMode = Boolean((colors && colors.length > 0) || rasterMode === 'pixel');
+      /*
+       * Which of the two output surfaces this frame belongs on. Vector always
+       * takes the canvas: it has no colour buffer and no text, so neither of
+       * the other two tests would catch it.
+       */
+      const isCanvasMode = Boolean(
+        (colors && colors.length > 0) || rasterMode === 'pixel' || rasterMode === 'vector'
+      );
 
       if (isCanvasMode) {
         if (!isColoredView) {
@@ -1084,7 +1237,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           // Read through the ref: setFrame runs from the animation loop and
           // must never paint at a transform the view has already moved past.
           viewRef.current,
-          rasterMode || latestRasterModeRef.current
+          rasterMode || latestRasterModeRef.current,
+          vector || null
         );
       } else {
         if (isColoredView) {

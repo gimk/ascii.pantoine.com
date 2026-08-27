@@ -38,6 +38,7 @@ import {
   RasterOutputMode,
   DitherAlgorithm,
   DitherParams,
+  VectorConfig,
   ToneMappingConfig,
   ImageAdjustConfig,
 } from '../types/ascii';
@@ -71,6 +72,7 @@ interface ExportModalProps {
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -133,6 +135,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   rasterMode,
   ditherAlgorithm,
   ditherParams,
+  vectorConfig,
   toneConfig,
   adjustConfig,
   mediaElement,
@@ -204,7 +207,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleCaptureImage = useCallback(async () => {
     const effectiveRasterMode: RasterOutputMode =
       rasterMode || (appMode === 'media' ? mediaViewConfig?.rasterMode : undefined) || 'ascii';
-    const isPixel = effectiveRasterMode === 'pixel';
+    /* Both non-ASCII modes bypass the CRT overlays. See imageExporter. */
+    const isPixel = effectiveRasterMode !== 'ascii';
 
     try {
       const res = await exportAsciiImage({
@@ -241,6 +245,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         rasterMode,
         ditherAlgorithm,
         ditherParams,
+        vectorConfig,
         toneConfig,
         adjustConfig,
       });
@@ -285,6 +290,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     rasterMode,
     ditherAlgorithm,
     ditherParams,
+    vectorConfig,
     toneConfig,
     adjustConfig,
     imageUrl,
@@ -331,6 +337,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         rasterMode,
         ditherAlgorithm,
         ditherParams,
+        vectorConfig,
         toneConfig,
         adjustConfig,
       });
@@ -351,7 +358,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     density, cols, rows, theme, customThemeColor, gradientConfig, crtConfig,
     appMode, modelConfig, modelViewConfig, geometry, mediaConfig,
     mediaViewConfig, mediaColorConfig, mediaElement, rasterMode,
-    ditherAlgorithm, ditherParams, toneConfig, adjustConfig,
+    ditherAlgorithm, ditherParams, vectorConfig, toneConfig, adjustConfig,
   ]);
 
   useEffect(() => {
@@ -412,25 +419,32 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const effectiveRasterMode: RasterOutputMode =
     rasterMode || (appMode === 'media' ? mediaViewConfig?.rasterMode : undefined) || 'ascii';
   const isPixel = effectiveRasterMode === 'pixel';
+  const isVector = effectiveRasterMode === 'vector';
+  /*
+   * Vector keeps the scale fractional where pixel rounds to whole pixels per
+   * cell: there are no cell edges to protect, and rounding would quantize the
+   * geometry the mode exists to keep continuous.
+   */
+  const cellSize = (sc: number) => (isVector ? sc : Math.max(1, Math.round(sc)));
 
-  const stillCellW = isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_WIDTH * imageScale;
-  const stillCellH = isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_HEIGHT * imageScale;
+  const stillCellW = isVector ? cellSize(imageScale) : isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_WIDTH * imageScale;
+  const stillCellH = isVector ? cellSize(imageScale) : isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_HEIGHT * imageScale;
   const stillExportW = Math.round(cols * stillCellW);
   const stillExportH = Math.round(rows * stillCellH);
 
   // Same cell geometry as the still export, at this tab's own scale.
-  const sepCellW = isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_WIDTH * sepScale;
-  const sepCellH = isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_HEIGHT * sepScale;
+  const sepCellW = isVector ? cellSize(sepScale) : isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_WIDTH * sepScale;
+  const sepCellH = isVector ? cellSize(sepScale) : isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_HEIGHT * sepScale;
   const sepExportW = Math.round(cols * sepCellW);
   const sepExportH = Math.round(rows * sepCellH);
 
-  const gifCellW = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_WIDTH * gifScale;
-  const gifCellH = isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_HEIGHT * gifScale;
+  const gifCellW = isVector ? cellSize(gifScale) : isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_WIDTH * gifScale;
+  const gifCellH = isVector ? cellSize(gifScale) : isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_HEIGHT * gifScale;
   const gifExportW = Math.round(cols * gifCellW);
   const gifExportH = Math.round(rows * gifCellH);
 
-  const videoCellW = isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_WIDTH * videoScale;
-  const videoCellH = isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_HEIGHT * videoScale;
+  const videoCellW = isVector ? cellSize(videoScale) : isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_WIDTH * videoScale;
+  const videoCellH = isVector ? cellSize(videoScale) : isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_HEIGHT * videoScale;
   const videoExportW = Math.round(cols * videoCellW);
   const videoExportH = Math.round(rows * videoCellH);
 
@@ -479,6 +493,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           rasterMode,
           ditherAlgorithm,
           ditherParams,
+          vectorConfig,
           toneConfig,
           adjustConfig,
         },
@@ -536,6 +551,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           rasterMode,
           ditherAlgorithm,
           ditherParams,
+          vectorConfig,
           toneConfig,
           adjustConfig,
         },
@@ -1054,6 +1070,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                         That is past the {MAX_PLATES}-plate limit and would not be editable by hand
                         anyway. Choose an indexed palette, or set <strong>Quantize Levels</strong> in
                         TONAL CONTROLS to reduce the render to a countable set of inks.
+                      </>
+                    )}
+                    {sepResult.analysis.refusal === 'vector' && (
+                      <>
+                        <strong style={{ color: 'var(--accent)' }}>VECTOR OUTPUT.</strong>{' '}
+                        A separation splits the opaque <em>cells</em> between inks, and beam
+                        geometry has none. Export the SVG instead — it is already one path per
+                        stroke colour — or switch the output mode to PIXEL or ASCII.
                       </>
                     )}
                     {sepResult.analysis.refusal === 'empty' && (

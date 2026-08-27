@@ -17,9 +17,11 @@ import {
   PhosphorTheme,
   RasterOutputMode,
   ImageAdjustConfig,
+  VECTOR_CONFIG_DEFAULTS,
 } from '../types/ascii';
 import { MediaUploadControls } from './MediaFileControls';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
+import { VectorControls } from './VectorControls';
 import { PaletteControls } from './PaletteControls';
 import { NToneRampEditor } from './NToneRampEditor';
 import { CHARSETS } from '../engine/renderer';
@@ -129,6 +131,9 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   onExport,
 }) => {
   const isPixel = rasterMode === 'pixel';
+  const isVector = rasterMode === 'vector';
+  /* Only ASCII uses a glyph ramp; the other two label their step differently. */
+  const isAscii = rasterMode === 'ascii';
   const hasSource = Boolean(mediaConfig.fileData);
 
   /* Source dimensions, needed to turn a DPI percentage into a grid size. */
@@ -293,11 +298,19 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           </button>
           <button
             type="button"
-            className={`color-mode-tab ${!isPixel ? 'active' : ''}`}
+            className={`color-mode-tab ${isAscii ? 'active' : ''}`}
             onClick={() => onChangeRasterMode('ascii')}
             title="Monospace character density ramp"
           >
             ASCII
+          </button>
+          <button
+            type="button"
+            className={`color-mode-tab ${isVector ? 'active' : ''}`}
+            onClick={() => onChangeRasterMode('vector')}
+            title="Rutt-Etra beam deflection, drawn as polylines"
+          >
+            VECTOR
           </button>
         </div>
       </div>
@@ -334,16 +347,23 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
 
         {/* 2. Dithering Algorithm & Character Set */}
         <div className="tonal-subheading" style={{ marginTop: '2px' }}>
-          <span>{isPixel ? 'Dither Pattern' : 'Dither & Glyphs'}</span>
+          <span>{isVector ? 'Beam Deflection' : isPixel ? 'Dither Pattern' : 'Dither & Glyphs'}</span>
         </div>
 
-        <DitherAlgorithmPicker
-          value={viewConfig.algorithm || 'floyd-steinberg'}
-          onChange={(algo) => updateView('algorithm', algo)}
-          compact
-        />
+        {isVector ? (
+          <VectorControls
+            config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+            onChange={(next) => updateView('vectorConfig', next)}
+          />
+        ) : (
+          <DitherAlgorithmPicker
+            value={viewConfig.algorithm || 'floyd-steinberg'}
+            onChange={(algo) => updateView('algorithm', algo)}
+            compact
+          />
+        )}
 
-        {!isPixel && (
+        {isAscii && (
           <div className="control-row" style={{ alignItems: 'center' }}>
             <span className="control-label" style={{ flexShrink: 0 }}>
               Charset
@@ -456,6 +476,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           tonalMapping={viewConfig.tonalMapping}
           onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
           isPixelMode={isPixel}
+          isVectorMode={isVector}
           colorLevels={viewConfig.colorLevels}
           onChangeColorLevels={(val) => updateView('colorLevels', val)}
           rampEditorSlot={

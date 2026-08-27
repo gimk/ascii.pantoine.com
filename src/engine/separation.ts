@@ -52,14 +52,17 @@ export interface SeparationAnalysis {
    *  - 'mono'      the frame carries no colour buffer at all
    *  - 'too-many'  more distinct colours than MAX_PLATES
    *  - 'empty'     nothing opaque to separate
+   *  - 'vector'    the frame is beam geometry, which has no cells to partition
    */
-  refusal?: 'mono' | 'too-many' | 'empty';
+  refusal?: 'mono' | 'too-many' | 'empty' | 'vector';
   /** Distinct colours found, reported even when it exceeds MAX_PLATES. */
   distinctColors: number;
 }
 
 /** Just the fields the separation reads, so tests need not build a whole frame. */
-export type SeparableFrame = Pick<ExportFrame, 'text' | 'colors' | 'luminance'>;
+export type SeparableFrame = Pick<ExportFrame, 'text' | 'colors' | 'luminance'> & {
+  rasterMode?: ExportFrame['rasterMode'];
+};
 
 /**
  * Enumerates the inks in a rendered frame.
@@ -75,6 +78,22 @@ export function analyzeSeparation(
   rows: number
 ): SeparationAnalysis {
   const { colors, luminance } = frame;
+
+  /*
+   * A plate is defined as a subset of the opaque *cells*, and every painter
+   * masks by writing the -1 sentinel into the cells belonging to other inks.
+   * Vector output has no cells, so the whole mechanism has nothing to act on --
+   * it would fall through to the mono refusal and blame the colour panel for
+   * something the colour panel cannot fix.
+   *
+   * The vector version is genuinely easy and worth doing later: group the
+   * polylines by stroke colour, one SVG layer each, and it partitions by
+   * construction. It is simply not this code path.
+   */
+  if (frame.rasterMode === 'vector') {
+    return { plates: [], opaqueCells: 0, refusal: 'vector', distinctColors: 0 };
+  }
+
   if (!colors || colors.length === 0) {
     return { plates: [], opaqueCells: 0, refusal: 'mono', distinctColors: 1 };
   }

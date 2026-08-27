@@ -14,6 +14,9 @@ import {
   MediaColorConfig,
   TonalMappingType,
   ImageAdjustConfig,
+  VectorConfig,
+  VectorFrame,
+  VECTOR_CONFIG_DEFAULTS,
 } from '../types/ascii';
 import {
   BUILTIN_PALETTES,
@@ -21,6 +24,7 @@ import {
   DEFAULT_PHOSPHOR_TINT,
 } from './palettes';
 import { applyDitherAlgorithm, DITHER_ALGORITHMS } from './ditherAlgorithms';
+import { traceVectorField, VectorColorResolver } from './vectorEngine';
 
 export interface RawFrameBuffer {
   width: number;
@@ -37,6 +41,8 @@ export interface UnifiedPipelineOptions {
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  /** Beam deflection. Read only when `rasterMode === 'vector'`. */
+  vectorConfig?: VectorConfig;
   density: string;
   toneConfig?: ToneMappingConfig;
   colorConfig?: MediaColorConfig;
@@ -436,6 +442,13 @@ export interface ProcessedRasterResult {
   bgColor: string;
   isColored: boolean;
   /**
+   * Beam geometry, in vector mode only. Null in every cell mode, and `text` is
+   * empty whenever this is set — the two are mutually exclusive representations
+   * of the same frame, and a painter must branch on one or the other rather
+   * than assuming both are populated.
+   */
+  vector?: VectorFrame | null;
+  /**
    * Distribution of the luminance entering the levels stage, 256 bins.
    *
    * Live module buffer, not a copy -- the same contract as `luminance`. Read
@@ -503,9 +516,16 @@ export function emptyRasterResult(rasterMode: RasterOutputMode = 'ascii'): Proce
     rasterMode,
     bgColor: '#0a0a0a',
     isColored: false,
+    vector: null,
     histogram: EMPTY_HISTOGRAM,
     histogramOpaque: 0,
   };
+}
+
+/** Canvas and SVG both want a colour string; the palette API speaks RGB. */
+function rgbToHex(c: { r: number; g: number; b: number }): string {
+  const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${h(c.r)}${h(c.g)}${h(c.b)}`;
 }
 
 // Palette quantizer cache
@@ -1058,6 +1078,81 @@ export function processRasterFrame(
    */
   const rampStops = resolveRampStops(options);
 
+  // -------------------------------------------------------------------------
+  // The vector fork
+  // -------------------------------------------------------------------------
+  /*
+   * Vector output leaves here, with the tone graded and nothing quantized.
+   *
+   * This is the whole reason the seam sits at 3.5 rather than at the top of the
+   * function: steps 1-3 are exactly the field a beam wants to read, so vector
+   * mode inherits the tone curve, levels, auto-levels, blur, sharpen and Sobel
+   * edges without a line of new code. Everything below this point -- depth
+   * resolution, the band warp, the dither, the colour buffer, the glyph ramp --
+   * is cell machinery with no vector meaning.
+   *
+   * `luminance` and `histogram` still ride out on the result, so AUTO LEVELS
+   * and the Levels histogram keep working: the histogram tap is upstream at
+   * step 3 and never depended on the quantizer.
+   */
+  if ((options.rasterMode || 'ascii') === 'vector') {
+    const vectorCfg = options.vectorConfig || VECTOR_CONFIG_DEFAULTS;
+    const monoTint = options.monoTint || DEFAULT_PHOSPHOR_TINT;
+
+    let resolveColor: VectorColorResolver;
+    if (paletteMode === 'indexed' && activePalette) {
+      /*
+       * Tone match, always. Hue matching needs per-cell RGB to compare against
+       * and a beam has no cells -- its colour is a property of the whole run.
+       */
+      const palId = activePalette.id;
+      if (!activeQuantizer || cachedPaletteId !== palId) {
+        activeQuantizer = new PaletteQuantizer(activePalette);
+        cachedPaletteId = palId;
+        cachedPaletteIsMonochrome = paletteIsMonochrome(activeQuantizer);
+      }
+      const q = activeQuantizer;
+      resolveColor = (_line, meanLum) => rgbToHex(q.getToneRgb(meanLum));
+    } else if (paletteMode !== 'content' && tonal !== '1color') {
+      const stops = rampStops;
+      resolveColor = (_line, meanLum) => {
+        const v = Math.max(0, Math.min(0.9999, meanLum));
+        return stops[Math.min(stops.length - 1, Math.floor(v * stops.length))];
+      };
+    } else {
+      /*
+       * Content colour resolves to the tint here rather than sampling the
+       * source. Averaging RGB along a run is the one thing that would make the
+       * tracer read the RGBA buffer as well as the luminance, and a deflection
+       * beam in true source colour is a muddy look besides. See
+       * vector-pipeline.md 7.
+       */
+      resolveColor = () => monoTint;
+    }
+
+    return {
+      text: '',
+      colors: null,
+      luminance: lumBuffer,
+      cols,
+      rows,
+      rasterMode: 'vector',
+      bgColor,
+      isColored: false,
+      vector: traceVectorField(
+        lumBuffer,
+        cols,
+        rows,
+        vectorCfg,
+        resolveColor,
+        bgColor,
+        monoTint
+      ),
+      histogram: histogramBuffer,
+      histogramOpaque,
+    };
+  }
+
   let autoLevels: number;
   if (!isPixelOut) {
     autoLevels = densityLength;
@@ -1430,6 +1525,7 @@ export function processRasterFrame(
     rasterMode: effectiveRasterMode,
     bgColor,
     isColored: Boolean(colorsOut && colorsOut.length > 0),
+    vector: null,
     histogram: histogramBuffer,
     histogramOpaque,
   };

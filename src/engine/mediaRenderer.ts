@@ -7,6 +7,8 @@ import {
   DitherAlgorithm,
   DitherParams,
   ToneMappingConfig,
+  VectorConfig,
+  VectorFrame,
 } from '../types/ascii';
 import { MONOSPACE_CELL_ASPECT } from './renderer';
 import { processRasterFrame, toPipelineAdjustments, createToneCurveLUT, evaluateMonotoneCubicSpline, EMPTY_HISTOGRAM } from './rasterEngine';
@@ -25,6 +27,7 @@ export interface RenderMediaContext {
   rasterMode?: RasterOutputMode;
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
 }
 
@@ -38,6 +41,8 @@ export interface AsciiMediaFrameResult {
   cols: number;
   rows: number;
   rasterMode?: RasterOutputMode;
+  /** Beam geometry in vector mode; null in the cell modes. See ProcessedRasterResult. */
+  vector?: VectorFrame | null;
   /** See ProcessedRasterResult: 256 bins of pre-levels luminance, live buffer. */
   histogram: Uint32Array;
   histogramOpaque: number;
@@ -89,6 +94,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     rasterMode = viewConfig.rasterMode ?? 'ascii',
     algorithm = viewConfig.algorithm ?? 'floyd-steinberg',
     ditherParams,
+    vectorConfig,
     toneConfig,
   } = context;
 
@@ -219,6 +225,7 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       rasterMode,
       ditherAlgorithm: algorithm,
       ditherParams: ditherParams || viewConfig.ditherParams,
+      vectorConfig: vectorConfig || viewConfig.vectorConfig,
       toneConfig: toneConfig || viewConfig.toneConfig,
       colorConfig,
       monoTint: colorConfig?.monoTint,

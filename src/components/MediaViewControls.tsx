@@ -9,6 +9,7 @@ import {
   AppMode,
   ResamplingMode,
   RasterOutputMode,
+  VECTOR_CONFIG_DEFAULTS,
 } from '../types/ascii';
 import { DEFAULT_MEDIA_VIEW_CONFIG } from '../engine/mediaPresets';
 import { DEFAULT_MEDIA_COLOR_CONFIG } from '../types/ascii';
@@ -24,6 +25,7 @@ import {
 } from './ImageAdjustControls';
 import { NToneRampEditor } from './NToneRampEditor';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
+import { VectorControls } from './VectorControls';
 import { Settings } from 'lucide-react';
 
 interface MediaViewControlsProps {
@@ -70,7 +72,9 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   histogram = null,
   histogramOpaque = 0,
 }) => {
-  const isPixelMode = (rasterMode || config.rasterMode) === 'pixel';
+  const effectiveRasterMode = rasterMode || config.rasterMode;
+  const isPixelMode = effectiveRasterMode === 'pixel';
+  const isVector = effectiveRasterMode === 'vector';
 
   /* Invert lives in the effect controls now, so RESET EFFECTS owns it. */
   const resetRenderSettings = () => {
@@ -79,6 +83,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
       resampling: DEFAULT_MEDIA_VIEW_CONFIG.resampling,
       algorithm: DEFAULT_MEDIA_VIEW_CONFIG.algorithm,
       ditherParams: undefined,
+      vectorConfig: undefined,
     });
   };
   /*
@@ -114,20 +119,34 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         title="RENDER SETTINGS"
         icon={<Settings size={12} />}
         badge={
-          DITHER_ALGORITHMS.find((a) => a.id === (config.algorithm || 'floyd-steinberg'))?.name ||
-          'Floyd-Steinberg'
+          isVector
+            ? 'Beam Deflection'
+            : DITHER_ALGORITHMS.find((a) => a.id === (config.algorithm || 'floyd-steinberg'))?.name ||
+              'Floyd-Steinberg'
         }
         persistKey="MediaViewControls-render-settings"
         onReset={resetRenderSettings}
         resetTitle="Reset dither algorithm and resampling filter"
       >
-        {/* Dither Algorithm Selector with Integrated Parameters */}
-        <DitherAlgorithmPicker
-          value={config.algorithm || 'floyd-steinberg'}
-          onChange={(algo) => update('algorithm', algo)}
-          params={config.ditherParams}
-          onChangeParams={(next) => update('ditherParams', next)}
-        />
+        {/*
+          * Vector output leaves the pipeline before quantization, so an
+          * algorithm has nothing to act on. The picker is hidden rather than
+          * disabled and  is left in state untouched, so switching
+          * back restores whatever was selected.
+          */}
+        {isVector ? (
+          <VectorControls
+            config={config.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+            onChange={(next) => update('vectorConfig', next)}
+          />
+        ) : (
+          <DitherAlgorithmPicker
+            value={config.algorithm || 'floyd-steinberg'}
+            onChange={(algo) => update('algorithm', algo)}
+            params={config.ditherParams}
+            onChangeParams={(next) => update('ditherParams', next)}
+          />
+        )}
 
         {/* Resampling Filter */}
         <div className="control-row" style={{ marginTop: '8px' }}>
@@ -169,7 +188,8 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
               appMode={appMode}
               tonalMapping={config.tonalMapping}
               onChangeTonalMapping={(t) => onChangeConfig({ ...config, tonalMapping: t })}
-              isPixelMode={isPixelMode}
+              isPixelMode={isPixelMode || isVector}
+              isVectorMode={isVector}
               colorLevels={config.colorLevels}
               onChangeColorLevels={(val) => update('colorLevels', val)}
               rampEditorSlot={

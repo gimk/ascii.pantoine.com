@@ -28,6 +28,9 @@ import {
   RasterOutputMode,
   UiThemeSettings,
   UiMode,
+  VectorConfig,
+  VectorFrame,
+  VECTOR_CONFIG_DEFAULTS,
 } from './types/ascii';
 import { resolvePhosphorTint, DEFAULT_PHOSPHOR_TINT, BUILTIN_PALETTES } from './engine/palettes';
 import {
@@ -52,6 +55,7 @@ import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRe
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelFrameData, applyTrackballRotationWithTime } from './engine/modelRenderer';
 import { renderAsciiMediaFrameData } from './engine/mediaRenderer';
+import { previewVectorConfig, scaleVectorFrame } from './engine/vectorEngine';
 import { choosePreviewDivisor, upscaleFrame } from './engine/framePreview';
 import { CHARSETS, renderSynthFrameData } from './engine/renderer';
 import {
@@ -80,6 +84,7 @@ import { CollapsibleSection, AccordionProvider } from './components/CollapsibleS
 import { BasicPanel } from './components/BasicPanel';
 import { UiModeSwitch } from './components/UiModeSwitch';
 import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
+import { VectorControls } from './components/VectorControls';
 import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
@@ -107,6 +112,7 @@ import {
   Settings,
   Keyboard,
   X,
+  Activity,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
@@ -133,6 +139,14 @@ const resolveUiMode = (stored: Record<string, unknown> | null): UiMode => {
 
 /** DPI a freshly loaded media source starts at: 1:1 with the source pixels. */
 const MEDIA_DEFAULT_DPI = 100;
+/*
+ * Sampling width for vector output. The grid stops being a display raster in
+ * that mode and becomes the resolution the beam reads luminance at; this is the
+ * studio's own working buffer size.
+ */
+const VECTOR_SAMPLE_COLS = 800;
+/** Radians of carrier phase per second of loop time. */
+const VECTOR_PHASE_RATE = 2.2;
 
 /**
  * How recently the last static render must have finished for the next change to
@@ -270,6 +284,14 @@ const OUTPUT_MODES: {
     description: 'Monospace Density Ramp',
     icon: Type,
     title: 'Monospace ASCII character density rasterization',
+  },
+  {
+    id: 'vector',
+    name: 'VECTOR',
+    badge: 'BEAM',
+    description: 'Rutt-Etra Scanline Relief',
+    icon: Activity,
+    title: 'Oscilloscope beam deflection and carrier modulation, as polylines',
   },
 ];
 
@@ -447,6 +469,7 @@ export const App: React.FC = () => {
       rasterMode: (isSynthShared && sharedState?.rasterMode) || savedSettings.synth?.rasterMode || 'pixel',
       ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
       ditherParams: (isSynthShared && sharedState?.ditherParams) || savedSettings.synth?.ditherParams,
+      vectorConfig: (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig,
       toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isSynthShared && sharedState?.theme) || savedSettings.synth?.theme || 'monochrome',
@@ -473,6 +496,7 @@ export const App: React.FC = () => {
       rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'pixel',
       ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
       ditherParams: (isMediaShared && sharedState?.ditherParams) || savedSettings.media?.ditherParams,
+      vectorConfig: (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig,
       toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isMediaShared && sharedState?.theme) || savedSettings.media?.theme || 'monochrome',
@@ -500,6 +524,7 @@ export const App: React.FC = () => {
       rasterMode: (isModelShared && sharedState?.rasterMode) || savedSettings.model?.rasterMode || 'pixel',
       ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
       ditherParams: (isModelShared && sharedState?.ditherParams) || savedSettings.model?.ditherParams,
+      vectorConfig: (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig,
       toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
       adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
       theme: (isModelShared && sharedState?.theme) || savedSettings.model?.theme || 'monochrome',
@@ -1605,15 +1630,28 @@ export const App: React.FC = () => {
     // often undefined, so fall back the same way currentRasterMode does. Reading
     // only the first source silently took the ASCII branch and sized the grid at
     // roughly a sixth of the source.
-    const isPixel =
-      (rasterModeOverride ||
-        mediaViewConfig.rasterMode ||
-        renderSettingsByMode.media.rasterMode) === 'pixel';
-    const cellAspect = isPixel ? 1.0 : 0.55;
+    const effectiveMode =
+      rasterModeOverride ||
+      mediaViewConfig.rasterMode ||
+      renderSettingsByMode.media.rasterMode;
+    const isPixel = effectiveMode === 'pixel';
+    const isVector = effectiveMode === 'vector';
+    /* Vector shares pixel's square cells: polylines are geometry, not glyphs. */
+    const cellAspect = isPixel || isVector ? 1.0 : 0.55;
 
     let targetCols: number;
     let targetRows: number;
-    if (isPixel) {
+    if (isVector) {
+      /*
+       * The grid is the beam's sampling resolution here, not a display raster,
+       * so it wants to be generous — a coarse one makes a deflected line
+       * visibly faceted. 800 across matches the studio's own
+       * `min(800, source.width)` working buffer.
+       */
+      const targetWidth = Math.min(VECTOR_SAMPLE_COLS, Math.max(200, w));
+      targetCols = Math.round(targetWidth);
+      targetRows = Math.max(10, Math.round(targetCols / srcAspect));
+    } else if (isPixel) {
       /*
        * Derive from the default DPI using the same mapping the DPI panel uses
        * (cols = source px * dpi / 100), so the grid and the DPI readout agree
@@ -1795,11 +1833,12 @@ export const App: React.FC = () => {
    * The density ramp sits directly above RENDER SETTINGS in every mode, which
    * is two different places in the tree: media carries its own RENDER SETTINGS
    * inside MediaViewControls, while synth and model share the block below.
-   * Pixel mode paints solid cells and never consults the charset, so the
-   * section is omitted outright rather than shown disabled.
+   * Neither non-ASCII mode consults the charset -- pixel paints solid cells,
+   * vector strokes polylines -- so the section is omitted outright rather than
+   * shown disabled.
    */
   const densityRampSection =
-    currentRasterMode === 'pixel' ? null : (
+    currentRasterMode !== 'ascii' ? null : (
       <CharsetThemeBar
         currentCharset={density}
         onChangeCharset={setDensity}
@@ -2198,6 +2237,17 @@ export const App: React.FC = () => {
           rasterMode: mediaViewConfig.rasterMode || curSettings.rasterMode || 'ascii',
           algorithm: mediaViewConfig.algorithm || curSettings.ditherAlgorithm || 'floyd-steinberg',
           ditherParams: mediaViewConfig.ditherParams || curSettings.ditherParams,
+          /*
+           * Beam parameters are in grid cells, and a draft preview moves
+           * the grid underneath them -- see previewVectorConfig. Retuned
+           * going in and the geometry scaled back out below, so the preview
+           * is the same picture sampled more coarsely rather than a
+           * different one.
+           */
+          vectorConfig: previewVectorConfig(
+            mediaViewConfig.vectorConfig || curSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS,
+            divisor
+          ),
           toneConfig: curSettings.toneConfig,
         });
 
@@ -2210,10 +2260,16 @@ export const App: React.FC = () => {
          */
         if (divisor > 1) {
           const scaled = upscaleFrame(result.text, result.colors, renderCols, renderRows, cols, rows);
-          viewportRef.current?.setFrame(scaled.text, 0, 0, scaled.colors, result.bgColor, result.rasterMode);
+          /*
+           * Geometry is multiplied back into full grid space rather than
+           * expanded cell by cell -- exact, and it keeps the preview the same
+           * physical size as the pass that replaces it.
+           */
+          const scaledVector = result.vector ? scaleVectorFrame(result.vector, cols, rows) : null;
+          viewportRef.current?.setFrame(scaled.text, 0, 0, scaled.colors, result.bgColor, result.rasterMode, scaledVector);
         } else {
           captureHistogram(result);
-          viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode);
+          viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode, result.vector);
           lastStaticRenderMsRef.current = performance.now() - startedAt;
         }
 
@@ -2370,6 +2426,16 @@ export const App: React.FC = () => {
       let frameText = '';
       let frameColors: Uint8ClampedArray | null = null;
       let frameBgColor: string | undefined = undefined;
+      let frameVector: VectorFrame | null = null;
+
+      /*
+       * Phase is an input to the trace, not stored state -- see
+       * vector-pipeline.md 3.3. Advancing it from the loop clock is what makes
+       * the carrier and ripple drift, and it costs nothing in the cell modes
+       * because nothing reads it there.
+       */
+      const animatedVectorConfig = (cfg: VectorConfig | undefined): VectorConfig | undefined =>
+        cfg ? { ...cfg, phase: cfg.phase + timeRef.current * VECTOR_PHASE_RATE } : cfg;
 
       if (appMode === 'model') {
         const res = renderModelFrameData({
@@ -2384,12 +2450,14 @@ export const App: React.FC = () => {
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
           ditherParams: activeSettings.ditherParams,
+          vectorConfig: animatedVectorConfig(activeSettings.vectorConfig),
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
         captureHistogram(res);
         frameText = res.text;
         frameColors = res.colors;
+        frameVector = res.vector || null;
       } else if (appMode === 'media') {
         const result = renderAsciiMediaFrameData({
           cols,
@@ -2402,12 +2470,14 @@ export const App: React.FC = () => {
           rasterMode: mediaViewConfig.rasterMode || activeSettings.rasterMode || 'ascii',
           algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
           ditherParams: mediaViewConfig.ditherParams || activeSettings.ditherParams,
+          vectorConfig: animatedVectorConfig(mediaViewConfig.vectorConfig || activeSettings.vectorConfig),
           toneConfig: activeSettings.toneConfig,
         });
         captureHistogram(result);
         frameText = result.text;
         frameColors = result.colors;
         frameBgColor = result.bgColor;
+        frameVector = result.vector || null;
       } else {
         const res = renderSynthFrameData({
           cols,
@@ -2425,6 +2495,7 @@ export const App: React.FC = () => {
           rasterMode: activeSettings.rasterMode || 'ascii',
           algorithm: activeSettings.ditherAlgorithm || 'none',
           ditherParams: activeSettings.ditherParams,
+          vectorConfig: animatedVectorConfig(activeSettings.vectorConfig),
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
@@ -2432,6 +2503,7 @@ export const App: React.FC = () => {
         frameText = res.text;
         frameColors = res.colors;
         frameBgColor = res.bgColor;
+        frameVector = res.vector || null;
       }
 
 
@@ -2441,7 +2513,8 @@ export const App: React.FC = () => {
         currentFpsRef.current,
         frameColors,
         frameBgColor,
-        appMode === 'media' ? (mediaViewConfig.rasterMode || activeSettings.rasterMode) : activeSettings.rasterMode
+        appMode === 'media' ? (mediaViewConfig.rasterMode || activeSettings.rasterMode) : activeSettings.rasterMode,
+        frameVector
       );
       animFrameId = requestAnimationFrame(loop);
     };
@@ -2598,6 +2671,9 @@ export const App: React.FC = () => {
       ditherParams: appMode === 'media'
         ? (mediaViewConfig.ditherParams || currentRenderSettings.ditherParams)
         : currentRenderSettings.ditherParams,
+      vectorConfig: appMode === 'media'
+        ? (mediaViewConfig.vectorConfig || currentRenderSettings.vectorConfig)
+        : currentRenderSettings.vectorConfig,
       toneConfig: currentRenderSettings.toneConfig,
       adjustConfig: currentRenderSettings.adjustConfig,
 
@@ -3231,7 +3307,7 @@ export const App: React.FC = () => {
                   appMode={appMode}
                   mediaElement={mediaElementRef.current}
                   mediaConfig={mediaConfig}
-                  isPixelMode={currentRasterMode === 'pixel'}
+                  isPixelMode={currentRasterMode !== 'ascii'}
                   viewfinderAspect={viewfinderAspect}
                   dpi={mediaViewConfig.dpi ?? 72}
                   onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
@@ -3281,9 +3357,11 @@ export const App: React.FC = () => {
                       title="RENDER SETTINGS"
                       icon={<Settings size={12} />}
                       badge={
-                        DITHER_ALGORITHMS.find(
-                          (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
-                        )?.name || 'Floyd-Steinberg'
+                        currentRasterMode === 'vector'
+                          ? 'Beam Deflection'
+                          : DITHER_ALGORITHMS.find(
+                              (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
+                            )?.name || 'Floyd-Steinberg'
                       }
                       persistKey={`${appMode}-render-settings`}
                       onReset={() => {
@@ -3298,28 +3376,43 @@ export const App: React.FC = () => {
                       }}
                       resetTitle="Reset dither algorithm and parameters"
                     >
-                      <DitherAlgorithmPicker
-                        value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
-                        onChange={(algo) => {
-                          setRenderSettingsByMode((prev) => ({
-                            ...prev,
-                            [appMode]: {
-                              ...prev[appMode],
-                              ditherAlgorithm: algo,
-                            },
-                          }));
-                        }}
-                        params={currentRenderSettings.ditherParams}
-                        onChangeParams={(next) => {
-                          setRenderSettingsByMode((prev) => ({
-                            ...prev,
-                            [appMode]: {
-                              ...prev[appMode],
-                              ditherParams: next,
-                            },
-                          }));
-                        }}
-                      />
+                      {currentRasterMode === 'vector' ? (
+                        <VectorControls
+                          config={currentRenderSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+                          onChange={(next) => {
+                            setRenderSettingsByMode((prev) => ({
+                              ...prev,
+                              [appMode]: {
+                                ...prev[appMode],
+                                vectorConfig: next,
+                              },
+                            }));
+                          }}
+                        />
+                      ) : (
+                        <DitherAlgorithmPicker
+                          value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
+                          onChange={(algo) => {
+                            setRenderSettingsByMode((prev) => ({
+                              ...prev,
+                              [appMode]: {
+                                ...prev[appMode],
+                                ditherAlgorithm: algo,
+                              },
+                            }));
+                          }}
+                          params={currentRenderSettings.ditherParams}
+                          onChangeParams={(next) => {
+                            setRenderSettingsByMode((prev) => ({
+                              ...prev,
+                              [appMode]: {
+                                ...prev[appMode],
+                                ditherParams: next,
+                              },
+                            }));
+                          }}
+                        />
+                      )}
                     </CollapsibleSection>
 
                     {(() => {
@@ -3354,7 +3447,8 @@ export const App: React.FC = () => {
                                   tonalMapping: t,
                                 })
                               }
-                              isPixelMode={currentRasterMode === 'pixel'}
+                              isPixelMode={currentRasterMode !== 'ascii'}
+                              isVectorMode={currentRasterMode === 'vector'}
                               colorLevels={synthModelAdjustConfig.colorLevels}
                               onChangeColorLevels={(val) =>
                                 handleChangeAdjustConfig({
@@ -3526,6 +3620,7 @@ export const App: React.FC = () => {
         rasterMode={appMode === 'media' ? (mediaViewConfig.rasterMode || currentRenderSettings.rasterMode) : currentRenderSettings.rasterMode}
         ditherAlgorithm={appMode === 'media' ? (mediaViewConfig.algorithm || currentRenderSettings.ditherAlgorithm) : currentRenderSettings.ditherAlgorithm}
         ditherParams={appMode === 'media' ? (mediaViewConfig.ditherParams || currentRenderSettings.ditherParams) : currentRenderSettings.ditherParams}
+        vectorConfig={appMode === 'media' ? (mediaViewConfig.vectorConfig || currentRenderSettings.vectorConfig) : currentRenderSettings.vectorConfig}
         toneConfig={currentRenderSettings.toneConfig}
         adjustConfig={currentRenderSettings.adjustConfig}
       />

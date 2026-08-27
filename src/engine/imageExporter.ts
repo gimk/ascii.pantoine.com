@@ -16,6 +16,8 @@ import {
   DitherParams,
   ToneMappingConfig,
   ImageAdjustConfig,
+  VectorConfig,
+  VectorFrame,
 } from '../types/ascii';
 import { renderSynthFrameData, MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from './renderer';
 import { renderModelFrameData } from './modelRenderer';
@@ -23,6 +25,7 @@ import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectPngMetadata, injectJpegComment } from './mediaMetadata';
 import { drawPixelRasterToCanvas, exportPixelRasterToSvg } from './pixelRasterRenderer';
+import { paintVectorFrame, vectorFrameToSvg } from './vectorEngine';
 
 
 export interface ImageExportOptions {
@@ -58,6 +61,7 @@ export interface ImageExportOptions {
   rasterMode?: RasterOutputMode;
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
+  vectorConfig?: VectorConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   modelConfig?: ModelConfig;
@@ -130,6 +134,8 @@ export interface ExportFrame {
   /** Foreground for the monochrome paths, where `colors` is null. */
   fgColor: string;
   rasterMode: RasterOutputMode;
+  /** Beam geometry in vector mode; null otherwise. Mutually exclusive with `text`. */
+  vector: VectorFrame | null;
 }
 
 /**
@@ -164,6 +170,7 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
   let frameText = currentAsciiFrame || '';
   let frameLuminance: Float32Array | null = null;
   let frameColors: Uint8ClampedArray | null = null;
+  let frameVector: VectorFrame | null = null;
   let effectiveBg = bg;
 
   if (opts.appMode === 'media' && opts.mediaConfig && opts.mediaViewConfig && opts.mediaElement) {
@@ -178,12 +185,14 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       rasterMode,
       algorithm: opts.ditherAlgorithm,
       ditherParams: opts.ditherParams,
+      vectorConfig: opts.vectorConfig || opts.mediaViewConfig.vectorConfig,
       toneConfig: opts.toneConfig,
     });
     frameText = res.text;
     frameLuminance = res.luminance;
     frameColors = res.colors;
-    if (res.isColored) effectiveBg = res.bgColor;
+    frameVector = res.vector || null;
+    if (res.isColored || res.vector) effectiveBg = res.bgColor;
   } else if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
     const res = renderModelFrameData({
       cols,
@@ -197,12 +206,15 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       rasterMode,
       algorithm: opts.ditherAlgorithm,
       ditherParams: opts.ditherParams,
+      vectorConfig: opts.vectorConfig,
       toneConfig: opts.toneConfig,
       adjustConfig: opts.adjustConfig,
     });
     frameText = res.text;
     frameLuminance = res.luminance;
     frameColors = res.colors;
+    frameVector = res.vector || null;
+    if (res.vector) effectiveBg = res.bgColor;
   } else {
     let customRenderFn: any;
     let prepareFn: any;
@@ -235,13 +247,15 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       rasterMode,
       algorithm: opts.ditherAlgorithm,
       ditherParams: opts.ditherParams,
+      vectorConfig: opts.vectorConfig,
       toneConfig: opts.toneConfig,
       adjustConfig: opts.adjustConfig,
     });
     frameText = res.text;
     frameLuminance = res.luminance;
     frameColors = res.colors;
-    if (res.isColored) effectiveBg = res.bgColor;
+    frameVector = res.vector || null;
+    if (res.isColored || res.vector) effectiveBg = res.bgColor;
   }
 
   return {
@@ -251,6 +265,7 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
     bgColor: effectiveBg,
     fgColor,
     rasterMode,
+    vector: frameVector,
   };
 }
 
@@ -274,10 +289,16 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   // custom-preset code -- is read by renderExportFrame, not here.
   const rasterMode: RasterOutputMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
   const isPixel = rasterMode === 'pixel';
-  const showScanlines = !isPixel && (opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true));
-  const showCrtGlow = !isPixel && (opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false));
-  const showVignette = !isPixel && (opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false));
-  const showPhosphorBloom = !isPixel && (opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false));
+  const isVector = rasterMode === 'vector';
+  /*
+   * CRT effects are bypassed in both non-ASCII modes for the same reason: they
+   * are a screen artefact, and baking one into a crisp dither or a plotter path
+   * ruins exactly what that output is for.
+   */
+  const showScanlines = !isPixel && !isVector && (opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true));
+  const showCrtGlow = !isPixel && !isVector && (opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false));
+  const showVignette = !isPixel && !isVector && (opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false));
+  const showPhosphorBloom = !isPixel && !isVector && (opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false));
 
   const {
     text: frameText,
@@ -285,12 +306,38 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     colors: frameColors,
     bgColor: effectiveBg,
     fgColor: text,
+    vector: frameVector,
   } = renderExportFrame(opts);
 
 
   // If Vector SVG export is requested
   if (format === 'svg') {
     let svgContent = '';
+
+    /*
+     * Vector is the one output whose SVG is not a translation of anything --
+     * polylines are already its native form, so this is a lossless export and
+     * the flagship reason the mode exists. It must NOT go through
+     * exportPixelRasterToSvg: mergeCellRects assumes cells and would emit
+     * squares where the beam belongs, the same mistake buildAsciiPlateSvg
+     * exists to correct for ASCII plates.
+     */
+    if (isVector) {
+      const vw = Math.round(cols * scale);
+      const vh = Math.round(rows * scale);
+      const content = frameVector
+        ? vectorFrameToSvg(frameVector, { scale, background: transparentBg ? null : effectiveBg })
+        : '';
+      const svgBlob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' });
+      return {
+        blob: svgBlob,
+        url: URL.createObjectURL(svgBlob),
+        width: vw,
+        height: vh,
+        mimeType: 'image/svg+xml',
+        extension: '.svg',
+      };
+    }
 
     const charWidth = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
     const charHeight = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
@@ -343,9 +390,14 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     };
   }
 
-  // Character cell dimensions on canvas (1:1 square for pixel mode, 0.6015 monospace aspect for ASCII)
-  const charWidth = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
-  const charHeight = isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
+  /*
+   * Cell dimensions on canvas. Pixel snaps to whole pixels per cell so edges
+   * stay hard; vector keeps the scale fractional, because there are no cell
+   * edges to protect and rounding would quantize the geometry it exists to keep
+   * continuous.
+   */
+  const charWidth = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -368,8 +420,23 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     textFillStyle = grad;
   }
 
-  // Pixel raster mode paints filled cells instead of glyphs
-  if (isPixel && frameLuminance) {
+  /*
+   * Vector strokes the beam at export scale. Resolution independence is real
+   * here: an 8x export is genuinely 8x the detail, not an upscale of a 1x
+   * raster, which is the one place this mode beats pixel outright.
+   */
+  if (isVector) {
+    if (!transparentBg || format === 'jpg') {
+      ctx.fillStyle = effectiveBg;
+      ctx.fillRect(0, 0, width, height);
+    }
+    if (frameVector) {
+      ctx.save();
+      ctx.scale(scale, scale);
+      paintVectorFrame(ctx, frameVector, { glowScale: scale });
+      ctx.restore();
+    }
+  } else if (isPixel && frameLuminance) {
     drawPixelRasterToCanvas({
       ctx,
       cols,

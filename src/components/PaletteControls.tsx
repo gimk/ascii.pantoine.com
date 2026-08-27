@@ -30,6 +30,12 @@ interface PaletteControlsProps {
   onChangeTonalMapping?: (t: TonalMappingType) => void;
   isPixelMode?: boolean;
   /**
+   * Vector output never quantizes -- it leaves the pipeline before step 3.5 --
+   * so Quantize Depth is hidden rather than shown wired to nothing. The value
+   * itself is left in state, so switching back to a cell mode restores it.
+   */
+  isVectorMode?: boolean;
+  /**
    * Turn the selected palette into an editable N-tone ramp.
    */
   onEditPaletteAsRamp?: () => void;
@@ -92,6 +98,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   tonalMapping = 'ntone',
   onChangeTonalMapping,
   isPixelMode = false,
+  isVectorMode = false,
   onEditPaletteAsRamp,
   rampEditorSlot,
   colorLevels = 0,
@@ -419,7 +426,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
             </div>
           </div>
 
-          {onChangeColorLevels && (
+          {onChangeColorLevels && !isVectorMode && (
             <QuantizeLevelsControl
               value={colorLevels}
               onChange={onChangeColorLevels}
@@ -448,7 +455,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
             />
           </div>
 
-          {onChangeColorLevels && (
+          {onChangeColorLevels && !isVectorMode && (
             <QuantizeLevelsControl
               value={colorLevels}
               onChange={onChangeColorLevels}
