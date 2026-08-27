@@ -1604,8 +1604,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
       noise: resetDefaults.noise,
       denoise: resetDefaults.denoise,
       blur: resetDefaults.blur,
-      brightness: resetDefaults.brightness,
-      contrast: resetDefaults.contrast,
       ...(showInvert ? { invert: resetDefaults.invert } : {}),
     });
   };
@@ -1614,6 +1612,8 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
     onChangeConfig({
       ...config,
       curvePoints: DEFAULT_CURVE_POINTS.map((pt) => [...pt] as [number, number]),
+      brightness: resetDefaults.brightness,
+      contrast: resetDefaults.contrast,
       highlights: resetDefaults.highlights,
       midtones: resetDefaults.midtones,
       shadows: resetDefaults.shadows,
@@ -1658,8 +1658,22 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         icon={<Sparkles size={12} />}
         persistKey={`${persistKeyPrefix}-tonal-controls`}
         onReset={resetTonal}
-        resetTitle="Reset curve, levels, highlights, midtones and shadows"
+        resetTitle="Reset exposure, curve, levels, highlights, midtones and shadows"
       >
+        {/*
+          * Exposure sits above the curve because the engine runs it there. It
+          * used to live in EFFECT CONTROLS, visually below everything, while
+          * running between levels and the tonal balance -- so the two coarsest
+          * controls silently undid the two most precise ones, and dragging the
+          * levels black point stopped producing black. The panel now reads in
+          * pipeline order, top to bottom.
+          */}
+        <div className="tonal-subheading" style={{ marginTop: 0 }}>
+          <span>Exposure &amp; Contrast</span>
+        </div>
+        <AdjustSlider id="brightness" config={config} onChangeConfig={onChangeConfig} />
+        <AdjustSlider id="contrast" config={config} onChangeConfig={onChangeConfig} />
+
         {/* Real-time Interactive Tonal Transfer Curve Graph */}
         <ToneCurveGraph config={config} onChangeConfig={onChangeConfig} />
 
@@ -1716,7 +1730,7 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
         persistKey={`${persistKeyPrefix}-effect-controls`}
         defaultOpen={false}
         onReset={resetEffects}
-        resetTitle="Reset invert, sharpen, blur, noise, denoise, brightness and contrast"
+        resetTitle="Reset invert, sharpen, blur, noise and denoise"
       >
         {showInvert && (
           <div className="control-row">
@@ -1754,13 +1768,6 @@ export const ImageAdjustControls: React.FC<ImageAdjustControlsProps> = ({
 
         <AdjustSlider id="blur" config={config} onChangeConfig={onChangeConfig} />
 
-        {/* EXPOSURE & CONTRAST */}
-        <div className="tonal-subheading">
-          <span>Exposure &amp; Contrast</span>
-        </div>
-
-        <AdjustSlider id="brightness" config={config} onChangeConfig={onChangeConfig} />
-        <AdjustSlider id="contrast" config={config} onChangeConfig={onChangeConfig} />
       </CollapsibleSection>
     </>
   );

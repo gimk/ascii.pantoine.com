@@ -969,9 +969,42 @@ export function processRasterFrame(
   const posterizeBits = toneCfg?.posterizeBits || 0;
 
   /*
+   * Exposure: brightness and contrast, applied *before* the curve and levels.
+   *
+   * This used to run between levels and the tonal balance, which made the two
+   * coarsest controls in the panel silently override the two most precise ones.
+   * Levels clips black to exactly 0; contrast then pivots the whole range about
+   * 0.5, and brightness adds a flat offset, so a positive brightness turns that
+   * clipped black into `brightness` and a negative contrast lifts it to
+   * `0.5(1 - factor)`. Levels ran earlier, so nothing could recover it: dragging
+   * the black point simply stopped producing black.
+   *
+   * Upstream is also the conventional place for it — Lightroom and Camera Raw
+   * both apply Exposure and Contrast ahead of the tone curve — and it lines the
+   * engine up with the sidebar, which reads exposure, curve, levels, balance
+   * from top to bottom.
+   *
+   * A separate pass rather than an extra branch in the two loops below, because
+   * *both* have to see it: the histogram tap must keep showing what levels
+   * actually receives. It is skipped entirely at neutral.
+   */
+  if (contrastFactor !== 1.0 || brightnessOffset !== 0) {
+    for (let i = 0; i < totalCells; i++) {
+      const v = lumBuffer[i];
+      if (v < 0) continue; // transparency sentinel
+      lumBuffer[i] = Math.max(0, Math.min(1, (v - 0.5) * contrastFactor + 0.5 + brightnessOffset));
+    }
+  }
+
+  /*
    * Histogram tap. Runs its own short pass rather than folding into the loop
    * below, because it has to read the value *after* the curve and *before*
    * levels, and those two are adjacent steps inside that loop.
+   *
+   * AUTO LEVELS stays idempotent across the move above: exposure is now
+   * *upstream* of the tap, and the invariant is only that nothing downstream of
+   * the tap feeds back above it. Levels is still the only thing the button
+   * writes, and it still sits below.
    */
   histogramBuffer.fill(0);
   histogramOpaque = 0;
@@ -1007,10 +1040,7 @@ export function processRasterFrame(
       val = Math.pow(norm, levelsGamma);
     }
 
-    if (contrastFactor !== 1.0 || brightnessOffset !== 0) {
-      val = (val - 0.5) * contrastFactor + 0.5 + brightnessOffset;
-      val = Math.max(0, Math.min(1, val));
-    }
+    /* Exposure already ran, above the curve. */
 
     if (shadowAdj !== 0 || highlightAdj !== 0) {
       if (val < 0.5) {

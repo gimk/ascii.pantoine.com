@@ -181,25 +181,44 @@ Order is fixed: **blur/denoise → sharpen → edges**.
 
 ### Step 3 — Tone
 
-One pass, per cell, in this exact order:
+In this exact order. **Exposure runs first, in its own guarded pass**; everything
+after it is one pass, per cell.
 
+0. **Exposure — contrast / brightness** — `(v - 0.5)·tan((c+100)·π/400) + 0.5 + b`,
+   clamped
 1. **Tone curve** — monotone cubic spline through `curvePoints`, baked to a 256-entry
    LUT once per frame
 2. **Levels** — black/white clip plus a gamma derived from the midtone position
    (`toneConfig.levelsBlack / levelsMidtones / levelsWhite`)
-3. **Contrast / brightness** — `(v - 0.5)·tan((c+100)·π/400) + 0.5 + b`
-4. **Shadows / highlights** — split at 0.5, each half pushed independently
-5. **Midtones** — `pow(v, 2^(-m/50))`
-6. **Noise** — uniform, amplitude `noise/200`
-7. **Posterize** — `2^bits - 1` steps, when `posterizeBits` is set
-8. **Invert**
+3. **Shadows / highlights** — split at 0.5, each half pushed independently
+4. **Midtones** — `pow(v, 2^(-m/50))`
+5. **Noise** — uniform, amplitude `noise/200`
+6. **Posterize** — `2^bits - 1` steps, when `posterizeBits` is set
+7. **Invert**
+
+**Why exposure is first, and not third.** It used to run between levels and the
+tonal balance, which meant the two coarsest controls in the panel silently
+overrode the two most precise ones. Levels clips black to exactly 0; contrast
+then pivots the whole range about 0.5 and brightness adds a flat offset, so a
+positive brightness turns that clipped black into `brightness` and a negative
+contrast lifts it to `0.5(1 - factor)`. Levels ran earlier, so **nothing could
+recover it — dragging the black point simply stopped producing black**, at any
+setting.
+
+Upstream is also the conventional place: Lightroom and Camera Raw both apply
+Exposure and Contrast ahead of the tone curve. And it is the only order that
+lets the sidebar read top to bottom, which is the rule the rest of this section
+is built on.
+
+It is a separate pass rather than a branch inside the loop because **both** the
+loop and the histogram tap have to see it. Skipped entirely at neutral.
 
 > **State:** `lumBuffer` = fully graded luminance. This is the last step that sees
 > continuous tone in the general case.
 
 #### The histogram tap
 
-A short dedicated pass runs **between step 1 and step 2 of the list above** — after
+A short dedicated pass runs **between steps 1 and 2 of the list above** — after
 the tone curve, before levels — filling a 256-bin `histogramBuffer` and counting
 opaque cells into `histogramOpaque`. Both ride out on `ProcessedRasterResult` as live
 module buffers, the same contract as `luminance`.
@@ -207,6 +226,8 @@ module buffers, the same contract as `luminance`.
 That position is the whole point. **AUTO LEVELS is idempotent because nothing
 downstream of the tap feeds back upstream of it**, so the reading does not move when
 the levels it produced are applied, and pressing the button twice is a no-op.
+Exposure moving to step 0 keeps that: it is now *upstream* of the tap, and levels
+is still the only thing the button writes and still sits below.
 Sampling the fully graded luminance instead would walk the image toward pure black
 and white on every press. Sampling `srcLumBuffer` would be idempotent too but would
 ignore blur, sharpen and edges, so the endpoints would not match what levels actually
@@ -223,8 +244,13 @@ Midtones are left at 50. The operation is a contrast stretch, not a re-gamma. In
 UI, dragging an endpoint carries the midtone with it so the derived gamma stays fixed
 — otherwise stretching an image would silently re-gamma it too.
 
-`ImageAdjustControls` renders Levels **after** the tone curve, matching the engine
-order, so the histogram under the handles is the tone the handles operate on.
+`ImageAdjustControls` renders the whole group in engine order — exposure, curve,
+levels, tonal balance — so the histogram under the handles is always the tone the
+handles operate on. Exposure used to sit in EFFECT CONTROLS, visually last and
+below a collapsed disclosure, while running third; that is what made the bug
+invisible. It also means the histogram now includes exposure, so on a lifted
+image the handles sit over data that actually exists rather than over the
+pre-exposure distribution.
 
 ### Step 3.5 — Quantization depth and dithering
 
@@ -893,8 +919,9 @@ The **Render** tab follows a strict vertical workflow across all three input sou
 4. **Tonal Controls & Grading** ([`ImageAdjustControls.tsx`](src/components/ImageAdjustControls.tsx))
    - **Color & Tonal Palette**: Single color mode dropdown (`1color`, `2color`, `3color`, `content`, or indexed `palette:<id>`). When in Pixel mode, CRT phosphor theme buttons are hidden to keep the interface neutral white.
    - **Quantize Levels**: Logarithmic warp slider ($2^1$ to $2^8$) giving smooth fine control across $2\dots 16$ levels, 1-click bit-depth pills (`[AUTO]`, `[2 (1b)]`, `[4 (2b)]`... `[256 (8b)]`), fine steppers (`-`/`+`), and direct numeric entry.
+   - **Exposure & Contrast**: Brightness and contrast, at the *top* of the group because the engine applies them first. Moved here from EFFECT CONTROLS, where sitting visually last while running third let them silently undo the levels black point. See §2.3.
    - **Tone Curve Spline**: Monotone cubic spline editor with 5 instant presets (`LINEAR`, `S-CURVE`, `LIFT`, `CONTRAST`, `INVERT`) and live `IN: x • OUT: y` telemetry.
-   - **Levels & Auto Range**: Square-root-scaled histogram of the luminance entering the levels stage, with draggable black / midtone / white handles and an `AUTO LEVELS` button. Placed *after* the curve because that is the engine's order. Writes `toneConfig`, not `adjustConfig`. See §2.3.
+   - **Levels & Auto Range**: Square-root-scaled histogram of the luminance entering the levels stage, with draggable black / midtone / white handles and an `AUTO LEVELS` button. Placed *after* the curve, and after exposure, because that is the engine's order — the whole group reads top to bottom in pipeline order. Writes `toneConfig`, not `adjustConfig`. See §2.3.
    - **Tonal Balance**: Highlights, Midtones, and Shadows sliders with double-click quick-zero.
 
 5. **Character Set Ramp** ([`CharsetThemeBar.tsx`](src/components/CharsetThemeBar.tsx))
