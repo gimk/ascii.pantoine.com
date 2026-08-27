@@ -313,6 +313,14 @@ from the shape of the implementation rather than declared beside the registry en
 — a list kept by hand next to 44 entries drifts from the code the first time a
 branch changes, and the failure mode is a slider that visibly does nothing.
 
+Each spec carries a **track range and a wider hard range** (`hardMin` / `hardMax`):
+the slider spans what is worth dragging through, the number field beside it accepts
+the extremes. `resolveDitherParams` clamps to the *hard* range, not the track — a
+typed value that the field accepted and the engine snapped back would read as a
+broken control rather than a bounded one. The floors that do not move are
+structural: `scale` is a divisor and `frequency` multiplies a carrier rate, so
+neither may reach zero however far the field is pushed.
+
 **Clamp and sentinel restore.** Error diffusion pays accumulated error back onto
 cells and can overshoot outside `[0, 1]`. An undershoot below zero would collide with
 the transparency sentinel and punch holes through opaque pixels. So immediately after
@@ -413,7 +421,17 @@ In that mode `cols × rows` stops being a display raster and becomes the
 resolution the beam *samples* luminance at, and the coordinate space the
 polylines live in. Cells are square, and the grid is much larger (800 across for
 media, a 400k auto-resolution budget against pixel mode's 40k) because only
-steps 1–3 run over it.
+steps 1–3 run over it. Nothing downstream quantizes to that grid, so a coarse
+one costs a visibly faceted deflection curve rather than visible cells — which
+is why both resolution controls give vector its own preset range around 800
+rather than the 60–240 a glyph grid wants.
+
+The tracer reads each line into a scratch series *before* drawing any of it, so a
+**Smoothing** radius can low-pass the luminance before it becomes a displacement.
+That is a different control from `sampleStep`, which decimates rather than filters:
+raising the step drops vertices while the survivors keep the same point-sampled
+noise. Measured on a grainy field, mean vertex curvature is 12.46 at step 1 and
+12.08 at step 6, against 0.49 at a 4-cell smoothing radius.
 
 Colour is resolved once per beam, from the run's mean luminance, through the same
 single selector every other mode reads (§4): the tint for mono, a ramp stop, or
@@ -839,10 +857,19 @@ whatever ADVANCED left it at.
 BASIC reaches its minimum by asking the shared controls for a reduced form,
 not by reimplementing them: `MediaUploadControls minimal` (paste + dropzone,
 no filename / URL / video timeline), `DitherAlgorithmPicker compact` (arrows,
-dropdown, dice — no family filter, swatch grid or description card), preset
-chips instead of the DPI slider, a charset `<select>` instead of
-`CharsetThemeBar`, and two plain clip-point sliders instead of the histogram
-Levels editor. One implementation, two levels of detail.
+dropdown, dice — no family filter, swatch grid or description card),
+`VectorControls compact` (eight beam controls — no presets, Sample Step, Bias,
+carrier deck, Ripple Freq, Phase, Glow or Aberration), preset chips instead of
+the DPI slider, a charset `<select>` instead of `CharsetThemeBar`, and two plain
+clip-point sliders instead of the histogram Levels editor. One implementation,
+two levels of detail.
+
+The compact beam deck is the one reduction that **writes** as well as hides:
+`carrierEnabled` defaults to on, so hiding its deck alone would leave a BASIC
+user with a dashed beam and no control that explains it. Compact switches it off
+and touches nothing else — the three tuning values stay in the config, so
+ADVANCED still has them when it comes back. That is a deliberate exception to
+the hidden-not-reset rule below, and the only one.
 
 Two couplings are load-bearing and easy to break:
 
@@ -854,6 +881,13 @@ Two couplings are load-bearing and easy to break:
    Auto, but a share link serialises `colorLevels` and so does arriving from
    ADVANCED. `QuantizeDepthNotice` surfaces a non-Auto value with a reset rather
    than either hiding it silently or overwriting a deliberate setting.
+3. **The resolution chips are per output mode, in range *and* in cell aspect.**
+   `handleColsChange` derives rows from the columns, so it needs
+   `cellAspectFor(rasterMode)` and a per-mode ceiling. It applied the monospace
+   0.55 unconditionally for a while and vector rendered at 55% height from BASIC
+   only — ADVANCED routes through `OptimizeControls`, which already took
+   `isPixelMode={rasterMode !== 'ascii'}`. The 400-column ceiling compounded it,
+   pinning every preset above 400 to one grid. See §5.7.
 
 The histogram tap stays gated on `panel === 'render'` alone: BASIC's levels are
 two numeric sliders with no histogram to feed, so waking the per-frame
@@ -923,12 +957,23 @@ The **Render** tab follows a strict vertical workflow across all three input sou
 2. **Resolution & DPI Optimizer** ([`OptimizeControls.tsx`](src/components/OptimizeControls.tsx))
    - Placed directly under the Output Mode selector.
    - Houses grid dimensions (`Cols × Rows`), Auto-Resolution toggle, Aspect Ratio lock, and print DPI scaling (`72`–`1200` DPI).
+   - Cell aspect follows the output mode, not the panel — see §5.7.
 
-3. **Dither Algorithm Picker** ([`DitherAlgorithmPicker.tsx`](src/components/DitherAlgorithmPicker.tsx))
-   - Universal across all three modes (`synth`, `media`, `model`).
+3. **RENDER SETTINGS** ([`MediaViewControls.tsx`](src/components/MediaViewControls.tsx))
+   - **Resampling sits first, behind a rule** (`.render-settings-source`). It is the only control in the section acting on the *source* rather than on the render — it picks the filter the browser downsamples with on the way into the grid (§1.2) — and it applies in every output mode. Sitting last, under a dither picker or the beam deck, made it read as one of their parameters.
+   - Below the rule, **exactly one** of the two decks, chosen by `rasterMode`. Hidden, not disabled: the other deck’s state stays put.
+   - **Every numeric field in the section reaches past its slider.** `PrecisionSlider` takes a track range and a wider `hardMin`/`hardMax`; the track spans what is worth dragging through and the field accepts the extremes, with the track growing to reach a typed value so it stays draggable. The engine has to honour the same hard range or the field accepts a value and the render snaps it back — see §2.3.5.
+
+   **Dither Algorithm Picker** ([`DitherAlgorithmPicker.tsx`](src/components/DitherAlgorithmPicker.tsx)) — ASCII and pixel
+   - Universal across all three sources (`synth`, `media`, `model`).
    - Rapid-cycle `<` and `>` stepper buttons for live auditioning of all 44 algorithms with wrap-around and counter telemetry (`[X / 44]`).
    - 1-click hero presets (`THRESHOLD`, `FLOYD-STEINBERG`, `ATKINSON`, `BAYER 4×4`, `BAYER 8×8`, `BLUE NOISE`, `HALFTONE`, `KNUTH DOT`, `HILBERT`).
-   - Categorized `<optgroup>` select covering all 5 families.
+   - Categorized `<optgroup>` select covering all 5 families, and an **Algorithm Tuning** deck whose rows come from `getDitherParamIds` — derived from the implementation, so a row never appears for a parameter the algorithm ignores.
+
+   **Beam deflection** ([`VectorControls.tsx`](src/components/VectorControls.tsx)) — vector
+   - Renders as a bare fragment, not a nested deck: it *is* the whole content of the section in vector mode, so a bordered panel with its own title and reset repeated the heading above it.
+   - Five presets, a scan-axis toggle, geometry (lines, sample step, smoothing, deflection, bias, cutoff), occlusion, then three tuning decks — carrier modulation, analog ripple, beam optics.
+   - BASIC takes `compact` and keeps eight of these; see §4.
 
 4. **Tonal Controls & Grading** ([`ImageAdjustControls.tsx`](src/components/ImageAdjustControls.tsx))
    - **Color & Tonal Palette**: Single color mode dropdown (`1color`, `2color`, `3color`, `content`, or indexed `palette:<id>`). When in Pixel mode, CRT phosphor theme buttons are hidden to keep the interface neutral white.
@@ -939,7 +984,7 @@ The **Render** tab follows a strict vertical workflow across all three input sou
    - **Tonal Balance**: Highlights, Midtones, and Shadows sliders with double-click quick-zero.
 
 5. **Character Set Ramp** ([`CharsetThemeBar.tsx`](src/components/CharsetThemeBar.tsx))
-   - Monospace density ramps (active in ASCII mode, dimmed in Pixel mode).
+   - Monospace density ramps: active in ASCII, dimmed in pixel, omitted entirely in vector — a beam has no glyphs.
 
 ---
 
@@ -1120,8 +1165,15 @@ Things that will silently break rendering if violated.
 6. **Quantization depth must track real output depth.** Dithering at 256 levels is
    invisible by construction; dithering a photo at charset depth turns flat areas
    into texture.
-7. **Cell aspect is applied at the source, not at paint time** — `1.0` for pixel,
-   `0.6015` for ASCII.
+7. **Cell aspect is applied at the source, not at paint time** — `0.6015` for
+   ASCII, `1.0` for pixel **and vector**. The test is always "are the cells
+   square?", which is `!== 'ascii'`, never `=== 'pixel'`. Every site that derives
+   rows from columns has to ask it: `autoSetMediaResolution`, `OptimizeControls`,
+   `mediaRenderer`, and `BasicPanel.handleColsChange`. The last of those is the one
+   that got missed, because it had no mode test to widen — it applied the
+   monospace figure unconditionally, so a search for branches never surfaced it.
+   Widening a union finds the code that branches on it, not the code that assumed
+   the old value so completely it never branched.
 8. **Media grading has exactly one home** (`mediaViewConfig`). A second `adjustConfig`
    field on the media context will shadow it with neutral defaults. Levels is the
    documented exception and lives in `toneConfig` for every mode; see §4.

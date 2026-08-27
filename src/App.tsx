@@ -2869,7 +2869,7 @@ export const App: React.FC = () => {
               <span className="brand-full">DITHER STUDIO</span>
             </div>
           </div>
-          <span className="brand-version">v2.1</span>
+          <span className="brand-version">v2.2</span>
         </div>
 
         {/*
