@@ -416,8 +416,17 @@ export interface VectorConfig {
 }
 
 /**
- * Mirrors the studio's opening state, so a fresh vector mode looks like
- * `rutt_etra_scanline_dither_studio.html` on first paint.
+ * The studio's opening state, with one deliberate departure: the carrier starts
+ * **off**.
+ *
+ * A dashed beam is a strong look to open on, and it is the one default a new
+ * user cannot reverse without first understanding what a carrier is. Off, the
+ * first paint is a plain deflected scan — the thing the mode is for — and the
+ * dot-break is one toggle away. It also lets the BASIC panel hide the carrier
+ * deck without writing to the config, which is the invariant every other
+ * reduction there holds (pipeline.md §4).
+ *
+ * OSCILLOSCOPE restores the studio’s exact opening frame in one click.
  */
 export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
   direction: 'vertical',
@@ -428,7 +437,7 @@ export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
   bias: 0.5,
   blanking: 0.02,
   occlusion: false,
-  carrierEnabled: true,
+  carrierEnabled: false,
   carrierFreq: 0.45,
   carrierThreshold: 0.32,
   pwm: 1.2,

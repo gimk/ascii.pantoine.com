@@ -172,8 +172,14 @@ export interface VectorConfig {
 ```
 
 Its own config object, not an extension of `DitherParams`, for the reason in §1.
-`VECTOR_CONFIG_DEFAULTS` mirrors the studio's `state` literal so a fresh vector
-mode looks like the studio's first paint.
+`VECTOR_CONFIG_DEFAULTS` is the studio's `state` literal with **one departure:
+the carrier starts off.** A dashed beam is a strong look to open on, and it is
+the one default a new user cannot undo without first knowing what a carrier is;
+off, the first paint is a plain deflected scan — the thing the mode is for —
+and the dot-break is one toggle away. It also lets the BASIC panel hide the
+carrier deck without writing to the config, which is the invariant every other
+reduction there holds. OSCILLOSCOPE restores the studio's exact opening frame in
+one click.
 
 ### 3.2 The tracer — `src/engine/vectorEngine.ts` (new)
 

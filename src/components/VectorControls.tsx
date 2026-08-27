@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { VectorConfig, VECTOR_CONFIG_DEFAULTS } from '../types/ascii';
 import { PrecisionSlider } from './controlPrimitives';
 import { MoveVertical, MoveHorizontal } from 'lucide-react';
@@ -224,6 +224,12 @@ const OPTICS_ROWS: Row[] = [
  * the deflection is bipolar), Ripple Freq and Phase (both modulate a ripple
  * that is off by default), and Phosphor Glow and Aberration (finishing passes
  * that need a look to finish).
+ *
+ * The whole carrier deck goes too, and costs nothing to hide because
+ * `carrierEnabled` now defaults to *off*: a basic user opens on a plain
+ * deflected scan rather than on a dashed one they have no control to explain.
+ * This panel therefore only hides — it never writes — which is the invariant
+ * every other reduction in BASIC holds.
  */
 const COMPACT_ROW_IDS: NumericKey[] = [
   'lineCount',
@@ -355,18 +361,6 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
   const set = <K extends keyof VectorConfig>(key: K, value: VectorConfig[K]) => {
     onChange({ ...config, [key]: value });
   };
-
-  /*
-   * The carrier defaults to *on*, so hiding its deck without switching it off
-   * would leave a basic user with a dashed beam and no control that explains
-   * it. Only `carrierEnabled` is touched — the three tuning values stay in the
-   * config, so the advanced deck still has them when it comes back.
-   */
-  useEffect(() => {
-    if (compact && config.carrierEnabled) {
-      onChange({ ...config, carrierEnabled: false });
-    }
-  }, [compact, config, onChange]);
 
   const ALL_ROWS = [...GEOMETRY_ROWS, ...CARRIER_ROWS, ...RIPPLE_ROWS, ...OPTICS_ROWS];
   const compactRows = COMPACT_ROW_IDS.map(

@@ -864,12 +864,12 @@ the DPI slider, a charset `<select>` instead of `CharsetThemeBar`, and two plain
 clip-point sliders instead of the histogram Levels editor. One implementation,
 two levels of detail.
 
-The compact beam deck is the one reduction that **writes** as well as hides:
-`carrierEnabled` defaults to on, so hiding its deck alone would leave a BASIC
-user with a dashed beam and no control that explains it. Compact switches it off
-and touches nothing else — the three tuning values stay in the config, so
-ADVANCED still has them when it comes back. That is a deliberate exception to
-the hidden-not-reset rule below, and the only one.
+The compact beam deck hides the carrier entirely, which is only safe because
+`carrierEnabled` **defaults to off**. It briefly defaulted to on, and hiding the
+deck then left a BASIC user with a dashed beam and no control that explained it;
+the fix was the default, not an exception to the rule — having the panel write
+`carrierEnabled: false` on mount would have made BASIC the one layout that
+changes state by being looked at. The reduction only hides.
 
 Two couplings are load-bearing and easy to break:
 
