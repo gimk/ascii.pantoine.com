@@ -938,6 +938,16 @@ export interface DitherParamSpec {
   hint: string;
   min: number;
   max: number;
+  /**
+   * Wider range the number field accepts, past the end of the track.
+   * Defaults to the track range.
+   *
+   * The floors are not decoration. `scale` is a divisor and `frequency`
+   * multiplies a carrier rate, so neither may reach zero however far the
+   * field is pushed; the ceilings are only expensive.
+   */
+  hardMin?: number;
+  hardMax?: number;
   step: number;
   /** Value used when the parameter is absent. */
   fallback: number;
@@ -958,6 +968,8 @@ export const DITHER_PARAM_SPECS: Record<DitherParamId, DitherParamSpec> = {
     hint: 'How hard the pattern pushes against the tone. 1.0 is one quantization step.',
     min: 0,
     max: 2,
+    hardMin: -2,
+    hardMax: 8,
     step: 0.05,
     fallback: 1,
     unit: '×',
@@ -968,6 +980,7 @@ export const DITHER_PARAM_SPECS: Record<DitherParamId, DitherParamSpec> = {
     hint: 'Cells per mask sample. Coarsens the pattern without reshaping it.',
     min: 1,
     max: 8,
+    hardMax: 64,
     step: 1,
     fallback: 1,
     unit: '×',
@@ -978,6 +991,8 @@ export const DITHER_PARAM_SPECS: Record<DitherParamId, DitherParamSpec> = {
     hint: 'Rotates the mask. 45° is the classic halftone screen.',
     min: 0,
     max: 90,
+    hardMin: -360,
+    hardMax: 360,
     step: 1,
     fallback: 0,
     unit: '°',
@@ -988,6 +1003,8 @@ export const DITHER_PARAM_SPECS: Record<DitherParamId, DitherParamSpec> = {
     hint: 'Multiplies the carrier rate. Below 1 spreads the pattern out.',
     min: 0.25,
     max: 3,
+    hardMin: 0.01,
+    hardMax: 20,
     step: 0.05,
     fallback: 1,
     unit: '×',
@@ -998,6 +1015,7 @@ export const DITHER_PARAM_SPECS: Record<DitherParamId, DitherParamSpec> = {
     hint: 'Shifts the pattern origin. The same seed always gives the same frame.',
     min: 0,
     max: 64,
+    hardMax: 9999,
     step: 1,
     fallback: 0,
   },
@@ -1022,10 +1040,16 @@ export interface ResolvedDitherParams {
   serpentine: boolean;
 }
 
+/*
+ * Clamped to the *hard* range, not the track range. A value typed past the
+ * end of a slider has to survive the trip through here or the field would
+ * accept it and the engine would quietly snap it back — the control reading
+ * as broken rather than as bounded.
+ */
 function clampParam(id: DitherParamId, value: number | undefined): number {
   const spec = DITHER_PARAM_SPECS[id];
   if (typeof value !== 'number' || !Number.isFinite(value)) return spec.fallback;
-  return Math.max(spec.min, Math.min(spec.max, value));
+  return Math.max(spec.hardMin ?? spec.min, Math.min(spec.hardMax ?? spec.max, value));
 }
 
 /** Fills in and clamps every parameter, whether or not the algorithm reads it. */

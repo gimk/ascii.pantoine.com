@@ -132,6 +132,8 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
               value={resolved[id] as number}
               sliderMin={spec.min}
               sliderMax={spec.max}
+              hardMin={spec.hardMin}
+              hardMax={spec.hardMax}
               step={spec.step}
               resetTo={spec.fallback}
               onChange={(val) => set(id, val)}

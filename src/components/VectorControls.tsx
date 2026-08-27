@@ -30,8 +30,19 @@ interface Row {
   id: NumericKey;
   label: string;
   hint: string;
+  /** Range the track spans under normal use. */
   min: number;
   max: number;
+  /**
+   * Wider range the number field accepts, past the end of the track.
+   * Defaults to the track range.
+   *
+   * Where a floor is given it is structural rather than cosmetic:
+   * `sampleStep` is a stride and `lineCount` a count, so neither may reach
+   * zero however far the field is pushed. The ceilings are only slow.
+   */
+  hardMin?: number;
+  hardMax?: number;
   step: number;
 }
 
@@ -43,6 +54,8 @@ const GEOMETRY_ROWS: Row[] = [
     hint: 'How many beams sweep the image. The Joy Division look lives around 40-80.',
     min: 16,
     max: 180,
+    hardMin: 1,
+    hardMax: 1000,
     step: 1,
   },
   {
@@ -52,6 +65,8 @@ const GEOMETRY_ROWS: Row[] = [
       'Grid cells between samples along a beam — how often it is read, not how smooth it is. Higher is faster and more angular. Use Smoothing to settle a noisy line.',
     min: 1,
     max: 6,
+    hardMin: 1,
+    hardMax: 64,
     step: 1,
   },
   {
@@ -61,6 +76,8 @@ const GEOMETRY_ROWS: Row[] = [
       'Low-pass radius in grid cells, along the beam only, applied before the luminance becomes a displacement. Settles jitter without flattening the ridges. Also softens Beam Cutoff by about the same radius.',
     min: 0,
     max: 48,
+    hardMin: 0,
+    hardMax: 400,
     step: 1,
   },
   {
@@ -70,6 +87,8 @@ const GEOMETRY_ROWS: Row[] = [
       'Peak displacement in grid cells. Negative inverts the relief, and the occlusion stack turns over with it.',
     min: -180,
     max: 180,
+    hardMin: -2000,
+    hardMax: 2000,
     step: 1,
   },
   {
@@ -78,6 +97,8 @@ const GEOMETRY_ROWS: Row[] = [
     hint: 'Luminance that deflects to zero. 0.5 is bipolar; 0 pushes one way only.',
     min: 0,
     max: 1,
+    hardMin: -2,
+    hardMax: 2,
     step: 0.05,
   },
   {
@@ -87,6 +108,8 @@ const GEOMETRY_ROWS: Row[] = [
       'Luminance below which the beam is off entirely. Raise it to clear flat lines off a dark background; 0 draws the baseline everywhere, which is what a relief wants.',
     min: 0,
     max: 0.5,
+    hardMin: 0,
+    hardMax: 1,
     step: 0.01,
   },
 ];
@@ -98,6 +121,8 @@ const CARRIER_ROWS: Row[] = [
     hint: 'Rate of the modulating carrier. Higher breaks the beam into finer pulses.',
     min: 0.05,
     max: 1.5,
+    hardMin: 0,
+    hardMax: 20,
     step: 0.01,
   },
   {
@@ -106,6 +131,8 @@ const CARRIER_ROWS: Row[] = [
     hint: 'How readily the carrier opens. Higher keeps more of the beam drawn.',
     min: 0,
     max: 0.9,
+    hardMin: -5,
+    hardMax: 1,
     step: 0.02,
   },
   {
@@ -114,6 +141,8 @@ const CARRIER_ROWS: Row[] = [
     hint: 'How fast the duty cycle opens with luminance — dots in shadow, line in light.',
     min: 0.2,
     max: 2.5,
+    hardMin: 0,
+    hardMax: 20,
     step: 0.1,
   },
 ];
@@ -125,6 +154,8 @@ const RIPPLE_ROWS: Row[] = [
     hint: 'High-frequency analog noise on the beam, heaviest in the shadows.',
     min: 0,
     max: 20,
+    hardMin: 0,
+    hardMax: 500,
     step: 0.5,
   },
   {
@@ -133,6 +164,8 @@ const RIPPLE_ROWS: Row[] = [
     hint: 'Rate of the ripple along the beam.',
     min: 0.1,
     max: 5,
+    hardMin: 0,
+    hardMax: 100,
     step: 0.1,
   },
   {
@@ -141,6 +174,8 @@ const RIPPLE_ROWS: Row[] = [
     hint: 'Scrubs the carrier and ripple. Advanced automatically while a loop is running.',
     min: 0,
     max: 6.28,
+    hardMin: -100,
+    hardMax: 100,
     step: 0.05,
   },
 ];
@@ -152,6 +187,8 @@ const OPTICS_ROWS: Row[] = [
     hint: 'Stroke weight in grid cells. Scales with the image on export.',
     min: 0.5,
     max: 4,
+    hardMin: 0,
+    hardMax: 40,
     step: 0.1,
   },
   {
@@ -160,6 +197,8 @@ const OPTICS_ROWS: Row[] = [
     hint: 'Halo radius around the beam.',
     min: 0,
     max: 25,
+    hardMin: 0,
+    hardMax: 200,
     step: 1,
   },
   {
@@ -168,6 +207,8 @@ const OPTICS_ROWS: Row[] = [
     hint: 'Splits the beam into offset R/G/B passes that recombine where they overlap.',
     min: 0,
     max: 8,
+    hardMin: 0,
+    hardMax: 100,
     step: 0.5,
   },
 ];
@@ -300,6 +341,8 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
           value={config[row.id]}
           sliderMin={row.min}
           sliderMax={row.max}
+          hardMin={row.hardMin}
+          hardMax={row.hardMax}
           step={row.step}
           resetTo={VECTOR_CONFIG_DEFAULTS[row.id]}
           disabled={disabled}
