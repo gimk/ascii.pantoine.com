@@ -1,10 +1,15 @@
 import React from 'react';
 import { VectorConfig, VECTOR_CONFIG_DEFAULTS } from '../types/ascii';
 import { PrecisionSlider } from './controlPrimitives';
-import { RotateCcw, Activity, MoveVertical, MoveHorizontal } from 'lucide-react';
+import { MoveVertical, MoveHorizontal } from 'lucide-react';
 
 /**
  * Beam deflection controls — vector mode's replacement for the dither picker.
+ *
+ * Renders as a bare fragment straight into RENDER SETTINGS rather than as its
+ * own bordered deck: it *is* the whole content of that section in vector mode,
+ * so a nested panel with its own title and reset button was a box inside a box
+ * repeating the heading above it. The section header owns the reset.
  *
  * The two are mutually exclusive by construction: vector output leaves the
  * raster pipeline before quantization, so an algorithm selection has nothing to
@@ -270,10 +275,6 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
     onChange({ ...config, [key]: value });
   };
 
-  const isDefault = (Object.keys(VECTOR_CONFIG_DEFAULTS) as (keyof VectorConfig)[]).every(
-    (k) => config[k] === VECTOR_CONFIG_DEFAULTS[k]
-  );
-
   const renderRows = (rows: Row[], disabled = false) =>
     rows.map((row) => (
       <div className="control-row" key={row.id}>
@@ -293,33 +294,7 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
     ));
 
   return (
-    <div className="dither-param-deck">
-      <div className="dither-param-deck-header">
-        <div className="dither-param-deck-title">
-          <Activity size={11} />
-          <span>Beam Deflection</span>
-        </div>
-        {!isDefault && (
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => onChange({ ...VECTOR_CONFIG_DEFAULTS })}
-            title="Reset every beam parameter"
-            style={{
-              padding: '1px 6px',
-              height: '18px',
-              fontSize: '9.5px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-            }}
-          >
-            <RotateCcw size={10} />
-            <span>Reset</span>
-          </button>
-        )}
-      </div>
-
+    <>
       <div className="vector-preset-grid">
         {PRESETS.map((p) => (
           <button
@@ -405,6 +380,6 @@ export const VectorControls: React.FC<VectorControlsProps> = ({ config, onChange
         <span>Beam Optics</span>
       </div>
       {renderRows(OPTICS_ROWS)}
-    </div>
+    </>
   );
 };

@@ -3371,10 +3371,20 @@ export const App: React.FC = () => {
                             ...prev[appMode],
                             ditherAlgorithm: 'floyd-steinberg',
                             ditherParams: undefined,
+                            /*
+                             * VectorControls has no reset of its own -- the
+                             * section header owns it, so this has to clear the
+                             * beam as well or nothing does.
+                             */
+                            vectorConfig: undefined,
                           },
                         }));
                       }}
-                      resetTitle="Reset dither algorithm and parameters"
+                      resetTitle={
+                        currentRasterMode === 'vector'
+                          ? 'Reset every beam parameter'
+                          : 'Reset dither algorithm and parameters'
+                      }
                     >
                       {currentRasterMode === 'vector' ? (
                         <VectorControls

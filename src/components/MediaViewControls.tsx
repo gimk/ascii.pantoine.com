@@ -126,7 +126,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         }
         persistKey="MediaViewControls-render-settings"
         onReset={resetRenderSettings}
-        resetTitle="Reset dither algorithm and resampling filter"
+        resetTitle={isVector ? 'Reset every beam parameter' : 'Reset dither algorithm and resampling filter'}
       >
         {/*
           * Vector output leaves the pipeline before quantization, so an

@@ -3964,7 +3964,8 @@ select:disabled {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 4px;
-  margin: 6px 0 8px;
+  /* First thing in RENDER SETTINGS now, so no leading margin. */
+  margin: 0 0 8px;
 }
 
 .vector-preset-chip {
