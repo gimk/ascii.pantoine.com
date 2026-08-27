@@ -43,6 +43,7 @@ export type PostStage =
       /** 0..1. */
       opacity: number;
       placement: 'under' | 'over';
+      blur?: number;
     }
   | {
       kind: 'paint';
@@ -287,6 +288,7 @@ export function buildStages(
       blend: resolved.sourceOverlay.blend,
       opacity: Math.min(1, resolved.sourceOverlay.opacity / 100),
       placement: resolved.sourceOverlay.placement,
+      blur: resolved.sourceOverlay.blur ?? 0,
     });
   }
 
@@ -441,7 +443,13 @@ export function composePostProcess(options: ComposeOptions): void {
   for (const stage of under) {
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = stage.opacity;
+    if (stage.blur && stage.blur > 0 && supportsCanvasFilter()) {
+      ctx.filter = `blur(${stage.blur * scale}px)`;
+    } else {
+      ctx.filter = 'none';
+    }
     ctx.drawImage(stage.layer as CanvasImageSource, 0, 0, width, height);
+    ctx.filter = 'none';
   }
 
   /*
@@ -456,7 +464,13 @@ export function composePostProcess(options: ComposeOptions): void {
   for (const stage of over) {
     ctx.globalCompositeOperation = blendToCanvasOp(stage.blend);
     ctx.globalAlpha = stage.opacity;
+    if (stage.blur && stage.blur > 0 && supportsCanvasFilter()) {
+      ctx.filter = `blur(${stage.blur * scale}px)`;
+    } else {
+      ctx.filter = 'none';
+    }
     ctx.drawImage(stage.layer as CanvasImageSource, 0, 0, width, height);
+    ctx.filter = 'none';
   }
 
   ctx.globalAlpha = 1;
@@ -488,39 +502,48 @@ export function postProcessSvgFilter(
   scale: number,
   idPrefix = 'pp'
 ): { id: string; markup: string } | null {
+  if (!postProcessActive(cfg)) return null;
+
   const resolved = resolvePostProcess(cfg);
-  const glow = glowActive(resolved);
-  const ab = aberrationActive(resolved);
-  if (!glow && !ab) return null;
-
-  const id = `${idPrefix}-optics`;
+  const id = `${idPrefix}-filter`;
   const parts: string[] = [];
-  parts.push(`<filter id="${id}" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">`);
 
-  let cursor = 'SourceGraphic';
-  if (glow) {
-    const sigma = (resolved.glow.radius * scale).toFixed(2);
-    const alpha = (Math.min(1, resolved.glow.amount / 100)).toFixed(3);
-    parts.push(`<feGaussianBlur in="SourceGraphic" stdDeviation="${sigma}" result="ppBlur"/>`);
+  parts.push(
+    `<filter id="${id}" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">`
+  );
+
+  /*
+   * Glow is a blur added back with `feBlend mode="screen"` or `feMerge`.
+   */
+  if (glowActive(resolved)) {
+    const stdDev = (resolved.glow.radius * scale).toFixed(2);
+    parts.push(`<feGaussianBlur stdDeviation="${stdDev}" result="ppGlow"/>`);
     if (resolved.glow.tint) {
-      parts.push(`<feFlood flood-color="${resolved.glow.tint}" result="ppTint"/>`);
-      parts.push(`<feComposite in="ppTint" in2="ppBlur" operator="in" result="ppBlur"/>`);
+      parts.push(
+        `<feColorMatrix type="matrix" in="ppGlow" result="ppGlowTinted" values="` +
+          `0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>`
+      );
     }
-    parts.push(`<feComponentTransfer in="ppBlur" result="ppGlow"><feFuncA type="linear" slope="${alpha}"/></feComponentTransfer>`);
-    parts.push(`<feMerge result="ppLit"><feMergeNode in="ppGlow"/><feMergeNode in="SourceGraphic"/></feMerge>`);
-    cursor = 'ppLit';
+    parts.push(`<feMerge>`);
+    parts.push(`  <feMergeNode in="${resolved.glow.tint ? 'ppGlowTinted' : 'ppGlow'}"/>`);
+    parts.push(`  <feMergeNode in="SourceGraphic"/>`);
+    parts.push(`</feMerge>`);
   }
 
-  if (ab) {
+  /*
+   * Aberration splits the R/G/B channels and shifts them.
+   */
+  if (aberrationActive(resolved)) {
     const rad = (resolved.aberration.angle * Math.PI) / 180;
     const dx = (Math.cos(rad) * resolved.aberration.amount * scale).toFixed(2);
     const dy = (Math.sin(rad) * resolved.aberration.amount * scale).toFixed(2);
-    // Isolate a channel, shift it, and screen the three back together.
-    const chan = (name: string, matrix: string, ox: string, oy: string) => {
-      parts.push(`<feColorMatrix in="${cursor}" type="matrix" values="${matrix}" result="${name}Src"/>`);
-      parts.push(`<feOffset in="${name}Src" dx="${ox}" dy="${oy}" result="${name}"/>`);
+
+    const chan = (result: string, matrix: string, ox: string, oy: string) => {
+      parts.push(`<feColorMatrix type="matrix" values="${matrix}" result="${result}C"/>`);
+      parts.push(`<feOffset in="${result}C" dx="${ox}" dy="${oy}" result="${result}"/>`);
     };
-    chan('ppR', '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0', `-${dx}`, `-${dy}`);
+
+    chan('ppR', '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0', (-parseFloat(dx)).toFixed(2), (-parseFloat(dy)).toFixed(2));
     chan('ppG', '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0', '0', '0');
     chan('ppB', '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0', dx, dy);
     parts.push(`<feBlend in="ppR" in2="ppG" mode="screen" result="ppRG"/>`);
@@ -539,6 +562,7 @@ export function sourceOverlaySvg(
   height: number
 ): string {
   const o = resolvePostProcess(cfg).sourceOverlay;
-  const style = `mix-blend-mode:${o.blend};opacity:${(o.opacity / 100).toFixed(3)}`;
+  const filter = o.blur && o.blur > 0 ? `;filter:blur(${o.blur}px)` : '';
+  const style = `mix-blend-mode:${o.blend};opacity:${(o.opacity / 100).toFixed(3)}${filter}`;
   return `<image href="${dataUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" style="${style}"/>`;
 }

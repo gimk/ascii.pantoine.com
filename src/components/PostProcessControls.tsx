@@ -245,6 +245,24 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
           <div className="control-row">
             <span
               className="control-label"
+              title="Gaussian blur radius applied to the source overlay."
+            >
+              Blur
+            </span>
+            <PrecisionSlider
+              value={overlay.blur ?? 0}
+              sliderMin={0}
+              sliderMax={40}
+              step={1}
+              resetTo={0}
+              disabled={overlayDisabled}
+              onChange={(v) => setOverlay({ blur: v })}
+            />
+          </div>
+
+          <div className="control-row">
+            <span
+              className="control-label"
               title="Supersample of the raster's display box. An ASCII cell is six pixels wide, so 1x already gives a readable photograph behind the glyphs; a pixel cell is one, so raise it there."
             >
               Detail

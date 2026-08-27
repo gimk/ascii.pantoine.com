@@ -465,7 +465,8 @@ function sourceOverlaySvgNormal(
   height: number
 ): string {
   const o = resolvePostProcess(cfg).sourceOverlay;
-  return `<image href="${dataUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" opacity="${(o.opacity / 100).toFixed(3)}"/>`;
+  const filter = o.blur && o.blur > 0 ? ` style="filter:blur(${o.blur}px)"` : '';
+  return `<image href="${dataUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" opacity="${(o.opacity / 100).toFixed(3)}"${filter}/>`;
 }
 
 /**

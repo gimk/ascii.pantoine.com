@@ -2022,6 +2022,10 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               zIndex: overlayUnder ? 1 : 3,
               opacity: post.sourceOverlay.opacity / 100,
               mixBlendMode: overlayUnder ? 'normal' : post.sourceOverlay.blend,
+              filter:
+                post.sourceOverlay.blur && post.sourceOverlay.blur > 0
+                  ? `blur(${post.sourceOverlay.blur}px)`
+                  : undefined,
             }}
           />
         )}

@@ -599,6 +599,29 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
         </div>
 
         <div className="control-row">
+          <span
+            className="control-label"
+            title="Gaussian blur radius applied to the source overlay."
+          >
+            Overlay Blur
+          </span>
+          <PrecisionSlider
+            value={postProcess.sourceOverlay.blur ?? 0}
+            sliderMin={0}
+            sliderMax={40}
+            step={1}
+            resetTo={0}
+            disabled={!postProcess.sourceOverlay.enabled}
+            onChange={(v) =>
+              onChangePostProcess({
+                ...postProcess,
+                sourceOverlay: { ...postProcess.sourceOverlay, blur: v },
+              })
+            }
+          />
+        </div>
+
+        <div className="control-row">
           <span className="control-label" title="Blooms the finished frame. Works in every output mode.">
             Glow
           </span>

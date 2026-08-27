@@ -516,6 +516,8 @@ export interface SourceOverlayConfig {
   blend: BlendMode;
   /** 0..100. */
   opacity: number;
+  /** Gaussian blur in pixels. 0 is off. */
+  blur?: number;
   /**
    * Supersample of the raster's *display* box, not of the grid.
    *
@@ -583,6 +585,7 @@ export const SOURCE_OVERLAY_DEFAULTS: SourceOverlayConfig = {
   placement: 'under',
   blend: 'normal',
   opacity: 100,
+  blur: 0,
   quality: 2,
   source: 'original',
 };
