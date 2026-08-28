@@ -1258,6 +1258,199 @@ against a 100 ms frame and a bad one against a 3 ms frame. The other measured
 cost, the ~7 ms coloured-ASCII paint, is 58% `fillStyle` churn — see the note in
 §3.1.
 
+### 4.7 Auto-resolution ([`autoResolution.ts`](src/engine/autoResolution.ts))
+
+Everything above takes `cols`/`rows` as given. This is where they come from when
+AUTO is on — which is the default in every mode.
+
+The module is pure: measurements go in as numbers, a grid comes out. No DOM, no
+React, so the whole thing is exercisable from a script. `AsciiViewport` owns the
+half of the input that is about the screen (its own size, `devicePixelRatio`,
+the live output mode); `App` owns the half that is about the work
+(`getAutoResSignals` — content kind, source dimensions, crop, target fps,
+measured cost) and hands it over as a getter rather than props, so a frame cost
+that changes every few frames does not re-render the viewport.
+
+#### Shape and scale are separate decisions
+
+Keeping them apart is what makes one function correct in all three modes.
+
+**Shape** is the content's aspect wherever the content has one — a photo, a
+video, a crop — and the viewfinder's only for the procedural sources that will
+fill whatever they are given. The previous solver used the viewfinder in every
+mode, which is why auto-res on a photograph produced borders and had to be
+switched off in media entirely.
+
+**Scale** is the smallest of four ceilings, each the honest answer to a
+different question:
+
+| ceiling | question | bound |
+|---|---|---|
+| perceptual | what can be seen on this display | ≥95 CSS px² per glyph; ≥2 device px *per side* for a pixel cell, ≥1 for vector |
+| source | what the content actually contains | ≥4 source px² per glyph, ≥1 per pixel/vector cell — the latter is exactly Native 1:1 / 100 DPI |
+| aesthetic | what still looks like this output mode | 22k cells ascii, 1.2M pixel, 500k vector |
+| performance | what this machine renders in the time available | measured — see below |
+
+A single tuned constant, which is what this replaced, is whichever of the four
+happened to bind on the machine it was tuned on, frozen.
+
+The units differ on purpose. A glyph has to be *read*, so its floor is physical
+size and stays in CSS pixels; a pixel or vector cell has to be *resolved by the
+display*, so its floor is device pixels and a retina panel legitimately earns
+four times the grid. Measuring both in CSS pixels under-resolves pixel mode on
+every high-DPI screen.
+
+#### The frame is `fixed + perCell × cells`
+
+The performance ceiling is the only one that needs measuring, and the shape of
+the measurement is the part that took three attempts to get right.
+
+Sizing from a per-cell average alone — `cells = budget / msPerCell` — assumes a
+frame costs only what the grid costs. It does not: the Three.js pass, the
+particle step and a video decode all run whatever the grid is. Folding that
+constant into the average turns sizing into a fixed-point iteration whose
+convergence rate is exactly `fixed / budget`:
+
+| | overhead vs budget | behaviour |
+|---|---|---|
+| media image | 0% | one solve, exact |
+| media video | ~11% | settles in two |
+| synth | ~33% | five or six visible steps |
+| model | ~87% | twenty-plus, never still |
+| heavy model | ~131% | diverges outright |
+
+Which is why media always looked settled and synth and model did not. `createRenderCostProbe`
+now fits both terms by decaying least squares over `(cells, ms)` and the solver
+subtracts the constant before dividing — one solve, no iteration.
+
+Budget is `FRAME_UTILISATION` (0.55) of a target frame when animated, or
+`STATIC_BUDGET_MS` (220ms) when not. That distinction is worth roughly an order
+of magnitude in cells and is most of why photographs used to under-resolve: a
+still renders once off React state, so its budget is how long you will wait for
+a sharp frame, not how many frames fit in a second.
+
+**Separation needs two cell counts**, and everything awkward about this follows
+from that:
+
+- The first solve waits ~70ms (`SOLVE_WARMUP_MS`, animated only) for the probe
+  to see a few frames, so the grid it is about to leave becomes the second
+  point. Without it the only way to get one is to move the grid and move it
+  back, which is visible.
+- An unseparated fit reports `fixedMs: 0`, and zero is a *claim*, not a gap. It
+  is passed to the solver as `null` so the prior speaks instead, and it may
+  never overwrite a separated fit in the memory below. Separation decays once
+  the picture settles, so without that rule the stored value for a model came
+  out `[0, 0.0097]` — no fixed cost and four times the true slope.
+- A fit whose constant approaches the whole frame time is rejected: it has
+  really said the slope is ~zero, which reads as "cells are free".
+- When the constant exceeds the budget outright, no grid reaches the target.
+  `MIN_CELL_BUDGET_SHARE` (0.3) keeps a floor for the raster and accepts the
+  miss, because the lever at that point is the target framerate, not the grid.
+
+Before anything is measured, `BASE_MS_PER_CELL` and `BASE_FIXED_MS` supply a
+prior scaled by core count and the active stages. It only has to be the right
+shape — it governs the first few hundred milliseconds.
+
+#### Cost memory
+
+`createRenderCostMemory` keeps the last fit per pipeline key in `localStorage`
+(`ascii_studio_cell_cost_v2`, `[fixedMs, msPerCell, separated]`).
+
+The probe resets when the pipeline's identity changes — correct, since an
+average only describes the work that produced it, and also the whole problem:
+the identity changing is exactly what makes the solver re-run. Without the
+memory the first solve after every mode switch met an empty probe, fell back to
+the prior, measured the truth and corrected. Two visible steps forever, the app
+relearning the machine from scratch each time.
+
+Live frames still win once the probe has samples, but a *separated* fit beats an
+unseparated one from either source — including a live one, which after the
+picture settles is the wrong quantity rather than a rougher version of it.
+
+Storage is injected rather than reached for, so the module stays DOM-free.
+Every access is guarded: some privacy modes throw on read, on write, or both,
+and a measurement cache is never worth taking the app down for. It is
+per-browser and per-device; nothing is shared between machines and a new one
+relearns.
+
+#### Latch, not loop
+
+`createAutoResController` is a state machine over `solve → measure → settled`,
+polled every `AUTO_RES_TICK_MS` (400ms) by the viewport and answering "no
+change" almost always.
+
+Continuous closed-loop solving was the first attempt and it visibly hunted.
+`latchSignature` re-opens the question only when something real moves — the
+viewport bucketed to 16px, output mode, pipeline key, animated, target fps,
+source dimensions, crop. Measured cost is deliberately *excluded*: a cost that
+drifts is not a new question.
+
+Once settled the grid is in a **safe zone**. Only a collapsed framerate moves
+it, only downwards, and only twice:
+
+- the trigger is half the target and never above 30fps
+  (`COLLAPSE_FPS_RATIO`/`COLLAPSE_FPS_CEILING`), not "over budget" — for a heavy
+  scene, over budget is the normal condition, not an emergency
+- three consecutive strikes at 400ms apart, so a single hitch does nothing
+- capped at `MAX_CORRECTIONS` (2). If two did not fix it, the grid is not what
+  is wrong
+- judged on measured fps, not extrapolated cost — and `measuredFps` is `null`
+  whenever the reading would be meaningless: paused loop, hidden tab, or the
+  12fps idle throttle. Shrinking the grid to rescue a slowdown someone asked for
+  is the failure mode this prevents
+- `failedAtCells` remembers the smallest cell count that blew the budget, which
+  is the single piece of state that makes the loop terminate: without it the net
+  shrinks, the next solve sees a cheaper frame and grows straight back
+
+`shouldReplaceGrid` applies an 8% cell deadband plus a 2% aspect check on top of
+all of it. The aspect half matters on its own — a grid can hold its cell count
+while changing shape (rotating a photo, dragging the viewfinder to portrait),
+and that is exactly the case the cell test cannot see and the one where leaving
+the old grid puts borders back.
+
+#### Where the grid gets clamped on a mode switch
+
+The grid travels with the output mode, and the three are not comparable: a
+vector lattice is allowed 500k cells because only the first pipeline steps run
+over it, while the same grid handed to the glyph renderer is that many
+characters to lay out every frame. On a 1400×800 viewfinder a synth beam solves
+to 414×236 — four times ASCII's own ceiling — and carrying that across hung the
+tab. `handleSelectRasterMode` clamps inside the same `setState` as the mode
+change (`clampGridToOutputCeilings`), so no render sees the mismatched pair.
+Ceilings only: too coarse for the new mode is a matter of taste and auto-res
+will see to it, while too large is the application not responding.
+
+#### Touch to take over
+
+Every resolution control stays live under AUTO. They all route through
+`handleManualResolutionChange`, which sets `autoRes: false` — including the DPI
+slider, since `handleDpiChange` calls `onChangeResolution` alongside
+`onChangeDpi` — so moving any of them simply takes over. The `AutoResToggle` in
+each panel header and on the viewfinder switches it back.
+
+The ratio-lock toggles are the exception and deliberately do not release the
+latch: they configure how the sliders behave once used rather than setting a
+resolution, so there is nothing to take over.
+
+#### Known rough edges
+
+- **Synth in vector mode under heavy frame-time jitter** is the weak case: the
+  fit declines to separate rather than guess, so it approaches the answer over
+  a few sessions instead of landing on it. Bounded and monotone, but not one
+  step.
+- **`sceneComplexity` is not in the pipeline key.** Two models of very different
+  weight share a cache entry, so the remembered cost mispredicts and the
+  correction fires anyway. Inherent to keying on pipeline identity; still better
+  than the hardcoded prior.
+- **The fixed cost is inferred, not instrumented.** `recordRenderCost` times the
+  whole raster including the model's GPU pass. App could time that pass directly
+  and hand over the real number — no regression, no waiting for spread, correct
+  on the first solve. That is a change to the render loop's instrumentation
+  rather than to this module.
+- **`0.55` vs `MONOSPACE_CELL_ASPECT`.** The manual ratio-lock paths use 0.55
+  where the engine uses the real 0.6015, so MATCH RATIO and an auto-res solve
+  disagree by ~9% in rows.
+
 ## 5. Invariants
 
 Things that will silently break rendering if violated.
