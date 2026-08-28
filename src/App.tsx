@@ -664,7 +664,7 @@ export const App: React.FC = () => {
       if (raw) {
         const parsed = JSON.parse(raw);
         return {
-          uiTheme: parsed.uiTheme || 'green',
+          uiTheme: parsed.uiTheme || 'monochrome',
           customUiColor: parsed.customUiColor || '',
           syncUiWithAscii: parsed.syncUiWithAscii !== undefined ? parsed.syncUiWithAscii : true,
           autoCollapsePanels: parsed.autoCollapsePanels !== undefined ? parsed.autoCollapsePanels : true,
@@ -674,7 +674,7 @@ export const App: React.FC = () => {
       }
     } catch {}
     return {
-      uiTheme: 'green',
+      uiTheme: 'monochrome',
       customUiColor: '',
       syncUiWithAscii: true,
       autoCollapsePanels: true,

@@ -73,7 +73,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
       });
     }
     if (onChangeTheme) {
-      onChangeTheme('green');
+      onChangeTheme('monochrome');
     }
     if (onChangeCustomColor) {
       onChangeCustomColor(DEFAULT_PHOSPHOR_TINT);
@@ -158,7 +158,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         paletteSlot={
           onChangeTheme ? (
             <PaletteControls
-              currentTheme={currentTheme || 'green'}
+              currentTheme={currentTheme || 'monochrome'}
               onChangeTheme={onChangeTheme}
               customThemeColor={customThemeColor}
               onChangeCustomColor={onChangeCustomColor}

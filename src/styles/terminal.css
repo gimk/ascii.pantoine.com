@@ -9,18 +9,21 @@
 
 :root {
   color-scheme: dark;
-  --bg-primary: #080808;
-  --bg-panel: #0d0d0d;
-  --bg-control: #141414;
-  --bg-control-hover: #1f1f1f;
-  --border-color: #272727;
-  --border-active: #00ff66;
+  /* These mirror `body.theme-monochrome`, the default theme, so the paint that
+     lands before React sets the theme class already carries the right accent.
+     Change one and change the other. */
+  --bg-primary: #0a0a0a;
+  --bg-panel: #111111;
+  --bg-control: #1a1a1a;
+  --bg-control-hover: #262626;
+  --border-color: #333333;
+  --border-active: #ffffff;
   
-  --text-primary: #00ff66;
-  --text-muted: #62a877;
-  --text-dim: #437a54;
-  --accent: #00ff66;
-  --accent-glow: rgba(0, 255, 102, 0.11);
+  --text-primary: #f0f0f0;
+  --text-muted: #aaaaaa;
+  --text-dim: #707070;
+  --accent: #ffffff;
+  --accent-glow: rgba(255, 255, 255, 0.08);
   
   --font-mono: 'JuliaMono', 'Noto Sans Mono', 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, SFMono-Regular, monospace;
 

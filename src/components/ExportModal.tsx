@@ -123,7 +123,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   density,
   currentAsciiFrame,
   currentTime = 0,
-  theme = 'green',
+  theme = 'monochrome',
   customThemeColor,
   gradientConfig,
   crtConfig,

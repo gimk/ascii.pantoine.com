@@ -3,16 +3,16 @@ import { X, Tv, Cpu, Sliders, Palette } from 'lucide-react';
 import { CrtConfig, OptimizeConfig, PhosphorTheme, UiThemeSettings } from '../types/ascii';
 
 const UI_THEMES: { id: PhosphorTheme; name: string; color: string }[] = [
+  { id: 'monochrome', name: 'Mono White', color: '#f0f0f0' },
   { id: 'green', name: 'Matrix Green', color: '#00ff66' },
   { id: 'amber', name: 'Amber CRT', color: '#ffb000' },
   { id: 'cyan', name: 'Cyber Cyan', color: '#00f0ff' },
-  { id: 'monochrome', name: 'Mono White', color: '#f0f0f0' },
   { id: 'blood', name: 'Crimson Red', color: '#ff3344' },
   { id: 'paper', name: 'Paper Print', color: '#151515' },
 ];
 
 const DEFAULT_UI_THEME_SETTINGS: UiThemeSettings = {
-  uiTheme: 'green',
+  uiTheme: 'monochrome',
   customUiColor: '',
   syncUiWithAscii: true,
   autoCollapsePanels: true,
@@ -194,7 +194,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                       background:
                         uiThemeSettings.customUiColor ||
                         UI_THEMES.find((t) => t.id === uiThemeSettings.uiTheme)?.color ||
-                        '#00ff66',
+                        '#f0f0f0',
                       position: 'relative',
                       overflow: 'hidden',
                     }}
@@ -204,7 +204,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                       value={
                         uiThemeSettings.customUiColor ||
                         UI_THEMES.find((t) => t.id === uiThemeSettings.uiTheme)?.color ||
-                        '#00ff66'
+                        '#f0f0f0'
                       }
                       onChange={(e) => {
                         onChangeUiThemeSettings?.({
@@ -228,7 +228,7 @@ export const ViewfinderSettingsModal: React.FC<ViewfinderSettingsModalProps> = (
                     type="text"
                     className="text-input"
                     value={uiThemeSettings.customUiColor}
-                    placeholder="#00ff66"
+                    placeholder="#f0f0f0"
                     onChange={(e) => {
                       onChangeUiThemeSettings?.({
                         ...uiThemeSettings,
