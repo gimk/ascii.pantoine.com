@@ -896,15 +896,6 @@ export const App: React.FC = () => {
   const currentFpsRef = useRef<number>(30);
 
   // UI state
-  /**
-   * Which sidebar section the rail is pointing at.
-   *
-   * CONTENT and RENDER used to be two tabs, and choosing an image meant
-   * leaving the controls that made it look like anything — a round trip you
-   * paid on every adjustment. They are one scrolling column now, so this is no
-   * longer a filter on what renders: it is scroll position, read back from the
-   * headings, and the rail scrolls to them rather than swapping them in.
-   */
   /* ======================================================================
      Luminance histogram, for the Levels control.
 
@@ -3568,7 +3559,7 @@ export const App: React.FC = () => {
               <span className="brand-full">DITHER STUDIO</span>
             </div>
           </div>
-          <span className="brand-version">v2.2</span>
+          <span className="brand-version">v2.3</span>
         </div>
 
         {/*
@@ -3689,18 +3680,6 @@ export const App: React.FC = () => {
           }}
           onMouseMove={handleMouseMove}
           onClick={handleClick}
-          presetName={
-            appMode === 'model'
-              ? modelConfig.sourceType === 'url'
-                ? modelConfig.fileName || 'Online 3D Model'
-                : modelConfig.sourceType === 'file'
-                ? modelConfig.fileName || 'Custom 3D File'
-                : 'Torus Knot'
-              : appMode === 'media'
-              ? mediaConfig.fileName || '2D Media'
-              : activePreset.name
-          }
-          isEdited={appMode === 'model' ? isModelEdited : appMode === 'media' ? isMediaEdited : isEdited}
           viewMode={viewMode}
           onToggleViewMode={handleToggleViewMode}
           autoRes={autoRes}

@@ -68,8 +68,9 @@ file picker, or remote URL.
    downsample to grid resolution happens in the browser's image scaler, not in our
    code**. `willReadFrequently: true` is set.
 2. Background cleared (transparent, or white if `viewConfig.background === 'white'`).
-3. Fit maths: `contain` / `cover` / `original` / stretch, against a *virtual* canvas
-   of `cols × (rows / cellAspect)`. Then scale, offset, rotation, flips.
+3. Framing: the crop rect becomes the `drawImage` source rect, then fit maths
+   (`contain` / `cover` / `original` / stretch) against a *virtual* canvas of
+   `cols × (rows / cellAspect)`, then scale, offset, rotation, flips.
 4. `imageSmoothingEnabled` follows `viewConfig.resampling`
    (`nearest` → off; `preserve-details` → `high`; otherwise `medium`).
 5. `ctx.scale(1, cellAspect)` squashes vertically so a monospace cell reads square.
@@ -77,6 +78,45 @@ file picker, or remote URL.
 6. `getImageData(0, 0, cols, rows)` → RGBA.
 
 **Hands to the engine:** `rgba` only. No `luminance`, so the engine computes it.
+
+**The crop *is* the source, from `computeMediaFraming` down.** `resolveCrop` turns an
+absent, malformed or inverted rect into the whole frame, and every length below it
+reads from the rect rather than from the image — so fit, scale, pan and rotation need
+no crop-aware branch, because as far as they can tell the picture simply has different
+dimensions. The `drawImage` call is always the nine-argument form: with a full crop the
+source rect is the whole image and it is identical to the five-argument call it
+replaced, so there is no cropped path and uncropped path to keep in agreement.
+
+Two consequences, both the point rather than a side effect:
+
+- **A crop gains detail, it does not zoom.** The grid is spent entirely on what the
+  rectangle kept, so cropping in resolves *more* cells of the subject — and the grid
+  itself is re-derived from the kept rectangle's aspect, see §4.4. Under `original`
+  fit — one source pixel per cell — a crop reveals more of the grid rather than
+  magnifying what it kept.
+- **The rect is normalized, not in pixels**, so the same crop survives a resolution
+  change, a re-import of the same picture at another size, and a shared link opened on
+  someone else's copy. `CROP_MIN_SPAN` is the floor the marquee will not drag below.
+  `cropActive` decides between a rect and `undefined` on apply, so a full-frame crop
+  stores nothing — absent is the documented no-op, and writing `0,0,1,1` would put a
+  crop key in every share link and preset that never cropped anything.
+
+**`MediaFraming` is where the source lands, as numbers rather than as a side effect on
+a context.** `computeMediaFraming` returns it, `drawFramedMedia` applies it, the crop
+marquee (§4.4) inverts it, and the source overlay (§3.5) replays it at a higher
+resolution. A second copy of this maths anywhere is a copy that drifts. Everything in
+it is in grid units, before any `pixelsPerCell` pre-scale — that scale is uniform, so
+it composes on the outside and changes nothing inside.
+
+**`contain` and `cover` measure the *rotated* picture.** The fit used to be computed
+from the unrotated aspect with the rotation applied afterwards, so a quarter-turned
+image was sized to fill the box and then spun inside it, landing short of every edge.
+What has to fit is what you end up looking at. The rotated bounding box gives one bound
+on `drawW` per canvas edge; contain takes the tighter, cover the looser. At zero
+degrees the two collapse to the aspect comparison they replace, so an unrotated
+source — nearly all of them — is sized exactly as before. `stretch` has no aspect to
+hold a rotated fit to, so a rotation there spills past the edges, which is the honest
+answer to asking for both.
 
 **Single source of truth:** media's adjustments live in `mediaViewConfig`, which
 *is* an `ImageAdjustConfig` (`MediaViewConfig extends ImageAdjustConfig`). The
@@ -613,6 +653,51 @@ Both details are load-bearing:
 
 Together these were the cause of the moiré on flat backgrounds.
 
+#### The camera on a grid change
+
+The viewport owns the framing, and a `cols`/`rows` change is the one event that can
+move it without the user touching anything. One `useLayoutEffect` keyed on the grid
+handles all three ways it can arrive, in the same paint as the change — a delayed
+timer cannot, because for the ~50 ms until it runs the *new* grid is painted at the
+*old* scale and pan.
+
+| what changed | what the camera does |
+|---|---|
+| auto-res corrected the grid | reproduce the same on-screen rectangle |
+| the user moved a resolution control | resize about the image centre |
+| the output mode switched | re-fit immediately |
+
+**An auto-res correction reproduces the rectangle exactly.** The pending fit carries a
+`preserve` record — the old `cols`, scale and centre point. Same rendered width,
+different cell count, so `scale × (oldCols / cols)` fed to `framingToView` against the
+new grid lands on the previous rectangle. Pixel mode rounds that to a whole-device-pixel
+rung rather than flooring it: this is not a fit trying to stay inside an edge, it is a
+framing trying not to move, and the nearest rung moves it least.
+
+**A manual change resizes about the image centre.** The view transform is a translate
+plus a scale anchored at the raster's top-left, so growing the grid at a fixed scale
+used to push the picture down and to the right, out from under the viewfinder. The
+effect measures the old rendered box, takes its centre, and re-centres the new box on
+the same point before `clampPan`. Nothing about the zoom changes — only where the
+larger or smaller raster sits.
+
+**An output-mode switch re-fits.** `rasterMode` arrives as a prop, not inferred from
+the last frame, because `setFrame` mirrors it into state a render *after* the switch
+and every framing decision in between would use the wrong cell aspect (0.6015 against
+1.0, invariant 7). Its own layout effect calls `autoFit` the moment the prop changes:
+the same `cols × rows` under a different cell aspect is a differently-shaped picture,
+so there is no rectangle to preserve.
+
+All three set `skipNextAutoFitRef`, because a grid change also queues the delayed fit
+above and a second fit landing 50 ms later would throw away whatever was just computed.
+
+**Zoom easing is gated on user input.** `zoomAbout` sets `isUserInputZoomRef`, and the
+camera's transition effect eases only when it finds the flag set, clearing it as it
+goes; every other scale change — auto-fit, the mode-switch fit, an auto-res correction,
+a share link's framing — applies its residual and lands instantly. Without the gate the
+camera animated its way into positions the user never asked it to travel to, which
+reads as the app drifting rather than as a zoom.
+
 ### 3.2 Still image ([`imageExporter.ts`](src/engine/imageExporter.ts))
 
 Formats: `png`, `jpg`, `svg`.
@@ -750,7 +835,7 @@ Three effects today, in one config object (`RenderSettings.postProcess`):
 
 | stage | what it is | modes |
 |---|---|---|
-| **Source overlay** | the ungraded source composited back over its own rasterization, with a blend mode | media, model (raw); all three (graded) |
+| **Source overlay** | the ungraded source composited back over its own rasterization, with a blend mode, an opacity and a blur | media, model (raw); all three (graded) |
 | **Phosphor glow** | one blur of the emissive layer, added back | all |
 | **Chromatic aberration** | RGB channel offset of the finished frame | all |
 
@@ -804,6 +889,25 @@ case — that is what makes the overlay register with its own rasterization cell
 for cell, at any zoom, with no alignment parameter. The overlay canvas's backing
 store is fixed at that resolution and the CSS box carries the zoom, so panning
 and zooming are free and it can never hit `MAX_BACKING_DIM`.
+
+**The overlay blur is drawn oversized, then clipped.** `sourceOverlay.blur` is a
+Gaussian radius on the composited layer only — the raster underneath stays sharp, which
+is the whole use of it: a soft plate of the original under a hard dither. Two details
+make it come out right at the edges, and they pull in opposite directions:
+
+- `ctx.filter` fades a layer toward transparent at its own boundary, so drawing the
+  layer at its natural size leaves a band of falloff *inside* the render. The layer is
+  drawn `1.5 × radius` past every edge instead, so the frame is covered to its corners.
+- That overdraw would then spill outside the render bounds, over the viewport chrome or
+  into an export's margin. `composePostProcess` clips the whole composite to the frame
+  rect before painting anything, so the spill is discarded.
+
+The radius scales with the export (`blur × scale`), so a 4× PNG is the frame you saw,
+not the frame with a quarter of the softness. `supportsCanvasFilter()` probes `ctx.filter`
+once and caches it — Safari only shipped it in 16.4, and a silent no-op there would put
+a hard-edged copy of the source on top of itself, which is worse than no blur. The
+viewport repeats the same pad-and-clip on its DOM overlay layer in CSS, and the SVG
+export carries the radius as `filter:blur(...)` on the `<image>`.
 
 **Model pays for a second GPU pass**, gated on the overlay being on: the pipeline
 is entitled to the exact point-sampled `cols × rows` frame it has always been
@@ -934,16 +1038,31 @@ config objects, so switching never converts, resets or drops anything. A
 control BASIC does not show is still live in the render and still set to
 whatever ADVANCED left it at.
 
-- **ADVANCED** ([`App.tsx`](src/App.tsx)) — the Content / Render tab tree
-  documented below. Every source, every control.
-- **BASIC** ([`BasicPanel.tsx`](src/components/BasicPanel.tsx)) — seven numbered
-  steps in a flat column: import → output → dither → adjust → colour → post →
-  export.
-  **No disclosures anywhere.** Every control is visible the moment the panel is;
-  section rhythm comes from `.sidebar-workflow-title`, the same numbered header
-  ADVANCED uses. Media only; entering it from synth or model switches the source,
-  which is lossless because render settings are per-mode and the synth/model
-  configs are separate state.
+Both are the **same five numbered steps in one scrolling column**, in the engine's
+own order:
+
+```
+01 SOURCE → 02 OUTPUT → 03 AESTHETIC → 04 ADJUST → 05 COMPOSITING
+```
+
+- **ADVANCED** ([`App.tsx`](src/App.tsx)) — every source and every control, the five
+  `WorkflowStep` headers with collapsible decks between them. Documented below.
+- **BASIC** ([`BasicPanel.tsx`](src/components/BasicPanel.tsx)) — the same five as
+  `.basic-step-card` panels, each with a badge, a title and a live status tag
+  (`LOADED`, the active output mode). **No disclosures anywhere:** every control is
+  visible the moment the panel is. Media only; entering it from synth or model
+  switches the source, which is lossless because render settings are per-mode and the
+  synth/model configs are separate state.
+
+Export is in neither sequence. It is a floating dock pinned to the bottom of the
+sidebar (`.sidebar-floating-export` — IMAGE, then GIF / VIDEO / PLATES), rendered
+outside the layout ternary so both panels get the identical one. It used to be
+BASIC's seventh step, which put the primary action of the app below a scroll.
+
+**CONTENT and RENDER used to be two tabs**, and choosing an image meant leaving the
+controls that made it look like anything — a round trip paid on every adjustment.
+They are one column now, so the step headers are scroll anchors rather than a filter
+on what renders.
 
 BASIC reaches its minimum by asking the shared controls for a reduced form,
 not by reimplementing them: `MediaUploadControls minimal` (paste + dropzone,
@@ -951,12 +1070,19 @@ no filename / URL / video timeline), `DitherAlgorithmPicker compact` (arrows,
 dropdown, dice — no family filter, swatch grid or description card),
 `VectorControls compact` (eight beam controls — no presets, Sample Step, Bias,
 carrier deck, Ripple Freq, Phase or Beam Aberration; Glow is not there to hide
-any more, having moved to `04 · POST-PROCESSING`), four post controls out of the
-eleven that section has (overlay on/off, blend, opacity, glow intensity — with
-eight blend modes of the sixteen), preset chips instead of
+any more, having moved to `05 · COMPOSITING`), five post controls out of the
+eleven that section has (overlay on/off, blend, opacity, blur, glow intensity —
+with eight blend modes of the sixteen), a 3×2 grid of resolution presets instead of
 the DPI slider, a charset `<select>` instead of `CharsetThemeBar`, and two plain
 clip-point sliders instead of the histogram Levels editor. One implementation,
 two levels of detail.
+
+Framing is the one place BASIC adds a shape rather than removing one: a two-tier
+`.basic-framing-deck` puts fit, zoom, CROP and RESET FRAMING on the primary tier and
+the four discrete geometry operations (rotate ±90°, flip X, flip Y) on the secondary.
+They are the same handlers ADVANCED calls; what differs is that a 90° rotation is a
+button here and a degree field there, because the two gestures are not the same
+question.
 
 The compact beam deck hides the carrier entirely, which is only safe because
 `carrierEnabled` **defaults to off**. It briefly defaulted to on, and hiding the
@@ -965,7 +1091,7 @@ the fix was the default, not an exception to the rule — having the panel write
 `carrierEnabled: false` on mount would have made BASIC the one layout that
 changes state by being looked at. The reduction only hides.
 
-Two couplings are load-bearing and easy to break:
+Three couplings are load-bearing and easy to break:
 
 1. **Output mode sits above the resolution chips.** `handleSelectRasterMode`
    re-derives the grid via `autoSetMediaResolution`, and `syncMediaDpiToGrid`
@@ -983,9 +1109,23 @@ Two couplings are load-bearing and easy to break:
    `isPixelMode={rasterMode !== 'ascii'}`. The 400-column ceiling compounded it,
    pinning every preset above 400 to one grid. See §5.7.
 
-The histogram tap stays gated on `panel === 'render'` alone: BASIC's levels are
-two numeric sliders with no histogram to feed, so waking the per-frame
-histogram pass for it would be pure cost.
+**The histogram tap outlived the tab it was gated on.** With no panel to test it now
+gates on `viewMode === 'editor'`, throttled to 200 ms and copied on the way out:
+`ProcessedRasterResult.histogram` is a live module buffer (invariant 5), and
+promoting it to state per frame would re-render the whole sidebar at 60 fps to redraw
+256 bars. BASIC's levels are two numeric sliders with no histogram to feed, so it
+pays for a snapshot it does not draw — the cost is one `Uint32Array` copy five times
+a second, against a per-layout gate that would have to be threaded through the same
+callback.
+
+**Both panels share the control primitives**, which is what keeps the two layouts one
+design rather than two. `PrecisionSlider` publishes its own fill as a
+`--slider-pct` custom property, so the progress track is CSS on a native
+`<input type="range">` and no second thumb is drawn to drift from the real one;
+`ToggleSwitch` is the `role="switch"` latch that replaced every ad-hoc checkbox
+across Compositing, Vector, Dither, Image Adjust, Synth and Model. Adding a control to
+one panel and hand-styling it in the other is how the two drift; there is one
+implementation and two levels of detail.
 
 #### Tonal bands, and palettes as preset ramps
 
@@ -1039,9 +1179,16 @@ Grading rows are declared once in `ADJUST_SLIDERS`
 through `AdjustSlider`. The two layouts group those rows differently, so a single
 declaration is what stops their ranges from drifting apart.
 
-### Render tab hierarchy & control architecture
+### The ADVANCED column, step by step
 
-The **Render** tab follows a strict vertical workflow across all three input sources:
+One scrolling column, identical across all three input sources. It reads top to bottom
+in engine order, which is the only rule that decides where a control goes.
+
+**`01 · SOURCE`** — the three source cards, then whatever the chosen one needs: the
+media importer and its framing deck (fit, scale, pan, rotation, flips, crop), the model
+loader and its transform, or the synth preset and wave channels.
+
+**`02 · OUTPUT`** — everything that decides the shape of the grid.
 
 1. **Output Mode Command Selector** ([`App.tsx`](src/App.tsx))
    - Permanent 3-card tactical grid at the top: `ASCII` (`TEXT`), `PIXEL` (`DITHER`), `VECTOR` (`BEAM`).
@@ -1053,7 +1200,15 @@ The **Render** tab follows a strict vertical workflow across all three input sou
    - Houses grid dimensions (`Cols × Rows`), Auto-Resolution toggle, Aspect Ratio lock, and print DPI scaling (`72`–`1200` DPI).
    - Cell aspect follows the output mode, not the panel — see §5.7.
 
-3. **RENDER SETTINGS** ([`MediaViewControls.tsx`](src/components/MediaViewControls.tsx))
+3. **Character Set Ramp** ([`CharsetThemeBar.tsx`](src/components/CharsetThemeBar.tsx))
+   - Monospace density ramps: active in ASCII, dimmed in pixel, omitted entirely in
+     vector — a beam has no glyphs. It sits under OUTPUT rather than with the tonal
+     controls because the ramp *is* the output alphabet, and its length is what sets
+     the depth the dither quantizes to (invariant 6).
+
+**`03 · AESTHETIC`** — how the grid gets filled.
+
+4. **RENDER SETTINGS** ([`MediaViewControls.tsx`](src/components/MediaViewControls.tsx))
    - **Resampling sits first, behind a rule** (`.render-settings-source`). It is the only control in the section acting on the *source* rather than on the render — it picks the filter the browser downsamples with on the way into the grid (§1.2) — and it applies in every output mode. Sitting last, under a dither picker or the beam deck, made it read as one of their parameters.
    - Below the rule, **exactly one** of the two decks, chosen by `rasterMode`. Hidden, not disabled: the other deck’s state stays put.
    - **Every numeric field in the section reaches past its slider.** `PrecisionSlider` takes a track range and a wider `hardMin`/`hardMax`; the track spans what is worth dragging through and the field accepts the extremes, with the track growing to reach a typed value so it stays draggable. The engine has to honour the same hard range or the field accepts a value and the render snaps it back — see §2.3.5.
@@ -1069,7 +1224,9 @@ The **Render** tab follows a strict vertical workflow across all three input sou
    - Five presets, a scan-axis toggle, geometry (lines, sample step, smoothing, deflection, bias, cutoff), occlusion, then three tuning decks — carrier modulation, analog ripple, beam optics.
    - BASIC takes `compact` and keeps eight of these; see §4.
 
-4. **Tonal Controls & Grading** ([`ImageAdjustControls.tsx`](src/components/ImageAdjustControls.tsx))
+**`04 · ADJUST`** — the greyscale the rasterizer above will read.
+
+5. **Tonal Controls & Grading** ([`ImageAdjustControls.tsx`](src/components/ImageAdjustControls.tsx))
    - **Color & Tonal Palette**: Single color mode dropdown (`1color`, `2color`, `3color`, `content`, or indexed `palette:<id>`). When in Pixel mode, CRT phosphor theme buttons are hidden to keep the interface neutral white.
    - **Quantize Levels**: Logarithmic warp slider ($2^1$ to $2^8$) giving smooth fine control across $2\dots 16$ levels, 1-click bit-depth pills (`[AUTO]`, `[2 (1b)]`, `[4 (2b)]`... `[256 (8b)]`), fine steppers (`-`/`+`), and direct numeric entry.
    - **Exposure & Contrast**: Brightness and contrast, at the *top* of the group because the engine applies them first. Moved here from EFFECT CONTROLS, where sitting visually last while running third let them silently undo the levels black point. See §2.3.
@@ -1077,14 +1234,12 @@ The **Render** tab follows a strict vertical workflow across all three input sou
    - **Levels & Auto Range**: Square-root-scaled histogram of the luminance entering the levels stage, with draggable black / midtone / white handles and an `AUTO LEVELS` button. Placed *after* the curve, and after exposure, because that is the engine's order — the whole group reads top to bottom in pipeline order. Writes `toneConfig`, not `adjustConfig`. See §2.3.
    - **Tonal Balance**: Highlights, Midtones, and Shadows sliders with double-click quick-zero.
 
-5. **Character Set Ramp** ([`CharsetThemeBar.tsx`](src/components/CharsetThemeBar.tsx))
-   - Monospace density ramps: active in ASCII, dimmed in pixel, omitted entirely in vector — a beam has no glyphs.
+**`05 · COMPOSITING`**
 
-6. **`04 · POST-PROCESSING`** ([`PostProcessControls.tsx`](src/components/PostProcessControls.tsx))
-   - Numbered `04` and rendered **last** in the tab, because that is where it
-     happens: the tab reads top to bottom in engine order and everything above
-     produces the frame this operates on. (The numbered headers had stopped at
-     `03`; the charset ramp and the tonal decks sit inside `03`'s section.)
+6. **Post-processing** ([`PostProcessControls.tsx`](src/components/PostProcessControls.tsx))
+   - Rendered **last**, because that is where it happens: everything above produces
+     the frame this operates on. It takes its own step number as a `step` prop rather
+     than hardcoding one, so the column can be renumbered in one place.
    - A **host**, not one effect. Two decks, matching the two `PostStage` kinds —
      `SOURCE OVERLAY` composites a layer, `OPTICS` filters the composed frame.
      A third effect is a deck here plus a key on `PostProcessConfig`; it does not
@@ -1100,6 +1255,81 @@ The **Render** tab follows a strict vertical workflow across all three input sou
      `onChangePresetGlow` alongside `onChange`, and a preset with no halo
      explicitly zeroes it — leaving the previous look's bloom running would not
      be the preset.
+
+### 4.4 The crop marquee ([`CropOverlay.tsx`](src/components/CropOverlay.tsx))
+
+A drag-a-rectangle stage laid over the raster, and the one piece of UI that paints the
+source rather than the render.
+
+**It shows the uncropped picture.** A crop that is already applied cannot be widened
+again from a cropped picture — everything you would want back is off screen. So crop
+mode paints its own stage: the media framed *without* the crop, with everything outside
+the rectangle dimmed. You adjust against the whole photograph and commit once, which is
+what every crop tool does and the only version of this that can undo its own narrowing.
+
+**The render pipeline is untouched while it is open.** The alternative — telling the
+pipeline to ignore the crop for the duration — would push a second, transient media
+config through the four paint sites and the exporters (invariant 4), for a picture the
+user is about to cover with this stage anyway.
+
+**The geometry comes from the engine.** Both the backdrop and the marquee are built
+from one `computeMediaFraming` call, and the backdrop is literally `drawFramedMedia`
+(§1.2). So the rectangle you drag sits on the source exactly where the rasterizer will
+read it, at any fit, scale, pan, rotation or flip, with no alignment parameter. Rotation
+is why the marquee is a `<polygon>` and not a `<rect>`: the crop is a rectangle *of the
+source*, so on screen it is that rectangle under the framing transform — a rotated quad
+with rotated handles. A screen-aligned box would crop a different region than the one
+drawn.
+
+**The draft is never `mediaConfig.crop`.** `cropDraft` is separate state; APPLY commits
+it through `handleChangeMediaConfig`, CANCEL discards it, and the toolbar's cancel and
+the bottom bar's CROP button are the same gesture.
+
+**The grid follows the framing, both ways.** `syncResolutionToFraming` feeds
+`autoSetMediaResolution` the *rotated bounding box of the kept rectangle*, so a crop
+re-solves the grid to its own aspect — that is what turns cropping in into a detail
+gain rather than a zoom (§1.2). Consequences:
+
+- Opening the marquee borrows a grid for the uncropped picture, so
+  `preCropResolutionRef` snapshots `cols`, `rows` and `autoRes` first and cancel puts
+  all three back. It also re-fits the view ~60 ms later, because the borrowed grid
+  auto-fit the camera on the way in and leaving would otherwise land the raster
+  off-centre.
+- Rotating the source resyncs the same way, debounced 150 ms — a rotation changes the
+  bounding box even with the crop untouched.
+- A new file clears the rect outright. Normalized coordinates surviving a resolution
+  change of the same picture is the point of them; a *different* picture cropped to the
+  last one's framing never is.
+
+### RESET ALL
+
+Everything the app renders **with**, back to a first-visit state, while everything the
+app renders **from** stays exactly where it is. That split is the whole contract of the
+button: the loaded image or video, the loaded model and the synth preset are content
+and survive; resolution, dither, tone, colour, optics, compositing, framing and the CRT
+chrome are settings and do not.
+
+It reads the same defaults a fresh session reads — `buildRenderSettings(null, null)`,
+the same builder with the share link and the persisted blob withheld — rather than
+keeping a second table of reset values to drift from the first.
+
+Two things it deliberately does not do:
+
+- **It does not reset the resolution to a constant.** A grid is content-derived: 240×120
+  on a portrait photograph is not "reset", it is a different wrong answer. Synth and
+  model keep their built-in figures; media re-derives from the source it still has, on
+  a `setTimeout(0)` after the pristine settings have committed, because
+  `autoSetMediaResolution` writes `cols`/`rows` itself and would otherwise be
+  overwritten by them.
+- **It pushes no history entry.** One entry per reset field would bury whatever came
+  before it. UNDO still walks back into the state from before the reset, so it is
+  recoverable — just not in one step.
+
+Framing is a setting and the file is content, so the media config is rebuilt from
+`DEFAULT_MEDIA_CONFIG` with only the identifying fields carried across
+(`sourceType`, `mediaType`, `mediaId`, `fileName`, `fileData`, `remoteUrl`); fit, zoom,
+pan, rotation, flips and the crop go back to default, and any open crop draft is
+dropped with them.
 
 ---
 
@@ -1527,7 +1757,16 @@ Things that will silently break rendering if violated.
   defeats that. Vector and ASCII SVG both carry the filter.
 - `three` is imported eagerly (~566 kB, ~142 kB gzipped) for all users including
   those who never open model mode.
-- `App.tsx` is ~3000 lines and owns all orchestration.
+- `App.tsx` is ~4400 lines and owns all orchestration.
+- **Applying a crop re-solves the grid even with AUTO off.** `syncResolutionToFraming`
+  goes through `autoSetMediaResolution`, which writes `cols`/`rows` unconditionally —
+  correct for its usual caller ("a new source arrived, size the grid to it") and
+  arguably correct here too, since a crop *is* a differently-shaped source. It still
+  overwrites a resolution the user locked by hand, without saying so.
+- **The crop marquee is media-only.** Model and synth frame with a camera and with
+  parameters, so there is no source rectangle to drag; a model framed too loosely is
+  fixed with the dolly. Nothing prevents a crop-equivalent there, it just would not be
+  this component.
 - ADVANCED still groups levels and the tone curve under `TONAL CONTROLS` while
   brightness/contrast/invert sit under `EFFECT CONTROLS`, which cuts across the
   engine's own split (§2 steps 2–4: spatial filters, then tone, then colour).

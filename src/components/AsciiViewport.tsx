@@ -148,8 +148,6 @@ interface AsciiViewportProps {
   onStepFrame?: () => void;
   onMouseMove?: (x: number, y: number) => void;
   onClick?: (x: number, y: number) => void;
-  presetName: string;
-  isEdited?: boolean;
   viewMode?: 'editor' | 'fullscreen';
   onToggleViewMode?: () => void;
   autoRes?: boolean;
@@ -246,8 +244,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onStepFrame,
   onMouseMove,
   onClick,
-  presetName,
-  isEdited = false,
   viewMode = 'editor',
   onToggleViewMode,
   autoRes = false,
@@ -2486,10 +2482,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         </div>
 
         <div className="status-group">
-          <span className="status-tag mode-tag">
-            PRESET: <strong>{presetName}{isEdited ? ' <edited>' : ''}</strong>
-          </span>
-
           {onToggleAutoRes && (
             <button
               className={`btn btn-sm ${autoRes ? 'btn-primary' : ''}`}
