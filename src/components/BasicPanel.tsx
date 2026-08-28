@@ -39,7 +39,12 @@ import {
   SimpleLevelsSlider,
 } from './ImageAdjustControls';
 import { BUILTIN_PALETTES } from '../engine/palettes';
-import { PrecisionSlider, WorkflowStep, BlendModePicker, AutoResToggle } from './controlPrimitives';
+import {
+  PrecisionSlider,
+  BlendModePicker,
+  AutoResToggle,
+  ToggleSwitch,
+} from './controlPrimitives';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
 const ASCII_CELL_ASPECT = 0.55;
@@ -286,413 +291,448 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   return (
     <div className="basic-panel">
       {/* ================================================================ */}
-      <WorkflowStep n="01" label="Source" />
-      <div className="basic-section">
-        <MediaUploadControls
-          config={mediaConfig}
-          onChangeConfig={onChangeMediaConfig}
-          mediaElement={mediaElement}
-          onFileUpload={onFileUpload}
-          onUrlLoad={onUrlLoad}
-          minimal
-        />
+      {/* STEP 01 · SOURCE & FRAMING                                      */}
+      {/* ================================================================ */}
+      <div className="basic-step-card">
+        <div className="basic-step-header">
+          <span className="basic-step-badge">01</span>
+          <span className="basic-step-title">Source &amp; Framing</span>
+          {hasSource && <span className="basic-step-tag">LOADED</span>}
+        </div>
 
-        {hasSource && (
-          <>
-            {/*
-              Crop and the framing reset, on their own two-up row above the
-              quarter-turns and flips.
+        <div className="basic-step-body">
+          <MediaUploadControls
+            config={mediaConfig}
+            onChangeConfig={onChangeMediaConfig}
+            mediaElement={mediaElement}
+            onFileUpload={onFileUpload}
+            onUrlLoad={onUrlLoad}
+            minimal
+          />
 
-              They are the two framing actions that are not a single-axis nudge:
-              one opens a stage on the viewport, the other undoes everything on
-              this row and that one at once. Sitting them together above the
-              four-up grid keeps the icon buttons reading as one set of nudges.
-            */}
-            <div className="basic-framing basic-framing-pair">
-              <button
-                type="button"
-                className={`btn btn-sm ${cropEditing ? 'btn-primary' : ''}`}
-                onClick={onEnterCrop}
-                disabled={!onEnterCrop}
-                title={
-                  cropEditing
-                    ? 'The crop marquee is open on the viewport'
-                    : 'Drag a crop rectangle on the viewport'
-                }
-              >
-                <Scissors size={12} />
-                <span className="basic-framing-label">
-                  {cropEditing ? 'EDITING' : cropActive(mediaConfig.crop) ? 'ADJUST' : 'CROP'}
-                </span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={onResetFraming}
-                disabled={!onResetFraming}
-                title="Reset fit, zoom, pan, rotation, flips and crop"
-              >
-                <RefreshCw size={12} />
-                <span className="basic-framing-label">RESET</span>
-              </button>
+          {hasSource && (
+            <div className="basic-framing-deck">
+              <div className="basic-framing-tier-primary">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${cropEditing ? 'btn-primary' : ''}`}
+                  onClick={onEnterCrop}
+                  disabled={!onEnterCrop}
+                  title={
+                    cropEditing
+                      ? 'The crop marquee is open on the viewport'
+                      : 'Drag a crop rectangle on the viewport'
+                  }
+                >
+                  <Scissors size={13} />
+                  <span>
+                    {cropEditing ? 'EDITING CROP' : cropActive(mediaConfig.crop) ? 'ADJUST CROP' : 'CROP'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={onResetFraming}
+                  disabled={!onResetFraming}
+                  title="Reset fit, zoom, pan, rotation, flips and crop"
+                >
+                  <RefreshCw size={13} />
+                  <span>RESET FRAMING</span>
+                </button>
+              </div>
+
+              <div className="basic-framing-tier-secondary">
+                <button
+                  type="button"
+                  className="btn-tool"
+                  onClick={() => rotateBy(-90)}
+                  title="Rotate 90° counter-clockwise"
+                >
+                  <RotateCcw size={14} />
+                  <span>-90°</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-tool"
+                  onClick={() => rotateBy(90)}
+                  title="Rotate 90° clockwise"
+                >
+                  <RotateCw size={14} />
+                  <span>+90°</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`btn-tool ${mediaConfig.flipX ? 'active' : ''}`}
+                  onClick={() => onChangeMediaConfig({ ...mediaConfig, flipX: !mediaConfig.flipX })}
+                  title="Flip horizontally"
+                >
+                  <FlipHorizontal size={14} />
+                  <span>FLIP H</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`btn-tool ${mediaConfig.flipY ? 'active' : ''}`}
+                  onClick={() => onChangeMediaConfig({ ...mediaConfig, flipY: !mediaConfig.flipY })}
+                  title="Flip vertically"
+                >
+                  <FlipVertical size={14} />
+                  <span>FLIP V</span>
+                </button>
+              </div>
             </div>
-
-            <div className="basic-framing">
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => rotateBy(-90)}
-                title="Rotate 90 degrees counter-clockwise"
-              >
-                <RotateCcw size={12} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => rotateBy(90)}
-                title="Rotate 90 degrees clockwise"
-              >
-                <RotateCw size={12} />
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${mediaConfig.flipX ? 'active' : ''}`}
-                onClick={() => onChangeMediaConfig({ ...mediaConfig, flipX: !mediaConfig.flipX })}
-                title="Flip horizontally"
-              >
-                <FlipHorizontal size={12} />
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${mediaConfig.flipY ? 'active' : ''}`}
-                onClick={() => onChangeMediaConfig({ ...mediaConfig, flipY: !mediaConfig.flipY })}
-                title="Flip vertically"
-              >
-                <FlipVertical size={12} />
-              </button>
-            </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
       {/* ================================================================ */}
-      <WorkflowStep n="02" label="Output" />
-      <div className="basic-section">
-        <OutputModeCards value={rasterMode} onChange={onChangeRasterMode} compact />
+      {/* STEP 02 · OUTPUT RASTER                                         */}
+      {/* ================================================================ */}
+      <div className="basic-step-card">
+        <div className="basic-step-header">
+          <span className="basic-step-badge">02</span>
+          <span className="basic-step-title">Output Raster</span>
+          <span className="basic-step-tag">{rasterMode.toUpperCase()}</span>
+        </div>
 
-        {/* Resolution / Grid Density */}
-        <div className="tonal-subheading tonal-subheading-flush" style={{ marginTop: '10px' }}>
-          <span
-            title={
-              isVector
-                ? 'How finely the beam reads the image. Nothing quantizes to this grid, so it is a sampling rate rather than a visible resolution — too coarse and the deflection curve turns faceted.'
-                : undefined
-            }
-          >
-            {isPixel
-              ? 'Resolution (DPI)'
-              : isVector
-                ? 'Beam Sampling (Columns)'
-                : 'Grid Size (Columns)'}
-          </span>
-          {/*
-            * Grouped, because the subheading is `justify-content: space-between`
-            * and a bare third child would strand the readout in the middle of
-            * the row instead of keeping it next to the switch that governs it.
-            */}
-          <span className="tonal-subheading-actions">
-            <span className="control-static-value">
-              {cols} &times; {rows} {isPixel ? 'px' : isVector ? 'samples' : 'chars'}
+        <div className="basic-step-body">
+          <OutputModeCards value={rasterMode} onChange={onChangeRasterMode} compact />
+
+          {/* Resolution / Grid Density Header */}
+          <div className="basic-sub-header">
+            <span
+              className="basic-sub-title"
+              title={
+                isVector
+                  ? 'How finely the beam reads the image. Nothing quantizes to this grid, so it is a sampling rate rather than a visible resolution.'
+                  : undefined
+              }
+            >
+              {isPixel
+                ? 'Resolution (DPI)'
+                : isVector
+                  ? 'Beam Sampling'
+                  : 'Grid Size'}
             </span>
-            {onToggleAutoRes && (
-              <AutoResToggle
-                active={autoRes}
-                onToggle={onToggleAutoRes}
-                noun={isPixel ? 'DPI' : isVector ? 'sampling rate' : 'grid'}
-              />
-            )}
-          </span>
-        </div>
 
-        <div className="basic-chip-row">
-          {(isPixel ? DPI_PRESETS : isVector ? VECTOR_COLS_PRESETS : COLS_PRESETS).map((preset) => {
-            const isActive = isPixel ? dpi === preset.value : cols === preset.value;
-            return (
-              <button
-                key={preset.value}
-                type="button"
-                className={`quantize-chip ${isActive ? 'active' : ''}`}
-                onClick={() =>
-                  isPixel ? handleDpiChange(preset.value) : handleColsChange(preset.value)
-                }
-                title={
-                  isPixel
-                    ? `${preset.value} DPI`
-                    : isVector
-                      ? `Sample the beam at ${preset.value} columns across`
-                      : `${preset.value} columns wide`
-                }
-              >
-                {preset.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {isAscii && (
-          <div className="control-row" style={{ marginTop: '8px' }}>
-            <span className="control-label control-fixed">Charset</span>
-
-            <div className="control-cluster">
-              {/* Previous */}
-              <button
-                type="button"
-                className="slider-nudge-btn btn-icon-sq"
-                onClick={() => handleStepCharset(-1)}
-                title="Previous charset (wraps around)"
-              >
-                <ChevronLeft size={13} />
-              </button>
-
-              {/* Select Dropdown */}
-              <select
-                className="number-input stepper-select"
-                value={activeCharsetId}
-                onChange={(e) => {
-                  const cs = CHARSETS.find((c) => c.id === e.target.value);
-                  if (cs) onChangeDensity(cs.chars);
-                }}
-              >
-                {CHARSETS.map((cs) => (
-                  <option key={cs.id} value={cs.id}>
-                    {cs.name}
-                  </option>
-                ))}
-                {activeCharsetId === '__custom__' && (
-                  <option value="__custom__">Custom (set in Advanced)</option>
-                )}
-              </select>
-
-              {/* Next */}
-              <button
-                type="button"
-                className="slider-nudge-btn btn-icon-sq"
-                onClick={() => handleStepCharset(1)}
-                title="Next charset (wraps around)"
-              >
-                <ChevronRight size={13} />
-              </button>
-
-              {/* Surprise Me / Randomizer Button */}
-              <button
-                type="button"
-                className={`slider-nudge-btn btn-icon-sq btn-dice${
-                  isCharsetRolling ? ' rolling' : ''
-                }`}
-                onClick={handleRandomizeCharset}
-                title="Surprise Me: pick a random charset"
-              >
-                <Dices size={13} />
-              </button>
-            </div>
+            <span className="basic-sub-actions">
+              <span className="control-static-value">
+                {cols} &times; {rows} {isPixel ? 'px' : isVector ? 'smp' : 'chars'}
+              </span>
+              {onToggleAutoRes && (
+                <AutoResToggle
+                  active={autoRes}
+                  onToggle={onToggleAutoRes}
+                  noun={isPixel ? 'DPI' : isVector ? 'sampling rate' : 'grid'}
+                />
+              )}
+            </span>
           </div>
-        )}
+
+          {/* 3x2 Grid Resolution Chips */}
+          <div className="basic-chip-grid">
+            {(isPixel ? DPI_PRESETS : isVector ? VECTOR_COLS_PRESETS : COLS_PRESETS).map((preset) => {
+              const isActive = isPixel ? dpi === preset.value : cols === preset.value;
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  className={`basic-preset-chip ${isActive ? 'active' : ''}`}
+                  onClick={() =>
+                    isPixel ? handleDpiChange(preset.value) : handleColsChange(preset.value)
+                  }
+                  title={
+                    isPixel
+                      ? `${preset.value} DPI`
+                      : isVector
+                        ? `Sample the beam at ${preset.value} columns across`
+                        : `${preset.value} columns wide`
+                  }
+                >
+                  <span className="chip-val">{preset.label}</span>
+                  <span className="chip-unit">
+                    {isPixel ? 'DPI' : isVector ? 'SMP' : 'COL'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {isAscii && (
+            <div className="basic-control-group" style={{ marginTop: '4px' }}>
+              <div className="control-row" style={{ margin: 0 }}>
+                <span className="control-label">Character Ramp</span>
+
+                <div className="control-cluster basic-stepper-cluster">
+                  <button
+                    type="button"
+                    className="slider-nudge-btn btn-icon-sq"
+                    onClick={() => handleStepCharset(-1)}
+                    title="Previous charset (wraps around)"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+
+                  <select
+                    className="number-input stepper-select"
+                    value={activeCharsetId}
+                    onChange={(e) => {
+                      const cs = CHARSETS.find((c) => c.id === e.target.value);
+                      if (cs) onChangeDensity(cs.chars);
+                    }}
+                  >
+                    {CHARSETS.map((cs) => (
+                      <option key={cs.id} value={cs.id}>
+                        {cs.name}
+                      </option>
+                    ))}
+                    {activeCharsetId === '__custom__' && (
+                      <option value="__custom__">Custom (set in Advanced)</option>
+                    )}
+                  </select>
+
+                  <button
+                    type="button"
+                    className="slider-nudge-btn btn-icon-sq"
+                    onClick={() => handleStepCharset(1)}
+                    title="Next charset (wraps around)"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`slider-nudge-btn btn-icon-sq btn-dice${
+                      isCharsetRolling ? ' rolling' : ''
+                    }`}
+                    onClick={handleRandomizeCharset}
+                    title="Surprise Me: pick a random charset"
+                  >
+                    <Dices size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ================================================================ */}
-      <WorkflowStep n="03" label="Aesthetic" />
-      <div className="basic-section">
-        {/* Dithering Algorithm & Character Set */}
-        <div className="tonal-subheading tonal-subheading-flush">
-          <span>{isVector ? 'Beam Deflection' : isPixel ? 'Dither Pattern' : 'Dithering'}</span>
+      {/* STEP 03 · AESTHETIC & PALETTE                                   */}
+      {/* ================================================================ */}
+      <div className="basic-step-card">
+        <div className="basic-step-header">
+          <span className="basic-step-badge">03</span>
+          <span className="basic-step-title">Aesthetic &amp; Palette</span>
         </div>
 
-        {isVector ? (
-          <VectorControls
-            compact
-            config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
-            onChange={(next) => updateView('vectorConfig', next)}
-          />
-        ) : (
-          <DitherAlgorithmPicker
-            value={viewConfig.algorithm || 'floyd-steinberg'}
-            onChange={(algo) => updateView('algorithm', algo)}
-            compact
-          />
-        )}
+        <div className="basic-step-body">
+          {/* Dithering Algorithm or Beam Controls */}
+          <div className="basic-sub-header">
+            <span className="basic-sub-title">
+              {isVector ? 'Beam Deflection' : isPixel ? 'Dither Pattern' : 'Dithering Engine'}
+            </span>
+          </div>
 
-        <div className="tonal-subheading tonal-subheading-tight" style={{ marginTop: '12px' }}>
-          <span>Color &amp; Palette</span>
+          {isVector ? (
+            <VectorControls
+              compact
+              config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+              onChange={(next) => updateView('vectorConfig', next)}
+            />
+          ) : (
+            <DitherAlgorithmPicker
+              value={viewConfig.algorithm || 'floyd-steinberg'}
+              onChange={(algo) => updateView('algorithm', algo)}
+              compact
+            />
+          )}
+
+          <div className="basic-sub-header" style={{ marginTop: '6px' }}>
+            <span className="basic-sub-title">Color &amp; Theme</span>
+          </div>
+
+          <PaletteControls
+            currentTheme={theme}
+            onChangeTheme={onChangeTheme}
+            customThemeColor={customThemeColor}
+            onChangeCustomColor={onChangeCustomColor}
+            mediaColorConfig={mediaColorConfig}
+            onChangeMediaColorConfig={onChangeMediaColorConfig}
+            appMode="media"
+            tonalMapping={viewConfig.tonalMapping}
+            onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
+            isPixelMode={isPixel}
+            isVectorMode={isVector}
+            colorLevels={viewConfig.colorLevels}
+            onChangeColorLevels={(val) => updateView('colorLevels', val)}
+            rampEditorSlot={
+              <NToneRampEditor
+                stops={rampColors}
+                weights={rampWeights}
+                onChangeRamp={(stops, nextWeights) =>
+                  updateAdjust({
+                    ...viewConfig,
+                    ...applyToneStops(viewConfig, stops),
+                    toneStopWeights: nextWeights,
+                  })
+                }
+              />
+            }
+            onEditPaletteAsRamp={
+              mediaColorConfig.paletteMode === 'indexed' ? handleEditPaletteAsRamp : undefined
+            }
+          />
+
+          <div className="color-backdrop-section">
+            <BackgroundRow
+              value={viewConfig.background}
+              onChange={(bg) => updateView('background', bg)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ================================================================ */}
+      {/* STEP 04 · ADJUSTMENTS                                           */}
+      {/* ================================================================ */}
+      <div className="basic-step-card">
+        <div className="basic-step-header">
+          <span className="basic-step-badge">04</span>
+          <span className="basic-step-title">Adjustments</span>
         </div>
 
-        <PaletteControls
-          currentTheme={theme}
-          onChangeTheme={onChangeTheme}
-          customThemeColor={customThemeColor}
-          onChangeCustomColor={onChangeCustomColor}
-          mediaColorConfig={mediaColorConfig}
-          onChangeMediaColorConfig={onChangeMediaColorConfig}
-          appMode="media"
-          tonalMapping={viewConfig.tonalMapping}
-          onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
-          isPixelMode={isPixel}
-          isVectorMode={isVector}
-          colorLevels={viewConfig.colorLevels}
-          onChangeColorLevels={(val) => updateView('colorLevels', val)}
-          rampEditorSlot={
-            <NToneRampEditor
-              stops={rampColors}
-              weights={rampWeights}
-              onChangeRamp={(stops, nextWeights) =>
-                updateAdjust({
-                  ...viewConfig,
-                  ...applyToneStops(viewConfig, stops),
-                  toneStopWeights: nextWeights,
+        <div className="basic-step-body">
+          <SimpleLevelsSlider
+            config={toneConfig}
+            onChangeConfig={onChangeToneConfig}
+          />
+
+          <div className="basic-sub-header" style={{ marginTop: '6px' }}>
+            <span className="basic-sub-title">Detail &amp; Texture</span>
+          </div>
+          <AdjustSlider id="sharpenStrength" config={viewConfig} onChangeConfig={updateAdjust} />
+          <AdjustSlider id="sharpenRadius" config={viewConfig} onChangeConfig={updateAdjust} />
+          <AdjustSlider id="denoise" config={viewConfig} onChangeConfig={updateAdjust} />
+        </div>
+      </div>
+
+      {/* ================================================================ */}
+      {/* STEP 05 · COMPOSITING & EFFECTS                                 */}
+      {/* ================================================================ */}
+      <div className="basic-step-card">
+        <div className="basic-step-header">
+          <span className="basic-step-badge">05</span>
+          <span className="basic-step-title">Compositing &amp; Effects</span>
+        </div>
+
+        <div className="basic-step-body">
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Bring the original back in over its own rasterization, framed identically."
+            >
+              Original Overlay
+            </span>
+            <ToggleSwitch
+              checked={Boolean(postProcess.sourceOverlay.enabled)}
+              disabled={!mediaElement}
+              title="Toggle original source overlay"
+              onChange={(enabled) =>
+                onChangePostProcess({
+                  ...postProcess,
+                  sourceOverlay: {
+                    ...postProcess.sourceOverlay,
+                    enabled,
+                    placement: 'under',
+                  },
                 })
               }
             />
-          }
-          onEditPaletteAsRamp={
-            mediaColorConfig.paletteMode === 'indexed' ? handleEditPaletteAsRamp : undefined
-          }
-        />
+          </div>
 
-        <div className="color-backdrop-section">
-          <BackgroundRow
-            value={viewConfig.background}
-            onChange={(bg) => updateView('background', bg)}
-          />
-        </div>
-      </div>
+          <div className="control-row">
+            <span className="control-label" title="How the original and the raster combine.">
+              Blend Mode
+            </span>
+            <BlendModePicker
+              value={postProcess.sourceOverlay.blend}
+              disabled={!postProcess.sourceOverlay.enabled}
+              onChange={(blend) =>
+                onChangePostProcess({
+                  ...postProcess,
+                  sourceOverlay: { ...postProcess.sourceOverlay, blend },
+                })
+              }
+            />
+          </div>
 
-      {/* ================================================================ */}
-      <WorkflowStep n="04" label="Adjust" />
-      <div className="basic-section">
-        <SimpleLevelsSlider
-          config={toneConfig}
-          onChangeConfig={onChangeToneConfig}
-        />
+          <div className="control-row">
+            <span className="control-label">Overlay Opacity</span>
+            <PrecisionSlider
+              value={postProcess.sourceOverlay.opacity}
+              sliderMin={0}
+              sliderMax={100}
+              step={1}
+              resetTo={100}
+              disabled={!postProcess.sourceOverlay.enabled}
+              onChange={(v) =>
+                onChangePostProcess({
+                  ...postProcess,
+                  sourceOverlay: { ...postProcess.sourceOverlay, opacity: v },
+                })
+              }
+            />
+          </div>
 
-        <div className="tonal-subheading tonal-subheading-tight">
-          <span>Detail &amp; Filtering</span>
-        </div>
-        <AdjustSlider id="sharpenStrength" config={viewConfig} onChangeConfig={updateAdjust} />
-        <AdjustSlider id="sharpenRadius" config={viewConfig} onChangeConfig={updateAdjust} />
-        <AdjustSlider id="denoise" config={viewConfig} onChangeConfig={updateAdjust} />
-      </div>
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Gaussian blur radius applied to the source overlay."
+            >
+              Overlay Blur
+            </span>
+            <PrecisionSlider
+              value={postProcess.sourceOverlay.blur ?? 0}
+              sliderMin={0}
+              sliderMax={40}
+              step={1}
+              resetTo={0}
+              disabled={!postProcess.sourceOverlay.enabled}
+              onChange={(v) =>
+                onChangePostProcess({
+                  ...postProcess,
+                  sourceOverlay: { ...postProcess.sourceOverlay, blur: v },
+                })
+              }
+            />
+          </div>
 
-      {/* ================================================================ */}
-      <WorkflowStep n="05" label="Compositing" />
-      <div className="basic-section">
-        <div className="control-row">
-          <span
-            className="control-label"
-            title="Bring the original back in over its own rasterization, framed identically."
+          <div
+            className="control-row"
+            style={{
+              marginTop: '4px',
+              paddingTop: '8px',
+              borderTop: '1px dashed var(--border-color)',
+            }}
           >
-            Overlay
-          </span>
-          <button
-            type="button"
-            className={`btn btn-sm btn-onoff ${
-              postProcess.sourceOverlay.enabled ? 'btn-primary' : ''
-            }`}
-            onClick={() =>
-              onChangePostProcess({
-                ...postProcess,
-                sourceOverlay: {
-                  ...postProcess.sourceOverlay,
-                  enabled: !postProcess.sourceOverlay.enabled,
-                  /*
-                   * BASIC has no Placement switch, so it pins the one it can
-                   * neither show nor undo. Without this, an overlay turned on
-                   * here after ADVANCED had chosen OVER composites the other
-                   * way round with nothing on screen to say so — and the two
-                   * are genuinely different pictures, not a z-order swap.
-                   * Written on the toggle rather than forced while BASIC is
-                   * open, so ADVANCED's choice still survives a trip through
-                   * this panel untouched.
-                   */
-                  placement: 'under',
-                },
-              })
-            }
-            disabled={!mediaElement}
-          >
-            {postProcess.sourceOverlay.enabled ? 'ON' : 'OFF'}
-          </button>
-        </div>
-
-        <div className="control-row">
-          <span className="control-label" title="How the original and the raster combine.">
-            Blend
-          </span>
-          <BlendModePicker
-            value={postProcess.sourceOverlay.blend}
-            disabled={!postProcess.sourceOverlay.enabled}
-            onChange={(blend) =>
-              onChangePostProcess({
-                ...postProcess,
-                sourceOverlay: { ...postProcess.sourceOverlay, blend },
-              })
-            }
-          />
-        </div>
-
-        <div className="control-row">
-          <span className="control-label">Opacity</span>
-          <PrecisionSlider
-            value={postProcess.sourceOverlay.opacity}
-            sliderMin={0}
-            sliderMax={100}
-            step={1}
-            resetTo={100}
-            disabled={!postProcess.sourceOverlay.enabled}
-            onChange={(v) =>
-              onChangePostProcess({
-                ...postProcess,
-                sourceOverlay: { ...postProcess.sourceOverlay, opacity: v },
-              })
-            }
-          />
-        </div>
-
-        <div className="control-row">
-          <span
-            className="control-label"
-            title="Gaussian blur radius applied to the source overlay."
-          >
-            Overlay Blur
-          </span>
-          <PrecisionSlider
-            value={postProcess.sourceOverlay.blur ?? 0}
-            sliderMin={0}
-            sliderMax={40}
-            step={1}
-            resetTo={0}
-            disabled={!postProcess.sourceOverlay.enabled}
-            onChange={(v) =>
-              onChangePostProcess({
-                ...postProcess,
-                sourceOverlay: { ...postProcess.sourceOverlay, blur: v },
-              })
-            }
-          />
-        </div>
-
-        <div className="control-row">
-          <span className="control-label" title="Blooms the finished frame. Works in every output mode.">
-            Glow
-          </span>
-          <PrecisionSlider
-            value={postProcess.glow.amount}
-            sliderMin={0}
-            sliderMax={200}
-            step={1}
-            resetTo={0}
-            onChange={(v) =>
-              onChangePostProcess({ ...postProcess, glow: { ...postProcess.glow, amount: v } })
-            }
-          />
+            <span className="control-label" title="Blooms the finished frame. Works in every output mode.">
+              CRT Glow Bloom
+            </span>
+            <PrecisionSlider
+              value={postProcess.glow.amount}
+              sliderMin={0}
+              sliderMax={200}
+              step={1}
+              resetTo={0}
+              onChange={(v) =>
+                onChangePostProcess({ ...postProcess, glow: { ...postProcess.glow, amount: v } })
+              }
+            />
+          </div>
         </div>
       </div>
     </div>

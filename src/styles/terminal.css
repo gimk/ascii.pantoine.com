@@ -1435,20 +1435,29 @@ html, body, #root {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 0;
-  padding: 10px 6px 9px 6px;
+  min-height: 56px;
+  padding: 10px 8px 8px 8px;
   text-align: center;
+  background-color: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
 }
 
 .source-card-mini .source-card-header {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  margin-bottom: 0;
+  width: 100%;
+  margin-bottom: 2px;
 }
 
 .source-card-mini .source-card-icon-wrap {
-  width: 26px;
-  height: 26px;
-  border-radius: 3px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
 }
 
 .source-card-mini .source-card-body {
@@ -1458,17 +1467,31 @@ html, body, #root {
 }
 
 .source-card-mini .source-card-name {
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 800;
   letter-spacing: 1px;
+  color: var(--text-muted);
 }
 
-/* Where the badge used to sit, so an active tile still reads at a glance. */
-.source-card-mini > .source-card-dot {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 5px;
-  height: 5px;
+.source-card-mini:hover {
+  border-color: var(--border-active);
+  background-color: var(--bg-panel);
+}
+
+.source-card-mini.active {
+  border-color: var(--accent);
+  background-color: var(--bg-panel);
+  box-shadow: 0 0 10px var(--accent-glow), inset 0 0 0 1px var(--accent-glow);
+}
+
+.source-card-mini.active .source-card-icon-wrap {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.source-card-mini.active .source-card-name {
+  color: var(--accent);
 }
 
 /* Sub-group Headings for Tonal & Effect Controls */
@@ -2258,7 +2281,7 @@ input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 20px;
+  height: 22px;
   background: transparent;
   cursor: pointer;
   margin: 0;
@@ -2276,10 +2299,16 @@ input[type="range"]:focus {
 .range-input::-webkit-slider-runnable-track,
 input[type="range"]::-webkit-slider-runnable-track {
   width: 100%;
-  height: 5px;
-  background: var(--bg-control);
+  height: 6px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--slider-pct, 0%),
+    var(--bg-control) var(--slider-pct, 0%),
+    var(--bg-control) 100%
+  );
   border: 1px solid var(--border-color);
-  border-radius: 2px;
+  border-radius: 3px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -2302,9 +2331,9 @@ input[type="range"]:focus::-webkit-slider-runnable-track {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 10px;
-  height: 14px;
-  margin-top: -5px;
+  width: 12px;
+  height: 16px;
+  margin-top: -6px;
   background: var(--accent);
   border: 1px solid var(--bg-primary);
   border-radius: 2px;
@@ -2330,16 +2359,24 @@ input[type="range"]:active::-webkit-slider-thumb {
   box-shadow: 0 0 12px var(--accent);
 }
 
-/* Firefox Track */
+/* Firefox Track & Progress */
 .range-slider::-moz-range-track,
 .range-input::-moz-range-track,
 input[type="range"]::-moz-range-track {
   width: 100%;
-  height: 5px;
+  height: 6px;
   background: var(--bg-control);
   border: 1px solid var(--border-color);
-  border-radius: 2px;
+  border-radius: 3px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.range-slider::-moz-range-progress,
+.range-input::-moz-range-progress,
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  background: var(--accent);
+  border-radius: 3px 0 0 3px;
 }
 
 .range-slider:hover::-moz-range-track,
@@ -2357,6 +2394,17 @@ input[type="range"]:focus::-moz-range-track {
 
 /* Firefox Thumb */
 .range-slider::-moz-range-thumb,
+.range-input::-moz-range-thumb,
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 16px;
+  background: var(--accent);
+  border: 1px solid var(--bg-primary);
+  border-radius: 2px;
+  box-shadow: 0 0 6px var(--accent-glow);
+  cursor: ew-resize;
+  transition: transform 0.1s ease, filter 0.1s ease, box-shadow 0.15s ease;
+}
 .range-input::-moz-range-thumb,
 input[type="range"]::-moz-range-thumb {
   width: 10px;
@@ -4824,43 +4872,348 @@ select:disabled {
 }
 
 /*
- * A flat column of numbered steps. No disclosures anywhere: every control in
- * BASIC is visible the moment the panel is. Section rhythm comes from
- * .sidebar-workflow-title, the same numbered header ADVANCED uses, so the two
- * modes read as one app rather than two.
+ * BASIC Panel — Tactical Elevated Step Workflow
  */
 .basic-panel {
   display: flex;
   flex-direction: column;
-  padding-bottom: 8px;
+  gap: 12px;
+  padding: 10px var(--sidebar-gutter) 16px var(--sidebar-gutter);
 }
 
-.basic-section {
+/* Individual Workflow Step Card */
+.basic-step-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 var(--sidebar-gutter) var(--section-tail) var(--sidebar-gutter);
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.15s ease;
 }
 
-/* Orientation strip: four icon buttons, no label — the icons say it. */
-.basic-framing {
+/* Card Header */
+.basic-step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-control);
+  border-bottom: 1px solid var(--border-color);
+  user-select: none;
+}
+
+.basic-step-badge {
+  font-size: 10px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--bg-primary);
+  background: var(--accent);
+  padding: 1px 6px;
+  border-radius: 2px;
+  letter-spacing: 0.6px;
+}
+
+.basic-step-title {
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: 0.8px;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  flex: 1;
+}
+
+.basic-step-tag,
+.basic-step-status {
+  font-size: 9.5px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--accent);
+}
+
+.basic-step-status {
+  color: var(--text-muted);
+}
+
+/* Card Body */
+.basic-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+/* Sub-headings inside a step */
+.basic-sub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.basic-sub-title {
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.basic-sub-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Framing Deck */
+.basic-framing-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.basic-framing-tier-primary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.basic-framing-tier-primary .btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.basic-framing-tier-secondary {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
 }
 
-.basic-framing .btn {
+.basic-framing-tier-secondary .btn-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.basic-framing-tier-secondary .btn-tool:hover {
+  background: var(--bg-primary);
+  border-color: var(--border-active);
+  color: var(--text-primary);
+}
+
+.basic-framing-tier-secondary .btn-tool.active {
+  background: var(--bg-primary);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+/* 3x2 Resolution Preset Chip Grid */
+.basic-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.basic-preset-chip {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5px 0;
+  gap: 4px;
+  padding: 8px 6px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-/*
- * The full-width action that opens a step — paste from clipboard, randomize
- * the wave. Three call sites had three hand-written copies that disagreed on
- * padding and size by half a pixel each.
- */
+.basic-preset-chip .chip-val {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.basic-preset-chip .chip-unit {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.basic-preset-chip:hover {
+  border-color: var(--border-active);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.basic-preset-chip.active {
+  background: var(--bg-primary);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow), inset 0 0 0 1px var(--accent-glow);
+}
+
+.basic-preset-chip.active .chip-val {
+  color: var(--accent);
+}
+
+.basic-preset-chip.active .chip-unit {
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* Stepper Control Cluster */
+.basic-stepper-cluster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.basic-stepper-cluster .stepper-select {
+  width: 145px;
+  height: 28px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.basic-stepper-cluster .slider-nudge-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+}
+
+/* Hardware Toggle Switch */
+.toggle-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 4px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.toggle-switch-btn:hover:not(:disabled) {
+  border-color: var(--border-active);
+}
+
+.toggle-switch-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.toggle-switch-track {
+  display: flex;
+  align-items: center;
+  width: 26px;
+  height: 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.toggle-switch-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  background: var(--text-dim);
+  border-radius: 50%;
+  transform: translateX(0);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease;
+}
+
+.toggle-switch-led {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.toggle-switch-text {
+  font-size: 10px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.toggle-switch-btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.toggle-switch-btn.is-active .toggle-switch-track {
+  border-color: var(--accent);
+  background: var(--bg-primary);
+}
+
+.toggle-switch-btn.is-active .toggle-switch-thumb {
+  transform: translateX(12px);
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.toggle-switch-btn.is-active .toggle-switch-led {
+  background: #ffffff;
+}
+
+.toggle-switch-btn.is-active .toggle-switch-text {
+  color: var(--accent);
+}
+
+.toggle-switch-btn.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Hero Button */
 .btn-hero {
   width: 100%;
   display: flex;
@@ -4882,7 +5235,6 @@ select:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* Always sits between control rows, and every call site was saying so. */
   margin: 6px 0;
   padding: 7px 9px;
   background-color: var(--bg-control);
@@ -4902,23 +5254,6 @@ select:disabled {
   flex-shrink: 0;
 }
 
-/* Resolution presets — six chips on one row */
-.basic-chip-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
-}
-
-.basic-chip-row .btn,
-.basic-chip-row .quantize-chip {
-  padding: 5px 0;
-  text-align: center;
-  font-family: var(--font-mono);
-}
-
-/*
- * Shared inline cluster for the small button groups (framing, background).
- */
 .btn-group-inline {
   display: flex;
   align-items: center;
@@ -4933,16 +5268,9 @@ select:disabled {
   letter-spacing: 0.4px;
 }
 
-/* ---------------------------------------------------------------------------
-   The stepper cluster: [<] [ select ] [>] [dice]
-
-   Shared by the charset picker in BASIC and the algorithm picker in ADVANCED,
-   which had two hand-written copies of the same measurements and two different
-   easings on the same dice spin.
-   --------------------------------------------------------------------------- */
 .stepper-select {
   width: 165px;
-  height: 24px;
+  height: 26px;
   padding: 2px 6px;
   font-family: var(--font-mono);
   font-size: 11px;

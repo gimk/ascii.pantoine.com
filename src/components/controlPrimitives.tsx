@@ -141,6 +141,10 @@ export const PrecisionSlider: React.FC<{
   const trackMin = Math.min(sliderMin, safeValue);
   const trackMax = Math.max(sliderMax, safeValue);
   const isBeyondTrack = safeValue > sliderMax || safeValue < sliderMin;
+  const fillPct =
+    trackMax > trackMin
+      ? Math.max(0, Math.min(100, ((safeValue - trackMin) / (trackMax - trackMin)) * 100))
+      : 0;
 
   return (
     <div className="control-input-wrapper">
@@ -152,6 +156,7 @@ export const PrecisionSlider: React.FC<{
         step={step}
         value={safeValue}
         disabled={disabled}
+        style={{ '--slider-pct': `${fillPct}%` } as React.CSSProperties}
         onChange={(e) => onChange(quantize(parseFloat(e.target.value), step))}
         {...(resetTo !== undefined
           ? {
@@ -175,6 +180,33 @@ export const PrecisionSlider: React.FC<{
     </div>
   );
 };
+
+/**
+ * Tactile hardware toggle switch latch with animated LED indicator.
+ */
+export const ToggleSwitch: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  title?: string;
+}> = ({ checked, onChange, disabled = false, title }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    className={`toggle-switch-btn ${checked ? 'is-active' : ''}${disabled ? ' is-disabled' : ''}`}
+    onClick={() => !disabled && onChange(!checked)}
+    disabled={disabled}
+    title={title}
+  >
+    <span className="toggle-switch-track">
+      <span className="toggle-switch-thumb">
+        <span className="toggle-switch-led" />
+      </span>
+    </span>
+    <span className="toggle-switch-text">{checked ? 'ON' : 'OFF'}</span>
+  </button>
+);
 
 /**
  * Colour swatch + hex field that commits only when the user is done picking.

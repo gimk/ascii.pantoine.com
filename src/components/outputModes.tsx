@@ -104,7 +104,7 @@ export const OutputModeCards: React.FC<OutputModeCardsProps> = ({ value, onChang
         >
           <div className="source-card-header">
             <div className="source-card-icon-wrap">
-              <Icon size={compact ? 13 : 14} />
+              <Icon size={compact ? 16 : 14} />
             </div>
             {!compact && <span className="source-card-badge">{mode.badge}</span>}
           </div>
@@ -112,9 +112,7 @@ export const OutputModeCards: React.FC<OutputModeCardsProps> = ({ value, onChang
             <span className="source-card-name">{mode.name}</span>
             {!compact && <span className="source-card-desc">{mode.description}</span>}
           </div>
-          {compact ? (
-            <span className="source-card-dot" />
-          ) : (
+          {!compact && (
             <div className="source-card-footer">
               <span className="source-card-dot" />
               <span className="source-card-status">{isActive ? 'ACTIVE' : 'READY'}</span>
