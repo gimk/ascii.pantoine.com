@@ -529,6 +529,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return Math.max(1, rungs) / dpr;
   }, []);
 
+  const isUserInputZoomRef = useRef<boolean>(false);
+
   /**
    * Scale about a point, keeping whatever sits under it pinned in place.
    *
@@ -538,6 +540,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
    */
   const zoomAbout = useCallback(
     (nextScale: number, px: number, py: number) => {
+      isUserInputZoomRef.current = true;
       setView((prev) => {
         const snapped = snapScaleToCellGrid(nextScale);
         const s2 = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number(snapped.toFixed(3))));
@@ -663,6 +666,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
     const el = cameraRef.current;
     if (!el || prev.scale === view.scale) return;
+
+    if (!isUserInputZoomRef.current) {
+      residualRef.current = null;
+      applyCameraResidual();
+      return;
+    }
+    isUserInputZoomRef.current = false;
+
     if (typeof window !== 'undefined' &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return;
@@ -1551,39 +1562,72 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     preserve: { cols: number; scale: number; cx: number; cy: number } | null;
   } | null>(null);
 
+  const prevGridRef = useRef<{ cols: number; rows: number }>({ cols, rows });
+
   useLayoutEffect(() => {
-    const pending = pendingAutoResFitRef.current;
-    if (!pending || pending.cols !== cols || pending.rows !== rows) return;
-    pendingAutoResFitRef.current = null;
+    const prevGrid = prevGridRef.current;
+    const gridChanged = prevGrid.cols !== cols || prevGrid.rows !== rows;
+    prevGridRef.current = { cols, rows };
+
+    if (!gridChanged) return;
+
     /* The cols/rows change queues a delayed fit too; this one already did it. */
     skipNextAutoFitRef.current = true;
 
-    const p = pending.preserve;
-    if (p && p.cols > 0 && cols > 0) {
-      /*
-       * Same rendered width, different cell count. `framingToView` measures
-       * against the new grid, so feeding it the compensated scale and the old
-       * centre point reproduces the previous rectangle exactly.
-       */
-      let nextScale = p.scale * (p.cols / cols);
-      /*
-       * Pixel mode still owes its cells whole device pixels — a fractional
-       * rung makes them alternate between N and N+1 wide. Rounded rather than
-       * floored: this is not a fit trying to stay inside an edge, it is a
-       * framing trying not to move, and the nearest rung moves it least.
-       */
-      if (latestRasterModeRef.current === 'pixel') {
-        nextScale = snapScaleToCellGrid(nextScale, 'round');
+    const pending = pendingAutoResFitRef.current;
+    if (pending && pending.cols === cols && pending.rows === rows) {
+      pendingAutoResFitRef.current = null;
+      const p = pending.preserve;
+      if (p && p.cols > 0 && cols > 0) {
+        /*
+         * Same rendered width, different cell count. `framingToView` measures
+         * against the new grid, so feeding it the compensated scale and the old
+         * centre point reproduces the previous rectangle exactly.
+         */
+        let nextScale = p.scale * (p.cols / cols);
+        /*
+         * Pixel mode still owes its cells whole device pixels — a fractional
+         * rung makes them alternate between N and N+1 wide. Rounded rather than
+         * floored: this is not a fit trying to stay inside an edge, it is a
+         * framing trying not to move, and the nearest rung moves it least.
+         */
+        if (latestRasterModeRef.current === 'pixel') {
+          nextScale = snapScaleToCellGrid(nextScale, 'round');
+        }
+        const next = framingToView({ scale: nextScale, cx: p.cx, cy: p.cy });
+        if (next) {
+          setView(next);
+          return;
+        }
       }
-      const next = framingToView({ scale: nextScale, cx: p.cx, cy: p.cy });
-      if (next) {
-        setView(next);
-        return;
-      }
+      autoFit();
+      return;
     }
 
-    autoFit();
-  }, [cols, rows, autoFit, framingToView, snapScaleToCellGrid]);
+    /*
+     * Manual resolution change (sliders, presets, etc.):
+     * Resize from the center of the image rather than the top-left origin.
+     */
+    const square = latestRasterModeRef.current !== 'ascii';
+    const cellW = square ? 1 : MONOSPACE_CELL_WIDTH;
+    const cellH = square ? 1 : MONOSPACE_CELL_HEIGHT;
+    const curView = viewRef.current;
+
+    const oldW = prevGrid.cols * cellW * curView.scale;
+    const oldH = prevGrid.rows * cellH * curView.scale;
+    const centerX = curView.tx + oldW / 2;
+    const centerY = curView.ty + oldH / 2;
+
+    const newW = cols * cellW * curView.scale;
+    const newH = rows * cellH * curView.scale;
+    const newTx = centerX - newW / 2;
+    const newTy = centerY - newH / 2;
+
+    setView({
+      scale: curView.scale,
+      ...clampPan(newTx, newTy, curView.scale),
+    });
+  }, [cols, rows, autoFit, framingToView, snapScaleToCellGrid, clampPan]);
 
   /*
    * A share link's framing, applied instead of the first auto-fit.
