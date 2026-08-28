@@ -110,8 +110,8 @@ import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { DITHER_ALGORITHMS } from './engine/ditherAlgorithms';
-import { clampGridToOutputCeilings, createRenderCostProbe, costProbeKey } from './engine/autoResolution';
-import type { AutoResSignals, AutoResCost, AutoResContentKind } from './engine/autoResolution';
+import { clampGridToOutputCeilings, createRenderCostMemory, createRenderCostProbe, costProbeKey } from './engine/autoResolution';
+import type { AutoResSignals, AutoResCost, AutoResContentKind, RenderCostMemory } from './engine/autoResolution';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
@@ -2636,12 +2636,37 @@ export const App: React.FC = () => {
   /** Set by the RAF loop; read by getAutoResSignals, which must not run off it. */
   const isIdleThrottledRef = useRef<boolean>(false);
 
+  /**
+   * What the probe learned last time, surviving the reset above and the visit.
+   *
+   * The reset is correct and also the whole problem: it fires exactly when the
+   * pipeline changes, which is exactly when auto-res re-solves, so the solver
+   * met an empty probe every single time and fell back to a hardcoded prior.
+   * This hands it the last measurement for that same pipeline instead, which
+   * is why a mode you have used before now resolves correctly on the first
+   * try rather than guessing and correcting.
+   *
+   * Lazily constructed: the factory reads localStorage, and passing it as an
+   * argument to `useRef` would re-read it on every render only to throw the
+   * result away.
+   */
+  const costMemoryRef = useRef<RenderCostMemory | null>(null);
+  if (!costMemoryRef.current) {
+    costMemoryRef.current = createRenderCostMemory(
+      typeof localStorage !== 'undefined' ? localStorage : null
+    );
+  }
+
   const recordRenderCost = useCallback((key: string, cells: number, ms: number) => {
     if (costProbeKeyRef.current !== key) {
       costProbeKeyRef.current = key;
       renderCostProbeRef.current.reset();
     }
     renderCostProbeRef.current.record(cells, ms);
+    const measured = renderCostProbeRef.current.msPerCell();
+    if (measured != null) {
+      costMemoryRef.current?.remember(key, measured, performance.now());
+    }
   }, []);
 
   /**
@@ -3349,7 +3374,14 @@ export const App: React.FC = () => {
        */
       animated: !(mode === 'media' && mediaConfigRef.current.mediaType === 'image'),
       targetFps: renderSettingsRef.current.optimizeConfig?.targetFps ?? 60,
-      measuredMsPerCell: renderCostProbeRef.current.msPerCell(),
+      /*
+       * Live frames first, memory second. The probe describes this session on
+       * this content and always wins once it has enough samples; the remembered
+       * value only fills the gap before that, which is precisely the gap the
+       * solver used to answer with a hardcoded guess.
+       */
+      measuredMsPerCell:
+        renderCostProbeRef.current.msPerCell() ?? costMemoryRef.current?.get(key) ?? null,
       /*
        * Only offered when the number means something. The loop deliberately
        * runs at 12fps once the mouse has been still for four seconds, and

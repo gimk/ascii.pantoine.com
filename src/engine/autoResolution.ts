@@ -285,6 +285,113 @@ export function createRenderCostProbe(): RenderCostProbe {
   };
 }
 
+/* ------------------------------------------------------------------------
+   Cost memory
+   ------------------------------------------------------------------------ */
+
+/**
+ * What this machine has been measured to cost, per pipeline, kept across
+ * output-mode switches and across visits.
+ *
+ * The probe alone cannot answer the question the solver asks first. It is
+ * necessarily empty at the moment the pipeline changes — that is what the
+ * reset is for — and the pipeline changing is exactly what makes the solver
+ * re-run. So the first solve after every mode switch fell back to a hardcoded
+ * prior, measured the truth a moment later, and corrected. Two visible steps,
+ * every time, forever: the app relearned the machine from scratch on each
+ * switch and threw the answer away again.
+ *
+ * Remembering it turns that into two steps the first time a pipeline is ever
+ * used and one step after, including on a later visit.
+ *
+ * Storage is per-browser and per-device by construction. Nothing here is
+ * shared between machines, and a new one simply starts empty and relearns.
+ */
+export interface RenderCostMemory {
+  /** Last known ms per cell for this pipeline, or null if never measured. */
+  get: (key: string) => number | null;
+  /** Offer a fresh measurement. Cheap to call every frame; writes are rare. */
+  remember: (key: string, msPerCell: number, now: number) => void;
+}
+
+const COST_MEMORY_KEY = 'ascii_studio_cell_cost_v1';
+/**
+ * Bounded well above the 96 keys `costProbeKey` can currently produce (three
+ * outputs x four content kinds x three booleans), so it never evicts in
+ * practice but cannot grow without limit if the key gains a field.
+ */
+const COST_MEMORY_MAX_ENTRIES = 128;
+/* Anything outside this is not a cell cost; it is a bug or a corrupted file. */
+const COST_MEMORY_MIN_MS = 1e-7;
+const COST_MEMORY_MAX_MS = 1;
+/** How far a measurement must move before it is worth writing back. */
+const COST_MEMORY_DELTA = 0.15;
+/** And how often, at most. The probe offers a new value on every frame. */
+const COST_MEMORY_WRITE_INTERVAL_MS = 2000;
+
+const costMemoryValid = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= COST_MEMORY_MIN_MS && v <= COST_MEMORY_MAX_MS;
+
+/**
+ * `storage` is injected rather than reached for, so this module stays free of
+ * the DOM and a caller can pass null (or a fake) without ceremony. Every
+ * access is guarded: storage throws outright in some privacy modes, and a
+ * measurement cache is never worth taking the app down for.
+ */
+export function createRenderCostMemory(storage: Storage | null): RenderCostMemory {
+  const values = new Map<string, number>();
+  let lastWriteAt = -Infinity;
+  let dirty = false;
+
+  try {
+    const raw = storage?.getItem(COST_MEMORY_KEY);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (costMemoryValid(v)) values.set(k, v);
+        }
+      }
+    }
+  } catch {
+    /* Absent, unreadable or corrupt: start empty and relearn. */
+  }
+
+  const flush = (now: number) => {
+    if (!dirty || !storage) return;
+    if (now - lastWriteAt < COST_MEMORY_WRITE_INTERVAL_MS) return;
+    lastWriteAt = now;
+    dirty = false;
+    try {
+      storage.setItem(COST_MEMORY_KEY, JSON.stringify(Object.fromEntries(values)));
+    } catch {
+      /* Quota, or a private window that accepts reads and refuses writes. */
+    }
+  };
+
+  return {
+    get(key) {
+      const v = values.get(key);
+      return v != null && v > 0 ? v : null;
+    },
+    remember(key, msPerCell, now) {
+      if (costMemoryValid(msPerCell)) {
+        const prev = values.get(key);
+        if (prev == null || Math.abs(msPerCell - prev) / prev > COST_MEMORY_DELTA) {
+          if (!values.has(key) && values.size >= COST_MEMORY_MAX_ENTRIES) {
+            /* Map iterates in insertion order, so this drops the oldest. */
+            const oldest = values.keys().next();
+            if (!oldest.done) values.delete(oldest.value);
+          }
+          values.set(key, msPerCell);
+          dirty = true;
+        }
+      }
+      flush(now);
+    },
+  };
+}
+
 /**
  * Identity of the work being measured. Two renders sharing this string cost
  * roughly the same per cell; when it changes, the probe's average is stale.
@@ -537,8 +644,28 @@ export interface AutoResController {
   next: (input: AutoResInput & { pipelineKey: string; now: number }) => { cols: number; rows: number } | null;
 }
 
-/** How long to gather frames at a freshly applied grid before correcting it. */
-const MEASURE_WINDOW_MS = 1200;
+/**
+ * How long to gather frames at a freshly applied grid before correcting it.
+ *
+ * Set from how long the probe actually takes to be worth reading, which is
+ * shorter than it looks: the EWMA runs at alpha 0.2, so the seed's weight is
+ * 0.8^(n-1) and fifteen frames put it within 5% of the truth — a quarter of a
+ * second at 60fps. This was 1200ms, four times longer than the maths needs,
+ * and that gap is most of why the correction read as a second event rather
+ * than part of the first: the picture went still, you started looking at it,
+ * and then it moved again.
+ */
+const MEASURE_WINDOW_MS = 350;
+
+/**
+ * ...but the window is time and the probe is frames, and the two only agree
+ * while the loop is running. A paused timeline, a hidden tab or the 12fps idle
+ * throttle can all leave the estimate empty when the window expires, and
+ * correcting then would spend the one correction re-deriving the same guess.
+ * So the window may stretch this far waiting for a measurement, and no
+ * further — after that the guess is the best there is.
+ */
+const MEASURE_DEADLINE_MS = 3000;
 
 /*
  * The safe zone.
@@ -608,6 +735,7 @@ function latchSignature(input: AutoResInput & { pipelineKey: string }): string {
 export function createAutoResController(): AutoResController {
   let signature = '';
   let phase: 'solve' | 'measure' | 'settled' = 'solve';
+  let measureFrom = 0;
   let measureUntil = 0;
   let strikes = 0;
   /** Corrections spent on the current latch. Capped at MAX_CORRECTIONS. */
@@ -650,17 +778,30 @@ export function createAutoResController(): AutoResController {
 
       if (phase === 'solve') {
         phase = 'measure';
+        measureFrom = input.now;
         measureUntil = input.now + MEASURE_WINDOW_MS;
         return capped(resolveAutoResolution(input));
       }
 
       if (phase === 'measure') {
         if (input.now < measureUntil) return null;
+        /* Nothing measured yet; hold the phase open rather than spend the
+         * correction on the same guess. See MEASURE_DEADLINE_MS. */
+        if (
+          (input.measuredMsPerCell == null || input.measuredMsPerCell <= 0) &&
+          input.now < measureFrom + MEASURE_DEADLINE_MS
+        ) {
+          return null;
+        }
         phase = 'settled';
         /*
          * The one correction. By now real frames have been timed at the grid
-         * actually in force, so this replaces the prior with a measurement —
-         * and then stops, whether or not it was right.
+         * actually in force, so this replaces the estimate with a measurement
+         * — and then stops, whether or not it was right.
+         *
+         * Often invisible now: the estimate the first solve used is itself a
+         * remembered measurement whenever this pipeline has been seen before,
+         * so the two agree and `shouldReplaceGrid` filters the result out.
          */
         return capped(resolveAutoResolution(input));
       }
