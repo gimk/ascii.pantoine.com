@@ -989,19 +989,25 @@ html, body, #root {
 /* Collapsible block group — the standard container for every sidebar group */
 .collapsible-section {
   border: 1px solid var(--border-color);
-  background-color: var(--bg-primary);
+  background-color: var(--bg-panel);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.15s ease;
 }
 
 .collapsible-section.flush {
   border: none;
   background: transparent;
+  box-shadow: none;
+  border-radius: 0;
 }
 
 .collapsible-header {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 0 12px;
   min-height: 38px;
   height: 38px;
@@ -1011,10 +1017,10 @@ html, body, #root {
   border-bottom: 1px solid transparent;
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.7px;
   text-align: left;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease;
@@ -1048,7 +1054,7 @@ html, body, #root {
 .collapsible-lead {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
 }
@@ -1057,7 +1063,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  opacity: 0.75;
+  color: var(--text-muted);
 }
 
 .collapsible-title {
@@ -1069,8 +1075,7 @@ html, body, #root {
 
 /*
  * Sits beside the title and stays visible when collapsed, so a shut group
- * still reports its value. It yields space before the title does (shrink 2
- * against 1) - a clipped value beats a clipped heading in a narrow sidebar.
+ * still reports its value.
  */
 .collapsible-badge {
   flex-shrink: 2;
@@ -1078,11 +1083,15 @@ html, body, #root {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 9.5px;
+  font-weight: 700;
   letter-spacing: 0.5px;
-  color: var(--text-muted);
-  text-transform: none;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  padding: 1px 6px;
+  border-radius: 2px;
+  color: var(--accent);
+  text-transform: uppercase;
 }
 
 .collapsible-icon {
@@ -1247,15 +1256,16 @@ html, body, #root {
   justify-content: space-between;
   padding: 12px 12px 11px 12px;
   min-height: 88px;
-  background-color: var(--bg-primary);
+  background-color: var(--bg-control);
   border: 1px solid var(--border-color);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--text-dim);
   font-family: var(--font-mono);
   cursor: pointer;
   text-align: left;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   transition: all 0.15s ease-in-out;
   user-select: none;
 }
@@ -1272,10 +1282,10 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 2px;
-  background: var(--bg-control);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
   color: var(--text-muted);
   transition: all 0.15s ease-in-out;
@@ -1285,12 +1295,12 @@ html, body, #root {
   position: absolute;
   top: 12px;
   right: 12px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.6px;
-  padding: 2px 5px;
+  padding: 2px 6px;
   border-radius: 2px;
-  background: var(--bg-control);
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
   color: var(--text-dim);
   transition: all 0.15s ease-in-out;
@@ -1349,7 +1359,7 @@ html, body, #root {
 
 .source-card:hover {
   border-color: var(--border-active);
-  background-color: var(--bg-control);
+  background-color: var(--bg-panel);
 }
 
 .source-card:hover .source-card-icon-wrap {
@@ -1497,14 +1507,14 @@ html, body, #root {
 /* Sub-group Headings for Tonal & Effect Controls */
 .tonal-subheading,
 .section-subheading {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.6px;
-  color: var(--text-dim);
+  letter-spacing: 0.7px;
+  color: var(--text-muted);
   text-transform: uppercase;
-  margin: 16px 0 8px 0;
+  margin: 14px 0 8px 0;
   padding-bottom: 4px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px dashed var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1514,14 +1524,14 @@ html, body, #root {
 .tonal-subheading .btn,
 .section-subheading .btn,
 .btn-reset {
-  font-size: 10px;
-  padding: 1px 7px;
+  font-size: 9.5px;
+  padding: 2px 7px;
   height: 20px;
   min-height: 20px;
   line-height: 1;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-muted);
-  border-color: var(--border-color);
+  border: 1px solid var(--border-color);
   background-color: var(--bg-control);
   text-transform: uppercase;
   font-family: var(--font-mono);
@@ -1530,7 +1540,7 @@ html, body, #root {
   justify-content: center;
   gap: 4px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 3px;
   transition: all 0.12s ease;
 }
 
@@ -1631,12 +1641,12 @@ html, body, #root {
 
 .quantize-chip {
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 2px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 3px;
   background: var(--bg-control);
   border: 1px solid var(--border-color);
-  border-radius: 2px;
+  border-radius: 4px;
   color: var(--text-muted);
   cursor: pointer;
   text-align: center;
@@ -1651,10 +1661,10 @@ html, body, #root {
 }
 
 .quantize-chip.active {
-  background: var(--accent-glow);
+  background: var(--bg-primary);
   border-color: var(--accent);
   color: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
+  box-shadow: 0 0 8px var(--accent-glow), inset 0 0 0 1px var(--accent-glow);
 }
 
 /* Dither Algorithm Explorer Styles */
@@ -1686,17 +1696,17 @@ html, body, #root {
 
 .dither-family-tab {
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  height: 24px;
-  min-height: 24px;
+  font-size: 10.5px;
+  font-weight: 800;
+  height: 26px;
+  min-height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
+  padding: 0 6px;
   background: var(--bg-control);
   border: 1px solid var(--border-color);
-  border-radius: 2px;
+  border-radius: 4px;
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
@@ -1719,10 +1729,10 @@ html, body, #root {
 }
 
 .dither-family-tab.active {
-  background: var(--accent-glow);
+  background: var(--bg-primary);
   border-color: var(--accent);
   color: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
+  box-shadow: 0 0 8px var(--accent-glow), inset 0 0 0 1px var(--accent-glow);
 }
 
 .dither-algo-list {

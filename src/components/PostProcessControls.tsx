@@ -11,6 +11,7 @@ import {
   WorkflowStep,
   BlendModePicker,
   blendLabel,
+  ToggleSwitch,
 } from './controlPrimitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { supportsCanvasFilter } from '../engine/postProcess';
@@ -100,14 +101,12 @@ export const PostProcessControls: React.FC<PostProcessControlsProps> = ({
             >
               Overlay
             </span>
-            <button
-              type="button"
-              className={`btn btn-sm btn-onoff ${overlay.enabled ? 'btn-primary' : ''}`}
-              onClick={() => setOverlay({ enabled: !overlay.enabled })}
+            <ToggleSwitch
+              checked={overlay.enabled}
+              onChange={(enabled) => setOverlay({ enabled })}
               disabled={sourceUnavailable}
-            >
-              {overlay.enabled ? 'ON' : 'OFF'}
-            </button>
+              title="Bring the source back in over its own rasterization"
+            />
           </div>
 
           {sourceUnavailable && (

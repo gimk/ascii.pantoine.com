@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
-import { NumberInput, PrecisionSlider } from './controlPrimitives';
+import { NumberInput, PrecisionSlider, ToggleSwitch } from './controlPrimitives';
 import {
   ImageAdjustConfig,
   ToneMappingConfig,
@@ -1677,13 +1677,11 @@ export const TonalAdjustControls: React.FC<TonalAdjustControlsProps> = ({
         {showInvert && (
           <div className="control-row">
             <span className="control-label">Invert Luminance</span>
-            <button
-              className={`btn btn-sm ${config.invert ? 'btn-primary' : ''}`}
-              onClick={() => update('invert', !config.invert)}
+            <ToggleSwitch
+              checked={Boolean(config.invert)}
+              onChange={(val) => update('invert', val)}
               title="Swap highlights and shadows"
-            >
-              {config.invert ? 'INVERTED [ON]' : 'NORMAL [OFF]'}
-            </button>
+            />
           </div>
         )}
 

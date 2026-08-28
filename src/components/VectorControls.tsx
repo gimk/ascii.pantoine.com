@@ -1,6 +1,6 @@
 import React from 'react';
 import { VectorConfig, VECTOR_CONFIG_DEFAULTS } from '../types/ascii';
-import { PrecisionSlider } from './controlPrimitives';
+import { PrecisionSlider, ToggleSwitch } from './controlPrimitives';
 import { MoveVertical, MoveHorizontal } from 'lucide-react';
 
 /**
@@ -314,13 +314,11 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
         >
           Occlusion
         </span>
-        <button
-          type="button"
-          className={`btn btn-sm btn-onoff ${config.occlusion ? 'btn-primary' : ''}`}
-          onClick={() => set('occlusion', !config.occlusion)}
-        >
-          {config.occlusion ? 'ON' : 'OFF'}
-        </button>
+        <ToggleSwitch
+          checked={Boolean(config.occlusion)}
+          onChange={(val) => set('occlusion', val)}
+          title="Hide what is behind a nearer ridge"
+        />
       </div>
 
       {/*
@@ -332,14 +330,11 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
         <>
           <div className="tonal-subheading">
             <span>Carrier Modulation</span>
-            <button
-              type="button"
-              className={`btn btn-sm btn-onoff ${config.carrierEnabled ? 'btn-primary' : ''}`}
-              onClick={() => set('carrierEnabled', !config.carrierEnabled)}
+            <ToggleSwitch
+              checked={Boolean(config.carrierEnabled)}
+              onChange={(val) => set('carrierEnabled', val)}
               title="Break the beam into pulses where the image is dark"
-            >
-              {config.carrierEnabled ? 'ON' : 'OFF'}
-            </button>
+            />
           </div>
           {renderRows(CARRIER_ROWS, !config.carrierEnabled)}
 

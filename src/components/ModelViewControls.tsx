@@ -1,7 +1,8 @@
 import React from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
+import { ToggleSwitch } from './controlPrimitives';
 import { ModelViewConfig, ModelShadingMode } from '../types/ascii';
-import { Play, Pause, Sun, Camera, Eye, RotateCw, Boxes } from 'lucide-react';
+import { Sun, Camera, Eye, RotateCw, Boxes } from 'lucide-react';
 
 interface ModelViewControlsProps {
   config: ModelViewConfig;
@@ -54,13 +55,11 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
           >
             <div className="control-row">
               <span className="control-label">Auto-Rotation</span>
-              <button
-                className={`btn btn-sm ${config.autoRotate ? 'btn-primary' : ''}`}
-                onClick={() => update('autoRotate', !config.autoRotate)}
-              >
-                {config.autoRotate ? <Pause size={10} /> : <Play size={10} />}
-                {config.autoRotate ? 'SPINNING' : 'PAUSED'}
-              </button>
+              <ToggleSwitch
+                checked={Boolean(config.autoRotate)}
+                onChange={(val) => update('autoRotate', val)}
+                title="Continuous 3D model rotation"
+              />
             </div>
 
             {/* Speed X */}
@@ -303,12 +302,11 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
             {/* Invert Characters */}
             <div className="control-row">
               <span className="control-label">Invert Characters</span>
-              <button
-                className={`btn btn-sm ${config.invert ? 'btn-primary' : ''}`}
-                onClick={() => update('invert', !config.invert)}
-              >
-                {config.invert ? 'INVERTED' : 'NORMAL'}
-              </button>
+              <ToggleSwitch
+                checked={Boolean(config.invert)}
+                onChange={(val) => update('invert', val)}
+                title="Invert 3D character shading"
+              />
             </div>
 
             {/* Outline / Edge Extraction */}
@@ -398,13 +396,12 @@ export const ModelViewControls: React.FC<ModelViewControlsProps> = ({
 
             {/* Projection Mode */}
             <div className="control-row">
-              <span className="control-label">Projection Mode</span>
-              <button
-                className={`btn btn-sm ${config.isOrthographic ? 'btn-primary' : ''}`}
-                onClick={() => update('isOrthographic', !config.isOrthographic)}
-              >
-                {config.isOrthographic ? 'ORTHOGRAPHIC' : 'PERSPECTIVE'}
-              </button>
+              <span className="control-label">Orthographic Projection</span>
+              <ToggleSwitch
+                checked={Boolean(config.isOrthographic)}
+                onChange={(val) => update('isOrthographic', val)}
+                title="Toggle Orthographic vs Perspective projection"
+              />
             </div>
           </CollapsibleSection>
 

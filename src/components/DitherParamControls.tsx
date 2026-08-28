@@ -6,7 +6,7 @@ import {
   getDitherParamIds,
   resolveDitherParams,
 } from '../engine/ditherAlgorithms';
-import { PrecisionSlider } from './controlPrimitives';
+import { PrecisionSlider, ToggleSwitch } from './controlPrimitives';
 import { RotateCcw, Sliders } from 'lucide-react';
 
 interface DitherParamControlsProps {
@@ -96,14 +96,11 @@ export const DitherParamControls: React.FC<DitherParamControlsProps> = ({
               <span className="control-label" title={spec.hint}>
                 {spec.label}
               </span>
-              <button
-                type="button"
-                className={`btn btn-sm btn-onoff ${on ? 'btn-primary' : ''}`}
-                onClick={() => set(id, !on)}
+              <ToggleSwitch
+                checked={on}
+                onChange={(checked) => set(id, checked)}
                 title={spec.hint}
-              >
-                {on ? 'ON' : 'OFF'}
-              </button>
+              />
             </div>
           );
         }

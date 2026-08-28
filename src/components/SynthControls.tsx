@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
+import { ToggleSwitch } from './controlPrimitives';
 import { WaveParams } from '../types/ascii';
 import { DEFAULT_WAVE_PARAMS } from '../engine/math';
 import {
@@ -153,6 +154,8 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
   ) => {
     const val = Number(params[key] ?? DEFAULT_WAVE_PARAMS[key] ?? 0);
     const sliderVal = Math.max(min, Math.min(max, val));
+    const fillPct =
+      max > min ? Math.max(0, Math.min(100, ((sliderVal - min) / (max - min)) * 100)) : 0;
 
     return (
       <div className="control-row">
@@ -166,6 +169,7 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
             max={max}
             step={step}
             value={sliderVal}
+            style={{ '--slider-pct': `${fillPct}%` } as React.CSSProperties}
             onChange={(e) => update(key, parseFloat(e.target.value) as any)}
           />
           <NumberField
@@ -269,13 +273,11 @@ export const SynthControls: React.FC<SynthControlsProps> = ({
             {renderSlider('Luminance Bias', 'bias', -1.0, 1.0, 0.05)}
             <div className="control-row">
               <span className="control-label">Invert Output</span>
-              <button
-                type="button"
-                className={`btn btn-sm ${params.invert ? 'btn-primary' : ''}`}
-                onClick={() => update('invert', !params.invert)}
-              >
-                {params.invert ? 'ON' : 'OFF'}
-              </button>
+              <ToggleSwitch
+                checked={Boolean(params.invert)}
+                onChange={(val) => update('invert', val)}
+                title="Invert luminance field output"
+              />
             </div>
           </CollapsibleSection>
 

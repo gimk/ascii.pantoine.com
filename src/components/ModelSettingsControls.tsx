@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
+import { ToggleSwitch } from './controlPrimitives';
 import { ModelConfig, BuiltinModelId } from '../types/ascii';
 import { parseModelFile } from '../engine/modelLoader';
 import {
@@ -485,62 +486,56 @@ export const ModelMeshControls: React.FC<ModelMeshControlsProps> = ({
       >
         <div className="control-row">
           <span className="control-label">Auto Center Mesh</span>
-          <button
-            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.autoCenter ? 'btn-primary' : ''}`}
-            onClick={() => update('autoCenter', !config.autoCenter)}
-          >
-            {config.autoCenter ? 'ENABLED' : 'DISABLED'}
-          </button>
+          <ToggleSwitch
+            checked={Boolean(config.autoCenter)}
+            onChange={(val) => update('autoCenter', val)}
+            title="Auto-center mesh at 3D origin"
+          />
         </div>
 
         <div className="control-row">
           <span className="control-label">Normalize Bounding Size</span>
-          <button
-            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.normalizeSize ? 'btn-primary' : ''}`}
-            onClick={() => update('normalizeSize', !config.normalizeSize)}
-          >
-            {config.normalizeSize ? 'ENABLED' : 'DISABLED'}
-          </button>
+          <ToggleSwitch
+            checked={Boolean(config.normalizeSize)}
+            onChange={(val) => update('normalizeSize', val)}
+            title="Normalize mesh bounding box scale"
+          />
         </div>
 
         <div className="control-row">
-          <span className="control-label">Flat Shading (Faceted Normals)</span>
-          <button
-            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.flatShading ? 'btn-primary' : ''}`}
-            onClick={() => update('flatShading', !config.flatShading)}
-          >
-            {config.flatShading ? 'FLAT' : 'SMOOTH'}
-          </button>
+          <span className="control-label">Flat Shading (Faceted)</span>
+          <ToggleSwitch
+            checked={Boolean(config.flatShading)}
+            onChange={(val) => update('flatShading', val)}
+            title="Compute faceted normals instead of smooth vertex normals"
+          />
         </div>
 
         <div className="control-row">
           <span className="control-label">Wireframe Edges Mode</span>
-          <button
-            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.wireframe ? 'btn-primary' : ''}`}
-            onClick={() => update('wireframe', !config.wireframe)}
-          >
-            {config.wireframe ? 'ON' : 'OFF'}
-          </button>
+          <ToggleSwitch
+            checked={Boolean(config.wireframe)}
+            onChange={(val) => update('wireframe', val)}
+            title="Render wireframe edge topology"
+          />
         </div>
 
         <div className="control-row">
           <span className="control-label">Double-Sided Faces</span>
-          <button
-            className={`btn btn-sm btn-toggle btn-toggle-wide ${config.doubleSided ? 'btn-primary' : ''}`}
-            onClick={() => update('doubleSided', !config.doubleSided)}
-          >
-            {config.doubleSided ? 'ON' : 'OFF'}
-          </button>
+          <ToggleSwitch
+            checked={Boolean(config.doubleSided)}
+            onChange={(val) => update('doubleSided', val)}
+            title="Render both front and back faces"
+          />
         </div>
 
         <div className="control-row">
           <span className="control-label">Invert Face Normals</span>
-          <button
-            className={`btn btn-sm ${config.invertNormals ? 'btn-primary' : ''}`}
-            onClick={() => update('invertNormals', !config.invertNormals)}
-          >
-            {config.invertNormals ? 'INVERTED' : 'NORMAL'}
-          </button>
+          <ToggleSwitch
+            checked={Boolean(config.invertNormals)}
+            onChange={(val) => update('invertNormals', val)}
+            title="Invert geometry surface normal directions"
+          />
         </div>
       </CollapsibleSection>
     </div>
