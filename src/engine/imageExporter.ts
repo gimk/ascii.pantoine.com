@@ -874,15 +874,15 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
               finalBlob = injectPngMetadata(arrayBuffer, {
                 Title: name,
                 Author: 'Dither Studio',
-                Software: 'Dither Studio (https://ascii.pantoine.com)',
-                Source: 'https://ascii.pantoine.com',
-                Comment: `Generated with Dither Studio (https://ascii.pantoine.com) - ${cols}x${rows} (${rasterMode})`,
+                Software: 'Dither Studio (https://studio.pantoine.com)',
+                Source: 'https://studio.pantoine.com',
+                Comment: `Generated with Dither Studio (https://studio.pantoine.com) - ${cols}x${rows} (${rasterMode})`,
                 Description: `Raster visual rendered via Dither Studio: ${name} (${opts.appMode || 'synth'})`,
               });
             } else {
               finalBlob = injectJpegComment(
                 arrayBuffer,
-                `Dither Studio (https://ascii.pantoine.com) - ${name} (${opts.appMode || 'synth'})`
+                `Dither Studio (https://studio.pantoine.com) - ${name} (${opts.appMode || 'synth'})`
               );
             }
 

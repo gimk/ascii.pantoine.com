@@ -1,22 +1,22 @@
-# ASCII Studio — Developer & AI Reference (`gemini.md`)
+# Dither Studio — Developer & AI Reference (`gemini.md`)
 
-> **Project**: [ASCII Studio](https://ascii.pantoine.com)  
-> **Repository**: [github.com/gimk/ascii.pantoine.com](https://github.com/gimk/ascii.pantoine.com)  
-> **Live Web App**: [ascii.pantoine.com](https://ascii.pantoine.com)  
+> **Project**: [Dither Studio](https://studio.pantoine.com)  
+> **Repository**: [github.com/gimk/studio.pantoine.com](https://github.com/gimk/studio.pantoine.com)  
+> **Live Web App**: [studio.pantoine.com](https://studio.pantoine.com)  
 > **Tech Stack**: React 19, TypeScript 5, Vite 6, Three.js, gifenc, Lucide React, Monospace Fonts (JetBrains Mono, JuliaMono)
 
 ---
 
 ## 1. Executive Overview
 
-**ASCII Studio** is an interactive, brutalist terminal-styled ASCII synthesis suite, 3D model rasterizer, 2D image/video processing engine, particle physics simulator, and live formula sandbox. It allows users to design, manipulate, code, and export complex, real-time procedural ASCII field animations, rasterized 3D geometry, high-fidelity media conversions, animated GIFs, and HD videos directly in the browser without any software installation.
+**Dither Studio** is an interactive, brutalist terminal-styled ASCII synthesis suite, 3D model rasterizer, 2D image/video processing engine, particle physics simulator, and live formula sandbox. It allows users to design, manipulate, code, and export complex, real-time procedural ASCII field animations, rasterized 3D geometry, high-fidelity media conversions, animated GIFs, and HD videos directly in the browser without any software installation.
 
 ---
 
 ## 2. Architecture & Directory Structure
 
 ```
-ascii.pantoine.com/
+studio.pantoine.com/
 ├── public/
 │   ├── favicon.svg
 │   └── fonts/                     # Monospace webfonts (JuliaMono, JetBrains Mono, etc.)
@@ -74,7 +74,7 @@ ascii.pantoine.com/
 ## 3. Core Engine Mechanics & Modes
 
 ### 3.1. App Modes (`AppMode = 'synth' | 'media' | 'model'`)
-ASCII Studio operates across three dedicated synthesis pipelines with isolated render settings:
+Dither Studio operates across three dedicated synthesis pipelines with isolated render settings:
 1. **Wave Synthesizer (`synth`)**: Mathematical parametric wave generator, particle physics, and live JS sandbox.
 2. **2D Media (`media`)**: Real-time rasterizer for images (PNG, JPG, WebP, SVG) and videos (MP4, WebM) with dithering and color sampling.
 3. **3D Models (`model`)**: Offscreen Three.js WebGL rasterizer for 3D meshes (OBJ, STL, GLTF/GLB, PLY) with real-time lighting and multiple shading modes.

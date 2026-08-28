@@ -1,8 +1,8 @@
 /**
- * ASCII Studio — Container Metadata Injector
+ * Dither Studio — Container Metadata Injector
  * 
  * Embeds standard non-visual container metadata (PNG tEXt chunks, JPEG COM markers,
- * and GIF89a Comment Extensions) into media blobs referencing https://ascii.pantoine.com.
+ * and GIF89a Comment Extensions) into media blobs referencing https://studio.pantoine.com.
  */
 
 // CRC32 Lookup Table for PNG Chunk Validation

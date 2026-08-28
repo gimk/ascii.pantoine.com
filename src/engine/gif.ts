@@ -477,6 +477,6 @@ export async function exportAnimatedGif(
   const bytes = gif.bytesView();
   return injectGifComment(
     bytes,
-    `Generated with ASCII Studio (https://ascii.pantoine.com) - ${opts.name} (${opts.appMode || 'synth'})`
+    `Generated with Dither Studio (https://studio.pantoine.com) - ${opts.name} (${opts.appMode || 'synth'})`
   );
 }

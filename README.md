@@ -1,7 +1,7 @@
 # Dither Studio
 
-[![Live App](https://img.shields.io/badge/Live_App-ascii.pantoine.com-00FF66?style=flat-square&logo=google-chrome&logoColor=black)](https://ascii.pantoine.com)
-[![Version](https://img.shields.io/badge/version-2.3-00FF66?style=flat-square)](https://github.com/gimk/ascii.pantoine.com/releases)
+[![Live App](https://img.shields.io/badge/Live_App-studio.pantoine.com-00FF66?style=flat-square&logo=google-chrome&logoColor=black)](https://studio.pantoine.com)
+[![Version](https://img.shields.io/badge/version-2.3-00FF66?style=flat-square)](https://github.com/gimk/studio.pantoine.com/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -11,7 +11,7 @@ model or a procedural wave field, and it rasterizes into ASCII, Braille, halfton
 1-bit pixel art or a deflected CRT beam — then exports as vector SVG, PNG, GIF, video or
 print-ready colour plates.
 
-**No install, no account: [ascii.pantoine.com](https://ascii.pantoine.com)**
+**No install, no account: [studio.pantoine.com](https://studio.pantoine.com)**
 
 ---
 
@@ -118,8 +118,8 @@ fork and why the effect cannot be a member of the dither family.
 ## Local development
 
 ```bash
-git clone https://github.com/gimk/ascii.pantoine.com.git
-cd ascii.pantoine.com
+git clone https://github.com/gimk/studio.pantoine.com.git
+cd studio.pantoine.com
 npm install
 npm run dev
 ```
