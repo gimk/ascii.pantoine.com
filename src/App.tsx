@@ -2663,8 +2663,8 @@ export const App: React.FC = () => {
       renderCostProbeRef.current.reset();
     }
     renderCostProbeRef.current.record(cells, ms);
-    const measured = renderCostProbeRef.current.msPerCell();
-    if (measured != null) {
+    const measured = renderCostProbeRef.current.frameCost();
+    if (measured) {
       costMemoryRef.current?.remember(key, measured, performance.now());
     }
   }, []);
@@ -3357,6 +3357,24 @@ export const App: React.FC = () => {
      */
     const crop = mode === 'media' ? resolveCrop(mediaConfigRef.current.crop) : null;
 
+    /*
+     * Live frames beat memory, but a *separated* fit beats an unseparated one
+     * from either source.
+     *
+     * The ordering matters and is not the obvious one. Once the picture
+     * settles the live probe only ever sees a single cell count, so it reverts
+     * to reporting a per-cell average — which for a model is not a rougher
+     * number but the wrong one, four times the true slope, because it has the
+     * whole GPU pass folded into it. Preferring it over a remembered fit that
+     * did tell the terms apart drove the grid to the ASCII floor on every
+     * visit. Among two of the same kind, live still wins: it describes this
+     * session, this scene, this machine as it is right now.
+     */
+    const liveCost = renderCostProbeRef.current.frameCost();
+    const rememberedCost = costMemoryRef.current?.get(key) ?? null;
+    const liveOrRememberedCost =
+      liveCost?.separated || !rememberedCost?.separated ? liveCost ?? rememberedCost : rememberedCost;
+
     return {
       content: {
         kind,
@@ -3379,9 +3397,18 @@ export const App: React.FC = () => {
        * this content and always wins once it has enough samples; the remembered
        * value only fills the gap before that, which is precisely the gap the
        * solver used to answer with a hardcoded guess.
+       *
+       * Taken as a pair, never mixed: a per-cell slope from one source and a
+       * fixed cost from another describe no frame that was ever rendered.
        */
-      measuredMsPerCell:
-        renderCostProbeRef.current.msPerCell() ?? costMemoryRef.current?.get(key) ?? null,
+      measuredMsPerCell: liveOrRememberedCost?.msPerCell ?? null,
+      /*
+       * Only when the two terms were genuinely told apart. An unseparated fit
+       * reports zero, and zero is a claim — "this pipeline has no per-frame
+       * overhead" — which for a model is the exact wrong answer. Null instead,
+       * so the solver reaches for its prior rather than believing it.
+       */
+      measuredFixedMs: liveOrRememberedCost?.separated ? liveOrRememberedCost.fixedMs : null,
       /*
        * Only offered when the number means something. The loop deliberately
        * runs at 12fps once the mouse has been still for four seconds, and
