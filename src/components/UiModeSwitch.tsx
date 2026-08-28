@@ -50,7 +50,6 @@ export const UiModeSwitch: React.FC<UiModeSwitchProps> = ({ value, onChange }) =
         aria-hidden="true"
       />
       {MODES.map((mode) => {
-        const Icon = mode.icon;
         const isActive = mode.id === value;
         return (
           <button
@@ -62,7 +61,6 @@ export const UiModeSwitch: React.FC<UiModeSwitchProps> = ({ value, onChange }) =
             onClick={() => onChange(mode.id)}
             title={mode.title}
           >
-            <Icon size={12} className="ui-mode-switch-icon" />
             <span className="ui-mode-switch-label">{mode.label}</span>
           </button>
         );
