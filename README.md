@@ -115,18 +115,4 @@ fork and why the effect cannot be a member of the dither family.
 
 ---
 
-## Local development
-
-```bash
-git clone https://github.com/gimk/studio.pantoine.com.git
-cd studio.pantoine.com
-npm install
-npm run dev
-```
-
-Then open http://localhost:5173. `npm run build` type-checks and bundles to `dist/`;
-`npm run preview` serves that build.
-
----
-
 MIT © [gimk](https://github.com/gimk)
