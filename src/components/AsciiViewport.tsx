@@ -81,20 +81,6 @@ const ZOOM_DECAY_PER_FRAME = 0.62;
 const ZOOM_DECAY_EPSILON = 0.0015;
 
 /**
- * Per-frame decay factor that brings a residual of `logS` home in `ms`.
- *
- * The default rate is a constant because a burst of wheel notches should feel
- * like one continuous movement regardless of how far it travels. A fit that
- * lands on its own has no burst to belong to and a duration is the more useful
- * handle, so this inverts the decay for the one caller that wants one.
- */
-function decayRateFor(logS: number, ms: number): number {
-  const frames = Math.max(1, ms / 16.6667);
-  const ratio = ZOOM_DECAY_EPSILON / Math.max(ZOOM_DECAY_EPSILON, Math.abs(logS));
-  return Math.min(0.995, Math.max(0.05, Math.pow(ratio, 1 / frames)));
-}
-
-/**
  * Ceiling on how far the camera may sit from identity. A jump straight
  * from 1600% to Fit is a factor of thirty; animating that literally is a
  * swooping flight across the image rather than a zoom, so a big jump starts
@@ -500,6 +486,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     };
   }, [getContentSize]);
 
+  /*
+   * The auto-res effect must read this without depending on it. Its identity
+   * changes with cols/rows, so listing it as a dependency would tear the
+   * controller down and rebuild it on every grid change — resetting the latch
+   * each time and putting the hunt straight back. Reading it through a ref
+   * keeps the effect stable and the measurement current.
+   */
+  const getViewFramingRef = useRef(getViewFraming);
+  getViewFramingRef.current = getViewFraming;
+
   /** Inverse of getViewFraming, against this viewport's own size. */
   const framingToView = useCallback(
     (f: { scale: number; cx: number; cy: number }): ViewTransform | null => {
@@ -594,31 +590,13 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      ====================================================================== */
 
   const cameraRef = useRef<HTMLDivElement>(null);
-  /**
-   * The rendered geometry the camera is currently showing.
-   *
-   * Carries the grid alongside the transform because a resolution change moves
-   * the picture just as surely as a zoom does — same scale, different cell
-   * count, so `cols * cellWidth * scale` lands somewhere else. Keyed on
-   * `view` alone this effect saw nothing to ease and the raster jumped its new
-   * size in a single frame, which is most of what a resolution change looked
-   * like.
-   */
-  const prevViewRef = useRef<{ view: ViewTransform; cols: number; rows: number }>({ view, cols, rows });
+  const prevViewRef = useRef<ViewTransform>(view);
   /**
    * How far the camera currently sits from identity, as a scale about a fixed
    * point. Any composition of scales-about-points is itself a scale about some
    * point, so this shape survives steps taken at different cursor positions.
-   *
-   * `decay` overrides the global rate for this residual only; see
-   * `pendingZoomEaseMsRef`.
    */
-  const residualRef = useRef<{ s: number; px: number; py: number; decay: number } | null>(null);
-  /**
-   * A duration claimed for the *next* view change, in ms, or null for the
-   * usual constant-rate decay. One-shot: read and cleared by the effect below.
-   */
-  const pendingZoomEaseMsRef = useRef<number | null>(null);
+  const residualRef = useRef<{ s: number; px: number; py: number } | null>(null);
   const decayRafRef = useRef<number | null>(null);
   const decayLastTsRef = useRef<number>(0);
 
@@ -659,7 +637,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
        * rate. Raising the per-frame factor by dt/frame keeps the rate the same
        * on any refresh rate.
        */
-      const logS = Math.log(r.s) * Math.pow(r.decay, dt / 16.6667);
+      const logS = Math.log(r.s) * Math.pow(ZOOM_DECAY_PER_FRAME, dt / 16.6667);
 
       if (Math.abs(logS) < ZOOM_DECAY_EPSILON) {
         residualRef.current = null;
@@ -671,7 +649,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       const s = Math.exp(logS);
       // Hold the fixed point and rebuild the scale around it, so relaxing the
       // magnitude never slides the image sideways.
-      residualRef.current = { s, px: r.px, py: r.py, decay: r.decay };
+      residualRef.current = { s, px: r.px, py: r.py };
       applyCameraResidual();
       decayRafRef.current = requestAnimationFrame(tick);
     };
@@ -681,54 +659,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
   useLayoutEffect(() => {
     const prev = prevViewRef.current;
-    prevViewRef.current = { view, cols, rows };
-    const easeMs = pendingZoomEaseMsRef.current;
-    pendingZoomEaseMsRef.current = null;
+    prevViewRef.current = view;
 
     const el = cameraRef.current;
-    if (!el) return;
+    if (!el || prev.scale === view.scale) return;
     if (typeof window !== 'undefined' &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return;
     }
-
-    /*
-     * Measure the rendered rectangle, not the scale.
-     *
-     * A zoom and a resolution change are the same event as far as the camera
-     * is concerned — both move where the picture's edges land — and only the
-     * rectangle sees both. `cols * cellWidth * scale` is what actually
-     * changed; the scale on its own misses a grid change entirely, which is
-     * why a resolution change used to arrive in one frame with no ease at all.
-     */
-    const square = latestRasterModeRef.current !== 'ascii';
-    const cellW = square ? 1 : MONOSPACE_CELL_WIDTH;
-    const cellH = square ? 1 : MONOSPACE_CELL_HEIGHT;
-    const w0 = prev.cols * cellW * prev.view.scale;
-    const h0 = prev.rows * cellH * prev.view.scale;
-    const w1 = cols * cellW * view.scale;
-    const h1 = rows * cellH * view.scale;
-    if (!(w0 > 0 && h0 > 0 && w1 > 0 && h1 > 0)) return;
-
-    const kx = w0 / w1;
-    const ky = h0 / h1;
-    /*
-     * The residual can only express a *uniform* scale about a point, so a
-     * change that stretched one axis relative to the other has no honest
-     * easing and takes the jump. Auto-res never does this — it derives the
-     * grid's shape from the content — but a single-axis manual edit does.
-     */
-    if (Math.abs(ky / kx - 1) > 0.02) return;
-    /*
-     * The geometric mean rather than either axis, because the two disagree
-     * slightly: the solver rounds its grid to whole cells, so 230x82 becomes
-     * 178x64 and the aspect moves by not quite one percent. Taking the width
-     * reproduces it exactly and leaves all of that error on the height —
-     * measured at 22px on a zoomed frame. Split, it is half that on each, and
-     * it is gone by the time the residual reaches identity either way.
-     */
-    const k = Math.sqrt(kx * ky);
-    if (Math.abs(k - 1) < 1e-9) return;
 
     /*
      * The fixed point of this step: the one screen position showing the same
@@ -736,8 +674,10 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      * than taken from the cursor, so it stays correct when a clamp has pulled
      * the pan somewhere the cursor was not.
      */
-    const qx = (prev.view.tx - k * view.tx) / (1 - k);
-    const qy = (prev.view.ty - k * view.ty) / (1 - k);
+    const ds = view.scale - prev.scale;
+    const qx = (prev.tx * view.scale - view.tx * prev.scale) / ds;
+    const qy = (prev.ty * view.scale - view.ty * prev.scale) / ds;
+    const k = prev.scale / view.scale;
     if (!Number.isFinite(qx) || !Number.isFinite(qy) || !(k > 0)) return;
 
     /*
@@ -781,12 +721,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       return;
     }
 
-    residualRef.current = {
-      s: Math.exp(logS),
-      px,
-      py,
-      decay: easeMs != null ? decayRateFor(logS, easeMs) : ZOOM_DECAY_PER_FRAME,
-    };
+    residualRef.current = { s: Math.exp(logS), px, py };
     /*
      * Promote for the duration. Without this the layer holds live text -- the
      * uncoloured ASCII path is a <pre> scaled by CSS -- and the browser
@@ -797,7 +732,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     el.style.willChange = 'transform';
     applyCameraResidual();
     runDecay();
-  }, [view, cols, rows, applyCameraResidual, runDecay]);
+  }, [view, applyCameraResidual, runDecay]);
 
   useEffect(() => () => {
     if (decayRafRef.current !== null) cancelAnimationFrame(decayRafRef.current);
@@ -1573,44 +1508,82 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return () => clearTimeout(timer);
   }, [viewMode, autoFit]);
 
-  /**
-   * Grids auto-res has asked for but not yet been fitted to.
+  /*
+   * Re-fit a grid that auto-res just changed, in the same paint as the change.
    *
-   * A resolution change alters the raster's unscaled size, so left alone the
-   * *new* grid is painted at the *old* scale and pan. The delayed fit above
-   * would correct that ~50ms later, and that snap-back three frames after the
-   * change is what read as the zoom fighting the resolution.
+   * The delayed fit above cannot do this. A resolution change alters the
+   * raster's unscaled size, so for the ~50ms until that timer runs the *new*
+   * grid is painted at the *old* scale and the *old* pan — and because the
+   * transform origin is the top-left corner (transform-origin: 0 0, needed so
+   * the pan maths and the canvas blit agree), a grid that grew or shrank does
+   * so away from that corner rather than about the centre. What you see is the
+   * raster lurch sideways and change size, then snap back centred three frames
+   * later. It reads as the zoom fighting the resolution.
    *
-   * Auto-res does not fit per change any more. It records the change here to
-   * stop the delayed fit firing, and arms a settle timer instead: the fit
-   * happens once, after the solver has stopped moving. A first solve followed
-   * by a measurement correction and a framerate rescue is one settle, not
-   * three, and the camera moves once at the end rather than chasing each step.
+   * A layout effect runs after the DOM is updated but before the browser
+   * paints, so the new grid and the fit that belongs to it land together and
+   * there is no intermediate frame to see.
+   *
+   * Scoped to grids this component asked for. A manual resolution change, a
+   * mode switch and a share-link restore all have their own choreography — and
+   * the mode-switch restore in particular relies on the delayed fit being
+   * skippable, which is why this claims the same flag rather than racing it.
    */
-  const pendingAutoResFitRef = useRef<{ cols: number; rows: number; fitNow: boolean } | null>(null);
+  const pendingAutoResFitRef = useRef<{
+    cols: number;
+    rows: number;
+    /**
+     * The framing to carry across, or null to re-fit from scratch.
+     *
+     * Carrying it is what makes a resolution change stop reading as a zoom. A
+     * fit recomputed from a different cell count lands at a different scale,
+     * so the raster visibly grows or shrinks and snaps back to centre — and if
+     * the view had been zoomed or panned deliberately, that work is simply
+     * thrown away. But the picture has not changed: it is the same image at a
+     * different sampling density, and it should occupy exactly the same
+     * rectangle it did a moment ago. Holding `cols * cellWidth * scale`
+     * constant across the change is what keeps it there.
+     *
+     * Null after a viewfinder resize, where re-filling the new viewport is the
+     * whole point, and on the first application, where there is no established
+     * framing worth preserving.
+     */
+    preserve: { cols: number; scale: number; cx: number; cy: number } | null;
+  } | null>(null);
 
   useLayoutEffect(() => {
     const pending = pendingAutoResFitRef.current;
     if (!pending || pending.cols !== cols || pending.rows !== rows) return;
     pendingAutoResFitRef.current = null;
-    /*
-     * The cols/rows change queues a delayed fit through `autoFit`'s identity.
-     * Swallow it — either the line below or the settle timer owns this camera.
-     */
+    /* The cols/rows change queues a delayed fit too; this one already did it. */
     skipNextAutoFitRef.current = true;
-    /*
-     * A viewfinder resize is the user's own hand on the window, and the raster
-     * is meant to re-fill the box it just got. Waiting most of a second for
-     * that would feel like lag, so it fits here and now — in a layout effect,
-     * so the new grid and its fit land in the same paint. Only the solver's
-     * own unprompted changes are worth batching.
-     */
-    if (pending.fitNow) autoFitRef.current();
-  }, [cols, rows]);
 
-  /** Latest `autoFit`, for effects that must call it without depending on it. */
-  const autoFitRef = useRef(autoFit);
-  autoFitRef.current = autoFit;
+    const p = pending.preserve;
+    if (p && p.cols > 0 && cols > 0) {
+      /*
+       * Same rendered width, different cell count. `framingToView` measures
+       * against the new grid, so feeding it the compensated scale and the old
+       * centre point reproduces the previous rectangle exactly.
+       */
+      let nextScale = p.scale * (p.cols / cols);
+      /*
+       * Pixel mode still owes its cells whole device pixels — a fractional
+       * rung makes them alternate between N and N+1 wide. Rounded rather than
+       * floored: this is not a fit trying to stay inside an edge, it is a
+       * framing trying not to move, and the nearest rung moves it least.
+       */
+      if (latestRasterModeRef.current === 'pixel') {
+        nextScale = snapScaleToCellGrid(nextScale, 'round');
+      }
+      const next = framingToView({ scale: nextScale, cx: p.cx, cy: p.cy });
+      if (next) {
+        setView(next);
+        return;
+      }
+    }
+
+    autoFit();
+  }, [cols, rows, autoFit, framingToView, snapScaleToCellGrid]);
 
   /*
    * A share link's framing, applied instead of the first auto-fit.
@@ -1719,26 +1692,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
    */
   const AUTO_RES_TICK_MS = 400;
 
-  /**
-   * Quiet time after the last applied change before the camera fits to it.
-   *
-   * Longer than the tick, so a run of solves arriving back to back counts as
-   * one event rather than several. It also has to clear the controller's own
-   * rhythm: the measurement correction lands about 1.2s after the first solve,
-   * which is deliberately *not* covered here — waiting that long would leave
-   * the raster visibly unfitted while nothing appeared to be happening. Two
-   * unhurried fits a second apart read better than one late one.
-   */
-  const AUTO_RES_SETTLE_MS = 700;
-
-  /**
-   * How long that fit takes to ease home. The wheel's constant-rate decay is
-   * tuned for a burst of notches under the hand; a fit nobody asked for is
-   * better slightly slower, where it reads as the picture settling rather than
-   * as something snapping.
-   */
-  const AUTO_RES_FIT_EASE_MS = 200;
-
   useEffect(() => {
     if (!autoRes || !containerRef.current || !onAutoResolutionChange) return;
     const el = containerRef.current;
@@ -1756,8 +1709,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      * every time and turning the whole thing back into a hunt.
      */
     const controller = createAutoResController();
-    /** Re-armed by every applied change; the fit happens when it finally fires. */
-    let settleTimer: any;
+    /*
+     * The first grid this activation applies has no framing worth keeping —
+     * the view may not have been fitted yet at all — so it fits. Everything
+     * after it carries the framing across instead. See `preserve` above.
+     */
+    let hasAppliedOnce = false;
 
     const runAutoRes = (cause: 'resize' | 'tick') => {
       const input = buildAutoResInput();
@@ -1772,28 +1729,28 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
        */
       if (!shouldReplaceGrid(gridRef.current, next)) return;
       /*
-       * No fit here, and none when the grid lands either. The camera waits for
-       * the solver to stop moving.
+       * No autoFit() here, deliberately.
        *
-       * A first solve is routinely followed by a measurement correction and
-       * sometimes a framerate rescue, several hundred milliseconds apart.
-       * Fitting to each one is three camera moves for one decision, and the
-       * middle ones are already wrong when they happen. Re-arming the timer on
-       * every change collapses the whole sequence into a single fit at the
-       * end.
-       *
-       * Nothing is fitted to a grid that no longer exists either: the timer is
-       * cleared by the next change before it can fire.
+       * It reads `cols`/`rows` from props, and the resolution change requested
+       * on the line below has not arrived as props yet — so fitting now would
+       * fit the grid being replaced. Instead the request is recorded, and the
+       * layout effect above re-fits the moment the new grid lands, before the
+       * browser has painted it. That is what keeps the change seamless.
        */
-      const fitNow = cause === 'resize';
-      pendingAutoResFitRef.current = { cols: next.cols, rows: next.rows, fitNow };
-      clearTimeout(settleTimer);
-      if (!fitNow) {
-        settleTimer = setTimeout(() => {
-          pendingZoomEaseMsRef.current = AUTO_RES_FIT_EASE_MS;
-          autoFitRef.current();
-        }, AUTO_RES_SETTLE_MS);
-      }
+      /*
+       * A resize wants the raster to re-fill the viewfinder it just got, so it
+       * re-fits. Everything else — the measurement correction, a framerate
+       * rescue — is the same picture at a different density and should not
+       * move on screen at all.
+       */
+      const framing = cause === 'tick' && hasAppliedOnce ? getViewFramingRef.current() : null;
+      pendingAutoResFitRef.current = {
+        ...next,
+        preserve: framing
+          ? { cols: gridRef.current.cols, scale: framing.scale, cx: framing.cx, cy: framing.cy }
+          : null,
+      };
+      hasAppliedOnce = true;
       onAutoResolutionChange(next.cols, next.rows);
     };
 
@@ -1801,7 +1758,9 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
     const observer = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => runAutoRes('resize'), 120);
+      resizeTimer = setTimeout(() => {
+        runAutoRes('resize');
+      }, 120);
     });
 
     observer.observe(el);
@@ -1809,7 +1768,6 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return () => {
       observer.disconnect();
       clearTimeout(resizeTimer);
-      clearTimeout(settleTimer);
       window.clearInterval(tick);
     };
   }, [autoRes, buildAutoResInput, onAutoResolutionChange]);
