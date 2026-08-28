@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CollapsibleSection } from './CollapsibleSection';
 import { AppMode, MediaConfig } from '../types/ascii';
-import { Crop, AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Grid } from 'lucide-react';
+import { AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Grid } from 'lucide-react';
 import { MONOSPACE_CELL_ASPECT } from '../engine/renderer';
 import { clampGridToBudget } from '../engine/mediaPresets';
+import { AutoResToggle } from './controlPrimitives';
 
 interface OptimizeControlsProps {
   cols: number;
@@ -304,9 +305,14 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 </span>
               }
               persistKey="OptimizeControls-pixel-dpi"
+              headerRight={
+                onToggleAutoRes && (
+                  <AutoResToggle active={autoRes} onToggle={onToggleAutoRes} noun="DPI" />
+                )
+              }
             >
               {/* DPI Slider */}
-              <div className="control-row control-row-spaced-below">
+              <div className={`control-row control-row-spaced-below`}>
                 <span className="control-label">Input DPI</span>
                 <div className="control-input-wrapper">
                   <input
@@ -328,7 +334,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
 
               {/* Quick DPI Preset Chips */}
-              <div className="btn-grid-3 control-row-spaced-below">
+              <div className={`btn-grid-3 control-row-spaced-below`}>
                 {[
                   { label: '25 DPI', val: 25, desc: 'Lo-Fi Pixel' },
                   { label: '50 DPI', val: 50, desc: 'Retro 8-Bit' },
@@ -382,6 +388,11 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               }
               persistKey="OptimizeControls-grid-resolution"
               defaultOpen={false}
+              headerRight={
+                onToggleAutoRes && (
+                  <AutoResToggle active={autoRes} onToggle={onToggleAutoRes} noun="grid" />
+                )
+              }
             >
               {/* Media Source & Ratio Info Card */}
               <div
@@ -431,7 +442,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 Scale resolutions proportional to image size with monospace aspect compensation:
               </p>
 
-              <div className="btn-grid-4 control-row-spaced-below">
+              <div className={`btn-grid-4 control-row-spaced-below`}>
                 {mediaFractionPresets.map((preset) => {
                   const isActive = cols === preset.cols && rows === preset.rows;
                   return (
@@ -481,7 +492,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
 
               {/* Columns Slider */}
-              <div className="control-row">
+              <div className={`control-row`}>
                 <span className="control-label">Columns (Width)</span>
                 <div className="control-input-wrapper">
                   <input
@@ -503,7 +514,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
 
               {/* Rows Slider */}
-              <div className="control-row">
+              <div className={`control-row`}>
                 <span className="control-label">Rows (Height)</span>
                 <div className="control-input-wrapper">
                   <input
@@ -538,13 +549,21 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </span></>}
             persistKey="OptimizeControls-grid-resolution"
             defaultOpen={false}
+            headerRight={
+              onToggleAutoRes && (
+                <AutoResToggle
+                  active={autoRes}
+                  onToggle={onToggleAutoRes}
+                  noun={isPixelMode ? 'pixel resolution' : 'grid'}
+                />
+              )
+            }
           >
             {/* Quick Resolution buttons */}
-            <div className={`btn-group btn-group-wrap control-row-spaced-below${autoRes ? ' control-disabled' : ''}`}>
+            <div className={`btn-group btn-group-wrap control-row-spaced-below`}>
               {synthResolutionPresets.map((preset) => (
                 <button
                   key={preset.label}
-                  disabled={autoRes}
                   className={`btn btn-sm ${cols === preset.c && rows === preset.r ? 'btn-primary' : ''}`}
                   onClick={() => onChangeResolution(preset.c, preset.r)}
                 >
@@ -553,36 +572,23 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               ))}
             </div>
 
-            {(onToggleAutoRes || onMatchViewfinderRatio) && (
-              <button
-                className={`btn btn-sm btn-full control-row-spaced-below ${
-                  autoRes ? 'btn-primary' : ''
-                }`}
-                onClick={onToggleAutoRes || onMatchViewfinderRatio}
-                title={
-                  autoRes
-                    ? 'Auto Resolution is ON (adapts to window/viewfinder size). Click to lock current resolution.'
-                    : 'Auto Resolution is OFF (fixed size). Click to toggle Auto Resolution.'
-                }
-              >
-                <Crop size={11} color={autoRes ? 'var(--bg-primary)' : 'var(--accent)'} />
-                AUTO RES {autoRes ? '[ENABLED]' : '[DISABLED]'}
-              </button>
-            )}
+            {/*
+              * The AUTO RES button that used to sit here is now the AUTO latch
+              * in this section's header, beside RESET — the same place every
+              * other panel keeps its header controls, and where the media DPI
+              * and grid panels now carry theirs too. One switch per panel, in
+              * one predictable spot, rather than a full-width button in the
+              * middle of the controls it disables.
+              */}
 
-            {/* Viewfinder Ratio Lock — inert while auto res drives the grid */}
-            <div className={`btn-group control-row-spaced-below${autoRes ? ' control-disabled' : ''}`}>
+            {/* Viewfinder Ratio Lock — how the sliders behave once you use them */}
+            <div className="btn-group control-row-spaced-below">
               <button
                 className={`btn btn-sm control-fill ${
-                  !autoRes && lockViewfinderRatio ? 'btn-primary' : ''
+                  lockViewfinderRatio ? 'btn-primary' : ''
                 }`}
-                disabled={autoRes}
                 onClick={() => setLockViewfinderRatio(!lockViewfinderRatio)}
-                title={
-                  autoRes
-                    ? 'Ratio lock is unavailable while Auto Resolution is driving the grid.'
-                    : "When locked, moving either slider adjusts the other so the grid keeps the viewfinder's aspect ratio"
-                }
+                title="When locked, moving either slider adjusts the other so the grid keeps the viewfinder's aspect ratio"
               >
                 {lockViewfinderRatio ? <Lock size={11} /> : <Unlock size={11} />}
                 RATIO LOCK {lockViewfinderRatio ? '[ON]' : '[OFF]'}
@@ -590,7 +596,6 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
 
               <button
                 className="btn btn-sm"
-                disabled={autoRes}
                 onClick={handleMatchViewfinder}
                 title="Snap rows to match the viewfinder aspect ratio at the current column count"
               >
@@ -599,7 +604,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </button>
             </div>
 
-            <div className={`control-row${autoRes ? ' control-disabled' : ''}`}>
+            <div className={`control-row`}>
               <span className="control-label">Columns (Width)</span>
               <div className="control-input-wrapper">
                 <input
@@ -609,20 +614,18 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   max={Math.max(isPixelMode ? 512 : 180, draftCols)}
                   step={2}
                   value={draftCols}
-                  disabled={autoRes}
                   onChange={(e) => handleSynthColsChange(parseInt(e.target.value, 10) || 100)}
                 />
                 <NumberInput
                   value={draftCols}
                   min={10}
                   step={2}
-                  disabled={autoRes}
                   onChange={handleSynthColsChange}
                 />
               </div>
             </div>
 
-            <div className={`control-row${autoRes ? ' control-disabled' : ''}`}>
+            <div className={`control-row`}>
               <span className="control-label">Rows (Height)</span>
               <div className="control-input-wrapper">
                 <input
@@ -632,14 +635,12 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                   max={Math.max(isPixelMode ? 384 : 90, draftRows)}
                   step={1}
                   value={draftRows}
-                  disabled={autoRes}
                   onChange={(e) => handleSynthRowsChange(parseInt(e.target.value, 10) || 50)}
                 />
                 <NumberInput
                   value={draftRows}
                   min={5}
                   step={1}
-                  disabled={autoRes}
                   onChange={handleSynthRowsChange}
                 />
               </div>

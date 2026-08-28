@@ -59,7 +59,7 @@ import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRe
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelFrameData, applyTrackballRotationWithTime } from './engine/modelRenderer';
 import { renderAsciiMediaFrameData, resolveCrop, cropActive } from './engine/mediaRenderer';
-import { migratePostProcess } from './engine/postProcess';
+import { migratePostProcess, overlayActive, glowActive, aberrationActive } from './engine/postProcess';
 /*
  * The overlay's source layer comes from the exporter's helpers, not from a
  * second copy here. They are the one thing the still, GIF and video exporters
@@ -110,6 +110,8 @@ import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { DITHER_ALGORITHMS } from './engine/ditherAlgorithms';
+import { createRenderCostProbe, costProbeKey } from './engine/autoResolution';
+import type { AutoResSignals, AutoResCost, AutoResContentKind } from './engine/autoResolution';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
   FullAnimationState,
@@ -132,6 +134,8 @@ import {
 } from 'lucide-react';
 
 const LOCAL_STORAGE_RENDER_SETTINGS_KEY = 'ascii_studio_render_settings_by_mode';
+/** Set once the media auto-res default flip has been applied. See buildRenderSettings. */
+const LOCAL_STORAGE_AUTORES_MIGRATED_KEY = 'ascii_studio_autores_default_migrated';
 const LOCAL_STORAGE_UI_THEME_KEY = 'ascii_studio_ui_theme_settings';
 
 /**
@@ -357,6 +361,30 @@ function buildRenderSettings(
     savedSettings.synth.ditherAlgorithm = 'none';
   }
 
+  /*
+   * Auto resolution is on by default in every mode now. Media shipped with it
+   * off and the share dialog refused to offer it there at all, so a persisted
+   * `false` on media is the old default rather than a decision anyone made —
+   * the same reasoning as the dither migration above.
+   *
+   * Guarded by a one-shot marker rather than run unconditionally, because
+   * unlike that one this flips a setting the user *can* still reach. Without
+   * the marker, turning media auto-res off would be undone on the next reload
+   * and there would be no way to keep it off.
+   *
+   * The marker is only *read* here — it is written from an effect on mount.
+   * This function runs inside a useState initializer, which StrictMode invokes
+   * twice and expects to be pure; writing the marker on the first invocation
+   * would make the second take the other branch and return different settings.
+   */
+  let autoResMigrated = true;
+  try {
+    autoResMigrated = !!localStorage.getItem(LOCAL_STORAGE_AUTORES_MIGRATED_KEY);
+  } catch {}
+  if (!autoResMigrated && savedSettings.media?.autoRes === false) {
+    savedSettings.media.autoRes = true;
+  }
+
   // The 'gameboy' / 'cyberpunk' / 'amber' tonal presets are built-in palettes
   // now. Move a persisted preset onto its palette so the look survives.
   for (const modeKey of ['synth', 'media', 'model'] as const) {
@@ -417,7 +445,12 @@ function buildRenderSettings(
   const defaultMediaSettings: RenderSettings = {
     cols: (isMediaShared && sharedState?.cols) || savedSettings.media?.cols || 240,
     rows: (isMediaShared && sharedState?.rows) || savedSettings.media?.rows || 120,
-    autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : false),
+    /*
+     * On by default, as in synth and model. Media was the exception only
+     * because the old solver shaped the grid to the viewfinder and so put
+     * borders on every photo; it now shapes to the source and its crop.
+     */
+    autoRes: (isMediaShared && sharedState?.autoRes !== undefined) ? sharedState.autoRes : (savedSettings.media?.autoRes !== undefined ? savedSettings.media.autoRes : true),
     density: (isMediaShared && sharedState?.density) || savedSettings.media?.density || CHARSETS[0].chars,
     rasterMode: (isMediaShared && sharedState?.rasterMode) || savedSettings.media?.rasterMode || 'pixel',
     ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
@@ -698,6 +731,16 @@ export const App: React.FC = () => {
     ) {
       setUiThemeSettings((prev) => ({ ...prev, uiMode: 'basic' }));
     }
+
+    /*
+     * Retire the media auto-res default flip. buildRenderSettings only reads
+     * this marker, so that it stays pure for StrictMode; setting it here is
+     * what makes the migration one-shot, and from now on a media auto-res of
+     * `false` is taken at face value.
+     */
+    try {
+      localStorage.setItem(LOCAL_STORAGE_AUTORES_MIGRATED_KEY, '1');
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -846,6 +889,9 @@ export const App: React.FC = () => {
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  /* A paused loop still repaints, but its framerate says nothing about load. */
+  const isPlayingRef = useRef<boolean>(isPlaying);
+  isPlayingRef.current = isPlaying;
   const viewportRef = useRef<AsciiViewportHandle>(null);
   const currentFpsRef = useRef<number>(30);
 
@@ -1300,6 +1346,10 @@ export const App: React.FC = () => {
     currentTonalMapping === '1color' &&
     currentPaletteMode === 'phosphor';
 
+  /* Read by describeRenderWork, which runs inside the render loop and off it. */
+  const isSingleColorAsciiRef = useRef<boolean>(isSingleColorAscii);
+  isSingleColorAsciiRef.current = isSingleColorAscii;
+
   const isSyncActive = uiThemeSettings.syncUiWithAscii && isSingleColorAscii;
 
   const effectiveUiTheme: PhosphorTheme = isSyncActive ? theme : uiThemeSettings.uiTheme;
@@ -1687,13 +1737,25 @@ export const App: React.FC = () => {
       targetRows = Math.max(10, Math.round((targetCols * cellAspect) / srcAspect));
     }
 
+    /*
+     * `autoRes` is deliberately left as it was.
+     *
+     * Every caller here is "a new source or raster mode just arrived, size the
+     * grid to it" — never "the user asked for this exact resolution". Forcing
+     * auto off meant loading any image silently switched it off, which with
+     * auto on by default would have made the default unreachable in practice.
+     *
+     * When auto is on the grid computed above is simply the seed: the source
+     * dimensions changing is itself one of the events the controller re-solves
+     * on, so it refines this within the measure window. When auto is off the
+     * behaviour is exactly as before.
+     */
     setRenderSettingsByMode((prev) => ({
       ...prev,
       media: {
         ...prev.media,
         cols: targetCols,
         rows: targetRows,
-        autoRes: false,
       },
     }));
 
@@ -2537,6 +2599,92 @@ export const App: React.FC = () => {
   const lastStaticRenderMsRef = useRef<number>(0);
   const lastStaticRenderEndRef = useRef<number>(0);
 
+  /*
+   * Measured cost of the live pipeline, and the closed half of auto-resolution.
+   *
+   * The solver's performance ceiling is "cells that fit in the time available",
+   * which needs a real ms-per-cell to divide by. Both render paths hand their
+   * timings here; the probe blends them and the solver reads the blend. Before
+   * enough frames exist it returns null and the solver falls back to a prior.
+   *
+   * Keyed, because a measurement only describes the pipeline that produced it:
+   * switching output mode or turning on error diffusion changes the cost per
+   * cell severalfold, and carrying the old average across that boundary would
+   * let the solver pick a grid for work it is no longer doing.
+   */
+  const renderCostProbeRef = useRef(createRenderCostProbe());
+  const costProbeKeyRef = useRef<string>('');
+  /** Set by the RAF loop; read by getAutoResSignals, which must not run off it. */
+  const isIdleThrottledRef = useRef<boolean>(false);
+
+  const recordRenderCost = useCallback((key: string, cells: number, ms: number) => {
+    if (costProbeKeyRef.current !== key) {
+      costProbeKeyRef.current = key;
+      renderCostProbeRef.current.reset();
+    }
+    renderCostProbeRef.current.record(cells, ms);
+  }, []);
+
+  /**
+   * What is being rendered and what makes it expensive, read from refs.
+   *
+   * One description serves both callers, which is the point: the render paths
+   * use it to key their timings and the solver uses it to pick a grid, and if
+   * the two disagreed the probe would be averaging across pipelines the solver
+   * thinks are separate.
+   */
+  const describeRenderWork = useCallback((): { kind: AutoResContentKind; cost: AutoResCost; key: string } => {
+    const mode = appModeRef.current;
+    const settings = renderSettingsRef.current;
+    const mediaView = mediaViewConfigRef.current;
+
+    const output = (mode === 'media' ? mediaView.rasterMode || settings.rasterMode : settings.rasterMode) || 'ascii';
+    const kind: AutoResContentKind =
+      mode === 'media'
+        ? mediaConfigRef.current.mediaType === 'video'
+          ? 'video'
+          : 'image'
+        : mode === 'model'
+        ? 'model'
+        : 'synth';
+
+    const algorithm = (mode === 'media' ? mediaView.algorithm || settings.ditherAlgorithm : settings.ditherAlgorithm) || 'none';
+    /*
+     * 'none' is filed under error-diffusion but diffuses nothing — it is a bare
+     * threshold, and the cheapest path there is. Counting it as serial would
+     * make the prior overestimate every un-dithered render.
+     */
+    const serialDither =
+      algorithm !== 'none' &&
+      DITHER_ALGORITHMS.find((a) => a.id === algorithm)?.family === 'error-diffusion';
+
+    /*
+     * Work that does not scale with the grid, expressed as roughly "how much
+     * does this multiply a frame". Particle trails are counted live from the
+     * buffer rather than from the configured burst size, because that is what
+     * is actually being integrated this frame.
+     */
+    let sceneComplexity = 0;
+    if (mode === 'synth') {
+      sceneComplexity = Math.min(1, trailPointsRef.current.length / 350);
+    } else if (mode === 'model') {
+      const positions = currentGeometryRef.current?.getAttribute('position');
+      sceneComplexity = positions ? Math.min(1.5, positions.count / 200000) : 0;
+    }
+
+    const cost: AutoResCost = {
+      serialDither,
+      color: !isSingleColorAsciiRef.current,
+      postProcess:
+        overlayActive(settings.postProcess) ||
+        glowActive(settings.postProcess) ||
+        aberrationActive(settings.postProcess),
+      sceneComplexity,
+    };
+
+    return { kind, cost, key: costProbeKey(output, kind, cost) };
+  }, []);
+
   // Animation Frame Loop with FPS Limiter & Power Optimizations
   const timeRef = useRef<number>(0);
   const lastFrameRenderTimeRef = useRef<number>(0);
@@ -2630,6 +2778,14 @@ export const App: React.FC = () => {
           captureHistogram(result);
           viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode, result.vector, sourceLayer);
           lastStaticRenderMsRef.current = performance.now() - startedAt;
+          /*
+           * Full-resolution passes only. A draft preview renders a fraction of
+           * the grid, and rasterizing is superlinear in cell count, so its
+           * ms-per-cell is systematically cheaper than the pass it stands in
+           * for -- feeding it to the probe would talk the solver into a grid
+           * that only the preview can afford.
+           */
+          recordRenderCost(describeRenderWork().key, renderCols * renderRows, lastStaticRenderMsRef.current);
         }
 
         lastStaticRenderEndRef.current = performance.now();
@@ -2684,6 +2840,8 @@ export const App: React.FC = () => {
 
       // Check Idle status
       const isIdle = optimizeConfig.idleThrottle && (Date.now() - lastInteractionTimeRef.current > 4000);
+      /* Auto-res must not read a deliberately throttled framerate as a collapse. */
+      isIdleThrottledRef.current = isIdle;
       const effectiveTargetFps = isIdle ? 12 : optimizeConfig.targetFps;
 
       // FPS Limiter check with precise pacing
@@ -2797,6 +2955,9 @@ export const App: React.FC = () => {
       const animatedVectorConfig = (cfg: VectorConfig | undefined): VectorConfig | undefined =>
         cfg ? { ...cfg, phase: cfg.phase + timeRef.current * VECTOR_PHASE_RATE } : cfg;
 
+      /* Frame cost for the auto-resolution probe. See renderCostProbeRef. */
+      const rasterStartedAt = performance.now();
+
       if (appMode === 'model') {
         /*
          * A second GPU pass at overlay resolution, and the only reason it is
@@ -2882,6 +3043,8 @@ export const App: React.FC = () => {
       }
 
 
+      recordRenderCost(describeRenderWork().key, cols * rows, performance.now() - rasterStartedAt);
+
       viewportRef.current?.setFrame(
         frameText,
         timeRef.current,
@@ -2918,6 +3081,10 @@ export const App: React.FC = () => {
     // once and must re-run when settings change. Only the active mode's slice
     // matters, so renderSettingsByMode itself is not a dependency.
     currentRenderSettings,
+    // Both are ref-only and never change identity; listed so a future edit that
+    // gives them real dependencies does not silently leave a stale one behind.
+    recordRenderCost,
+    describeRenderWork,
   ]);
 
 
@@ -3119,6 +3286,71 @@ export const App: React.FC = () => {
     }
     return w > 0 && h > 0 ? { w, h } : null;
   }, []);
+
+  /**
+   * The content-and-cost half of the auto-resolution input.
+   *
+   * Handed to the viewport as a getter rather than a prop: it carries a live
+   * frame cost that changes every few frames, and delivering that through
+   * React would re-render the viewport constantly to update a number only the
+   * solver reads. Everything in here comes from refs for the same reason.
+   *
+   * Null when media mode has nothing loaded — there is no content to size a
+   * grid against, and guessing one would only have to be undone on load.
+   */
+  const getAutoResSignals = useCallback((): AutoResSignals | null => {
+    const mode = appModeRef.current;
+    const { kind, cost, key } = describeRenderWork();
+
+    if (mode === 'media' && !mediaElementRef.current) return null;
+
+    const size = mode === 'media' ? getMediaSourceSize() : null;
+    /*
+     * Taken against the crop, not the whole frame. A crop spends the entire
+     * grid on what the rectangle keeps, so it changes both the aspect the grid
+     * should be shaped to and how much source detail is actually available --
+     * sizing to the original would letterbox a cropped photo all over again.
+     */
+    const crop = mode === 'media' ? resolveCrop(mediaConfigRef.current.crop) : null;
+
+    return {
+      content: {
+        kind,
+        sourceWidth: size?.w,
+        sourceHeight: size?.h,
+        cropW: crop?.w,
+        cropH: crop?.h,
+      },
+      /*
+       * A still image renders once off React state with no loop behind it, so
+       * its budget is how long you will wait for a sharp frame rather than how
+       * many frames fit in a second. That distinction is worth roughly an
+       * order of magnitude in cells, and is most of why auto-res used to
+       * under-resolve photographs.
+       */
+      animated: !(mode === 'media' && mediaConfigRef.current.mediaType === 'image'),
+      targetFps: renderSettingsRef.current.optimizeConfig?.targetFps ?? 60,
+      measuredMsPerCell: renderCostProbeRef.current.msPerCell(),
+      /*
+       * Only offered when the number means something. The loop deliberately
+       * runs at 12fps once the mouse has been still for four seconds, and
+       * stops entirely on a hidden tab or a paused timeline — reporting any of
+       * those as a collapsed framerate would have auto-res shrink the grid to
+       * rescue a slowdown that was asked for.
+       */
+      measuredFps:
+        isPlayingRef.current &&
+        !document.hidden &&
+        !isIdleThrottledRef.current &&
+        currentFpsRef.current > 0
+          ? currentFpsRef.current
+          : null,
+      cost,
+      cores: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 8 : 8,
+      /* Same key the probe is bucketed by, so the latch and the measurement agree. */
+      pipelineKey: key,
+    };
+  }, [describeRenderWork, getMediaSourceSize]);
 
   /**
    * Keep the DPI readout honest when something else sets the grid.
@@ -3396,6 +3628,7 @@ export const App: React.FC = () => {
           autoRes={autoRes}
           onToggleAutoRes={handleToggleAutoRes}
           onAutoResolutionChange={handleAutoResolutionChange}
+          autoResSignals={getAutoResSignals}
           onViewfinderAspectChange={setViewfinderAspect}
           crtConfig={crtConfig}
           onChangeCrtConfig={setCrtConfig}
@@ -3448,6 +3681,8 @@ export const App: React.FC = () => {
                   cols={cols}
                   rows={rows}
                   onChangeResolution={handleManualResolutionChange}
+                  autoRes={autoRes}
+                  onToggleAutoRes={handleToggleAutoRes}
                   density={density}
                   onChangeDensity={setDensity}
                   theme={theme}
@@ -3673,18 +3908,6 @@ export const App: React.FC = () => {
                               },
                             }));
                           }}
-                          onChangePresetGlow={(glow) => {
-                            setRenderSettingsByMode((prev) => {
-                              const base = prev[appMode].postProcess ?? POST_PROCESS_DEFAULTS;
-                              return {
-                                ...prev,
-                                [appMode]: {
-                                  ...prev[appMode],
-                                  postProcess: { ...base, glow: { ...base.glow, ...glow } },
-                                },
-                              };
-                            });
-                          }}
                         />
                       ) : (
                         <DitherAlgorithmPicker
@@ -3835,18 +4058,6 @@ export const App: React.FC = () => {
                               vectorConfig: next,
                             },
                           }));
-                        }}
-                        onChangePresetGlow={(glow) => {
-                          setRenderSettingsByMode((prev) => {
-                            const base = prev[appMode].postProcess ?? POST_PROCESS_DEFAULTS;
-                            return {
-                              ...prev,
-                              [appMode]: {
-                                ...prev[appMode],
-                                postProcess: { ...base, glow: { ...base.glow, ...glow } },
-                              },
-                            };
-                          });
                         }}
                       />
                     ) : (

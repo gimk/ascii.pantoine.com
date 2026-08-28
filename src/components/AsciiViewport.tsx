@@ -27,6 +27,8 @@ import { CropOverlay } from './CropOverlay';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT, MONOSPACE_CELL_ASPECT } from '../engine/renderer';
 import { resolvePhosphorTint } from '../engine/palettes';
 import { paintVectorFrame } from '../engine/vectorEngine';
+import { resolveAutoResolution, shouldReplaceGrid, createAutoResController } from '../engine/autoResolution';
+import type { AutoResSignals } from '../engine/autoResolution';
 
 const hexToRgb = (hex: string): [number, number, number] => {
   let cleaned = hex.replace('#', '').trim();
@@ -153,6 +155,15 @@ interface AsciiViewportProps {
   autoRes?: boolean;
   onToggleAutoRes?: () => void;
   onAutoResolutionChange?: (cols: number, rows: number) => void;
+  /**
+   * The content-and-cost half of the auto-resolution input, read at solve time.
+   *
+   * A getter rather than a value: the frame cost it carries changes every few
+   * frames, and a prop would re-render the whole viewport each time to deliver
+   * a number only the solver reads. Returning null disables auto-res, which is
+   * what a mode with nothing loaded yet wants.
+   */
+  autoResSignals?: () => AutoResSignals | null;
   /** Live width/height of the viewfinder area, for ratio-locking the grid to it. */
   onViewfinderAspectChange?: (aspect: number) => void;
   crtConfig?: CrtConfig;
@@ -240,6 +251,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   autoRes = false,
   onToggleAutoRes,
   onAutoResolutionChange,
+  autoResSignals,
   onViewfinderAspectChange,
   crtConfig,
   onChangeCrtConfig,
@@ -275,6 +287,15 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 }, ref) => {
   const isTimelineDisabled = appMode === 'media' && mediaType === 'image';
   const containerRef = useRef<HTMLDivElement>(null);
+  /*
+   * The grid and the solver's inputs, held as refs for the same reason: the
+   * auto-res effect must not be torn down and rebuilt when the grid it just
+   * set arrives back as a prop, or it re-solves in a loop with itself.
+   */
+  const gridRef = useRef<{ cols: number; rows: number }>({ cols, rows });
+  gridRef.current = { cols, rows };
+  const autoResSignalsRef = useRef<typeof autoResSignals>(autoResSignals);
+  autoResSignalsRef.current = autoResSignals;
   const preRef = useRef<HTMLPreElement>(null);
   const bloomPreRef = useRef<HTMLPreElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -336,90 +357,52 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   /** Bumped on container resize purely to force a culled canvas to repaint. */
   const [resizeTick, setResizeTick] = useState<number>(0);
 
-  const getOptimalResolution = useCallback((): { cols: number; rows: number } | null => {
+  /*
+   * The viewport half of the auto-resolution input: its own measured size, the
+   * device pixel ratio and which output mode is live. Everything about the
+   * content and what it costs to render arrives through `autoResSignals`,
+   * which is read here rather than held as props so a changing frame cost does
+   * not re-render the viewport. See engine/autoResolution.ts.
+   *
+   * `current` is passed so the solver can damp its own step: the performance
+   * ceiling is an extrapolation from a cost measured at a different grid size,
+   * and jumping straight to it is what makes a closed loop oscillate.
+   */
+  /** Everything the solver needs, or null when there is nothing to size against. */
+  const buildAutoResInput = useCallback(() => {
     if (!containerRef.current) return null;
     const { clientWidth, clientHeight } = containerRef.current;
     if (clientWidth <= 0 || clientHeight <= 0) return null;
 
-    /*
-     * Pixel mode is a raster, not a text grid: the search below is tuned for
-     * character cells (2-7.5k cells, 180 col ceiling) and leaves a 1:1 grid
-     * occupying a fraction of the viewfinder. Instead pick the smallest whole
-     * number of screen pixels per cell that keeps the grid inside the cell
-     * budget, then fill the viewport at that scale. Whole-number scaling is
-     * what drawCanvas snaps to anyway, so the result blits without resampling.
-     */
-    if (activeRasterMode === 'pixel' || activeRasterMode === 'vector') {
-      const pad = 20;
-      const availableWidth = Math.max(80, clientWidth - pad);
-      const availableHeight = Math.max(60, clientHeight - pad);
+    const signals = autoResSignalsRef.current?.();
+    if (!signals) return null;
 
-      /*
-       * Ceiling on live cells. Synth and model re-dither every frame, so this
-       * trades raster detail against holding framerate on a full-screen grid.
-       *
-       * Vector gets far more, because in that mode the grid is not a display
-       * raster at all -- it is the resolution the beam samples luminance at,
-       * and a coarse one makes a deflected line visibly faceted. Only steps 1-3
-       * run over it (there is no dither, no colour buffer and no glyph pass),
-       * so the extra cells are much cheaper than they look.
-       */
-      const MAX_PIXEL_CELLS = activeRasterMode === 'vector' ? 400000 : 40000;
-      const scale = Math.max(
-        2,
-        Math.min(
-          16,
-          Math.ceil(Math.sqrt((availableWidth * availableHeight) / MAX_PIXEL_CELLS))
-        )
-      );
-
-      return {
-        cols: Math.max(32, Math.floor(availableWidth / scale)),
-        rows: Math.max(24, Math.floor(availableHeight / scale)),
-      };
-    }
-
-    const charWidth = MONOSPACE_CELL_WIDTH;
-    const charHeight = MONOSPACE_CELL_HEIGHT;
-    const pad = 20;
-    const availableWidth = Math.max(80, clientWidth - pad);
-    const availableHeight = Math.max(60, clientHeight - pad);
-    const windowRatio = availableWidth / availableHeight;
-    const charAspectCompensation = charHeight / charWidth;
-
-    const targetCells = Math.max(2000, Math.min(7500, Math.round((availableWidth * availableHeight) / 95)));
-
-    let bestCols = 100;
-    let bestRows = 50;
-    let minScore = Infinity;
-
-    const minRows = Math.max(20, Math.min(35, Math.floor(availableHeight / 20)));
-    const maxRows = Math.min(80, Math.max(45, Math.floor(availableHeight / 8)));
-
-    for (let r = minRows; r <= maxRows; r++) {
-      let c = Math.round(r * windowRatio * charAspectCompensation);
-      if (c % 2 !== 0) c += 1;
-      if (c < 36 || c > 180) continue;
-
-      const gridVisualWidth = c * charWidth;
-      const gridVisualHeight = r * charHeight;
-      const gridRatio = gridVisualWidth / gridVisualHeight;
-
-      const ratioMismatch = Math.abs(gridRatio - windowRatio) / windowRatio;
-      const cellCount = c * r;
-      const densityPenalty = (Math.abs(cellCount - targetCells) / targetCells) * 0.08;
-
-      const score = ratioMismatch + densityPenalty;
-
-      if (score < minScore) {
-        minScore = score;
-        bestCols = c;
-        bestRows = r;
-      }
-    }
-
-    return { cols: bestCols, rows: bestRows };
+    return {
+      ...signals,
+      viewport: {
+        width: clientWidth,
+        height: clientHeight,
+        dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+      },
+      output: activeRasterMode,
+      current: gridRef.current,
+    };
   }, [activeRasterMode]);
+
+  /*
+   * A single stateless solve, for callers that want an answer now — App uses it
+   * to seed the grid the moment auto-res is switched on, so the old resolution
+   * is never briefly visible. Deliberately does not touch the controller: this
+   * has no opinion about *whether* the grid should change, only what it would
+   * be, and advancing the latch from here would consume the correction pass
+   * that belongs to the effect below.
+   */
+  const getOptimalResolution = useCallback((): { cols: number; rows: number } | null => {
+    const input = buildAutoResInput();
+    if (!input) return null;
+    const result = resolveAutoResolution(input);
+    return { cols: result.cols, rows: result.rows };
+  }, [buildAutoResInput]);
 
   /* ======================================================================
      View transform: content geometry, pan clamping, and the two ways to
@@ -502,6 +485,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       cy: Number(((el.clientHeight / 2 - v.ty) / h).toFixed(4)),
     };
   }, [getContentSize]);
+
+  /*
+   * The auto-res effect must read this without depending on it. Its identity
+   * changes with cols/rows, so listing it as a dependency would tear the
+   * controller down and rebuild it on every grid change — resetting the latch
+   * each time and putting the hunt straight back. Reading it through a ref
+   * keeps the effect stable and the measurement current.
+   */
+  const getViewFramingRef = useRef(getViewFraming);
+  getViewFramingRef.current = getViewFraming;
 
   /** Inverse of getViewFraming, against this viewport's own size. */
   const framingToView = useCallback(
@@ -1514,6 +1507,83 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   }, [viewMode, autoFit]);
 
   /*
+   * Re-fit a grid that auto-res just changed, in the same paint as the change.
+   *
+   * The delayed fit above cannot do this. A resolution change alters the
+   * raster's unscaled size, so for the ~50ms until that timer runs the *new*
+   * grid is painted at the *old* scale and the *old* pan — and because the
+   * transform origin is the top-left corner (transform-origin: 0 0, needed so
+   * the pan maths and the canvas blit agree), a grid that grew or shrank does
+   * so away from that corner rather than about the centre. What you see is the
+   * raster lurch sideways and change size, then snap back centred three frames
+   * later. It reads as the zoom fighting the resolution.
+   *
+   * A layout effect runs after the DOM is updated but before the browser
+   * paints, so the new grid and the fit that belongs to it land together and
+   * there is no intermediate frame to see.
+   *
+   * Scoped to grids this component asked for. A manual resolution change, a
+   * mode switch and a share-link restore all have their own choreography — and
+   * the mode-switch restore in particular relies on the delayed fit being
+   * skippable, which is why this claims the same flag rather than racing it.
+   */
+  const pendingAutoResFitRef = useRef<{
+    cols: number;
+    rows: number;
+    /**
+     * The framing to carry across, or null to re-fit from scratch.
+     *
+     * Carrying it is what makes a resolution change stop reading as a zoom. A
+     * fit recomputed from a different cell count lands at a different scale,
+     * so the raster visibly grows or shrinks and snaps back to centre — and if
+     * the view had been zoomed or panned deliberately, that work is simply
+     * thrown away. But the picture has not changed: it is the same image at a
+     * different sampling density, and it should occupy exactly the same
+     * rectangle it did a moment ago. Holding `cols * cellWidth * scale`
+     * constant across the change is what keeps it there.
+     *
+     * Null after a viewfinder resize, where re-filling the new viewport is the
+     * whole point, and on the first application, where there is no established
+     * framing worth preserving.
+     */
+    preserve: { cols: number; scale: number; cx: number; cy: number } | null;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    const pending = pendingAutoResFitRef.current;
+    if (!pending || pending.cols !== cols || pending.rows !== rows) return;
+    pendingAutoResFitRef.current = null;
+    /* The cols/rows change queues a delayed fit too; this one already did it. */
+    skipNextAutoFitRef.current = true;
+
+    const p = pending.preserve;
+    if (p && p.cols > 0 && cols > 0) {
+      /*
+       * Same rendered width, different cell count. `framingToView` measures
+       * against the new grid, so feeding it the compensated scale and the old
+       * centre point reproduces the previous rectangle exactly.
+       */
+      let nextScale = p.scale * (p.cols / cols);
+      /*
+       * Pixel mode still owes its cells whole device pixels — a fractional
+       * rung makes them alternate between N and N+1 wide. Rounded rather than
+       * floored: this is not a fit trying to stay inside an edge, it is a
+       * framing trying not to move, and the nearest rung moves it least.
+       */
+      if (latestRasterModeRef.current === 'pixel') {
+        nextScale = snapScaleToCellGrid(nextScale, 'round');
+      }
+      const next = framingToView({ scale: nextScale, cx: p.cx, cy: p.cy });
+      if (next) {
+        setView(next);
+        return;
+      }
+    }
+
+    autoFit();
+  }, [cols, rows, autoFit, framingToView, snapScaleToCellGrid]);
+
+  /*
    * A share link's framing, applied instead of the first auto-fit.
    *
    * Once only: after that the camera belongs to whoever is driving it, and
@@ -1613,34 +1683,92 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     };
   }, [onViewfinderAspectChange]);
 
+  /*
+   * How often the controller is *asked*. Not how often the grid changes — it
+   * answers "no change" for all but a handful of these, and after it has
+   * latched it answers nothing else until an input actually moves.
+   */
+  const AUTO_RES_TICK_MS = 400;
+
   useEffect(() => {
     if (!autoRes || !containerRef.current || !onAutoResolutionChange) return;
     const el = containerRef.current;
     let resizeTimer: any;
 
-    const runAutoRes = () => {
-      const optimal = getOptimalResolution();
-      if (optimal) {
-        onAutoResolutionChange(optimal.cols, optimal.rows);
-        autoFit();
-      }
+    /*
+     * One controller per activation, created here rather than in a ref so that
+     * switching auto-res off and back on, or changing output mode, genuinely
+     * starts over. A ref would keep a latch that had already settled and the
+     * grid would never be re-solved.
+     *
+     * This is also why `autoFit` is no longer a dependency of this effect: it
+     * changes identity with every cols/rows change, so keeping it here tore the
+     * controller down and rebuilt it on each grid change — resetting the latch
+     * every time and turning the whole thing back into a hunt.
+     */
+    const controller = createAutoResController();
+    /*
+     * The first grid this activation applies has no framing worth keeping —
+     * the view may not have been fitted yet at all — so it fits. Everything
+     * after it carries the framing across instead. See `preserve` above.
+     */
+    let hasAppliedOnce = false;
+
+    const runAutoRes = (cause: 'resize' | 'tick') => {
+      const input = buildAutoResInput();
+      if (!input) return;
+
+      const next = controller.next({ ...input, now: performance.now() });
+      if (!next) return;
+      /*
+       * A solve that lands within a few percent of the grid already in force is
+       * not worth a re-render: the raster visibly re-resolves each time, and
+       * the resize stream alone is noisy enough to produce such a solve often.
+       */
+      if (!shouldReplaceGrid(gridRef.current, next)) return;
+      /*
+       * No autoFit() here, deliberately.
+       *
+       * It reads `cols`/`rows` from props, and the resolution change requested
+       * on the line below has not arrived as props yet — so fitting now would
+       * fit the grid being replaced. Instead the request is recorded, and the
+       * layout effect above re-fits the moment the new grid lands, before the
+       * browser has painted it. That is what keeps the change seamless.
+       */
+      /*
+       * A resize wants the raster to re-fill the viewfinder it just got, so it
+       * re-fits. Everything else — the measurement correction, a framerate
+       * rescue — is the same picture at a different density and should not
+       * move on screen at all.
+       */
+      const framing = cause === 'tick' && hasAppliedOnce ? getViewFramingRef.current() : null;
+      pendingAutoResFitRef.current = {
+        ...next,
+        preserve: framing
+          ? { cols: gridRef.current.cols, scale: framing.scale, cx: framing.cx, cy: framing.cy }
+          : null,
+      };
+      hasAppliedOnce = true;
+      onAutoResolutionChange(next.cols, next.rows);
     };
 
-    runAutoRes();
+    runAutoRes('tick');
 
     const observer = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        runAutoRes();
+        runAutoRes('resize');
       }, 120);
     });
 
     observer.observe(el);
+    const tick = window.setInterval(() => runAutoRes('tick'), AUTO_RES_TICK_MS);
     return () => {
       observer.disconnect();
       clearTimeout(resizeTimer);
+      window.clearInterval(tick);
     };
-  }, [autoRes, getOptimalResolution, onAutoResolutionChange, autoFit]);
+  }, [autoRes, buildAutoResInput, onAutoResolutionChange]);
 
   /*
    * Pointer maths must measure whichever surface is actually on screen. The
@@ -2310,8 +2438,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
               onClick={onToggleAutoRes}
               title={
                 autoRes
-                  ? 'Auto Resolution is ON (adapts to window/viewfinder size). Click to lock current resolution.'
-                  : 'Auto Resolution is OFF (fixed size). Click to toggle Auto Resolution.'
+                  ? 'Auto Resolution is ON: the grid is solved from the content, the viewfinder, this machine and the target framerate. Click to lock the current resolution.'
+                  : 'Auto Resolution is OFF (fixed size). Click to let the grid be solved automatically.'
               }
             >
               <Crop size={11} />

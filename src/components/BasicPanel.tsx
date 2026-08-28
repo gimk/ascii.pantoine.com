@@ -39,7 +39,7 @@ import {
   SimpleLevelsSlider,
 } from './ImageAdjustControls';
 import { BUILTIN_PALETTES } from '../engine/palettes';
-import { PrecisionSlider, WorkflowStep, BlendModePicker } from './controlPrimitives';
+import { PrecisionSlider, WorkflowStep, BlendModePicker, AutoResToggle } from './controlPrimitives';
 
 /** Monospace cells are taller than wide, so an ASCII grid needs fewer rows. */
 const ASCII_CELL_ASPECT = 0.55;
@@ -107,6 +107,15 @@ interface BasicPanelProps {
   cols: number;
   rows: number;
   onChangeResolution: (cols: number, rows: number) => void;
+  /**
+   * Whether the grid is being solved rather than set.
+   *
+   * BASIC needs this as much as ADVANCED does now that auto-res is on by
+   * default: without it the resolution chips would be quietly overruled with
+   * nothing on screen saying so.
+   */
+  autoRes?: boolean;
+  onToggleAutoRes?: () => void;
 
   density: string;
   onChangeDensity: (charset: string) => void;
@@ -148,6 +157,8 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   cols,
   rows,
   onChangeResolution,
+  autoRes = false,
+  onToggleAutoRes,
   density,
   onChangeDensity,
   theme,
@@ -384,8 +395,22 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
                 ? 'Beam Sampling (Columns)'
                 : 'Grid Size (Columns)'}
           </span>
-          <span className="control-static-value">
-            {cols} &times; {rows} {isPixel ? 'px' : isVector ? 'samples' : 'chars'}
+          {/*
+            * Grouped, because the subheading is `justify-content: space-between`
+            * and a bare third child would strand the readout in the middle of
+            * the row instead of keeping it next to the switch that governs it.
+            */}
+          <span className="tonal-subheading-actions">
+            <span className="control-static-value">
+              {cols} &times; {rows} {isPixel ? 'px' : isVector ? 'samples' : 'chars'}
+            </span>
+            {onToggleAutoRes && (
+              <AutoResToggle
+                active={autoRes}
+                onToggle={onToggleAutoRes}
+                noun={isPixel ? 'DPI' : isVector ? 'sampling rate' : 'grid'}
+              />
+            )}
           </span>
         </div>
 

@@ -413,3 +413,42 @@ export const BlendModePicker: React.FC<{
     </div>
   );
 };
+
+/**
+ * The AUTO latch for a resolution or DPI panel, sized to sit in a section
+ * header beside RESET.
+ *
+ * Auto resolution used to be reachable only from the viewfinder toolbar, which
+ * put the switch a long way from the numbers it governs — and in media mode it
+ * had no control at all, so the DPI panel could silently be showing a value it
+ * was not choosing. Same latch, same state, wherever the resolution is.
+ *
+ * Deliberately short. The header already carries a title, a live badge and
+ * RESET, and a narrow sidebar has no room for a spelled-out state; the accent
+ * fill carries it, the way every other toggle in the panel does.
+ *
+ * The controls it governs stay live while it is on, and using one switches it
+ * off. Disabling them instead left a panel of dead sliders showing values
+ * nobody could act on, and made taking manual control a two-step job: find the
+ * switch, then find the control. Reaching for the control *is* taking over.
+ */
+export const AutoResToggle: React.FC<{
+  active: boolean;
+  onToggle: () => void;
+  /** What the panel calls the thing being solved, for the tooltip. */
+  noun?: string;
+}> = ({ active, onToggle, noun = 'resolution' }) => (
+  <button
+    type="button"
+    className={`btn-reset btn-auto-latch${active ? ' is-active' : ''}`}
+    aria-pressed={active}
+    onClick={onToggle}
+    title={
+      active
+        ? `AUTO is on: the ${noun} is solved from the content, the viewfinder, this machine and the target framerate. Move any control below to take over, or click here to lock the current value.`
+        : `AUTO is off: the ${noun} is whatever you set. Click to let it be solved automatically.`
+    }
+  >
+    AUTO
+  </button>
+);

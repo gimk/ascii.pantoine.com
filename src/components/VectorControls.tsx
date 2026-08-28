@@ -22,12 +22,6 @@ interface VectorControlsProps {
   onChange: (config: VectorConfig) => void;
   /** Cut down to the handful of controls the basic panel shows. */
   compact?: boolean;
-  /**
-   * Applied alongside `onChange` when a preset carries a halo. Optional so a
-   * caller that has no post-processing store (there is none today, but BASIC
-   * once did) simply gets the beam half of the preset.
-   */
-  onChangePresetGlow?: (glow: { amount: number; radius: number }) => void;
 }
 
 /*
@@ -249,134 +243,10 @@ const COMPACT_ROW_IDS: NumericKey[] = [
   'strokeWidth',
 ];
 
-/**
- * The studio's four presets, carried across verbatim except for amplitude and
- * ripple, which were pixel figures against its 800px buffer and are grid cells
- * here — the same numbers, because the vector grid is sized to match.
- */
-const PRESETS: {
-  id: string;
-  name: string;
-  hint: string;
-  patch: Partial<VectorConfig>;
-  /**
-   * Halo, which is no longer a beam parameter — it is one blur of the finished
-   * frame in `04 · POST-PROCESSING`, shared with ASCII and pixel. A preset
-   * therefore writes two stores, and omitting this means "no glow" rather than
-   * "leave whatever was there": a preset that left the previous look's bloom
-   * running would not be the preset.
-   */
-  glow?: { amount: number; radius: number };
-}[] = [
-  {
-    id: 'unknown-pleasures',
-    name: 'UNKNOWN PLEASURES',
-    hint: 'Dense horizontal ridges, carrier off, occlusion on',
-    patch: {
-      direction: 'horizontal',
-      lineCount: 80,
-      sampleStep: 1,
-      smoothing: 6,
-      amplitude: 90,
-      bias: 0,
-      blanking: 0,
-      occlusion: true,
-      carrierEnabled: false,
-      rippleAmp: 0,
-      strokeWidth: 1.4,
-      chroma: 0,
-    },
-  },
-  {
-    id: 'oscilloscope',
-    name: 'OSCILLOSCOPE',
-    hint: 'Vertical beams broken into carrier pulses',
-    patch: {
-      direction: 'vertical',
-      lineCount: 54,
-      sampleStep: 2,
-      smoothing: 0,
-      amplitude: 65,
-      bias: 0.5,
-      blanking: 0.02,
-      occlusion: false,
-      carrierEnabled: true,
-      carrierFreq: 0.45,
-      carrierThreshold: 0.32,
-      pwm: 1.2,
-      rippleAmp: 0,
-      strokeWidth: 1.2,
-      chroma: 0,
-    },
-  },
-  {
-    id: 'pulsar',
-    name: 'PULSAR',
-    hint: 'Wide deflection with heavy analog ripple and glow',
-    patch: {
-      direction: 'horizontal',
-      lineCount: 46,
-      sampleStep: 1,
-      smoothing: 8,
-      amplitude: 120,
-      bias: 0,
-      blanking: 0,
-      occlusion: true,
-      carrierEnabled: false,
-      rippleAmp: 6,
-      rippleFreq: 2.4,
-      strokeWidth: 1.6,
-      chroma: 0,
-    },
-    glow: { amount: 100, radius: 5 },
-  },
-  {
-    id: 'contour',
-    name: 'CONTOUR',
-    hint: 'Continuous beams on the subject only — carrier off, cutoff raised',
-    patch: {
-      direction: 'vertical',
-      lineCount: 64,
-      sampleStep: 1,
-      smoothing: 4,
-      amplitude: 55,
-      bias: 0.5,
-      blanking: 0.14,
-      occlusion: false,
-      carrierEnabled: false,
-      rippleAmp: 0,
-      strokeWidth: 1.2,
-      chroma: 0,
-    },
-  },
-  {
-    id: 'rutt-etra',
-    name: 'RUTT-ETRA',
-    hint: 'Chromatic beam split, fine scan, no occlusion',
-    patch: {
-      direction: 'vertical',
-      lineCount: 120,
-      sampleStep: 1,
-      smoothing: 0,
-      amplitude: 45,
-      bias: 0.5,
-      blanking: 0.06,
-      occlusion: false,
-      carrierEnabled: false,
-      rippleAmp: 1.5,
-      rippleFreq: 3.2,
-      strokeWidth: 0.8,
-      chroma: 3,
-    },
-    glow: { amount: 100, radius: 3 },
-  },
-];
-
 export const VectorControls: React.FC<VectorControlsProps> = ({
   config,
   onChange,
   compact = false,
-  onChangePresetGlow,
 }) => {
   const set = <K extends keyof VectorConfig>(key: K, value: VectorConfig[K]) => {
     onChange({ ...config, [key]: value });
@@ -409,25 +279,6 @@ export const VectorControls: React.FC<VectorControlsProps> = ({
 
   return (
     <>
-      {!compact && (
-        <div className="vector-preset-grid">
-          {PRESETS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="btn btn-sm vector-preset-chip"
-              title={p.hint}
-              onClick={() => {
-                onChange({ ...config, ...p.patch });
-                onChangePresetGlow?.(p.glow ?? { amount: 0, radius: 6 });
-              }}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="control-row">
         <span className="control-label" title="Which way the beams sweep.">
           Scan Axis

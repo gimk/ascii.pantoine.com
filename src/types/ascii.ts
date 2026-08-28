@@ -466,35 +466,43 @@ export interface VectorConfig {
 }
 
 /**
- * The studio's opening state, with one deliberate departure: the carrier starts
- * **off**.
+ * The opening state of vector mode: a shallow horizontal relief.
  *
- * A dashed beam is a strong look to open on, and it is the one default a new
- * user cannot reverse without first understanding what a carrier is. Off, the
- * first paint is a plain deflected scan — the thing the mode is for — and the
- * dot-break is one toggle away. It also lets the BASIC panel hide the carrier
- * deck without writing to the config, which is the invariant every other
- * reduction there holds (pipeline.md §4).
+ * Not the studio's opening frame any more. That was a vertical carrier-broken
+ * scan, which asks a new user to understand two things at once — what a beam
+ * deflection is, and what a carrier does to it — before the first paint means
+ * anything. What is here instead is the mode's plainest legible output:
+ * horizontal beams, occluded so the ridges stack, and nothing modulating them.
  *
- * OSCILLOSCOPE restores the studio’s exact opening frame in one click.
+ * The carrier starts **off**, which is the one departure worth calling out. A
+ * dashed beam is a strong look to open on and the hardest default to reverse
+ * without knowing the vocabulary; off, the dot-break is one toggle away. It
+ * also lets the BASIC panel hide the carrier deck without writing to the
+ * config, which is the invariant every other reduction there holds
+ * (pipeline.md §4).
+ *
+ * Deflection opens small for the same reason. A large amplitude is most of a
+ * relief already built, so the first paint reads as a finished statement
+ * rather than as a control someone is meant to drive. A shallow scan shows the
+ * beam doing its work and leaves the whole range above it to reach for.
  */
 export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
-  direction: 'vertical',
-  lineCount: 54,
-  sampleStep: 2,
-  smoothing: 0,
-  amplitude: 65,
+  direction: 'horizontal',
+  lineCount: 50,
+  sampleStep: 1,
+  smoothing: 5,
+  amplitude: 15,
   bias: 0.5,
-  blanking: 0.02,
-  occlusion: false,
+  blanking: 0,
+  occlusion: true,
   carrierEnabled: false,
   carrierFreq: 0.45,
   carrierThreshold: 0.32,
   pwm: 1.2,
   rippleAmp: 0,
-  rippleFreq: 1.2,
+  rippleFreq: 2,
   phase: 0,
-  strokeWidth: 1.2,
+  strokeWidth: 1,
   chroma: 0,
 };
 

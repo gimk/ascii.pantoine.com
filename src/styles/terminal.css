@@ -1519,6 +1519,34 @@ html, body, #root {
   background-color: var(--bg-control-hover);
 }
 
+/* A readout and its control kept together at the right end of a subheading. */
+.tonal-subheading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/*
+ * The AUTO latch on a resolution header.
+ *
+ * Borrows .btn-reset's geometry so it lines up with the RESET beside it, but
+ * unlike RESET it is a state rather than an action, and has to read as on or
+ * off at a glance from across the panel. Same accent fill every other engaged
+ * toggle uses, so it needs no label to say which it is.
+ */
+.btn-auto-latch.is-active {
+  color: var(--bg-primary);
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn-auto-latch.is-active:hover {
+  color: var(--bg-primary);
+  background-color: var(--accent);
+  filter: brightness(1.12);
+}
+
 /*
  * An ON toggle keeps the accent even inside a deck title.
  *
@@ -4999,36 +5027,6 @@ select:disabled {
   box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.45);
   z-index: 15;
   margin-top: auto;
-}
-
-/* ---------------------------------------------------------------------------
-   Vector mode — beam deflection presets
-   Four chips in a 2x2 block above the sliders, so the studio's named looks are
-   one click away and the parameters underneath read as "and here is why".
-   --------------------------------------------------------------------------- */
-.vector-preset-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 4px;
-  /* First thing in RENDER SETTINGS now, so no leading margin. */
-  margin: 0 0 8px;
-}
-
-.vector-preset-chip {
-  height: 22px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  font-family: var(--font-mono);
-  padding: 0 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* An odd preset count would otherwise leave the last chip half width. */
-.vector-preset-chip:last-child:nth-child(odd) {
-  grid-column: span 2;
 }
 
 /* ---------------------------------------------------------------------------
