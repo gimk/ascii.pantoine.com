@@ -3719,6 +3719,7 @@ export const App: React.FC = () => {
           onChangeUiThemeSettings={setUiThemeSettings}
           isSyncEligible={isSingleColorAscii}
           appMode={appMode}
+          rasterMode={currentRasterMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
           showMediaPlaceholder={appMode === 'media' && !mediaConfig.fileData}
           initialView={sharedState?.view ?? null}

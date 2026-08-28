@@ -233,11 +233,13 @@ interface AsciiViewportProps {
    * an export without a translation table.
    */
   postProcess?: PostProcessConfig;
+  rasterMode?: RasterOutputMode;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
   cols,
   rows,
+  rasterMode = 'ascii',
   isPlaying,
   onTogglePlay,
   onResetTime,
@@ -384,10 +386,10 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         height: clientHeight,
         dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
       },
-      output: activeRasterMode,
+      output: rasterMode || activeRasterMode,
       current: gridRef.current,
     };
-  }, [activeRasterMode]);
+  }, [activeRasterMode, rasterMode]);
 
   /*
    * A single stateless solve, for callers that want an answer now — App uses it
@@ -409,7 +411,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      change scale (about a point, or about the viewport centre).
      ====================================================================== */
 
-  const latestRasterModeRef = useRef<RasterOutputMode>('ascii');
+  const latestRasterModeRef = useRef<RasterOutputMode>(rasterMode);
+  latestRasterModeRef.current = rasterMode;
 
   /**
    * On-screen size of the raster at a given scale.
@@ -419,12 +422,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
    */
   const getContentSize = useCallback(
     (scale: number) => {
-      const square = latestRasterModeRef.current !== 'ascii';
+      const square = rasterMode !== 'ascii';
       const cellW = square ? 1 : MONOSPACE_CELL_WIDTH;
       const cellH = square ? 1 : MONOSPACE_CELL_HEIGHT;
       return { w: cols * cellW * scale, h: rows * cellH * scale };
     },
-    [cols, rows]
+    [cols, rows, rasterMode]
   );
 
   /**
@@ -1628,6 +1631,15 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       ...clampPan(newTx, newTy, curView.scale),
     });
   }, [cols, rows, autoFit, framingToView, snapScaleToCellGrid, clampPan]);
+
+  const prevRasterModeRef = useRef<RasterOutputMode>(rasterMode);
+  useLayoutEffect(() => {
+    if (prevRasterModeRef.current !== rasterMode) {
+      prevRasterModeRef.current = rasterMode;
+      skipNextAutoFitRef.current = true;
+      autoFit();
+    }
+  }, [rasterMode, autoFit]);
 
   /*
    * A share link's framing, applied instead of the first auto-fit.
