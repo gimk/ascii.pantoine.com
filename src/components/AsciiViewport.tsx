@@ -1534,42 +1534,48 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   }, [viewMode]);
 
   /**
-   * A claim on the camera for one specific incoming grid, when that grid
-   * should be *fitted* rather than kept in place.
+   * A claim that one specific incoming grid should keep the framing already on
+   * screen instead of being fitted.
    *
-   * Addressed to a grid rather than held as a bare flag on purpose. The old
-   * arrangement was a single shared boolean that four choreographies wrote to,
-   * so two overlapping ones could consume each other's claim — and a claim
-   * whose grid change never arrived sat there and silently swallowed the next
-   * unrelated fit. A claim that names its grid cannot do either: it either
+   * **Fitting is the default, and opting out is the exception.** Making it the
+   * other way round looked tidier and was wrong: a great deal more than
+   * auto-res changes this grid — loading an image or a model, switching output
+   * mode, a crop — and every one of those is a genuinely new picture that has
+   * to be re-framed. Preserving there left new content sitting at the last
+   * picture's zoom, off centre, with nothing to pull it back.
+   *
+   * Addressed to a grid rather than held as a bare flag, because the old
+   * arrangement was a single shared boolean that four choreographies wrote to:
+   * two overlapping ones could consume each other's claim, and a claim whose
+   * grid change never arrived sat there and silently swallowed the next
+   * unrelated fit. A claim that names its grid can do neither — it either
    * matches the change in front of it or it is ignored.
    */
-  const gridCameraClaimRef = useRef<{ cols: number; rows: number } | null>(null);
+  const keepFramingForRef = useRef<{ cols: number; rows: number } | null>(null);
   const lastGridRef = useRef<{ cols: number; rows: number }>({ cols, rows });
   const cameraAppModeRef = useRef<string>(appMode);
 
   /**
-   * Hold the picture still across a resolution change.
+   * The camera for a grid change: fit it, or hold the picture exactly still.
    *
-   * A resolution change alters the raster's unscaled size, so a naive one
-   * leaves the *new* grid painted at the *old* scale — and because the
-   * transform origin is the top-left corner (`transform-origin: 0 0`, needed
-   * so the pan maths and the canvas blit agree), a grid that grew or shrank
-   * does so away from that corner rather than about the centre. Re-fitting
-   * afterwards was the old answer, and it is worse: the fit lands at a
-   * different scale and recentres, so the raster visibly jumps and any zoom or
-   * pan is thrown away.
+   * A resolution change alters the raster's unscaled size, so left alone it
+   * paints the *new* grid at the *old* scale — and the transform origin is the
+   * top-left corner, so a grid that grew or shrank does so away from that
+   * corner rather than about the centre. Something has to act, and this is the
+   * one place that decides which.
    *
-   * But nothing about the picture has changed. It is the same image at a
-   * different sampling density and it should occupy exactly the same rectangle
-   * it did a moment ago, only sharper or softer. Holding
-   * `cols * cellWidth * scale` constant is what keeps it there — the width
-   * comes out identical, so the horizontal pan does not move at all, and the
-   * vertical anchor is carried as a fraction so it survives the aspect
-   * rounding the solver's integer grid introduces.
+   * **Fit** is the default and covers every change that is a new picture:
+   * loading media, a model, a crop, an output-mode switch, a manual
+   * resolution edit. It fits here, in a layout effect, rather than on a 50ms
+   * timer as it used to, so the new grid and its camera land in the same paint
+   * and there is no intermediate frame to see.
    *
-   * A layout effect, so the new grid and the camera that belongs to it land in
-   * the same paint and there is no intermediate frame to see.
+   * **Keep the framing** is claimed by auto-res for the corrections it makes
+   * after its first solve. Nothing about the picture has changed there — it is
+   * the same image at a different sampling density, and it should occupy the
+   * same rectangle it did a moment ago, only sharper or softer. Re-fitting
+   * instead lands at a different scale and recentres, so the raster jumps and
+   * whatever zoom or pan was in force is thrown away.
    */
   useLayoutEffect(() => {
     const prev = lastGridRef.current;
@@ -1579,22 +1585,31 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
     if (prev.cols === cols && prev.rows === rows) return;
 
-    const claim = gridCameraClaimRef.current;
-    gridCameraClaimRef.current = null;
-    const wantsFit = claim !== null && claim.cols === cols && claim.rows === rows;
+    const claim = keepFramingForRef.current;
+    keepFramingForRef.current = null;
+    const keepFraming = claim !== null && claim.cols === cols && claim.rows === rows;
 
     /* A content switch carries its own camera; see the restore below. */
     if (modeSwitched) return;
     /*
      * A fit is already queued and will land within 50ms — mount, a fullscreen
-     * toggle, or a share link about to apply its own framing. Preserving here
-     * would only be overwritten, and on mount there is nothing worth
-     * preserving in the first place.
+     * toggle, or a share link about to apply its own framing. Fitting here too
+     * would be a second, competing camera, so it does not.
+     *
+     * It does still recentre, though. The transform origin is the top-left
+     * corner, so a grid that changes size under an untouched pan grows out of
+     * that corner — and those 50ms are exactly when the grid churns most. Held
+     * at the current scale this costs nothing and is thrown away by the fit
+     * that follows, but it makes the interim frames grow about the middle,
+     * which is the difference between "it re-resolved" and "it lurched".
      */
-    if (deliberateFitPendingRef.current || initialViewPendingRef.current) return;
+    if (deliberateFitPendingRef.current || initialViewPendingRef.current) {
+      setView((v) => ({ ...v, ...centerFor(v.scale) }));
+      return;
+    }
 
     const el = containerRef.current;
-    if (!wantsFit && el && prev.cols > 0 && prev.rows > 0 && cols > 0) {
+    if (keepFraming && el && prev.cols > 0 && prev.rows > 0 && cols > 0) {
       const v = viewRef.current;
       const square = latestRasterModeRef.current !== 'ascii';
       const oldW = prev.cols * (square ? 1 : MONOSPACE_CELL_WIDTH) * v.scale;
@@ -1607,13 +1622,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
          * The geometric mean of the two cell-count ratios, which is to say:
          * hold the rendered *area* constant.
          *
-         * Whenever the raster's aspect survives the change — every auto-res
-         * solve, since the solver derives the shape from the content — this is
-         * arithmetically the same as holding the width, and the rectangle comes
-         * back identical. It differs only when the aspect genuinely changes,
-         * which is a single-axis manual drag: no scale can hold both edges
-         * still there, and splitting the difference between them beats dumping
-         * all of it on one.
+         * Only auto-res corrections reach here, and the solver derives its
+         * shape from the content — so the aspect survives and this is
+         * arithmetically the same as holding the width, give or take the
+         * integer rounding of the grid. It is written as the mean rather than
+         * as `prev.cols / cols` because when those two disagree, splitting the
+         * difference between the axes is the better failure.
          */
         let nextScale =
           v.scale * Math.sqrt((prev.cols * prev.rows) / (cols * rows));
@@ -1635,7 +1649,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     }
 
     autoFitRef.current();
-  }, [cols, rows, appMode, framingToView, snapScaleToCellGrid]);
+  }, [cols, rows, appMode, centerFor, framingToView, snapScaleToCellGrid]);
 
   /*
    * A share link's framing, applied instead of the first auto-fit.
@@ -1767,6 +1781,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
      * every time and turning the whole thing back into a hunt.
      */
     const controller = createAutoResController();
+    /*
+     * The first grid an activation applies gets a fit. It arrives because the
+     * output mode changed, or auto-res was just switched on, or the component
+     * mounted — in every case the picture on screen is about to be a different
+     * one and there is no framing worth carrying into it. Only the corrections
+     * that follow are the same picture re-sampled.
+     */
+    let hasAppliedOnce = false;
 
     const runAutoRes = (cause: 'resize' | 'tick') => {
       const input = buildAutoResInput();
@@ -1786,15 +1808,16 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
        * fitting now would fit the grid being replaced. The camera belongs to
        * the layout effect above, which acts in the same paint as the change.
        *
-       * The only thing worth telling it is that a viewfinder resize wants the
-       * raster to re-fill the box it just got. Everything else — the
-       * measurement correction, a framerate rescue — is the same picture at a
-       * different density and should not move on screen at all, which is the
-       * default there.
+       * What is worth telling it is which changes are *not* a new picture: the
+       * measurement correction and the framerate rescue re-sample the image
+       * already on screen and should not move it at all. A viewfinder resize
+       * is the opposite — the raster is meant to re-fill the box it just got —
+       * and so is the first solve, which lands with the mode or the mount.
        */
-      if (cause === 'resize') {
-        gridCameraClaimRef.current = { cols: next.cols, rows: next.rows };
+      if (cause === 'tick' && hasAppliedOnce) {
+        keepFramingForRef.current = { cols: next.cols, rows: next.rows };
       }
+      hasAppliedOnce = true;
       onAutoResolutionChange(next.cols, next.rows);
     };
 
