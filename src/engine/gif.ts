@@ -30,7 +30,7 @@ import { buildStages, composePostProcess, glowActive } from './postProcess';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectGifComment } from './mediaMetadata';
 import { drawPixelRasterToCanvas } from './pixelRasterRenderer';
-import { paintVectorFrame } from './vectorEngine';
+import { paintVectorFrame, vectorFrameErasesGround } from './vectorEngine';
 
 export interface GifExportOptions {
   name: string;
@@ -304,6 +304,8 @@ export async function exportAnimatedGif(
         height,
         stages,
         scale,
+        /* The beam erases its occlusion polygons; keep them off the ground. */
+        isolateRaster: vectorFrameErasesGround(frameResult?.vector),
         bgColor: effectiveBg,
         paintRaster: (target) => {
           if (!frameResult?.vector) return;

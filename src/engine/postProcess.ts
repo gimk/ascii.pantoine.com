@@ -373,6 +373,20 @@ export interface ComposeOptions {
   /** Paints the raster itself, onto a transparent surface. */
   paintRaster: (target: CanvasRenderingContext2D) => void;
   /**
+   * Set when `paintRaster` composites *destructively* — vector occlusion
+   * clears its ground polygons with `destination-out`, which only ever means
+   * "hide the beam behind me" if the beam is alone on the surface.
+   *
+   * A stage already forces that surface to exist. Without one there is a fast
+   * path straight onto `ctx`, and there the erase reaches past the beam and
+   * punches the polygon clean through the background as well: on a model,
+   * a silhouette-shaped column of holes running down to the bottom edge, which
+   * reads as a shadow because the page behind shows through. This opts out of
+   * the fast path for the callers where that applies, so the cell modes — which
+   * never erase — keep it.
+   */
+  isolateRaster?: boolean;
+  /**
    * Output pixels per frame unit, so a stage measured in pixels grows with an
    * export scale or a viewport zoom the way the picture does.
    */
@@ -390,7 +404,17 @@ export interface ComposeOptions {
  * and arrives as a single `drawImage`.
  */
 export function composePostProcess(options: ComposeOptions): void {
-  const { ctx, width, height, stages, bgColor, paintBase, paintRaster, scale = 1 } = options;
+  const {
+    ctx,
+    width,
+    height,
+    stages,
+    bgColor,
+    paintBase,
+    paintRaster,
+    isolateRaster = false,
+    scale = 1,
+  } = options;
 
   const ground = (target: CanvasRenderingContext2D) => {
     if (paintBase) {
@@ -405,12 +429,20 @@ export function composePostProcess(options: ComposeOptions): void {
     }
   };
 
-  const rasterLayer = stages.length > 0 ? getScratch(0, width, height) : null;
+  const needsLayer = stages.length > 0 || isolateRaster;
+  const rasterLayer = needsLayer ? getScratch(0, width, height) : null;
   const rasterCtx = rasterLayer?.getContext('2d') || null;
 
-  // Nothing to compose, or no canvas to compose on: paint straight through.
+  /*
+   * Nothing to compose, or no canvas to compose on: paint straight through.
+   *
+   * The scratch allocation can genuinely fail, and an isolating caller that
+   * lands here gets the erase-through-the-ground it asked to avoid. Dropping
+   * the ground is the lesser of the two: a beam on the page's own background
+   * is a wrong colour, a beam over a shadow-riddled plate is a wrong picture.
+   */
   if (!rasterLayer || !rasterCtx) {
-    ground(ctx);
+    if (!isolateRaster) ground(ctx);
     paintRaster(ctx);
     return;
   }

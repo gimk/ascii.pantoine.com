@@ -531,6 +531,23 @@ const LEGACY_FILL_EDGE = (frame: VectorFrame): FillEdge =>
   frame.fillEdge ?? { axis: 'y', value: frame.height };
 
 /**
+ * Whether painting this frame will clear pixels it did not draw.
+ *
+ * `paintVectorFrame` cuts its occlusion polygons with `destination-out`, so it
+ * is only correct on a surface holding nothing but the beam. Callers pass this
+ * to `composePostProcess` as `isolateRaster`; ignoring it costs a
+ * silhouette-shaped hole through the background wherever a run occludes.
+ *
+ * Keyed on `fillEdge` rather than on the polylines: the edge is written for
+ * exactly the frames whose runs are eligible to fill, it is one property
+ * instead of a scan, and it errs towards isolating (chroma suppresses the
+ * fills but keeps the edge), which is the safe direction.
+ */
+export function vectorFrameErasesGround(frame: VectorFrame | null | undefined): boolean {
+  return Boolean(frame?.fillEdge);
+}
+
+/**
  * The two legs that turn an open run into a closed occlusion polygon: drop both
  * ends onto the edge, in the axis the edge is measured on.
  */

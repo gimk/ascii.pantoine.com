@@ -36,7 +36,7 @@ import {
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectPngMetadata, injectJpegComment } from './mediaMetadata';
 import { drawPixelRasterToCanvas, exportPixelRasterToSvg } from './pixelRasterRenderer';
-import { paintVectorFrame, vectorFrameToSvg } from './vectorEngine';
+import { paintVectorFrame, vectorFrameErasesGround, vectorFrameToSvg } from './vectorEngine';
 
 
 export interface ImageExportOptions {
@@ -711,6 +711,8 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
       stages: postStages,
       scale,
       bgColor: !transparentBg || format === 'jpg' ? effectiveBg : null,
+      /* The beam erases its occlusion polygons; keep them off the ground. */
+      isolateRaster: vectorFrameErasesGround(frameVector),
       paintRaster: (target) => {
         if (!frameVector) return;
         target.save();

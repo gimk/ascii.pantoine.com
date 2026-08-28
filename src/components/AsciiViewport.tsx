@@ -26,7 +26,7 @@ import { ViewfinderSettingsModal } from './ViewfinderSettingsModal';
 import { CropOverlay } from './CropOverlay';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT, MONOSPACE_CELL_ASPECT } from '../engine/renderer';
 import { resolvePhosphorTint } from '../engine/palettes';
-import { paintVectorFrame } from '../engine/vectorEngine';
+import { paintVectorFrame, vectorFrameErasesGround } from '../engine/vectorEngine';
 import { resolveAutoResolution, shouldReplaceGrid, createAutoResController } from '../engine/autoResolution';
 import type { AutoResSignals } from '../engine/autoResolution';
 
@@ -1000,6 +1000,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         width: backingW,
         height: backingH,
         stages: buildStages(postProcessRef.current, null),
+        /* The beam erases its occlusion polygons; keep them off the ground. */
+        isolateRaster: vectorFrameErasesGround(frame),
         scale: scale * dpr,
         /*
          * The ground covers the raster's own box, not the whole backing store.
