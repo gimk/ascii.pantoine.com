@@ -18,26 +18,46 @@ export const DEFAULT_MEDIA_CONFIG: MediaConfig = {
 /**
  * Widest grid a DPI setting is allowed to ask for.
  *
- * Matches the ceiling autoSetMediaResolution already applies. The DPI paths
- * multiply source width by a percentage with no bound of their own, so a 4000px
- * photo at 200 DPI asks for 8000x6000 -- 48M cells, which is not slow but
- * unresponsive: one rasterization runs for seconds and the tab stops answering.
+ * The DPI paths multiply source width by a percentage with no bound of their
+ * own, so a 4000px photo at 200 DPI asks for 8000x6000 -- 48M cells, which is
+ * not slow but unresponsive: one rasterization runs for seconds and the tab
+ * stops answering.
  */
 export const MAX_GRID_COLS = 2048;
 
 /**
- * Scale a requested grid down to MAX_GRID_COLS, preserving aspect.
+ * And the total, which is what the rasterizer actually pays for.
+ *
+ * A width cap alone bounds nothing on a tall source: a 1000x20000 panorama is
+ * already inside it and still asks for 20M cells. Set to a square at the width
+ * cap, so the two agree for a square picture and neither is the odd one out.
+ *
+ * It costs the long axis of a portrait source some resolution -- a 3000x4000
+ * photo lands at 1774x2365 rather than 2048x2731 -- which is the trade the cap
+ * exists to make.
+ */
+export const MAX_GRID_CELLS = MAX_GRID_COLS * MAX_GRID_COLS;
+
+/**
+ * Scale a requested grid down inside both budgets, preserving aspect.
+ *
+ * One factor for both axes, taken as the tightest the two caps allow. Scaling
+ * them separately is how a grid ends up a different shape than the picture it
+ * is for, and the letterboxing that follows looks like a bug in the crop
+ * rather than in the clamp.
  *
  * Applied to the DPI controls, where the cell count is implied by a percentage
  * rather than typed. An explicitly entered cols/rows is left alone -- someone
  * typing 4000 into a number field means it, and may be setting up an export.
  */
 export function clampGridToBudget(cols: number, rows: number): { cols: number; rows: number } {
-  if (cols <= MAX_GRID_COLS) return { cols, rows };
-  const scale = MAX_GRID_COLS / cols;
+  const c = Math.max(1, cols);
+  const r = Math.max(1, rows);
+  const scale = Math.min(MAX_GRID_COLS / c, Math.sqrt(MAX_GRID_CELLS / (c * r)));
+  if (scale >= 1) return { cols, rows };
   return {
-    cols: MAX_GRID_COLS,
-    rows: Math.max(10, Math.round(rows * scale)),
+    cols: Math.max(10, Math.round(c * scale)),
+    rows: Math.max(10, Math.round(r * scale)),
   };
 }
 

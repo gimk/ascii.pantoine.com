@@ -22,7 +22,7 @@ import {
   VECTOR_CONFIG_DEFAULTS,
 } from '../types/ascii';
 import { MediaUploadControls } from './MediaFileControls';
-import { cropActive } from '../engine/mediaRenderer';
+import { cropActive, measureFramedMedia } from '../engine/mediaRenderer';
 import { OutputModeCards } from './outputModes';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
 import { VectorControls } from './VectorControls';
@@ -186,22 +186,17 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   const isAscii = rasterMode === 'ascii';
   const hasSource = Boolean(mediaConfig.fileData);
 
-  /* Source dimensions, needed to turn a DPI percentage into a grid size. */
+  /*
+   * Source dimensions *as framed* -- crop applied, rotation's bounding box --
+   * because this is what a DPI percentage is turned into a grid against. The
+   * intrinsic ones would put a cropped picture back inside the proportions of
+   * the frame it was cropped out of.
+   */
   const { srcWidth, srcHeight } = useMemo(() => {
-    let w = 0;
-    let h = 0;
-    if (mediaElement instanceof HTMLImageElement) {
-      w = mediaElement.naturalWidth || mediaElement.width;
-      h = mediaElement.naturalHeight || mediaElement.height;
-    } else if (mediaElement instanceof HTMLVideoElement) {
-      w = mediaElement.videoWidth || mediaElement.width;
-      h = mediaElement.videoHeight || mediaElement.height;
-    } else if (mediaElement instanceof HTMLCanvasElement) {
-      w = mediaElement.width;
-      h = mediaElement.height;
-    }
-    return { srcWidth: w, srcHeight: h };
-  }, [mediaElement]);
+    if (!mediaElement) return { srcWidth: 0, srcHeight: 0 };
+    const { width, height } = measureFramedMedia(mediaElement, mediaConfig);
+    return { srcWidth: Math.round(width), srcHeight: Math.round(height) };
+  }, [mediaElement, mediaConfig]);
 
   const srcAspect = srcWidth > 0 && srcHeight > 0 ? srcWidth / srcHeight : 1;
   const dpi = viewConfig.dpi ?? 72;

@@ -217,7 +217,20 @@ interface AsciiViewportProps {
    * than into the raster grid, so it stays legible at any zoom and in pixel
    * mode.
    */
+  /**
+   * The resolution the current DPI asked for, when the grid budget cut it
+   * down. Null when the grid is whatever was asked for.
+   */
+  gridCap?: { cols: number; rows: number } | null;
   showMediaPlaceholder?: boolean;
+  /**
+   * Load a file dropped anywhere on the viewfinder.
+   *
+   * Media mode only. The sidebar dropzone stays the discoverable target, but
+   * it is a small one and it scrolls out of reach once the panel moves past
+   * import -- while the picture is where the file is being aimed anyway.
+   */
+  onMediaFileDrop?: (file: File) => void;
   /**
    * Framing carried by a share link, applied once instead of the initial
    * auto-fit. Same shape as getViewFraming returns.
@@ -280,6 +293,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   mediaConfig,
   resampling = 'bilinear',
   showMediaPlaceholder = false,
+  gridCap = null,
+  onMediaFileDrop,
   initialView = null,
   postProcess,
 }, ref) => {
@@ -1932,6 +1947,56 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   };
 
   /*
+   * --- Drop a file onto the picture ---------------------------------------
+   *
+   * The sidebar dropzone stays the signposted target; this is the one people
+   * aim at. Enter and leave fire once per element crossed rather than once per
+   * container boundary, so the overlay is keyed off a depth counter -- keyed
+   * off the events alone it blinks out the moment the cursor passes onto the
+   * raster inside. The counter is a ref: nothing reads it during a render.
+   *
+   * Held off while the crop marquee is open, since a drop there would swap the
+   * source out from under a rectangle being chosen on the old one.
+   */
+  const [isFileDragging, setIsFileDragging] = useState(false);
+  const dragDepthRef = useRef(0);
+  const dropEnabled = appMode === 'media' && !!onMediaFileDrop && !cropEditing;
+
+  /* Text selections and the in-app drags also raise these events. */
+  const dragCarriesFile = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer?.types ?? []).includes('Files');
+
+  const handleViewportDragEnter = (e: React.DragEvent) => {
+    if (!dropEnabled || !dragCarriesFile(e)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsFileDragging(true);
+  };
+
+  const handleViewportDragOver = (e: React.DragEvent) => {
+    if (!dropEnabled || !dragCarriesFile(e)) return;
+    /* Without a prevented dragover the browser navigates to the file. */
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleViewportDragLeave = () => {
+    if (!dropEnabled) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsFileDragging(false);
+  };
+
+  const handleViewportDrop = (e: React.DragEvent) => {
+    if (!dropEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsFileDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) onMediaFileDrop?.(file);
+  };
+
+  /*
    * Middle-click otherwise arms Windows' autoscroll, which hijacks the drag
    * and leaves a scroll cursor stuck over the viewfinder. Only the mousedown
    * event suppresses it; preventing the pointer event is not enough.
@@ -2150,7 +2215,12 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           appMode === 'model' ? 'model-orbit-active' : '',
           appMode === 'media' ? 'viewport-pan-ready' : '',
           isPanning ? 'viewport-panning' : '',
+          isFileDragging ? 'viewport-file-dragging' : '',
         ].filter(Boolean).join(' ')}
+        onDragEnter={handleViewportDragEnter}
+        onDragOver={handleViewportDragOver}
+        onDragLeave={handleViewportDragLeave}
+        onDrop={handleViewportDrop}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
@@ -2395,8 +2465,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
 
         </div>
 
-        {/* No-Media Prompt: fixed size, outside the zoomed raster surface */}
-        {showMediaPlaceholder && !isLoading && (
+        {/*
+          No-Media Prompt: fixed size, outside the zoomed raster surface.
+
+          Stands down while a file is over the viewfinder -- the drop badge is
+          the same badge saying the more specific thing, and both at once is
+          two prompts stacked on the same spot.
+        */}
+        {showMediaPlaceholder && !isLoading && !isFileDragging && (
           <div
             className="media-placeholder-modal"
             /* Purely informational, so it must not swallow drops or clicks. */
@@ -2407,6 +2483,21 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
             <span className="media-placeholder-hint">
               DRAG &amp; DROP &middot; PASTE &middot; OPEN FILE
             </span>
+          </div>
+        )}
+
+        {/*
+          Drop affordance. Fixed size and outside the camera for the same
+          reason the no-media prompt is, and inert to the pointer so the drop
+          lands on the container that is listening for it.
+        */}
+        {isFileDragging && (
+          <div className="viewport-drop-overlay" aria-hidden="true">
+            <div className="viewport-drop-badge">
+              <ImagePlus size={22} strokeWidth={1.5} />
+              <span className="viewport-drop-title">DROP TO LOAD</span>
+              <span className="viewport-drop-hint">IMAGE OR VIDEO</span>
+            </div>
           </div>
         )}
 
@@ -2478,6 +2569,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           </span>
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
+            {gridCap && (
+              <span
+                className="status-tag-flag"
+                title={`Limited by the grid budget. At this DPI the source asked for ${gridCap.cols}x${gridCap.rows}; exports render from this grid, so they are limited with it. Type an exact resolution to override.`}
+              >
+                CAPPED
+              </span>
+            )}
           </span>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop as CropIcon, Maximize, X } from 'lucide-react';
 import { CropRect, CROP_FULL, CROP_MIN_SPAN, MediaConfig, ResamplingMode } from '../types/ascii';
 import { computeMediaFraming, drawFramedMedia, measureMedia } from '../engine/mediaRenderer';
@@ -72,6 +72,74 @@ const GRIPS: Array<{ id: Grip; u: number; v: number; cursor: string }> = [
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
 
 /**
+ * The one-click aspect presets, as source-pixel width:height.
+ *
+ * `null` means the source's own aspect, which is not a constant — it is
+ * resolved against the loaded picture at the point of use. Everything else
+ * here is fixed.
+ *
+ * Landscape and portrait are listed as separate entries rather than as one
+ * entry plus an orientation toggle: the rectangle can be turned by hand at any
+ * time, so a toggle would be a second piece of state saying something the crop
+ * already says, and a flat row is one click to any of them.
+ */
+const CROP_RATIOS: Array<{ label: string; ratio: number | null }> = [
+  { label: 'ORIGINAL', ratio: null },
+  { label: '1:1', ratio: 1 },
+  { label: '4:3', ratio: 4 / 3 },
+  { label: '3:4', ratio: 3 / 4 },
+  { label: '5:4', ratio: 5 / 4 },
+  { label: '4:5', ratio: 4 / 5 },
+  { label: '16:9', ratio: 16 / 9 },
+  { label: '9:16', ratio: 9 / 16 },
+];
+
+
+/**
+ * Re-cut the rectangle to a source-pixel aspect ratio.
+ *
+ * Two coordinate systems meet here: the crop is stored in fractions of the
+ * source, but "16:9" is a statement about pixels, so the target is scaled by
+ * the source's own aspect before it means anything. On a 3:2 photograph a 1:1
+ * crop is w = 2/3 of the width against the full height, not a square in
+ * fractions.
+ *
+ * The area is preserved rather than the width or the height, so switching
+ * between presets keeps roughly the framing already chosen instead of growing
+ * or shrinking with each click; the clamp then scales both axes by one factor,
+ * because scaling them independently would silently give back a different
+ * ratio than the button says. The centre is kept and only pushed inward if the
+ * new rectangle would hang off an edge.
+ */
+function applyRatio(
+  crop: CropRect,
+  ratio: number,
+  srcWidth: number,
+  srcHeight: number
+): CropRect {
+  const r = ratio * (srcHeight / Math.max(1, srcWidth));
+  if (!Number.isFinite(r) || r <= 0) return crop;
+
+  const area = Math.max(CROP_MIN_SPAN * CROP_MIN_SPAN, crop.w * crop.h);
+  let w = Math.sqrt(area * r);
+  let h = Math.sqrt(area / r);
+
+  /* One shared factor: the whole point of the button is the exact ratio. */
+  const fit = Math.min(1, 1 / w, 1 / h);
+  w *= fit;
+  h *= fit;
+
+  const cx = crop.x + crop.w / 2;
+  const cy = crop.y + crop.h / 2;
+  return {
+    x: Math.max(0, Math.min(1 - w, cx - w / 2)),
+    y: Math.max(0, Math.min(1 - h, cy - h / 2)),
+    w,
+    h,
+  };
+}
+
+/**
  * Move one or two edges and rebuild the rect.
  *
  * Edges rather than a corner plus a size, because that is what a grip actually
@@ -101,6 +169,89 @@ function applyGrip(start: CropRect, grip: Grip, du: number, dv: number): CropRec
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/**
+ * The point a ratio-locked resize pivots around, per grip.
+ *
+ * The corners pin the opposite corner, which is what a corner drag means. The
+ * edge grips pin their opposite edge on the axis they move, and stay
+ * `center` on the other one: an edge handle only states one dimension, and
+ * growing the other from a corner would slide the rectangle sideways as you
+ * dragged straight up.
+ */
+const RATIO_ANCHOR: Record<
+  Exclude<Grip, 'move'>,
+  { x: 'left' | 'right' | 'center'; y: 'top' | 'bottom' | 'center' }
+> = {
+  nw: { x: 'right', y: 'bottom' },
+  n: { x: 'center', y: 'bottom' },
+  ne: { x: 'left', y: 'bottom' },
+  e: { x: 'left', y: 'center' },
+  se: { x: 'left', y: 'top' },
+  s: { x: 'center', y: 'top' },
+  sw: { x: 'right', y: 'top' },
+  w: { x: 'right', y: 'center' },
+};
+
+/**
+ * A grip drag with the ratio held, `r` being the target in *fraction* space.
+ *
+ * Built on the free solve rather than beside it: that one already knows which
+ * edges each grip owns and where the min-span floor pushes, and a second copy
+ * of it constrained differently is a second copy to keep in step. The free
+ * result is read only for the size it implies; the ratio then decides one
+ * dimension from the other and the anchor decides where the rectangle sits.
+ *
+ * A corner takes whichever axis was dragged further, so the box follows the
+ * pointer diagonally instead of ignoring half the gesture. The clamp is a
+ * single width — the height is derived from it — because clamping the two
+ * independently is exactly how a locked rectangle drifts off its ratio at the
+ * edges of the frame.
+ */
+function applyGripLocked(
+  start: CropRect,
+  grip: Exclude<Grip, 'move'>,
+  du: number,
+  dv: number,
+  r: number
+): CropRect {
+  const free = applyGrip(start, grip, du, dv);
+  const anchor = RATIO_ANCHOR[grip];
+
+  const ax =
+    anchor.x === 'left' ? start.x : anchor.x === 'right' ? start.x + start.w : start.x + start.w / 2;
+  const ay =
+    anchor.y === 'top' ? start.y : anchor.y === 'bottom' ? start.y + start.h : start.y + start.h / 2;
+
+  let w: number;
+  if (grip === 'n' || grip === 's') w = free.h * r;
+  else if (grip === 'e' || grip === 'w') w = free.w;
+  else w = Math.max(free.w, free.h * r);
+
+  /* How far the rectangle can grow before it leaves the frame, per axis. */
+  const roomX = anchor.x === 'left' ? 1 - ax : anchor.x === 'right' ? ax : 2 * Math.min(ax, 1 - ax);
+  const roomY = anchor.y === 'top' ? 1 - ay : anchor.y === 'bottom' ? ay : 2 * Math.min(ay, 1 - ay);
+
+  w = Math.max(w, CROP_MIN_SPAN, CROP_MIN_SPAN * r);
+  w = Math.min(w, roomX, roomY * r);
+  const h = w / r;
+  /*
+   * No rectangle of this ratio fits against that anchor — a tall lock on a
+   * crop already pressed into a corner. Hold the last good one rather than
+   * collapsing it to a sliver the user then has to drag back out.
+   */
+  if (!(w > 0) || w < CROP_MIN_SPAN || h < CROP_MIN_SPAN) return start;
+
+  const x = anchor.x === 'left' ? ax : anchor.x === 'right' ? ax - w : ax - w / 2;
+  const y = anchor.y === 'top' ? ay : anchor.y === 'bottom' ? ay - h : ay - h / 2;
+
+  return {
+    x: Math.max(0, Math.min(1 - w, x)),
+    y: Math.max(0, Math.min(1 - h, y)),
+    w,
+    h,
+  };
+}
+
 export const CropOverlay: React.FC<CropOverlayProps> = ({
   mediaElement,
   mediaConfig,
@@ -119,6 +270,19 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<{ grip: Grip; startCrop: CropRect; u: number; v: number } | null>(null);
+  /*
+   * The held preset, by label, or null for a free crop.
+   *
+   * The label rather than the number, because ORIGINAL has no number until a
+   * picture is loaded — keying on the value would mean a second piece of state
+   * saying which preset that value came from, and the two drifting apart the
+   * moment the source changes.
+   *
+   * Local to the marquee because the lock is a way of dragging, not part of
+   * the crop: what gets committed is a rectangle, and reopening the stage on
+   * it should not imply the constraint that happened to produce it.
+   */
+  const [lockedLabel, setLockedLabel] = useState<string | null>(null);
 
   const boxW = Math.max(1, cols * pxPerCol);
   const boxH = Math.max(1, rows * pxPerRow);
@@ -254,6 +418,26 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
     [crop, pointerToSource]
   );
 
+  /** A preset's source-pixel ratio; ORIGINAL is whatever the picture is. */
+  const resolveRatio = useCallback(
+    (ratio: number | null): number =>
+      ratio ?? framing.srcWidth / Math.max(1, framing.srcHeight),
+    [framing.srcWidth, framing.srcHeight]
+  );
+
+  /*
+   * The lock in the crop's own coordinates. "16:9" is a statement about source
+   * pixels and the rectangle is stored in fractions of the source, so on a 3:2
+   * photograph a square is w = 2/3 against the full height, not w === h.
+   * ORIGINAL falls out of the same conversion as exactly 1.
+   */
+  const lockedFractionRatio = useMemo(() => {
+    const preset = CROP_RATIOS.find((p) => p.label === lockedLabel);
+    if (!preset) return null;
+    const r = resolveRatio(preset.ratio) * (framing.srcHeight / Math.max(1, framing.srcWidth));
+    return Number.isFinite(r) && r > 0 ? r : null;
+  }, [lockedLabel, resolveRatio, framing.srcHeight, framing.srcWidth]);
+
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       const drag = dragRef.current;
@@ -261,9 +445,16 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
       e.stopPropagation();
       const at = pointerToSource(e.clientX, e.clientY);
       if (!at) return;
-      onChange(applyGrip(drag.startCrop, drag.grip, at.u - drag.u, at.v - drag.v));
+      const du = at.u - drag.u;
+      const dv = at.v - drag.v;
+      /* A move is a translation: the ratio it already has survives it. */
+      onChange(
+        lockedFractionRatio && drag.grip !== 'move'
+          ? applyGripLocked(drag.startCrop, drag.grip, du, dv, lockedFractionRatio)
+          : applyGrip(drag.startCrop, drag.grip, du, dv)
+      );
     },
-    [onChange, pointerToSource]
+    [onChange, pointerToSource, lockedFractionRatio]
   );
 
   const handlePointerUp = useCallback(
@@ -346,19 +537,31 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
     { minX: Infinity, maxX: -Infinity, maxY: -Infinity, minY: Infinity }
   );
 
-  /* Approximate, and only used to decide which side of the edge to sit on. */
-  const BAR_H = 30;
   const GAP = 8;
   /*
-   * Below the rectangle, unless that would put it past the bottom of the
-   * stage — then it tucks just inside the edge instead, which keeps it on
-   * screen for a crop dragged right down to the border.
+   * Always just below the rectangle's lower-left corner, and free to hang off
+   * the stage from there.
+   *
+   * It used to flip above the rectangle near the bottom edge and slide back in
+   * from the right, which kept it in frame at the cost of the one thing a bar
+   * pinned to a rectangle has to do: stay where you last saw it. Dragging the
+   * bottom grip a few pixels sent it to the other side of the crop and put
+   * APPLY under a cursor that was aiming at a handle. The stage does not clip,
+   * so overflowing is cheap; jumping is not.
    */
-  const barBelow = bbox.maxY + GAP + BAR_H <= boxH;
-  const barTop = barBelow ? bbox.maxY + GAP : Math.max(0, bbox.maxY - BAR_H - GAP);
+  const barTop = bbox.maxY + GAP;
+  const barLeft = bbox.minX;
   const cropPxW = Math.round(framing.srcWidth * crop.w);
   const cropPxH = Math.round(framing.srcHeight * crop.h);
   const isFull = crop.w >= 1 && crop.h >= 1 && crop.x <= 0 && crop.y <= 0;
+
+  /*
+   * The highlighted chip is the *lock*, not a measurement of the rectangle.
+   *
+   * A free crop dragged onto 16:9 by hand is not locked to it, and lighting
+   * the chip up would say it was — the next grip drag would then not behave
+   * the way the highlight implied.
+   */
 
   return (
     <div className="crop-stage" style={{ width: `${boxW}px`, height: `${boxH}px` }}>
@@ -412,33 +615,83 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({
       */}
       <div
         className="crop-toolbar"
-        style={{ left: `${bbox.minX}px`, top: `${barTop}px` }}
+        style={{ left: `${barLeft}px`, top: `${barTop}px` }}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        <span className="crop-readout" title="Cropped source size, in source pixels">
-          <CropIcon size={11} />
-          {cropPxW} x {cropPxH}
-          <span className="crop-readout-pct">
-            {isFull ? 'full frame' : `${Math.round(crop.w * crop.h * 100)}%`}
+        {/*
+          The presets go above the actions, because they are what you reach for
+          while still shaping the rectangle -- APPLY is the end of the gesture
+          and sits closest to it.
+
+          Picking one both re-cuts the rectangle and holds it there: every grip
+          from then on keeps the ratio, which is what a ratio control on a crop
+          tool is for. FREE releases it and leaves the rectangle alone -- the
+          way back out, and the state a crop starts in.
+
+          One history entry per click, since this is a finished gesture rather
+          than the middle of a drag, exactly like the FULL button.
+        */}
+        <div className="crop-toolbar-row crop-ratio-row">
+          <span className={`crop-ratio-label ${lockedLabel ? 'is-locked' : ''}`}>RATIO</span>
+          <button
+            className={`btn btn-sm crop-ratio-btn ${lockedLabel === null ? 'active' : ''}`}
+            onClick={() => setLockedLabel(null)}
+            title="Release the lock -- drag the rectangle to any shape"
+          >
+            FREE
+          </button>
+          {CROP_RATIOS.map((p) => (
+            <button
+              key={p.label}
+              className={`btn btn-sm crop-ratio-btn ${lockedLabel === p.label ? 'active' : ''}`}
+              onClick={() => {
+                setLockedLabel(p.label);
+                const next = applyRatio(
+                  crop,
+                  resolveRatio(p.ratio),
+                  framing.srcWidth,
+                  framing.srcHeight
+                );
+                onChange(next);
+                onCommit(next);
+              }}
+              title={
+                p.ratio === null
+                  ? 'Hold the rectangle at the aspect of the source itself, re-cutting it around its centre'
+                  : `Hold the rectangle at ${p.label}, re-cutting it around its centre`
+              }
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="crop-toolbar-row crop-action-row">
+          <span className="crop-readout" title="Cropped source size, in source pixels">
+            <CropIcon size={11} />
+            {cropPxW} x {cropPxH}
+            <span className="crop-readout-pct">
+              {isFull ? 'full frame' : `${Math.round(crop.w * crop.h * 100)}%`}
+            </span>
           </span>
-        </span>
-        <button
-          className="btn btn-sm"
-          onClick={() => {
-            onChange(CROP_FULL);
-            onCommit(CROP_FULL);
-          }}
-          disabled={isFull}
-          title="Reset the rectangle to the whole frame"
-        >
-          <Maximize size={11} /> FULL
-        </button>
-        <button className="btn btn-sm" onClick={onCancel} title="Discard this crop (Esc)">
-          <X size={11} /> CANCEL
-        </button>
-        <button className="btn btn-sm btn-primary" onClick={onApply} title="Apply this crop (Enter)">
-          <Check size={11} /> APPLY
-        </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              onChange(CROP_FULL);
+              onCommit(CROP_FULL);
+            }}
+            disabled={isFull}
+            title="Reset the rectangle to the whole frame"
+          >
+            <Maximize size={11} /> FULL
+          </button>
+          <button className="btn btn-sm" onClick={onCancel} title="Discard this crop (Esc)">
+            <X size={11} /> CANCEL
+          </button>
+          <button className="btn btn-sm btn-primary" onClick={onApply} title="Apply this crop (Enter)">
+            <Check size={11} /> APPLY
+          </button>
+        </div>
       </div>
     </div>
   );

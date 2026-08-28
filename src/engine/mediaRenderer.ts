@@ -166,6 +166,39 @@ export function resolveCrop(crop?: CropRect | null): CropRect {
   };
 }
 
+/**
+ * The source dimensions the raster is actually made of: crop applied, and the
+ * rotated rectangle's bounding box.
+ *
+ * Every panel that sizes the grid against "the source" wants these, not the
+ * intrinsic ones. Sized against the intrinsic dimensions, a DPI change or a
+ * fraction preset re-derives the *uncropped* aspect and the picture goes back
+ * to letterboxing inside its old shape — the crop is still applied, but the
+ * canvas it is drawn into no longer has its proportions.
+ *
+ * The rotation term is the bounding box rather than a 90-degree swap because
+ * the angle is a free slider: at 90 it reduces to that swap, and at 45 it
+ * gives the square that contains the diamond. Anything narrower clips the
+ * corners off every intermediate angle.
+ */
+export function measureFramedMedia(
+  el: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null | undefined,
+  mediaConfig?: MediaConfig | null,
+  fallback: { width: number; height: number } = { width: 256, height: 256 }
+): { width: number; height: number } {
+  const src = el ? measureMedia(el) : fallback;
+  const c = resolveCrop(mediaConfig?.crop);
+  const cw = src.width * c.w;
+  const ch = src.height * c.h;
+  const rad = ((mediaConfig?.rotation || 0) * Math.PI) / 180;
+  const cosA = Math.abs(Math.cos(rad));
+  const sinA = Math.abs(Math.sin(rad));
+  return {
+    width: cw * cosA + ch * sinA,
+    height: cw * sinA + ch * cosA,
+  };
+}
+
 /** Is this crop doing anything? Drives the badge and the reset affordance. */
 export function cropActive(crop?: CropRect | null): boolean {
   const c = resolveCrop(crop);

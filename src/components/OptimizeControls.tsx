@@ -4,6 +4,7 @@ import { AppMode, MediaConfig } from '../types/ascii';
 import { AlertTriangle, Lock, Unlock, Scale, CheckCircle2, Grid } from 'lucide-react';
 import { MONOSPACE_CELL_ASPECT } from '../engine/renderer';
 import { clampGridToBudget } from '../engine/mediaPresets';
+import { measureFramedMedia } from '../engine/mediaRenderer';
 import { AutoResToggle } from './controlPrimitives';
 
 interface OptimizeControlsProps {
@@ -114,26 +115,20 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   // Monospace cell aspect ratio (0.55 for characters, 1.0 for 1:1 squared pixels)
   const cellAspect = isPixelMode ? 1.0 : 0.55;
 
-  // Compute Source Media Dimensions & Native Aspect Ratio
+  /*
+   * Source dimensions *as framed* -- crop applied, rotation's bounding box.
+   *
+   * Everything below derives a grid from these: the DPI slider, the fraction
+   * presets and the aspect lock. Measured intrinsically, each of them would
+   * quietly re-impose the uncropped shape on a cropped picture and letterbox
+   * it back inside its old proportions.
+   */
   const { srcWidth, srcHeight, srcAspect } = useMemo(() => {
-    let w = 256;
-    let h = 256;
-    if (mediaElement instanceof HTMLImageElement) {
-      w = mediaElement.naturalWidth || mediaElement.width || 256;
-      h = mediaElement.naturalHeight || mediaElement.height || 256;
-    } else if (mediaElement instanceof HTMLVideoElement) {
-      w = mediaElement.videoWidth || mediaElement.width || 256;
-      h = mediaElement.videoHeight || mediaElement.height || 256;
-    } else if (mediaElement instanceof HTMLCanvasElement) {
-      w = mediaElement.width || 256;
-      h = mediaElement.height || 256;
-    }
-    return {
-      srcWidth: w,
-      srcHeight: h,
-      srcAspect: w / Math.max(1, h),
-    };
-  }, [mediaElement]);
+    const { width, height } = measureFramedMedia(mediaElement, mediaConfig);
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(height));
+    return { srcWidth: w, srcHeight: h, srcAspect: w / Math.max(1, h) };
+  }, [mediaElement, mediaConfig]);
 
   // Visual aspect ratio on screen: (cols / rows) * cellAspect
   const currentGridRatio = (cols / Math.max(1, rows)) * cellAspect;

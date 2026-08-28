@@ -54,11 +54,12 @@ import {
 import {
   DEFAULT_MEDIA_CONFIG,
   DEFAULT_MEDIA_VIEW_CONFIG,
+  clampGridToBudget,
 } from './engine/mediaPresets';
 import { getBuiltinGeometry, loadBuiltinGeometryAsync, getGeometryStats, fetchRemoteGeometry } from './engine/modelLoader';
 import { Khronos3DModel } from './engine/khronos3dModels';
 import { renderModelFrameData, applyTrackballRotationWithTime } from './engine/modelRenderer';
-import { renderAsciiMediaFrameData, resolveCrop, cropActive } from './engine/mediaRenderer';
+import { renderAsciiMediaFrameData, resolveCrop, cropActive, measureFramedMedia } from './engine/mediaRenderer';
 import { migratePostProcess, overlayActive, glowActive, aberrationActive } from './engine/postProcess';
 /*
  * The overlay's source layer comes from the exporter's helpers, not from a
@@ -1313,6 +1314,31 @@ export const App: React.FC = () => {
       ? mediaViewConfig.rasterMode || currentRenderSettings.rasterMode
       : currentRenderSettings.rasterMode) || 'pixel';
 
+  /**
+   * What this DPI asked for, when the budget cut it down — otherwise null.
+   *
+   * The viewport flags it next to the resolution, because a grid quietly
+   * smaller than the DPI implies is the kind of thing you only notice in the
+   * export.
+   *
+   * The last clause is what keeps it honest: it claims a cap only when the
+   * grid *is* the budgeted one. A hand-typed resolution is exempt from the
+   * budget by design, and would otherwise wear a tag saying it had been cut.
+   */
+  const gridCap = useMemo(() => {
+    if (appMode !== 'media' || currentRasterMode !== 'pixel') return null;
+    const el = mediaElementRef.current;
+    if (!el) return null;
+    const framed = measureFramedMedia(el, mediaConfig);
+    const scale = (mediaViewConfig.dpi ?? MEDIA_DEFAULT_DPI) / 100;
+    const reqCols = Math.max(10, Math.round(framed.width * scale));
+    const reqRows = Math.max(10, Math.round(framed.height * scale));
+    const budgeted = clampGridToBudget(reqCols, reqRows);
+    const wasCut = budgeted.cols !== reqCols || budgeted.rows !== reqRows;
+    if (!wasCut || cols !== budgeted.cols || rows !== budgeted.rows) return null;
+    return { cols: reqCols, rows: reqRows };
+  }, [appMode, currentRasterMode, mediaConfig, mediaViewConfig.dpi, cols, rows]);
+
   const currentTonalMapping =
     (appMode === 'media' ? mediaViewConfig.tonalMapping : currentRenderSettings.adjustConfig?.tonalMapping) || '1color';
   const currentPaletteMode =
@@ -1721,8 +1747,21 @@ export const App: React.FC = () => {
        * nothing actually set.
        */
       const scale = MEDIA_DEFAULT_DPI / 100;
-      targetCols = Math.max(10, Math.min(2048, Math.round(w * scale)));
-      targetRows = Math.max(10, Math.round(h * scale));
+      /*
+       * Clamped through the shared budget, which scales both axes by one
+       * factor. The copy that used to live here capped the columns and left
+       * the rows at full height, so any source wider than the cap came out
+       * with a grid taller than its own aspect -- a 3000x4000 photo landed in
+       * a 2048x4000 canvas and the picture sat letterboxed in the middle of
+       * it. Clamping one axis of a pair that has to stay proportional is the
+       * whole bug, and there is no version of it that is safe to keep local.
+       */
+      const budgeted = clampGridToBudget(
+        Math.max(10, Math.round(w * scale)),
+        Math.max(10, Math.round(h * scale))
+      );
+      targetCols = budgeted.cols;
+      targetRows = budgeted.rows;
     } else {
       targetCols = Math.max(20, Math.round(w * (1 / 6)));
       targetRows = Math.max(10, Math.round((targetCols * cellAspect) / srcAspect));
@@ -1816,21 +1855,21 @@ export const App: React.FC = () => {
    */
   const syncResolutionToFraming = useCallback(
     (crop: CropRect | null, rotation: number) => {
-      const src = measureSource();
-      if (!src) return;
-      const c = resolveCrop(crop);
-      const cw = src.w * c.w;
-      const ch = src.h * c.h;
-      const rad = (rotation * Math.PI) / 180;
-      const cosA = Math.abs(Math.cos(rad));
-      const sinA = Math.abs(Math.sin(rad));
-      autoSetMediaResolution(
-        cw * cosA + ch * sinA,
-        cw * sinA + ch * cosA,
-        currentRasterMode
-      );
+      const el = mediaElementRef.current;
+      if (!el) return;
+      /*
+       * The same measurement the resolution panels size their grid with, so a
+       * later DPI change cannot re-derive a different shape than the one the
+       * crop just committed.
+       */
+      const framed = measureFramedMedia(el, {
+        ...mediaConfigRef.current,
+        crop: crop ?? undefined,
+        rotation,
+      });
+      autoSetMediaResolution(framed.width, framed.height, currentRasterMode);
     },
-    [measureSource, autoSetMediaResolution, currentRasterMode]
+    [autoSetMediaResolution, currentRasterMode]
   );
 
   /**
@@ -2137,17 +2176,8 @@ export const App: React.FC = () => {
 
   const handleChangeMediaViewConfig = useCallback((newViewConfig: MediaViewConfig) => {
     if (newViewConfig.rasterMode !== mediaViewConfig.rasterMode) {
-      const el = mediaElementRef.current;
-      let w = 256;
-      let h = 256;
-      if (el instanceof HTMLImageElement) {
-        w = el.naturalWidth || el.width || 256;
-        h = el.naturalHeight || el.height || 256;
-      } else if (el instanceof HTMLVideoElement) {
-        w = el.videoWidth || el.width || 256;
-        h = el.videoHeight || el.height || 256;
-      }
-      autoSetMediaResolution(w, h, newViewConfig.rasterMode);
+      const framed = measureFramedMedia(mediaElementRef.current, mediaConfigRef.current);
+      autoSetMediaResolution(framed.width, framed.height, newViewConfig.rasterMode);
     }
 
     setMediaViewConfig(newViewConfig);
@@ -3429,19 +3459,26 @@ export const App: React.FC = () => {
    * writes cols/rows straight from the viewfinder size, so without this the
    * panel keeps reporting whatever DPI was last dialled in by hand, describing
    * a resolution nothing is using.
+   *
+   * Against the *framed* width, which is the width the slider divides by too.
+   * Read intrinsically it would report half the DPI for a half-width crop, and
+   * the next nudge of the slider would jump the grid to match the wrong
+   * number it had just been told.
    */
   const syncMediaDpiToGrid = useCallback((nextCols: number) => {
     if (appModeRef.current !== 'media' || nextCols <= 0) return;
-    const size = getMediaSourceSize();
-    if (!size) return;
+    const el = mediaElementRef.current;
+    if (!el) return;
+    const framedW = measureFramedMedia(el, mediaConfigRef.current).width;
+    if (framedW <= 0) return;
     setMediaViewConfig((prev) => {
       const isPixel = (prev.rasterMode || renderSettingsRef.current.rasterMode) === 'pixel';
       if (!isPixel) return prev;
       // Same 10-300 range the DPI slider clamps to.
-      const nextDpi = Math.max(10, Math.min(300, Math.round((nextCols / size.w) * 100)));
+      const nextDpi = Math.max(10, Math.min(300, Math.round((nextCols / framedW) * 100)));
       return prev.dpi === nextDpi ? prev : { ...prev, dpi: nextDpi };
     });
-  }, [getMediaSourceSize]);
+  }, []);
 
   const handleToggleAutoRes = useCallback(() => {
     const mode = appModeRef.current;
@@ -3489,18 +3526,9 @@ export const App: React.FC = () => {
       setAppMode(id);
 
       if (id === 'media' && mediaElementRef.current) {
-        const el = mediaElementRef.current;
-        let w = 256;
-        let h = 256;
-        if (el instanceof HTMLImageElement) {
-          w = el.naturalWidth || el.width || 256;
-          h = el.naturalHeight || el.height || 256;
-        } else if (el instanceof HTMLVideoElement) {
-          w = el.videoWidth || el.width || 256;
-          h = el.videoHeight || el.height || 256;
-        }
         if (!renderSettingsByMode.media.cols || renderSettingsByMode.media.cols === 100) {
-          autoSetMediaResolution(w, h, undefined, true);
+          const framed = measureFramedMedia(mediaElementRef.current, mediaConfigRef.current);
+          autoSetMediaResolution(framed.width, framed.height, undefined, true);
         }
       }
 
@@ -3700,7 +3728,9 @@ export const App: React.FC = () => {
           appMode={appMode}
           rasterMode={currentRasterMode}
           mediaType={appMode === 'media' ? mediaConfig.mediaType : undefined}
+          gridCap={gridCap}
           showMediaPlaceholder={appMode === 'media' && !mediaConfig.fileData}
+          onMediaFileDrop={handleMediaFileUpload}
           initialView={sharedState?.view ?? null}
           postProcess={currentRenderSettings.postProcess}
 
