@@ -110,7 +110,7 @@ import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { DITHER_ALGORITHMS } from './engine/ditherAlgorithms';
-import { createRenderCostProbe, costProbeKey } from './engine/autoResolution';
+import { clampGridToOutputCeilings, createRenderCostProbe, costProbeKey } from './engine/autoResolution';
 import type { AutoResSignals, AutoResCost, AutoResContentKind } from './engine/autoResolution';
 import { generateRandomAnimation } from './engine/randomizer';
 import {
@@ -2211,13 +2211,32 @@ export const App: React.FC = () => {
 
   const handleSelectRasterMode = useCallback(
     (newMode: RasterOutputMode) => {
-      setRenderSettingsByMode((prev) => ({
-        ...prev,
-        [appMode]: {
-          ...prev[appMode],
-          rasterMode: newMode,
-        },
-      }));
+      setRenderSettingsByMode((prev) => {
+        const cur = prev[appMode];
+        /*
+         * The grid travels with the mode, and the three modes are nowhere near
+         * comparable in what they can afford. A vector lattice runs to six
+         * figures of cells because only the first pipeline steps touch it;
+         * hand that same grid to the glyph renderer and it is that many
+         * characters to build and lay out every frame, which hangs the tab
+         * outright. Auto-res does re-solve, but not before React has rendered
+         * the new mode against the old grid several times over.
+         *
+         * Ceilings only. A grid being too coarse for its new mode is a matter
+         * of taste and auto-res will see to it; a grid being too large is the
+         * application not responding.
+         */
+        const bounded = clampGridToOutputCeilings(cur.cols, cur.rows, newMode);
+        return {
+          ...prev,
+          [appMode]: {
+            ...cur,
+            rasterMode: newMode,
+            cols: bounded.cols,
+            rows: bounded.rows,
+          },
+        };
+      });
       if (newMode === 'ascii' && !asciiMonoSeededRef.current.has(appMode)) {
         asciiMonoSeededRef.current.add(appMode);
         applyMonoColorMode();

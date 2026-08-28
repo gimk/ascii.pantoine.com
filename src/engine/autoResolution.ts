@@ -308,8 +308,49 @@ export function costProbeKey(
    ======================================================================== */
 
 /**
- * Hold a grid inside its mode's floor and ceiling, preserving aspect where the
- * clamp allows it.
+ * Hold a grid under its mode's ceilings, preserving aspect. No floors — this
+ * is the half that exists to keep a renderer from being handed more cells than
+ * it can survive, which is a different question from whether a grid is coarse.
+ *
+ * Exported because switching output mode carries the grid across, and the
+ * three modes are not remotely comparable: a vector lattice is allowed half a
+ * million cells because only the first pipeline steps run over it, while the
+ * same grid handed to the glyph renderer is half a million characters to lay
+ * out every frame. On a 1400x800 viewfinder a synth beam solves to 414x236 —
+ * 97,704 cells, four times ASCII's own ceiling and twenty-four times what
+ * ASCII would ever choose — and moving the output mode across without this
+ * hangs the tab.
+ */
+export function clampGridToOutputCeilings(
+  cols: number,
+  rows: number,
+  output: RasterOutputMode
+): { cols: number; rows: number } {
+  const bounds = SHAPE_BOUNDS[output];
+  let c = Math.max(1, Math.round(cols));
+  let r = Math.max(1, Math.round(rows));
+
+  /* Width first, carrying height with it, so a clamped grid keeps its shape. */
+  if (c > bounds.maxCols) {
+    r = Math.round(r * (bounds.maxCols / c));
+    c = bounds.maxCols;
+  }
+  /* Then area, which the width clamp alone does not bound: a tall grid can sit
+   * under `maxCols` and still be far over the cell budget. */
+  if (c * r > bounds.maxCells) {
+    const k = Math.sqrt(bounds.maxCells / (c * r));
+    /* Floored, not rounded: rounding both axes up puts the product back over
+     * the ceiling, which for a clamp whose entire job is a ceiling is no
+     * clamp at all. Measured at 22,064 against a 22,000 limit. */
+    c = Math.floor(c * k);
+    r = Math.floor(r * k);
+  }
+  return { cols: Math.max(1, c), rows: Math.max(1, r) };
+}
+
+/**
+ * Hold a grid inside its mode's floor *and* ceiling, preserving aspect where
+ * the clamp allows it.
  *
  * Shared by the solver and the controller's safety net, and the net is why it
  * exists separately: that path shrinks a grid by a factor without going through
@@ -319,15 +360,11 @@ export function costProbeKey(
  */
 function clampToBounds(cols: number, rows: number, output: RasterOutputMode): { cols: number; rows: number } {
   const bounds = SHAPE_BOUNDS[output];
-  let c = Math.round(cols);
-  let r = Math.round(rows);
-
-  /* Width first, carrying height with it, so a clamped grid keeps its shape. */
-  if (c > bounds.maxCols) {
-    r = Math.round(r * (bounds.maxCols / c));
-    c = bounds.maxCols;
-  }
-  return { cols: Math.max(bounds.minCols, c), rows: Math.max(bounds.minRows, r) };
+  const capped = clampGridToOutputCeilings(cols, rows, output);
+  return {
+    cols: Math.max(bounds.minCols, capped.cols),
+    rows: Math.max(bounds.minRows, capped.rows),
+  };
 }
 
 /** Grid cell width / height, in screen pixels. Glyphs are tall; everything else is square. */
