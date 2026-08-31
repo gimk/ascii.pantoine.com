@@ -35,23 +35,23 @@ export const CMYK_INKS: Array<{ id: string; name: string; hex: string; angle: nu
 /** Build standard 4-plate InkPlate array for Fast CMYK mode. */
 export function getFastCmykPlates(config?: Partial<PrintConfig>): InkPlate[] {
   const angles = config?.cmykAngles || CMYK_DEFAULT_ANGLES;
+
+  if (config?.cmykPlates && config.cmykPlates.length === 4) {
+    return config.cmykPlates.map((p, i) => {
+      const defaultAngle = i === 0 ? angles.c : i === 1 ? angles.m : i === 2 ? angles.y : angles.k;
+      return {
+        ...p,
+        angle: typeof p.angle === 'number' ? p.angle : defaultAngle,
+      };
+    });
+  }
+
   const plates: InkPlate[] = [
     makeInkPlate({ name: 'Process Cyan', hex: '#00a3e0' }, 'offset', angles.c),
     makeInkPlate({ name: 'Process Magenta', hex: '#ec008c' }, 'offset', angles.m),
     makeInkPlate({ name: 'Process Yellow', hex: '#ffed00' }, 'offset', angles.y),
     makeInkPlate({ name: 'Process Black', hex: '#1d1d1b' }, 'offset', angles.k),
   ];
-
-  // If user disabled or hid any plate in config.inks, reflect that
-  if (config?.inks && config.inks.length >= 4) {
-    for (let i = 0; i < 4; i++) {
-      const src = config.inks[i];
-      if (src) {
-        plates[i].enabled = src.enabled;
-        plates[i].hidden = src.hidden;
-      }
-    }
-  }
 
   return plates;
 }
@@ -90,21 +90,12 @@ export function renderFastCmykFrame(input: FastCmykInput): PrintFrame {
   const dotScale = Math.max(0.4, Math.min(2.5, config.cmykDotScale ?? 1.0));
   const paperHex = config.paper || '#ffffff';
 
-  const angleArr = [angles.c, angles.m, angles.y, angles.k];
+  const defaultAngleArr = [angles.c, angles.m, angles.y, angles.k];
   const coverage = [0, 0, 0, 0];
 
   // Ruling frequency: cells across image width
   const freq = ruling / cols;
   const scaleFreq = freq / supersample;
-
-  const cosArr = new Float32Array(4);
-  const sinArr = new Float32Array(4);
-
-  for (let p = 0; p < 4; p++) {
-    const rad = (angleArr[p] * Math.PI) / 180;
-    cosArr[p] = Math.cos(rad);
-    sinArr[p] = Math.sin(rad);
-  }
 
   const cols1 = Math.max(1, cols - 1);
   const rows1 = Math.max(1, rows - 1);
@@ -114,11 +105,16 @@ export function renderFastCmykFrame(input: FastCmykInput): PrintFrame {
     const ink = inks[p];
     if (!ink || !ink.enabled) continue;
 
-    const cosT = cosArr[p];
-    const sinT = sinArr[p];
+    const angleDeg = typeof ink.angle === 'number' ? ink.angle : defaultAngleArr[p];
+    const rad = (angleDeg * Math.PI) / 180;
+    const cosT = Math.cos(rad);
+    const sinT = Math.sin(rad);
     const cosNegT = cosT;
     const sinNegT = -sinT;
     const plateBit = 1 << p;
+
+    // Intensity multiplier from ink.intensity or ink.opacity (default 1.0)
+    const intensity = typeof ink.intensity === 'number' ? ink.intensity : (typeof ink.opacity === 'number' ? ink.opacity : 1.0);
 
     let totalSet = 0;
 
@@ -167,7 +163,7 @@ export function renderFastCmykFrame(input: FastCmykInput): PrintFrame {
           channelVal = k;
         }
 
-        channelVal = Math.max(0, Math.min(1, channelVal));
+        channelVal = Math.max(0, Math.min(1, channelVal * intensity));
 
         // 6. Dot radius threshold
         const rDot = Math.sqrt(channelVal) * 0.7071 * dotScale;

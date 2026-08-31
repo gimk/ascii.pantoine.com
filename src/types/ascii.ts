@@ -584,6 +584,8 @@ export interface InkPlate {
    * 0.95. This is the term that makes overprints mix rather than just darken.
    */
   opacity: number;
+  /** Channel intensity multiplier (0 to 2, default 1.0) */
+  intensity?: number;
   /**
    * Composite src-over in print order instead of multiplying.
    *
@@ -670,6 +672,8 @@ export interface PrintConfig {
   cmykDotScale?: number;
   /** Screen angles in degrees for CMYK plates */
   cmykAngles?: { c: number; m: number; y: number; k: number };
+  /** Custom 4-plate array for Fast CMYK mode (custom colors, angles, intensities) */
+  cmykPlates?: InkPlate[];
   press: PressProfile;
   inks: InkPlate[];
   /**

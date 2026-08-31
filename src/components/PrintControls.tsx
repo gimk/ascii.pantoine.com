@@ -660,31 +660,62 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
           </div>
 
           <div className="tonal-subheading" style={{ marginTop: '8px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span title="Process CMYK printing plates with standard rosette screen angles.">
+            <span title="Process CMYK printing plates. Customize ink colors, screen angles, and channel intensities.">
               Process CMYK Plates (4)
             </span>
             <button
               type="button"
               className="btn btn-sm btn-ghost"
               style={{ fontSize: '9px', padding: '1px 5px', height: '18px' }}
-              onClick={() => set('cmykAngles', { ...CMYK_DEFAULT_ANGLES })}
-              title="Reset screen angles to standard rosette convention (C:15°, M:75°, Y:0°, K:45°)"
+              onClick={() => {
+                const def = getFastCmykPlates();
+                onChange({
+                  ...config,
+                  cmykAngles: { ...CMYK_DEFAULT_ANGLES },
+                  cmykPlates: def.map((p, i) => ({
+                    ...p,
+                    hex: i === 0 ? '#00a3e0' : i === 1 ? '#ec008c' : i === 2 ? '#ffed00' : '#1d1d1b',
+                    intensity: 1.0,
+                    opacity: 1.0,
+                    angle: i === 0 ? 15 : i === 1 ? 75 : i === 2 ? 0 : 45,
+                  })),
+                });
+              }}
+              title="Reset screen angles, colors, and intensities to standard process CMYK"
             >
               <RotateCw size={9} style={{ marginRight: '3px' }} />
-              ROSETTE
+              RESET
             </button>
           </div>
 
           {cmykPlates.map((ink, i) => {
+            const isOpen = expanded === ink.id || expanded === `cmyk_${i}`;
             const angleKey = (i === 0 ? 'c' : i === 1 ? 'm' : i === 2 ? 'y' : 'k') as 'c' | 'm' | 'y' | 'k';
-            const currentAngle = config.cmykAngles?.[angleKey] ?? (i === 0 ? 15 : i === 1 ? 75 : i === 2 ? 0 : 45);
+            const defaultAngle = i === 0 ? 15 : i === 1 ? 75 : i === 2 ? 0 : 45;
+            const currentAngle = typeof ink.angle === 'number' ? ink.angle : (config.cmykAngles?.[angleKey] ?? defaultAngle);
+            const intensityPct = Math.round((typeof ink.intensity === 'number' ? ink.intensity : (typeof ink.opacity === 'number' ? ink.opacity : 1.0)) * 100);
+
+            const updatePlate = (patch: Partial<InkPlate>, extra?: Partial<PrintConfig>) => {
+              const current = getFastCmykPlates(config);
+              const updated = current.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
+              onChange({ ...config, ...extra, cmykPlates: updated });
+            };
+
             return (
               <div
-                className={`print-plate${!ink.enabled ? ' is-disabled-plate' : ''}`}
-                key={ink.id}
+                className={`print-plate${isOpen ? ' is-open' : ''}${!ink.enabled ? ' is-disabled-plate' : ''}`}
+                key={ink.id || `cmyk_${i}`}
                 style={{ marginBottom: '4px' }}
               >
                 <div className="print-plate-head">
+                  <button
+                    type="button"
+                    className="print-plate-disclose"
+                    onClick={() => setExpanded(isOpen ? null : (ink.id || `cmyk_${i}`))}
+                    title={isOpen ? 'Collapse plate settings' : 'Edit plate color, screen angle, and intensity'}
+                  >
+                    {isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                  </button>
                   <span className="print-plate-index">{String(i + 1).padStart(2, '0')}</span>
                   <span
                     className="print-plate-swatch"
@@ -695,38 +726,112 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
                     {ink.name}
                   </span>
                   <span className="print-plate-meta">
-                    {currentAngle}°
+                    {currentAngle}° · {intensityPct}%
                   </span>
                   <button
                     type="button"
                     className={`btn btn-sm btn-micro ${!ink.hidden && ink.enabled ? 'btn-primary' : ''}`}
                     style={ink.hidden || !ink.enabled ? { opacity: 0.5 } : undefined}
-                    onClick={() => {
-                      const newInks = config.inks.length >= 4 ? [...config.inks] : getFastCmykPlates(config);
-                      if (newInks[i]) {
-                        newInks[i] = { ...newInks[i], hidden: !ink.hidden };
-                        onChange({ ...config, inks: newInks });
-                      }
-                    }}
+                    onClick={() => updatePlate({ hidden: !ink.hidden })}
                     title={ink.hidden ? 'Show this ink pass on paper' : 'Hide this ink pass from view'}
                   >
                     {ink.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
                   </button>
                   <ToggleSwitch
                     checked={ink.enabled}
-                    onChange={(val) => {
-                      const newInks = config.inks.length >= 4 ? [...config.inks] : getFastCmykPlates(config);
-                      if (newInks[i]) {
-                        newInks[i] = { ...newInks[i], enabled: val };
-                        onChange({ ...config, inks: newInks });
-                      }
-                    }}
+                    onChange={(val) => updatePlate({ enabled: val })}
                     title="Include in separation (ON) / Exclude from separation (OFF)"
                   />
                 </div>
+
+                {isOpen && (
+                  <div className="print-plate-body">
+                    {/* Ink Color */}
+                    <div className="control-row">
+                      <span className="control-label" title="The ink color deposited by this channel plate on paper.">
+                        Ink Color
+                      </span>
+                      <div className="control-cluster control-fixed">
+                        <DeferredColorInput
+                          value={ink.hex}
+                          showHexField
+                          hexFieldWidth="72px"
+                          onChange={(val) => updatePlate({ hex: val })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Intensity */}
+                    <div className="control-row">
+                      <span className="control-label" title="Channel intensity / ink density multiplier (0% to 200%).">
+                        Intensity
+                      </span>
+                      <PrecisionSlider
+                        value={typeof ink.intensity === 'number' ? ink.intensity : (typeof ink.opacity === 'number' ? ink.opacity : 1.0)}
+                        sliderMin={0}
+                        sliderMax={2}
+                        step={0.05}
+                        resetTo={1.0}
+                        onChange={(val) => updatePlate({ intensity: val, opacity: val })}
+                      />
+                    </div>
+
+                    {/* Screen Angle */}
+                    <div className="control-row">
+                      <span className="control-label" title="Screen rotation angle in degrees for this channel.">
+                        Screen Angle
+                      </span>
+                      <PrecisionSlider
+                        value={currentAngle}
+                        sliderMin={0}
+                        sliderMax={90}
+                        step={1}
+                        resetTo={defaultAngle}
+                        onChange={(val) => {
+                          const newAngles = { ...(config.cmykAngles || CMYK_DEFAULT_ANGLES), [angleKey]: val };
+                          updatePlate({ angle: val }, { cmykAngles: newAngles });
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
+
+          {/* Quick Palette Presets */}
+          <div className="tonal-subheading" style={{ marginTop: '10px', marginBottom: '6px' }}>
+            <span title="Preset 4-color palettes for Fast CMYK mode.">
+              CMYK Color Presets
+            </span>
+          </div>
+          <div className="print-ink-library">
+            {[
+              { name: 'Standard Process', colors: ['#00a3e0', '#ec008c', '#ffed00', '#1d1d1b'] },
+              { name: 'Warm Vintage', colors: ['#007a87', '#e03a27', '#e5a93b', '#2b1810'] },
+              { name: 'Neon Cyberpunk', colors: ['#00f0ff', '#ff007f', '#f5ff00', '#12002b'] },
+              { name: 'Retro Newsprint', colors: ['#2c5282', '#c53030', '#d69e2e', '#1a202c'] },
+            ].map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                className="print-ink-chip"
+                onClick={() => {
+                  const current = getFastCmykPlates(config);
+                  const updated = current.map((plate, idx) => ({ ...plate, hex: p.colors[idx] }));
+                  onChange({ ...config, cmykPlates: updated });
+                }}
+                title={`Apply ${p.name}`}
+              >
+                <span className="control-cluster">
+                  {p.colors.map((c) => (
+                    <span key={c} className="print-ink-chip-dot" style={{ background: c }} />
+                  ))}
+                </span>
+                <span>{p.name}</span>
+              </button>
+            ))}
+          </div>
         </>
       ) : (
         <>
