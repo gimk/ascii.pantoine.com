@@ -16,6 +16,7 @@ import {
   PAPER_STOCKS,
   makeInkPlate,
   applyPressAngles,
+  resolveMoireAngles,
   findMoireConflicts,
   MOIRE_ANGLE_TOLERANCE,
   extractImageInks,
@@ -35,12 +36,12 @@ import {
   ArrowDown,
   Eye,
   AlertTriangle,
-  Play,
   Pipette,
+  RotateCw,
 } from 'lucide-react';
 
 import { BUILTIN_PALETTES } from '../engine/palettes';
-import { DITHER_ALGORITHMS } from '../engine/ditherAlgorithms';
+import { DITHER_ALGORITHMS, hasThresholdMask } from '../engine/ditherAlgorithms';
 
 /**
  * Press, inks and screens — print mode's replacement for the dither picker.
@@ -72,6 +73,7 @@ export interface PrintPressControlsProps {
 export interface PrintInkStackProps {
   config: PrintConfig;
   onChange: (config: PrintConfig) => void;
+  compact?: boolean;
   cols?: number;
   rows?: number;
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
@@ -79,7 +81,7 @@ export interface PrintInkStackProps {
 }
 
 export interface PrintControlsProps extends PrintPressControlsProps {
-  section?: 'all' | 'press' | 'inks';
+  section?: 'all' | 'press' | 'inks' | 'press-and-inks' | 'settings';
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   onSeedInksFromPalette?: (colors: string[]) => void;
 }
@@ -236,9 +238,9 @@ const FM_TOP_ALGORITHMS: { id: DitherAlgorithm; label: string; hint: string }[] 
 ];
 
 /**
- * Press settings: Press profiles, paper stock, screen resolution (Live/Proof), proof runner, TAC & optical gain.
+ * Press settings: Substrate physics (TAC & optical gain), raster quality (Live/Proof), and proof runner.
  */
-export const PrintPressControls: React.FC<PrintPressControlsProps> = ({
+export const PrintSettingsControls: React.FC<PrintPressControlsProps> = ({
   config,
   onChange,
   compact = false,
@@ -260,86 +262,58 @@ export const PrintPressControls: React.FC<PrintPressControlsProps> = ({
     onChange({ ...config, [key]: value });
   };
 
-  const applyPress = (press: PressProfile) => {
-    const p = PRESS_PROFILES[press];
-    const stamped = config.inks.map((k) => ({
-      ...k,
-      screen: p.screen,
-      ruling: p.ruling,
-      dotShape: p.dotShape,
-      dotGain: p.dotGain,
-    }));
-    onChange({
-      ...config,
-      press,
-      paper: p.paper,
-      tacLimit: p.tacLimit,
-      yuleNielsen: p.yuleNielsen,
-      inks: applyPressAngles(stamped, press),
-    });
-  };
-
   return (
     <>
-      {/* Press profile */}
-      <div className="control-row">
-        <span
-          className="control-label"
-          title="Stamps ruling, screen family, dot shape, dot gain, paper and the 30-degree angle convention across the whole stack. A starting point, not a lock — change anything after."
-        >
-          Press
-        </span>
-      </div>
-      <div className="print-press-grid">
-        {(Object.keys(PRESS_PROFILES) as PressProfile[]).map((id) => (
-          <button
-            key={id}
-            type="button"
-            className={`btn btn-sm btn-toggle ${config.press === id ? 'btn-primary' : ''}`}
-            onClick={() => applyPress(id)}
-            title={PRESS_PROFILES[id].description}
-          >
-            {PRESS_PROFILES[id].name}
-          </button>
-        ))}
-      </div>
-
-      {/* Paper stock */}
-      <div className="control-row">
-        <span
-          className="control-label"
-          title="Paper colour. What shows through where no dot lands, and the substrate inks multiply against."
-        >
-          Paper
-        </span>
-        <div className="control-cluster control-fixed">
-          <DeferredColorInput
-            value={config.paper}
-            showHexField
-            hexFieldWidth="72px"
-            onChange={(val) => set('paper', val)}
-          />
-        </div>
-      </div>
+      {/* Substrate Physics */}
       {!compact && (
-        <div className="print-paper-grid">
-          {PAPER_STOCKS.map((s) => (
-            <button
-              key={s.hex}
-              type="button"
-              className={`print-paper-chip ${config.paper.toLowerCase() === s.hex.toLowerCase() ? 'active' : ''}`}
-              style={{ background: s.hex }}
-              onClick={() => set('paper', s.hex)}
-              title={`${s.name} · ${s.hex}`}
+        <>
+          <div className="tonal-subheading">
+            <span title="Physical paper and ink drying characteristics.">
+              Substrate Physics
+            </span>
+          </div>
+
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Yule-Nielsen n: optical dot gain from light scattering sideways inside the paper, which is why a halftone reads darker than its ink area. 1 is off, ~1.7 coated, 2-3 uncoated."
+            >
+              Optical Gain
+            </span>
+            <PrecisionSlider
+              value={config.yuleNielsen}
+              sliderMin={1}
+              sliderMax={3}
+              hardMax={6}
+              step={0.05}
+              resetTo={1}
+              onChange={(val) => set('yuleNielsen', val)}
             />
-          ))}
-        </div>
+          </div>
+
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Total area coverage: the cap on all inks summed. A real press limit — past it the sheet cannot dry and the shadows fill in. Applied as a penalty in the separation, so the solve redistributes toward black rather than clipping."
+            >
+              Ink Limit (TAC)
+            </span>
+            <PrecisionSlider
+              value={config.tacLimit}
+              sliderMin={0}
+              sliderMax={400}
+              hardMax={800}
+              step={10}
+              onChange={(val) => set('tacLimit', val)}
+            />
+          </div>
+        </>
       )}
 
-      {/* Screen Resolution */}
-      <div className="tonal-subheading">
-        <span title="Device pixels per contone cell. This decides how finely each dot shape is resolved. Live is optimized for fluid interaction; Proof provides high-resolution screening for zoom inspection and exports.">
-          Screen Resolution
+      {/* Screen Quality & Proofing */}
+      <div className="tonal-subheading" style={{ marginTop: '8px' }}>
+        <span title="Device pixels per contone cell. Decides how finely dot shapes and grain are resolved. Live is optimized for fluid viewport interaction; Proof provides high-resolution screening for zoom inspection and exports.">
+          Screen Quality & Proof
         </span>
       </div>
 
@@ -417,118 +391,38 @@ export const PrintPressControls: React.FC<PrintPressControlsProps> = ({
         </div>
       )}
 
-      {!compact && (
-        <>
-          <div className="control-row">
-            <span
-              className="control-label"
-              title="Total area coverage: the cap on all inks summed. A real press limit — past it the sheet cannot dry and the shadows fill in. Applied as a penalty in the separation, so the solve redistributes toward black rather than clipping."
-            >
-              Ink Limit (TAC)
-            </span>
-            <PrecisionSlider
-              value={config.tacLimit}
-              sliderMin={0}
-              sliderMax={400}
-              hardMax={800}
-              step={10}
-              onChange={(val) => set('tacLimit', val)}
-            />
-          </div>
-          <div className="control-row">
-            <span
-              className="control-label"
-              title="Yule-Nielsen n: optical dot gain from light scattering sideways inside the paper, which is why a halftone reads darker than its ink area. 1 is off, ~1.7 coated, 2-3 uncoated."
-            >
-              Optical Gain
-            </span>
-            <PrecisionSlider
-              value={config.yuleNielsen}
-              sliderMin={1}
-              sliderMax={3}
-              hardMax={6}
-              step={0.05}
-              resetTo={1}
-              onChange={(val) => set('yuleNielsen', val)}
-            />
-          </div>
-
-          <div className="control-row">
-            <span
-              className="control-label"
-              title="Ink purity / crosstalk suppression (0 to 100%): Suppresses secondary ink bleed and faint crosstalk in areas where a primary ink dominates, keeping flat colors and solid fields completely clean on their own plate."
-            >
-              Ink Purity
-            </span>
-            <PrecisionSlider
-              value={config.inkPurity ?? 0.5}
-              sliderMin={0}
-              sliderMax={1}
-              step={0.01}
-              resetTo={0.5}
-              onChange={(val) => set('inkPurity', val)}
-            />
-          </div>
-
-          <div className="control-row">
-            <span
-              className="control-label"
-              title="Grain interlock (joint screening): When enabled, stochastic FM dots on adjacent plates interlock into each other's negative space in gradient transitions, eliminating accidental white paper voids between overlapping colors."
-            >
-              Grain Interlock
-            </span>
-            <ToggleSwitch
-              checked={config.grainInterlock !== false}
-              onChange={(val) => set('grainInterlock', val)}
-              title="Interlock dots in gradients to prevent white paper bleed"
-            />
-          </div>
-        </>
-      )}
-
       {/* Render Proof card */}
       {onRenderProof && (
         <div className="print-proof-card">
           <div className="print-proof-head">
             <span>Render Proof</span>
             <span className="control-hint-dim">
-              {isProofOnScreen ? `Proof Active · ×${proofSs}` : `Live Mode · ×${liveSs}`}
+              {isProofOnScreen
+                ? `Held at ×${proofSs}`
+                : proofEstimateMs
+                  ? `~${(proofEstimateMs / 1000).toFixed(1)}s at ×${proofSs}`
+                  : `×${proofSs}`}
             </span>
           </div>
-          <div className="control-hint print-proof-explain">
-            {proofProgress ? (
-              <>Screening every plate in bands ({proofProgress}). Editing anything cancels it.</>
-            ) : isProofOnScreen ? (
-              <>
-                <strong>Proof Active ({proofPlate}):</strong> Full-resolution plate rendered.
-                Zoom in (scroll/pinch) to inspect fine dot geometry (round, chain, square).
-                Exports use this resolution. Any setting edit returns to Live mode.
-              </>
-            ) : proofSs <= liveSs ? (
-              <>
-                Proof resolution (×{proofSs}) is not higher than Live (×{liveSs}).
-                Select a higher <strong>Proof</strong> supersample (e.g. ×8 or ×16) above to render finer details.
-              </>
-            ) : (
-              <>
-                Re-screens the image at <strong>×{proofSs}</strong> ({proofPlate} plate, {(proofSs / liveSs).toFixed(1)}× finer dot shapes).
-                Live view (×{liveSs}) remains fast for drafting; run Proof to inspect true dot shapes up close and prepare for high-DPI export.
-              </>
-            )}
-          </div>
+          <p className="print-proof-copy">
+            Escalates the viewport to full proof supersample. Freezes the live render
+            pipeline until an ink, screen, or grid setting is changed.
+          </p>
           <div className="print-proof-body">
-            <span className="control-hint">
-              {proofProgress || `~${((proofEstimateMs || 0) / 1000).toFixed(1)}s`}
-            </span>
             <button
               type="button"
-              className="btn btn-sm btn-primary"
+              className={`btn btn-sm ${isProofOnScreen ? 'btn-disabled' : 'btn-primary'}`}
+              disabled={isProofOnScreen || Boolean(proofProgress) || proofSs <= liveSs}
               onClick={onRenderProof}
-              disabled={Boolean(proofProgress) || proofSs <= liveSs || isProofOnScreen}
-              title="Screen every plate at the proof resolution. Runs in background bands so UI remains interactive."
+              style={{ width: '100%', justifyContent: 'center' }}
             >
-              <Play size={10} />
-              {proofProgress ? 'RENDERING' : isProofOnScreen ? 'CURRENT PROOF' : `RUN PROOF (×${proofSs})`}
+              {proofProgress ? (
+                <span>PROOFING ({proofProgress})…</span>
+              ) : isProofOnScreen ? (
+                <span>PROOF CURRENT (×{proofSs})</span>
+              ) : (
+                <span>RENDER PROOF (×{proofSs})</span>
+              )}
             </button>
           </div>
         </div>
@@ -543,6 +437,7 @@ export const PrintPressControls: React.FC<PrintPressControlsProps> = ({
 export const PrintInkStack: React.FC<PrintInkStackProps> = ({
   config,
   onChange,
+  compact = false,
   cols = 420,
   rows = 315,
   mediaElement,
@@ -592,6 +487,25 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
     onChange({ ...config, inks: next });
   };
 
+  const applyPress = (press: PressProfile) => {
+    const p = PRESS_PROFILES[press];
+    const stamped = config.inks.map((k) => ({
+      ...k,
+      screen: p.screen,
+      ruling: p.ruling,
+      dotShape: p.dotShape,
+      dotGain: p.dotGain,
+    }));
+    onChange({
+      ...config,
+      press,
+      paper: p.paper,
+      tacLimit: p.tacLimit,
+      yuleNielsen: p.yuleNielsen,
+      inks: applyPressAngles(stamped, press),
+    });
+  };
+
   const conflicts = findMoireConflicts(config.inks);
   const printPalettes = BUILTIN_PALETTES.filter((p) => p.category === 'print');
 
@@ -618,43 +532,66 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
 
   return (
     <>
-      <div className="tonal-subheading">
-        <span title="One pass per ink, in the order the drums go through the machine. Reordering matters only for an opaque ink — translucent films multiply, which is commutative.">
-          Ink Stack · {config.inks.length}/{MAX_INKS}
+      {/* Press profile */}
+      <div className="control-row">
+        <span
+          className="control-label"
+          title="Stamps ruling, screen family, dot shape, dot gain, paper and the 30-degree angle convention across the whole stack. A starting point, not a lock — change anything after."
+        >
+          Press
         </span>
-        {config.soloInk && (
+      </div>
+      <div className="print-press-grid" style={{ marginBottom: '8px' }}>
+        {(Object.keys(PRESS_PROFILES) as PressProfile[]).map((id) => (
           <button
+            key={id}
             type="button"
-            className="btn btn-sm btn-micro"
-            onClick={() => set('soloInk', null)}
-            title="Show the full composite again"
+            className={`btn btn-sm btn-toggle ${config.press === id ? 'btn-primary' : ''}`}
+            onClick={() => applyPress(id)}
+            title={PRESS_PROFILES[id].description}
           >
-            CLEAR SOLO
+            {PRESS_PROFILES[id].name}
           </button>
-        )}
+        ))}
       </div>
 
-      {mediaElement && (
-        <div className="control-row control-row-spaced" style={{ marginBottom: '8px' }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            style={{ width: '100%', justifyContent: 'center', gap: '6px' }}
-            onClick={() => {
-              const res = extractImageInks(mediaElement, config.press, MAX_INKS);
-              onChange({
-                ...config,
-                paper: res.paper,
-                inks: res.inks,
-              });
-            }}
-            title="Samples the loaded image, finds its dominant colors, sets the paper stock, and creates matching ink plates."
-          >
-            <Pipette size={11} />
-            <span>EXTRACT INKS FROM IMAGE</span>
-          </button>
+      {/* Paper stock */}
+      <div className="control-row">
+        <span
+          className="control-label"
+          title="Paper colour. What shows through where no dot lands, and the substrate inks multiply against."
+        >
+          Paper
+        </span>
+        <div className="control-cluster control-fixed">
+          <DeferredColorInput
+            value={config.paper}
+            showHexField
+            hexFieldWidth="72px"
+            onChange={(val) => set('paper', val)}
+          />
+        </div>
+      </div>
+      {!compact && (
+        <div className="print-paper-grid" style={{ marginBottom: '8px' }}>
+          {PAPER_STOCKS.map((s) => (
+            <button
+              key={s.hex}
+              type="button"
+              className={`print-paper-chip ${config.paper.toLowerCase() === s.hex.toLowerCase() ? 'active' : ''}`}
+              style={{ background: s.hex }}
+              onClick={() => set('paper', s.hex)}
+              title={`${s.name} · ${s.hex}`}
+            />
+          ))}
         </div>
       )}
+
+      <div className="tonal-subheading" style={{ marginTop: '4px', marginBottom: '6px' }}>
+        <span title="Global color separation physics and multi-plate stochastic screening behavior.">
+          Separation & Screening
+        </span>
+      </div>
 
       <div className="control-row" style={{ marginBottom: '8px' }}>
         <span
@@ -676,14 +613,14 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
       <div className="control-row" style={{ marginBottom: '8px' }}>
         <span
           className="control-label"
-          title="Grain interlock (joint screening): When enabled, stochastic FM dots on adjacent plates interlock into each other's negative space in gradient transitions, eliminating accidental white paper voids between overlapping colors."
+          title="Grain interlock (joint screening): When enabled, stochastic FM dots on adjacent plates interlock into each other's negative space in gradient transitions, eliminating accidental white paper voids between overlapping colors. Only threshold-mask algorithms can share out an interval this way, so the error diffusion FM algorithms grey out while it is on."
         >
           Grain Interlock
         </span>
         <ToggleSwitch
           checked={config.grainInterlock !== false}
           onChange={(val) => set('grainInterlock', val)}
-          title="Interlock dots in gradients to prevent white paper bleed"
+          title="Interlock dots in gradients to prevent white paper bleed. Greys out the FM algorithms that diffuse error instead of sampling a threshold."
         />
       </div>
 
@@ -697,12 +634,36 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             are within {MOIRE_ANGLE_TOLERANCE}&deg; at a similar ruling. Real presses beat here —
             space the screens 30&deg; apart for a rosette.
           </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary print-warning-action"
+            onClick={() => onChange({ ...config, inks: resolveMoireAngles(config.inks, config.press) })}
+            title={
+              config.inks.filter((k) => k.enabled).length > PRESS_PROFILES[config.press].angles.length
+                ? 'Re-angle every enabled plate. Deeper than four inks, so the angles are spread evenly over the 90° the lattice repeats in rather than following the four-colour convention.'
+                : `Re-angle every enabled plate to the ${PRESS_PROFILES[config.press].name} convention: darkest ink on 45°, the rest 30° apart, a yellow-leaning ink on the orphan angle.`
+            }
+          >
+            <RotateCw size={10} />
+            AUTO ROTATE
+          </button>
         </div>
       )}
 
       {config.inks.map((ink, i) => {
         const isOpen = expanded === ink.id;
         const isSolo = config.soloInk === ink.id;
+        /*
+         * Interlock only exists for a threshold mask — the plates share out one
+         * threshold interval between them — so with it on, every error
+         * diffusion algorithm is dead UI: the screening drops to the plain FM
+         * path and the grain stops interlocking, silently. Greyed out rather
+         * than filtered away, so the reason the choice went missing is legible,
+         * and so an existing selection is still shown rather than vanishing.
+         */
+        const interlockOn = config.grainInterlock !== false;
+        const fmAlgorithm = ink.fmAlgorithm || 'atkinson';
+        const fmInterlocks = hasThresholdMask(fmAlgorithm);
         return (
           <div className={`print-plate${isOpen ? ' is-open' : ''}`} key={ink.id}>
             <div className="print-plate-head">
@@ -846,29 +807,55 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
                       </span>
                       <select
                         className="number-input stepper-select"
-                        value={ink.fmAlgorithm || 'atkinson'}
+                        value={fmAlgorithm}
                         onChange={(e) => setInk(ink.id, { fmAlgorithm: e.target.value as DitherAlgorithm })}
                       >
-                        {DITHER_ALGORITHMS.map((algo) => (
-                          <option key={algo.id} value={algo.id}>
-                            {algo.name}
-                          </option>
-                        ))}
+                        {DITHER_ALGORITHMS.map((algo) => {
+                          const off = interlockOn && !hasThresholdMask(algo.id);
+                          return (
+                            <option key={algo.id} value={algo.id} disabled={off}>
+                              {algo.name}
+                              {off ? ' — no interlock' : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                     <div className="print-shape-grid">
-                      {FM_TOP_ALGORITHMS.map((a) => (
-                        <button
-                          key={a.id}
-                          type="button"
-                          className={`btn btn-sm btn-toggle btn-toggle-narrow ${(ink.fmAlgorithm || 'atkinson') === a.id ? 'btn-primary' : ''}`}
-                          onClick={() => setInk(ink.id, { fmAlgorithm: a.id })}
-                          title={a.hint}
-                        >
-                          {a.label}
-                        </button>
-                      ))}
+                      {FM_TOP_ALGORITHMS.map((a) => {
+                        const off = interlockOn && !hasThresholdMask(a.id);
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            disabled={off}
+                            className={`btn btn-sm btn-toggle btn-toggle-narrow ${fmAlgorithm === a.id ? 'btn-primary' : ''}${off ? ' btn-explains-disabled' : ''}`}
+                            onClick={() => setInk(ink.id, { fmAlgorithm: a.id })}
+                            title={
+                              off
+                                ? `${a.label} diffuses error instead of sampling a threshold, so it cannot interlock with the other plates. Turn Grain Interlock off to use it.`
+                                : a.hint
+                            }
+                          >
+                            {a.label}
+                          </button>
+                        );
+                      })}
                     </div>
+
+                    {interlockOn && !fmInterlocks && (
+                      <div className="print-warning" role="status">
+                        <AlertTriangle size={11} />
+                        <span>
+                          Grain Interlock is on, and{' '}
+                          {DITHER_ALGORITHMS.find((a) => a.id === fmAlgorithm)?.name ||
+                            fmAlgorithm}{' '}
+                          has no threshold to share — this plate screens without
+                          interlocking. Pick a masked algorithm above, or turn
+                          Grain Interlock off.
+                        </span>
+                      </div>
+                    )}
 
                     <div className="control-row">
                       <span
@@ -1028,40 +1015,70 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
           </div>
         </>
       )}
+      {mediaElement && (
+        /* Last, because it *replaces* everything above it. Sitting at the top it
+           read as the starting point of the panel, which inverted the flow: the
+           press, the stock and the stack are what it overwrites, so the offer to
+           derive them from the artwork belongs after the reader has seen what is
+           there. */
+        <div className="control-row control-row-spaced print-extract-row">
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            style={{ width: '100%', justifyContent: 'center', gap: '6px' }}
+            onClick={() => {
+              const res = extractImageInks(mediaElement, config.press, MAX_INKS);
+              onChange({
+                ...config,
+                paper: res.paper,
+                inks: res.inks,
+              });
+            }}
+            title="Samples the loaded image, picks the inks that actually earn a plate, sets the paper stock, and replaces the whole stack."
+          >
+            <Pipette size={11} />
+            <span>EXTRACT INKS FROM IMAGE</span>
+          </button>
+        </div>
+      )}
     </>
   );
 };
+
+export const PrintPressAndInksControls = PrintInkStack;
 
 export const PrintControls: React.FC<PrintControlsProps> = ({
   section = 'all',
   ...props
 }) => {
-  if (section === 'press') {
-    return <PrintPressControls {...props} />;
-  }
-  if (section === 'inks') {
+  if (section === 'press-and-inks' || section === 'inks') {
     return (
-      <PrintInkStack
+      <PrintPressAndInksControls
         config={props.config}
         onChange={props.onChange}
         cols={props.cols}
         rows={props.rows}
         mediaElement={props.mediaElement}
         onSeedInksFromPalette={props.onSeedInksFromPalette}
+        compact={props.compact}
       />
     );
   }
+  if (section === 'settings' || section === 'press') {
+    return <PrintSettingsControls {...props} />;
+  }
   return (
     <>
-      <PrintPressControls {...props} />
-      <PrintInkStack
+      <PrintPressAndInksControls
         config={props.config}
         onChange={props.onChange}
         cols={props.cols}
         rows={props.rows}
         mediaElement={props.mediaElement}
         onSeedInksFromPalette={props.onSeedInksFromPalette}
+        compact={props.compact}
       />
+      <PrintSettingsControls {...props} />
     </>
   );
 };

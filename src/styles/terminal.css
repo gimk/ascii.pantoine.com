@@ -2638,6 +2638,13 @@ select:disabled {
   pointer-events: none;
 }
 
+/* A control greyed out for a *reason* has to be able to state the reason, and
+   the blanket `pointer-events: none` above takes the tooltip down with the
+   click. Restoring hover is safe: a disabled button fires no click either way. */
+.btn.btn-explains-disabled:disabled {
+  pointer-events: auto;
+}
+
 .btn-sm {
   padding: 3px 8px;
   min-height: 22px;
@@ -5707,23 +5714,35 @@ select:disabled {
   min-width: 0;
 }
 
-/* Paper stock shortcuts: colour is the whole label, so they are swatches. */
-.print-stock-row {
-  display: flex;
+/* Paper stock shortcuts: colour is the whole label, so they are swatches.
+
+   Six stocks on one row, sized to be read as paper rather than as a hairline.
+   Four of the six are within a few percent of each other — natural, cream and
+   newsprint are the whole point of the control — so the chip needs enough area
+   for that difference to register at all, and an inset edge so a near-white
+   stock still reads as a swatch against a light panel. */
+.print-paper-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
   gap: 4px;
   margin-bottom: 10px;
 }
 
-.print-stock-chip {
-  flex: 1;
-  height: 16px;
+.print-paper-chip {
+  height: 24px;
+  min-width: 0;
   border: 1px solid var(--border-color);
   border-radius: 2px;
   cursor: pointer;
   padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
-.print-stock-chip.is-active {
+.print-paper-chip:hover {
+  border-color: var(--text-muted);
+}
+
+.print-paper-chip.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
 }
@@ -5759,9 +5778,12 @@ select:disabled {
 
 /* The comparison line: what a proof would actually change. Sits between the
    heading and the button because it is the reason to press it. */
-.print-proof-explain {
+.print-proof-explain,
+.print-proof-copy {
   margin: 0 0 8px 0;
   line-height: 1.5;
+  font-size: 10.5px;
+  color: var(--text-muted);
 }
 
 .print-proof-body {
@@ -5874,6 +5896,30 @@ select:disabled {
   flex-shrink: 0;
   margin-top: 1px;
   color: var(--accent);
+}
+
+/* The fix, sitting inside the complaint. Pushed to the trailing edge and
+   centred against the text block so the row still reads as one warning rather
+   than as a warning with a control bolted on. Its own icon has to opt out of
+   the rule above, which is aimed at the alert triangle. */
+.print-warning-action {
+  margin-left: auto;
+  align-self: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.print-warning-action svg {
+  margin-top: 0;
+  color: inherit;
+}
+
+/* Closes the panel, so it gets a rule above it rather than the even spacing of
+   the rows it is not part of. */
+.print-extract-row {
+  margin: 10px 0 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
 }
 
 .print-ink-library {

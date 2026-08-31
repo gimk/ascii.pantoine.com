@@ -174,6 +174,8 @@ interface BasicPanelProps {
   onRenderProof?: () => void;
   proofProgress?: string | null;
   printTier?: { tier: PrintTier; supersample: number } | null;
+  /** Estimated proof cost, for the price on the RENDER PROOF card. */
+  proofEstimateMs?: number;
   /** Replace the ink stack from a palette. Print mode only. */
   onSeedInksFromPalette?: (colors: string[]) => void;
 }
@@ -216,6 +218,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   onRenderProof,
   proofProgress,
   printTier,
+  proofEstimateMs,
   onSeedInksFromPalette,
 }) => {
   const isPixel = rasterMode === 'pixel';
@@ -305,7 +308,27 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
     onChangeDensity(pick.chars);
   };
 
+  /*
+   * The ramp editor and the palette-to-ramp handoff are handed to every
+   * PaletteControls below, exactly as ADVANCED does: N-TONE is selectable here,
+   * so the stops have to be editable here. Without the slot the N-TONE tab
+   * opens an empty subpanel.
+   */
   const { colors: rampColors, weights: rampWeights } = resolveToneStops(viewConfig);
+
+  const rampEditorSlot = (
+    <NToneRampEditor
+      stops={rampColors}
+      weights={rampWeights}
+      onChangeRamp={(stops, nextWeights) =>
+        updateAdjust({
+          ...viewConfig,
+          ...applyToneStops(viewConfig, stops),
+          toneStopWeights: nextWeights,
+        })
+      }
+    />
+  );
 
   const handleEditPaletteAsRamp = () => {
     const pal = BUILTIN_PALETTES.find((p) => p.id === mediaColorConfig.activePaletteId);
@@ -322,6 +345,12 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
       toneStopWeights: stops.map(() => DEFAULT_STOP_WEIGHT),
       tonalMapping: 'ntone',
     });
+  };
+
+  const paletteRampProps = {
+    rampEditorSlot,
+    onEditPaletteAsRamp:
+      mediaColorConfig.paletteMode === 'indexed' ? handleEditPaletteAsRamp : undefined,
   };
 
   return (
@@ -502,63 +531,6 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
               );
             })}
           </div>
-
-          {isAscii && (
-            <div className="basic-control-group" style={{ marginTop: '4px' }}>
-              <div className="control-row" style={{ margin: 0 }}>
-                <span className="control-label">Character Ramp</span>
-
-                <div className="control-cluster basic-stepper-cluster">
-                  <button
-                    type="button"
-                    className="slider-nudge-btn btn-icon-sq"
-                    onClick={() => handleStepCharset(-1)}
-                    title="Previous charset (wraps around)"
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-
-                  <select
-                    className="number-input stepper-select"
-                    value={activeCharsetId}
-                    onChange={(e) => {
-                      const cs = CHARSETS.find((c) => c.id === e.target.value);
-                      if (cs) onChangeDensity(cs.chars);
-                    }}
-                  >
-                    {CHARSETS.map((cs) => (
-                      <option key={cs.id} value={cs.id}>
-                        {cs.name}
-                      </option>
-                    ))}
-                    {activeCharsetId === '__custom__' && (
-                      <option value="__custom__">Custom (set in Advanced)</option>
-                    )}
-                  </select>
-
-                  <button
-                    type="button"
-                    className="slider-nudge-btn btn-icon-sq"
-                    onClick={() => handleStepCharset(1)}
-                    title="Next charset (wraps around)"
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`slider-nudge-btn btn-icon-sq btn-dice${
-                      isCharsetRolling ? ' rolling' : ''
-                    }`}
-                    onClick={handleRandomizeCharset}
-                    title="Surprise Me: pick a random charset"
-                  >
-                    <Dices size={14} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -572,94 +544,219 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
         </div>
 
         <div className="basic-step-body">
-          {/* Dithering Algorithm or Beam Controls */}
-          <div className="basic-sub-header">
-            <span className="basic-sub-title">
-              {isPrint
-                ? 'Press & Inks'
-                : isVector
-                  ? 'Beam Deflection'
-                  : isPixel
-                    ? 'Dither Pattern'
-                    : 'Dithering Engine'}
-            </span>
-          </div>
+          {/* ASCII Mode: 1. Character Ramp -> 2. Color -> 3. Dithering */}
+          {isAscii && (
+            <>
+              <div className="basic-sub-header">
+                <span className="basic-sub-title">Character Ramp</span>
+              </div>
+              <div className="basic-control-group" style={{ marginBottom: '8px' }}>
+                <div className="control-row" style={{ margin: 0 }}>
+                  <div className="control-cluster basic-stepper-cluster" style={{ width: '100%' }}>
+                    <button
+                      type="button"
+                      className="slider-nudge-btn btn-icon-sq"
+                      onClick={() => handleStepCharset(-1)}
+                      title="Previous charset (wraps around)"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
 
-          {isPrint ? (
-            <PrintControls
-              compact
-              section="press"
-              config={viewConfig.printConfig || printConfigFallback}
-              onChange={(next) => updateView('printConfig', next)}
-              cols={cols}
-              rows={rows}
-              onRenderProof={onRenderProof}
-              proofProgress={proofProgress}
-              tier={printTier}
-            />
-          ) : isVector ? (
-            <VectorControls
-              compact
-              config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
-              onChange={(next) => updateView('vectorConfig', next)}
-            />
-          ) : (
-            <DitherAlgorithmPicker
-              value={viewConfig.algorithm || 'floyd-steinberg'}
-              onChange={(algo) => updateView('algorithm', algo)}
-              compact
-            />
+                    <select
+                      className="number-input stepper-select"
+                      value={activeCharsetId}
+                      onChange={(e) => {
+                        const cs = CHARSETS.find((c) => c.id === e.target.value);
+                        if (cs) onChangeDensity(cs.chars);
+                      }}
+                    >
+                      {CHARSETS.map((cs) => (
+                        <option key={cs.id} value={cs.id}>
+                          {cs.name}
+                        </option>
+                      ))}
+                      {activeCharsetId === '__custom__' && (
+                        <option value="__custom__">Custom (set in Advanced)</option>
+                      )}
+                    </select>
+
+                    <button
+                      type="button"
+                      className="slider-nudge-btn btn-icon-sq"
+                      onClick={() => handleStepCharset(1)}
+                      title="Next charset (wraps around)"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`slider-nudge-btn btn-icon-sq btn-dice${
+                        isCharsetRolling ? ' rolling' : ''
+                      }`}
+                      onClick={handleRandomizeCharset}
+                      title="Surprise Me: pick a random charset"
+                    >
+                      <Dices size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="basic-sub-header" style={{ marginTop: '6px' }}>
+                <span className="basic-sub-title">Color &amp; Theme</span>
+              </div>
+              <PaletteControls
+                currentTheme={theme}
+                onChangeTheme={onChangeTheme}
+                customThemeColor={customThemeColor}
+                onChangeCustomColor={onChangeCustomColor}
+                mediaColorConfig={mediaColorConfig}
+                onChangeMediaColorConfig={onChangeMediaColorConfig}
+                appMode="media"
+                tonalMapping={viewConfig.tonalMapping}
+                onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
+                isPixelMode={false}
+                isVectorMode={false}
+                isPrintMode={false}
+                cols={cols}
+                rows={rows}
+                mediaElement={mediaElement}
+                colorLevels={viewConfig.colorLevels}
+                onChangeColorLevels={(val) => updateView('colorLevels', val)}
+                {...paletteRampProps}
+              />
+
+              <div className="basic-sub-header" style={{ marginTop: '6px' }}>
+                <span className="basic-sub-title">Dithering Algorithm</span>
+              </div>
+              <DitherAlgorithmPicker
+                value={viewConfig.algorithm || 'none'}
+                onChange={(algo) => updateView('algorithm', algo)}
+                compact
+              />
+            </>
           )}
 
-          <div className="basic-sub-header" style={{ marginTop: '6px' }}>
-            <span className="basic-sub-title">{isPrint ? 'Inks & Color' : 'Color & Theme'}</span>
-          </div>
-
-          <PaletteControls
-            currentTheme={theme}
-            onChangeTheme={onChangeTheme}
-            customThemeColor={customThemeColor}
-            onChangeCustomColor={onChangeCustomColor}
-            mediaColorConfig={mediaColorConfig}
-            onChangeMediaColorConfig={onChangeMediaColorConfig}
-            appMode="media"
-            tonalMapping={viewConfig.tonalMapping}
-            onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
-            isPixelMode={isPixel}
-            isVectorMode={isVector}
-            isPrintMode={isPrint}
-            printConfig={viewConfig.printConfig || printConfigFallback}
-            onChangePrintConfig={(next) => updateView('printConfig', next)}
-            cols={cols}
-            rows={rows}
-            mediaElement={mediaElement}
-            onSeedInksFromPalette={onSeedInksFromPalette}
-            colorLevels={viewConfig.colorLevels}
-            onChangeColorLevels={(val) => updateView('colorLevels', val)}
-            rampEditorSlot={
-              <NToneRampEditor
-                stops={rampColors}
-                weights={rampWeights}
-                onChangeRamp={(stops, nextWeights) =>
-                  updateAdjust({
-                    ...viewConfig,
-                    ...applyToneStops(viewConfig, stops),
-                    toneStopWeights: nextWeights,
-                  })
-                }
+          {/* Pixel Mode: 1. Dither Pattern -> 2. Color & Theme */}
+          {isPixel && (
+            <>
+              <div className="basic-sub-header">
+                <span className="basic-sub-title">Dithering Algorithm</span>
+              </div>
+              <DitherAlgorithmPicker
+                value={viewConfig.algorithm || 'floyd-steinberg'}
+                onChange={(algo) => updateView('algorithm', algo)}
+                compact
               />
-            }
-            onEditPaletteAsRamp={
-              mediaColorConfig.paletteMode === 'indexed' ? handleEditPaletteAsRamp : undefined
-            }
-          />
 
-          <div className="color-backdrop-section">
-            <BackgroundRow
-              value={viewConfig.background}
-              onChange={(bg) => updateView('background', bg)}
-            />
-          </div>
+              <div className="basic-sub-header" style={{ marginTop: '6px' }}>
+                <span className="basic-sub-title">Color &amp; Palette</span>
+              </div>
+              <PaletteControls
+                currentTheme={theme}
+                onChangeTheme={onChangeTheme}
+                customThemeColor={customThemeColor}
+                onChangeCustomColor={onChangeCustomColor}
+                mediaColorConfig={mediaColorConfig}
+                onChangeMediaColorConfig={onChangeMediaColorConfig}
+                appMode="media"
+                tonalMapping={viewConfig.tonalMapping}
+                onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
+                isPixelMode={true}
+                isVectorMode={false}
+                isPrintMode={false}
+                cols={cols}
+                rows={rows}
+                mediaElement={mediaElement}
+                colorLevels={viewConfig.colorLevels}
+                onChangeColorLevels={(val) => updateView('colorLevels', val)}
+                {...paletteRampProps}
+              />
+            </>
+          )}
+
+          {/* Vector Mode: 1. Beam Deflection -> 2. Color & Theme */}
+          {isVector && (
+            <>
+              <div className="basic-sub-header">
+                <span className="basic-sub-title">Beam Settings</span>
+              </div>
+              <VectorControls
+                compact
+                config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+                onChange={(next) => updateView('vectorConfig', next)}
+              />
+
+              <div className="basic-sub-header" style={{ marginTop: '6px' }}>
+                <span className="basic-sub-title">Beam Color</span>
+              </div>
+              <PaletteControls
+                currentTheme={theme}
+                onChangeTheme={onChangeTheme}
+                customThemeColor={customThemeColor}
+                onChangeCustomColor={onChangeCustomColor}
+                mediaColorConfig={mediaColorConfig}
+                onChangeMediaColorConfig={onChangeMediaColorConfig}
+                appMode="media"
+                tonalMapping={viewConfig.tonalMapping}
+                onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
+                isPixelMode={false}
+                isVectorMode={true}
+                isPrintMode={false}
+                cols={cols}
+                rows={rows}
+                mediaElement={mediaElement}
+                colorLevels={viewConfig.colorLevels}
+                onChangeColorLevels={(val) => updateView('colorLevels', val)}
+                {...paletteRampProps}
+              />
+            </>
+          )}
+
+          {/* Print Mode: 1. Press and Inks -> 2. Press Settings & Proof */}
+          {isPrint && (
+            <>
+              <div className="basic-sub-header">
+                <span className="basic-sub-title">Press and Inks</span>
+              </div>
+              <PrintControls
+                compact
+                section="press-and-inks"
+                config={viewConfig.printConfig || printConfigFallback}
+                onChange={(next) => updateView('printConfig', next)}
+                cols={cols}
+                rows={rows}
+                mediaElement={mediaElement}
+                onSeedInksFromPalette={onSeedInksFromPalette}
+              />
+
+              <div className="basic-sub-header" style={{ marginTop: '6px' }}>
+                <span className="basic-sub-title">Press Settings &amp; Proof</span>
+              </div>
+              <PrintControls
+                compact
+                section="settings"
+                config={viewConfig.printConfig || printConfigFallback}
+                onChange={(next) => updateView('printConfig', next)}
+                cols={cols}
+                rows={rows}
+                onRenderProof={onRenderProof}
+                proofProgress={proofProgress}
+                tier={printTier}
+                proofEstimateMs={proofEstimateMs}
+              />
+            </>
+          )}
+
+          {!isPrint && (
+            <div className="color-backdrop-section">
+              <BackgroundRow
+                value={viewConfig.background}
+                onChange={(bg) => updateView('background', bg)}
+              />
+            </div>
+          )}
         </div>
       </div>
 

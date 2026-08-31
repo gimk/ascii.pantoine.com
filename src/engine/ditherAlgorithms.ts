@@ -899,6 +899,24 @@ const TEXTURE_MASK_SOURCES: Partial<Record<DitherAlgorithm, () => DitherMask>> =
   'void-cluster': () => toTextureMask(getVoidAndClusterTexture(), VOID_CLUSTER_SIZE),
 };
 
+/**
+ * Whether an algorithm screens through a tiling threshold mask.
+ *
+ * The same question `maskFor` answers, asked without paying for the answer:
+ * this reads the source tables rather than building the mask, so a UI can ask
+ * it once per option per render. `maskFor` would generate the void-and-cluster
+ * texture to say "yes".
+ *
+ * The distinction is load-bearing for print: joint stochastic screening
+ * partitions one threshold interval between the plates, so it only exists for
+ * an algorithm that *has* a threshold. Error diffusion carries its state in the
+ * error it drags to the next pixel, with nothing for a neighbouring plate to
+ * interlock against.
+ */
+export function hasThresholdMask(algorithm: DitherAlgorithm): boolean {
+  return Boolean(ORDERED_MASK_SOURCES[algorithm] || TEXTURE_MASK_SOURCES[algorithm]);
+}
+
 /** The tiling mask an algorithm samples, if it samples one at all. */
 export function maskFor(algorithm: DitherAlgorithm): DitherMask | undefined {
   const matrix = ORDERED_MASK_SOURCES[algorithm];

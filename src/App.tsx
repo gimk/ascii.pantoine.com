@@ -80,7 +80,7 @@ import {
   estimatePrintCost,
   tierSupersample,
 } from './engine/printEngine';
-import { defaultPrintConfig, PRESS_PROFILES, inksFromPalette } from './engine/printInks';
+import { defaultPrintConfig, inksFromPalette } from './engine/printInks';
 import { choosePreviewDivisor, upscaleFrame } from './engine/framePreview';
 import { CHARSETS, renderSynthFrameData } from './engine/renderer';
 import {
@@ -2562,10 +2562,17 @@ export const App: React.FC = () => {
    * dither picker is *hidden*, not disabled, and `ditherAlgorithm` stays in
    * state so switching back to a cell mode restores it.
    */
+  const proofEstimateMs = estimatePrintCost(
+    cols,
+    rows,
+    tierSupersample(activePrintConfig, cols, rows, 'proof'),
+    activePrintConfig.inks.filter((k) => k.enabled).length
+  );
+
   const renderSettingsBody =
     currentRasterMode === 'print' ? (
       <PrintControls
-        section="press"
+        section="settings"
         config={activePrintConfig}
         onChange={handleChangePrintConfig}
         cols={cols}
@@ -2573,12 +2580,7 @@ export const App: React.FC = () => {
         onRenderProof={appMode === 'media' ? handleRenderProof : undefined}
         proofProgress={proofProgress}
         tier={printTierBadge}
-        proofEstimateMs={estimatePrintCost(
-          cols,
-          rows,
-          tierSupersample(activePrintConfig, cols, rows, 'proof'),
-          activePrintConfig.inks.filter((k) => k.enabled).length
-        )}
+        proofEstimateMs={proofEstimateMs}
       />
     ) : currentRasterMode === 'vector' ? (
       <VectorControls
@@ -2609,21 +2611,28 @@ export const App: React.FC = () => {
       />
     );
 
-  /** Badge and reset copy for the RENDER SETTINGS header, per output mode. */
+  /** Title, badge and reset copy for the RENDER SETTINGS header, per output mode. */
+  const renderSettingsTitle =
+    currentRasterMode === 'print'
+      ? 'PRESS SETTINGS & PROOF'
+      : currentRasterMode === 'vector'
+        ? 'BEAM SETTINGS'
+        : 'DITHERING ALGORITHM';
+
   const renderSettingsBadge =
     currentRasterMode === 'print'
-      ? `${PRESS_PROFILES[activePrintConfig.press].name} · ${activePrintConfig.inks.filter((k) => k.enabled).length} ink${activePrintConfig.inks.filter((k) => k.enabled).length === 1 ? '' : 's'}`
+      ? `TAC ${activePrintConfig.tacLimit}% · YN ${activePrintConfig.yuleNielsen.toFixed(1)}`
       : currentRasterMode === 'vector'
-        ? 'Beam Deflection'
+        ? `${(currentRenderSettings.vectorConfig?.direction || 'vertical').toUpperCase()} · ${currentRenderSettings.vectorConfig?.lineCount || 60} LINES`
         : DITHER_ALGORITHMS.find(
-            (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
-          )?.name || 'Floyd-Steinberg';
+            (a) => a.id === (currentRenderSettings.ditherAlgorithm || (currentRasterMode === 'ascii' ? 'none' : 'floyd-steinberg'))
+          )?.name || (currentRasterMode === 'ascii' ? 'Threshold (None)' : 'Floyd-Steinberg');
 
   const renderSettingsResetTitle =
     currentRasterMode === 'print'
-      ? 'Reset the press, the ink stack and every screen'
+      ? 'Reset TAC limit, optical gain, and supersample proof multipliers'
       : currentRasterMode === 'vector'
-        ? 'Reset every beam parameter'
+        ? 'Reset all beam deflection parameters'
         : 'Reset dither algorithm and parameters';
 
   /*
@@ -4191,6 +4200,7 @@ export const App: React.FC = () => {
                   onRenderProof={handleRenderProof}
                   proofProgress={proofProgress}
                   printTier={printTierBadge}
+                  proofEstimateMs={proofEstimateMs}
                   onSeedInksFromPalette={handleSeedInksFromPalette}
                 />
             ) : (
@@ -4334,8 +4344,6 @@ export const App: React.FC = () => {
                 onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
               />
 
-              {densityRampSection}
-
               {/* ---------------------------------------------------------- */}
               {/* 03 · AESTHETIC                                             */}
               {/* ---------------------------------------------------------- */}
@@ -4359,6 +4367,12 @@ export const App: React.FC = () => {
                   cols={cols}
                   rows={rows}
                   mediaElement={mediaElementRef.current}
+                  density={density}
+                  onChangeDensity={setDensity}
+                  onRenderProof={handleRenderProof}
+                  proofProgress={proofProgress}
+                  printTier={printTierBadge}
+                  proofEstimateMs={proofEstimateMs}
                 />
               )}
 
@@ -4370,8 +4384,10 @@ export const App: React.FC = () => {
                     onResetRotation={handleResetModelRotation}
                   />
                   <div className="tab-content">
+                    {currentRasterMode === 'ascii' && densityRampSection}
+
                     <CollapsibleSection
-                      title="RENDER SETTINGS"
+                      title={renderSettingsTitle}
                       icon={<Settings size={12} />}
                       badge={renderSettingsBadge}
                       persistKey={`${appMode}-render-settings`}
@@ -4380,7 +4396,7 @@ export const App: React.FC = () => {
                           ...prev,
                           [appMode]: {
                             ...prev[appMode],
-                            ditherAlgorithm: 'floyd-steinberg',
+                            ditherAlgorithm: currentRasterMode === 'ascii' ? 'none' : 'floyd-steinberg',
                             ditherParams: undefined,
                             vectorConfig: undefined,
                             printConfig: undefined,
@@ -4484,8 +4500,10 @@ export const App: React.FC = () => {
 
               {appMode === 'synth' && (
                 <div className="tab-content">
+                  {currentRasterMode === 'ascii' && densityRampSection}
+
                   <CollapsibleSection
-                    title="RENDER SETTINGS"
+                    title={renderSettingsTitle}
                     icon={<Settings size={12} />}
                     badge={renderSettingsBadge}
                     persistKey={`${appMode}-render-settings`}
@@ -4494,7 +4512,7 @@ export const App: React.FC = () => {
                         ...prev,
                         [appMode]: {
                           ...prev[appMode],
-                          ditherAlgorithm: 'floyd-steinberg',
+                          ditherAlgorithm: currentRasterMode === 'ascii' ? 'none' : 'floyd-steinberg',
                           ditherParams: undefined,
                           vectorConfig: undefined,
                           printConfig: undefined,

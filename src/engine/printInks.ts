@@ -19,6 +19,7 @@ import {
   PressProfile,
   MAX_INKS,
 } from '../types/ascii';
+import { Lab, rgbToLab, deltaE } from './palettes';
 
 // ---------------------------------------------------------------------------
 // sRGB transfer
@@ -82,6 +83,12 @@ export function encodeSrgb(v: number): number {
 export function linearizeHex(hex: string | undefined): [number, number, number] {
   const b = hexToBytes(hex);
   return [linearizeByte(b[0]), linearizeByte(b[1]), linearizeByte(b[2])];
+}
+
+/** RGB bytes to '#rrggbb'. */
+export function bytesToHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+  return '#' + ((1 << 24) + (clamp(r) << 16) + (clamp(g) << 8) + clamp(b)).toString(16).slice(1);
 }
 
 export function hexToBytes(hex: string | undefined): [number, number, number] {
@@ -239,9 +246,9 @@ export const PRESS_PROFILES: Record<PressProfile, PressSpec> = {
      * every colour pass — misregistration is the look, not a defect.
      */
     name: 'RISO',
-    description: 'Soy ink through a thermal stencil, one pass per drum',
+    description: 'Soy ink through a thermal stencil (Grain Touch FM), one pass per drum',
     ruling: 71,
-    screen: 'am',
+    screen: 'fm',
     dotShape: 'round',
     dotGain: 0.14,
     registration: 1.5,
@@ -268,7 +275,6 @@ export function makeInkPlate(
     opacity: spec.opacity ?? findInkSpec(spec.hex)?.opacity ?? 0.85,
     opaque: false,
     enabled: true,
-
     screen: p.screen,
     ruling: p.ruling,
     angle,
@@ -276,8 +282,8 @@ export function makeInkPlate(
     shiftY: 0,
     dotShape: p.dotShape,
     dotAspect: 1,
-    fmAlgorithm: 'atkinson',
-    fmScale: 1,
+    fmAlgorithm: 'blue-noise',
+    fmScale: 2,
 
     regX: 0,
     regY: 0,
@@ -299,8 +305,7 @@ export function makeInkPlate(
  * real press — a light ink's moire is the least visible, so it takes the worst
  * slot.
  */
-export function applyPressAngles(inks: InkPlate[], press: PressProfile): InkPlate[] {
-  const angles = PRESS_PROFILES[press].angles;
+function assignAngles(inks: InkPlate[], angles: number[]): InkPlate[] {
   const enabled = inks.filter((k) => k.enabled);
 
   // Luminance decides the order: darkest ink takes 45, the most stable angle.
@@ -322,6 +327,48 @@ export function applyPressAngles(inks: InkPlate[], press: PressProfile): InkPlat
   return inks.map((k) =>
     assignment.has(k.id) ? { ...k, angle: assignment.get(k.id)! } : k
   );
+}
+
+export function applyPressAngles(inks: InkPlate[], press: PressProfile): InkPlate[] {
+  return assignAngles(inks, PRESS_PROFILES[press].angles);
+}
+
+/**
+ * Angles for more plates than the press convention has names for.
+ *
+ * A press profile lists four, because four-colour process is what presses do
+ * and 45/75/15/0 is the convention that makes a rosette. Beyond four there is
+ * no convention to follow, so the angles are derived instead: a symmetric
+ * halftone lattice repeats every 90°, so N screens are furthest apart at 90/N,
+ * and eight plates land 11.25° apart — tight, but still clear of
+ * `MOIRE_ANGLE_TOLERANCE`, which is the most that can be said for eight AM
+ * screens on one sheet.
+ *
+ * Starts at 45 so the darkest ink still gets the stable angle, matching what
+ * the four-colour path does.
+ */
+function spreadAngles(n: number): number[] {
+  const step = 90 / n;
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push(Math.round(((45 + i * step) % 90) * 100) / 100);
+  }
+  return out;
+}
+
+/**
+ * Re-angle the stack to clear moiré, for the AUTO ROTATE action on the warning.
+ *
+ * Prefers the press convention whenever it has enough angles to go round,
+ * because those are the real ones; falls back to an even spread only when the
+ * stack is deeper than four. Without that fallback the convention assigns its
+ * last angle to every plate past the fourth, which is a moiré *guarantee* — and
+ * an eight-ink stack is exactly what ink extraction can now hand you.
+ */
+export function resolveMoireAngles(inks: InkPlate[], press: PressProfile): InkPlate[] {
+  const pressAngles = PRESS_PROFILES[press].angles;
+  const enabled = inks.filter((k) => k.enabled).length;
+  return assignAngles(inks, enabled <= pressAngles.length ? pressAngles : spreadAngles(enabled));
 }
 
 function inkLuma(hex: string): number {
@@ -666,7 +713,17 @@ export function buildSeparationLut(
                 if (ratio <= low) {
                   a[i] = 0;
                 } else {
-                  const t = (ratio - low) / (ratioCutoff - low);
+                  /*
+                   * `t` is clamped because the two cutoffs are independent: an
+                   * ink can fail the *absolute* test while already sitting
+                   * above `ratioCutoff`, which puts the raw ratio past the top
+                   * of the fade. Unclamped the smoothstep runs away past 1 and
+                   * goes negative — and a negative coverage is the cut-out
+                   * sentinel the screening reads as "no media here"
+                   * (pipeline.md invariant 1), so the plate dropped out in
+                   * speckles across light tints instead of fading down.
+                   */
+                  const t = Math.min(1, Math.max(0, (ratio - low) / (ratioCutoff - low)));
                   a[i] = cov * (t * t * (3 - 2 * t));
                 }
               }
@@ -804,174 +861,416 @@ export function findMoireConflicts(inks: InkPlate[]): [InkPlate, InkPlate][] {
 }
 
 /**
- * Extracts the dominant distinct colors from an image / media element and builds
- * an ink stack + paper stock matching the artwork.
+ * Ink extraction: what to *print* an image with, which is not the same
+ * question as what the image is mostly made of.
+ *
+ * The naive version is a popularity contest — histogram the pixels, take the
+ * top N — and it fails the same way on every photograph: the top eight buckets
+ * of a sunset are eight slightly different oranges, and the top eight of a
+ * portrait are eight greys. Both fill the stack with plates that overprint into
+ * each other, and neither buys any gamut.
+ *
+ * A plate earns its place by making a colour the other plates cannot. Ink is
+ * subtractive and translucent (see `buildSeparationLut`), so any colour inside
+ * the hull of the chosen inks is already reachable by overprinting: a muddy
+ * mid-tone is free, a saturated cyan is not. So selection maximises spread in a
+ * perceptual space, weighted by how much of the sheet each colour actually
+ * covers, and stops when the next plate stops paying for itself.
+ */
+
+/** Sampling raster. Big enough that a 0.5%-coverage spot colour survives. */
+const EXTRACT_SAMPLE_W = 160;
+const EXTRACT_SAMPLE_H = 120;
+
+/*
+ * Every threshold here is a CIE76 ΔE. `deltaE` returns the *square* of it, so
+ * they are compared against its square root — `labDistance` below.
+ *
+ * MERGE is tighter than SEPARATION on purpose: merging asks "is this the same
+ * ink", separation asks "is a second plate worth a whole extra pass on press".
+ * The gap between the two is where near-duplicates go to die instead of
+ * becoming plates 7 and 8.
+ */
+const INK_MERGE_DELTA_E = 11;
+const INK_MIN_SEPARATION = 17;
+
+
+/*
+ * Coverage floors, as a fraction of the sheet — and there are two, because a
+ * vivid colour earns a plate at a coverage a dull one does not. Nothing else in
+ * the stack can make a fluorescent pink; a warm grey is what any two inks
+ * already produce where they overlap.
+ */
+const INK_MIN_SHARE_DULL = 0.02;
+const INK_MIN_SHARE_VIVID = 0.005;
+const INK_VIVID_CHROMA = 38;
+
+/*
+ * The elbow. Every plate after the first is scored on what it adds, and once
+ * that falls to a seventh of what the second plate added, the stack is done.
+ * This is the rule that makes the count follow the artwork — two-colour poster
+ * in, two plates out — instead of always filling every slot.
+ */
+const INK_GAIN_KNEE = 0.14;
+
+/** A plate below this L* anchors the shadows; see `chooseInkPlates`. */
+const INK_KEY_LIGHTNESS = 34;
+const INK_KEY_MIN_SHARE = 0.03;
+
+/** Paper has to be light *and* actually present, not a specular glint. */
+const PAPER_MIN_LIGHTNESS = 84;
+const PAPER_NEAR_DELTA_E = 14;
+
+/**
+ * One merged colour region of the sampled image, carrying everything the
+ * selection judges it on.
+ */
+export interface InkCandidate {
+  hex: string;
+  rgb: [number, number, number];
+  lab: Lab;
+  /** sqrt(a*² + b*²): how far outside grey it sits, i.e. how unfakeable it is. */
+  chroma: number;
+  /** Fraction of the opaque sampled pixels, so: coverage of the sheet. */
+  share: number;
+}
+
+const labDistance = (a: Lab, b: Lab) => Math.sqrt(deltaE(a, b));
+
+/**
+ * How far a colour sits from what one already-chosen plate can already print.
+ *
+ * A single ink on paper does not give you one colour, it gives you a *line*:
+ * every coverage from 0 to 100% traces the ramp from the paper to the solid.
+ * So the question "is this candidate worth its own drum" is a
+ * point-to-segment distance in Lab, not point-to-point — and measuring it
+ * against the solid alone is what buys four plates for a greyscale photograph
+ * (the light greys are all tints of the black) and a second, paler orange for a
+ * sunset (a tint of the first orange is lighter *and* less saturated, which is
+ * exactly what the paler orange is).
+ *
+ * The clamp carries the physics at both ends. Past the solid (t > 1) the
+ * candidate is darker or more saturated than the ink can go at any coverage, so
+ * it measures from the solid and reads as new reach. Before the paper (t < 0)
+ * it is lighter than the substrate, which no amount of ink achieves.
+ */
+function tintRampDistance(c: Lab, paper: Lab, ink: Lab): number {
+  const vl = ink.l - paper.l;
+  const va = ink.a - paper.a;
+  const vb = ink.b - paper.b;
+  const wl = c.l - paper.l;
+  const wa = c.a - paper.a;
+  const wb = c.b - paper.b;
+
+  const vv = vl * vl + va * va + vb * vb;
+  const t = vv > 0 ? Math.max(0, Math.min(1, (wl * vl + wa * va + wb * vb) / vv)) : 0;
+
+  const dl = wl - t * vl;
+  const da = wa - t * va;
+  const db = wb - t * vb;
+  return Math.sqrt(dl * dl + da * da + db * db);
+}
+
+/**
+ * Coverage weight, shared by both scores below.
+ *
+ * The square root matters: raw share lets the background outvote everything, so
+ * the top pick becomes the paper-adjacent tint in every photograph.
+ * Square-rooted, a region four times larger is twice as attractive, which is
+ * about the rate a printer actually cares at.
+ */
+const shareWeight = (c: InkCandidate) => Math.sqrt(c.share);
+
+/** Chroma weight: a colour the others cannot overprint into existence. */
+const chromaWeight = (c: InkCandidate) => 0.55 + Math.min(1, c.chroma / 60);
+
+/**
+ * Worth as the *first* plate, which is a different question from the rest.
+ *
+ * The first plate is the density anchor, so darkness is a constraint here, not
+ * a preference. Ink subtracts: a plate can be lightened to anything between
+ * itself and the paper by dropping coverage, but never darkened. Seed on a
+ * mid-tone and every shadow below it is unreachable at any coverage — which is
+ * why a real separation starts at the key and works up.
+ */
+const anchorWeight = (c: InkCandidate) =>
+  shareWeight(c) * chromaWeight(c) * Math.pow(Math.max(0.05, 1 - c.lab.l / 100), 1.5);
+
+/**
+ * Worth as a *subsequent* plate, where darkness deliberately does not appear.
+ *
+ * Once the anchor is placed, what a new drum buys is hue reach, and a bright
+ * saturated yellow is one of the most valuable plates there is — no stack of
+ * darker inks will ever multiply *up* to it. Carrying the anchor's darkness
+ * term into this score is what made the selection drop exactly those inks.
+ */
+const plateWeight = (c: InkCandidate) => shareWeight(c) * chromaWeight(c);
+
+/**
+ * Pick the plates — and pick *how many* plates.
+ *
+ * Farthest-point selection: seed with the most valuable candidate, then
+ * repeatedly take whichever one maximises (distance from everything already
+ * chosen) × (its own worth). That product kills both failure modes at once. A
+ * near-duplicate scores near zero however popular it is, and a three-pixel
+ * outlier scores near zero however exotic it is.
+ *
+ * Pure, and kept separate from the canvas sampling below, so the rules can be
+ * exercised without a DOM.
+ */
+export function chooseInkPlates(
+  candidates: InkCandidate[],
+  paperLab: Lab,
+  maxInks: number = MAX_INKS
+): InkCandidate[] {
+  const budget = Math.max(1, Math.min(MAX_INKS, maxInks));
+  if (candidates.length === 0) return [];
+
+  const pool = [...candidates];
+  let seedIdx = 0;
+  for (let i = 1; i < pool.length; i++) {
+    if (anchorWeight(pool[i]) > anchorWeight(pool[seedIdx])) seedIdx = i;
+  }
+  const chosen: InkCandidate[] = [pool.splice(seedIdx, 1)[0]];
+
+  /* The second plate sets the scale every later plate is judged against. */
+  let firstGain = 0;
+
+  while (chosen.length < budget && pool.length > 0) {
+    let bestIdx = -1;
+    let bestGain = 0;
+
+    for (let i = 0; i < pool.length; i++) {
+      const c = pool[i];
+      const floor = c.chroma >= INK_VIVID_CHROMA ? INK_MIN_SHARE_VIVID : INK_MIN_SHARE_DULL;
+      if (c.share < floor) continue;
+
+      let sep = Infinity;
+      for (const s of chosen) sep = Math.min(sep, tintRampDistance(c.lab, paperLab, s.lab));
+      if (sep < INK_MIN_SEPARATION) continue;
+
+      const gain = sep * plateWeight(c);
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx < 0) break;
+    if (firstGain === 0) firstGain = bestGain;
+    else if (bestGain < firstGain * INK_GAIN_KNEE) break;
+
+    chosen.push(pool.splice(bestIdx, 1)[0]);
+  }
+
+  /*
+   * Reserve one dark plate if the picture has shadows and the selection came
+   * back all mid-tones.
+   *
+   * Without a key, the separation can only build a shadow by piling every
+   * chromatic plate on top of each other — the wrong colour, and the fastest
+   * route into the TAC limit, after which the solve redistributes and the
+   * shadows go flat. One dark ink is worth more than a fifth hue.
+   */
+  const hasKey = chosen.some((c) => c.lab.l < INK_KEY_LIGHTNESS);
+  if (!hasKey && chosen.length < budget) {
+    let key: InkCandidate | null = null;
+    for (const c of pool) {
+      if (c.share < INK_KEY_MIN_SHARE || c.lab.l >= INK_KEY_LIGHTNESS) continue;
+      let sep = Infinity;
+      for (const s of chosen) sep = Math.min(sep, tintRampDistance(c.lab, paperLab, s.lab));
+      if (sep < INK_MIN_SEPARATION) continue;
+      if (!key || c.lab.l < key.lab.l) key = c;
+    }
+    if (key) chosen.push(key);
+  }
+
+  /*
+   * Darkest first: the printing order convention, and what `inksFromPalette`
+   * already assumes when it calls the darkest entry the key.
+   */
+  return chosen.sort((a, b) => a.lab.l - b.lab.l);
+}
+
+/**
+ * Extracts the ink stack and the paper stock an image would be printed with.
  */
 export function extractImageInks(
   element: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement,
   press: PressProfile = 'riso',
   maxInks: number = 4
 ): { paper: string; inks: InkPlate[] } {
+  const fallback = (paper = '#ffffff'): { paper: string; inks: InkPlate[] } => ({
+    paper,
+    inks: applyPressAngles([makeInkPlate(INK_LIBRARY[0], press, 15)], press),
+  });
+
   const canvas = document.createElement('canvas');
-  const w = 120;
-  const h = 90;
+  const w = EXTRACT_SAMPLE_W;
+  const h = EXTRACT_SAMPLE_H;
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) {
-    return {
-      paper: '#ffffff',
-      inks: PRESS_PROFILES[press].angles.slice(0, 2).map((a, i) =>
-        makeInkPlate(INK_LIBRARY[i], press, a)
-      ),
-    };
-  }
+  if (!ctx) return fallback();
 
   try {
     ctx.drawImage(element, 0, 0, w, h);
-    const imgData = ctx.getImageData(0, 0, w, h);
-    const data = imgData.data;
-    const totalPixels = w * h;
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const pixels = w * h;
 
-    // Check corners for paper / background color
-    const cornerOffsets = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4];
-    const cornerColors: [number, number, number][] = [];
-    for (const off of cornerOffsets) {
-      if (data[off + 3] >= 128) {
-        cornerColors.push([data[off], data[off + 1], data[off + 2]]);
-      }
-    }
-
-    // 5-bit RGB histogram (32x32x32 buckets)
-    const bins = new Map<number, { r: number; g: number; b: number; count: number }>();
-    for (let i = 0; i < totalPixels; i++) {
-      const idx = i * 4;
-      const a = data[idx + 3];
-      if (a < 128) continue;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-
-      const binKey = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-      const existing = bins.get(binKey);
-      if (existing) {
-        existing.r += r;
-        existing.g += g;
-        existing.b += b;
-        existing.count++;
+    /*
+     * 5-bit RGB histogram, accumulating sums so each bucket yields a true
+     * centroid rather than whichever pixel happened to land in it first.
+     */
+    const bins = new Map<number, { r: number; g: number; b: number; n: number }>();
+    let opaque = 0;
+    for (let i = 0; i < pixels; i++) {
+      const o = i * 4;
+      if (data[o + 3] < 128) continue;
+      opaque++;
+      const r = data[o];
+      const g = data[o + 1];
+      const b = data[o + 2];
+      const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+      const hit = bins.get(key);
+      if (hit) {
+        hit.r += r;
+        hit.g += g;
+        hit.b += b;
+        hit.n++;
       } else {
-        bins.set(binKey, { r, g, b, count: 1 });
+        bins.set(key, { r, g, b, n: 1 });
       }
     }
+    if (opaque === 0 || bins.size === 0) return fallback();
 
-    // Convert bins to cluster centroids
-    const clusters: { hex: string; rgb: [number, number, number]; lum: number; count: number }[] = [];
-    for (const b of bins.values()) {
-      const r = Math.round(b.r / b.count);
-      const g = Math.round(b.g / b.count);
-      const bl = Math.round(b.b / b.count);
-      const hex = '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
-      const lum = 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (bl / 255);
-      clusters.push({ hex, rgb: [r, g, bl], lum, count: b.count });
+    /*
+     * Corner average, as the tie-breaker for which light region is the paper: a
+     * background reaches the edge of the frame, a highlight usually does not.
+     */
+    let cornerLab: Lab | null = null;
+    let cornerHex = '';
+    const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4].filter(
+      (o) => data[o + 3] >= 128
+    );
+    if (corners.length > 0) {
+      const cr = Math.round(corners.reduce((s, o) => s + data[o], 0) / corners.length);
+      const cg = Math.round(corners.reduce((s, o) => s + data[o + 1], 0) / corners.length);
+      const cb = Math.round(corners.reduce((s, o) => s + data[o + 2], 0) / corners.length);
+      cornerLab = rgbToLab(cr, cg, cb);
+      cornerHex = bytesToHex(cr, cg, cb);
     }
 
-    // Sort by popularity
-    clusters.sort((a, b) => b.count - a.count);
-
-    // Merge visually similar clusters (distance threshold ~36 in RGB space)
-    const merged: typeof clusters = [];
-    for (const c of clusters) {
-      let isDuplicate = false;
-      for (const m of merged) {
-        const dr = c.rgb[0] - m.rgb[0];
-        const dg = c.rgb[1] - m.rgb[1];
-        const db = c.rgb[2] - m.rgb[2];
-        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-        if (dist < 36) {
-          m.count += c.count;
-          isDuplicate = true;
+    /*
+     * Merge in Lab, moving the centroid as mass arrives. The old pass kept the
+     * first bucket's colour and only added the counts, which left the
+     * representative sitting at the edge of its own cluster.
+     */
+    type Cluster = { r: number; g: number; b: number; n: number; lab: Lab };
+    const clusters: Cluster[] = [];
+    for (const bin of [...bins.values()].sort((a, b) => b.n - a.n)) {
+      const r = bin.r / bin.n;
+      const g = bin.g / bin.n;
+      const b = bin.b / bin.n;
+      const lab = rgbToLab(r, g, b);
+      let host: Cluster | null = null;
+      for (const c of clusters) {
+        if (labDistance(lab, c.lab) < INK_MERGE_DELTA_E) {
+          host = c;
           break;
         }
       }
-      if (!isDuplicate) {
-        merged.push(c);
+      if (host) {
+        const n = host.n + bin.n;
+        host.r = (host.r * host.n + r * bin.n) / n;
+        host.g = (host.g * host.n + g * bin.n) / n;
+        host.b = (host.b * host.n + b * bin.n) / n;
+        host.n = n;
+        host.lab = rgbToLab(host.r, host.g, host.b);
+      } else {
+        clusters.push({ r, g, b, n: bin.n, lab });
       }
     }
 
-    if (merged.length === 0) {
+    /*
+     * Re-sort. Merging moves mass between clusters, so the order the buckets
+     * arrived in is no longer the order of importance — the old code sorted
+     * once, *before* merging, and never again, which is why a colour that had
+     * absorbed half the image could still rank below one that had not.
+     */
+    clusters.sort((a, b) => b.n - a.n);
+
+    const candidates: InkCandidate[] = clusters.map((c) => {
+      const r = Math.round(c.r);
+      const g = Math.round(c.g);
+      const b = Math.round(c.b);
       return {
-        paper: '#ffffff',
-        inks: [makeInkPlate(INK_LIBRARY[0], press, 15)],
+        hex: bytesToHex(r, g, b),
+        rgb: [r, g, b] as [number, number, number],
+        lab: c.lab,
+        chroma: Math.sqrt(c.lab.a * c.lab.a + c.lab.b * c.lab.b),
+        share: c.n / opaque,
       };
-    }
-
-    let paperHex = '#ffffff';
-    let inkCandidates = [...merged];
-
-    // Find the lightest candidate with significant presence (> 3% of pixels)
-    const lightCandidates = merged.filter((c) => c.lum > 0.85 && c.count > totalPixels * 0.03);
-    if (lightCandidates.length > 0) {
-      lightCandidates.sort((a, b) => b.lum - a.lum);
-      paperHex = lightCandidates[0].hex;
-      inkCandidates = inkCandidates.filter((c) => c.hex !== paperHex);
-    } else {
-      if (cornerColors.length > 0) {
-        const avgR = Math.round(cornerColors.reduce((s, c) => s + c[0], 0) / cornerColors.length);
-        const avgG = Math.round(cornerColors.reduce((s, c) => s + c[1], 0) / cornerColors.length);
-        const avgB = Math.round(cornerColors.reduce((s, c) => s + c[2], 0) / cornerColors.length);
-        const cornerLum = 0.2126 * (avgR / 255) + 0.7152 * (avgG / 255) + 0.0722 * (avgB / 255);
-        if (cornerLum > 0.8) {
-          paperHex = '#' + ((1 << 24) + (avgR << 16) + (avgG << 8) + avgB).toString(16).slice(1);
-        }
-      }
-    }
-
-    // Filter out candidates that are nearly identical to paper
-    const [pr, pg, pb] = linearizeHex(paperHex);
-    inkCandidates = inkCandidates.filter((c) => {
-      const [cr, cg, cb] = linearizeHex(c.hex);
-      const dr = (cr - pr) * 255;
-      const dg = (cg - pg) * 255;
-      const db = (cb - pb) * 255;
-      return Math.sqrt(dr * dr + dg * dg + db * db) > 28;
     });
 
-    const selectedInks = inkCandidates.slice(0, Math.max(1, Math.min(MAX_INKS, maxInks)));
-    if (selectedInks.length === 0) {
-      selectedInks.push(merged[0]);
+    /*
+     * Paper: the most *present* light region, not the lightest one. Picking by
+     * lightness handed the stock to a 3%-coverage specular highlight and left
+     * the cream background to be printed as an ink.
+     */
+    let paperHex = '#ffffff';
+    let paperLab = rgbToLab(255, 255, 255);
+    const paperPick = candidates
+      .filter((c) => c.lab.l >= PAPER_MIN_LIGHTNESS && c.share >= 0.03)
+      .map((c) => ({
+        c,
+        score:
+          c.share +
+          (cornerLab && labDistance(c.lab, cornerLab) < PAPER_NEAR_DELTA_E ? 0.25 : 0),
+      }))
+      .sort((a, b) => b.score - a.score)[0];
+
+    if (paperPick) {
+      paperHex = paperPick.c.hex;
+      paperLab = paperPick.c.lab;
+    } else if (cornerLab && cornerHex && cornerLab.l >= PAPER_MIN_LIGHTNESS - 4) {
+      paperHex = cornerHex;
+      paperLab = cornerLab;
     }
+
+    /*
+     * Nothing within a hair of the paper gets a plate: that pass would lay
+     * near-white on near-white and spend a whole drum on nothing.
+     */
+    const inkPool = candidates.filter(
+      (c) => labDistance(c.lab, paperLab) > PAPER_NEAR_DELTA_E
+    );
+
+    const selected = chooseInkPlates(inkPool, paperLab, maxInks);
+    if (selected.length === 0) return fallback(paperHex);
 
     const angles = PRESS_PROFILES[press].angles;
-    const newInks = selectedInks.map((c, idx) => {
-      let bestName = `Ink ${idx + 1}`;
-      let bestDist = Infinity;
+    const plates = selected.map((c, idx) => {
+      /*
+       * Name from the ink library when it genuinely *is* that ink, judged
+       * perceptually — the old threshold of 40 was measured in linear RGB,
+       * where it means wildly different things at different lightnesses.
+       */
+      let name = `Ink ${idx + 1}`;
+      let best = Infinity;
       for (const spec of INK_LIBRARY) {
-        const [sr, sg, sb] = linearizeHex(spec.hex);
-        const [cr, cg, cb] = linearizeHex(c.hex);
-        const d = Math.sqrt(Math.pow((sr - cr) * 255, 2) + Math.pow((sg - cg) * 255, 2) + Math.pow((sb - cb) * 255, 2));
-        if (d < bestDist) {
-          bestDist = d;
-          if (d < 40) {
-            bestName = spec.name;
-          }
+        const [sr, sg, sb] = hexToBytes(spec.hex);
+        const d = labDistance(c.lab, rgbToLab(sr, sg, sb));
+        if (d < best) {
+          best = d;
+          if (d < 12) name = spec.name;
         }
       }
-
-      return makeInkPlate(
-        { name: bestName, hex: c.hex },
-        press,
-        angles[Math.min(idx, angles.length - 1)]
-      );
+      return makeInkPlate({ name, hex: c.hex }, press, angles[Math.min(idx, angles.length - 1)]);
     });
 
-    return {
-      paper: paperHex,
-      inks: applyPressAngles(newInks, press),
-    };
+    return { paper: paperHex, inks: applyPressAngles(plates, press) };
   } catch {
-    return {
-      paper: '#ffffff',
-      inks: [makeInkPlate(INK_LIBRARY[0], press, 15)],
-    };
+    return fallback();
   }
 }
