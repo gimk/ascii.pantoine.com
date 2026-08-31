@@ -398,6 +398,10 @@ export function defaultPrintConfig(): PrintConfig {
   const press: PressProfile = 'riso';
   const p = PRESS_PROFILES[press];
   return {
+    engineMode: 'simulation',
+    cmykRuling: 50,
+    cmykDotScale: 1.0,
+    cmykAngles: { c: 15, m: 75, y: 0, k: 45 },
     press,
     inks: [
       makeInkPlate({ name: 'Fluorescent Pink', hex: '#ff48b0' }, press, 45),

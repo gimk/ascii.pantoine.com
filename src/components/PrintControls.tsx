@@ -44,6 +44,7 @@ import {
 
 import { BUILTIN_PALETTES } from '../engine/palettes';
 import { DITHER_ALGORITHMS, hasThresholdMask } from '../engine/ditherAlgorithms';
+import { getFastCmykPlates, CMYK_DEFAULT_ANGLES } from '../engine/fastCmykEngine';
 
 /**
  * Press, inks and screens — print mode's replacement for the dither picker.
@@ -544,68 +545,251 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
       </div>
     ));
 
+  const isCmyk = config.engineMode === 'cmyk';
+  const cmykPlates = getFastCmykPlates(config);
+
   return (
     <>
-      {/* Press profile */}
-      <div className="control-row">
+      {/* Engine Switcher */}
+      <div className="control-row" style={{ marginBottom: '4px' }}>
         <span
           className="control-label"
-          title="Stamps ruling, screen family, dot shape, dot gain, paper and the 30-degree angle convention across the whole stack. A starting point, not a lock — change anything after."
+          title="Switch between the instant analytical CMYK halftone engine (Gustavson rotated screens) and the physical multi-ink press separation engine."
         >
-          Press
+          Engine Mode
         </span>
       </div>
-      <div className="print-press-grid" style={{ marginBottom: '8px' }}>
-        {(Object.keys(PRESS_PROFILES) as PressProfile[]).map((id) => (
-          <button
-            key={id}
-            type="button"
-            className={`btn btn-sm btn-toggle ${config.press === id ? 'btn-primary' : ''}`}
-            onClick={() => applyPress(id)}
-            title={PRESS_PROFILES[id].description}
-          >
-            {PRESS_PROFILES[id].name}
-          </button>
-        ))}
+      <div className="btn-grid-2" style={{ marginBottom: '10px' }}>
+        <button
+          type="button"
+          className={`btn btn-sm btn-stacked ${isCmyk ? 'btn-primary' : ''}`}
+          onClick={() => set('engineMode', 'cmyk')}
+          title="Instant analytical CMYK halftone rasterizer (Gustavson rotated screens). Blazing fast 60+ FPS live performance."
+        >
+          <span className="btn-stacked-main">FAST CMYK</span>
+          <span className="btn-stacked-sub">Instant Raster</span>
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm btn-stacked ${!isCmyk ? 'btn-primary' : ''}`}
+          onClick={() => set('engineMode', 'simulation')}
+          title="Full physical press separation simulation (1-8 custom spot/Riso inks, TAC limit, Yule-Nielsen optical gain, stochastic grain interlock)."
+        >
+          <span className="btn-stacked-main">PRESS SIM</span>
+          <span className="btn-stacked-sub">Physical Plates</span>
+        </button>
       </div>
 
-      {/* Paper stock */}
-      <div className="control-row">
-        <span
-          className="control-label"
-          title="Paper colour. What shows through where no dot lands, and the substrate inks multiply against."
-        >
-          Paper
-        </span>
-        <div className="control-cluster control-fixed">
-          <DeferredColorInput
-            value={config.paper}
-            showHexField
-            hexFieldWidth="72px"
-            onChange={(val) => set('paper', val)}
-          />
-        </div>
-      </div>
-      {!compact && (
-        <div className="print-paper-grid" style={{ marginBottom: '8px' }}>
-          {PAPER_STOCKS.map((s) => (
-            <button
-              key={s.hex}
-              type="button"
-              className={`print-paper-chip ${config.paper.toLowerCase() === s.hex.toLowerCase() ? 'active' : ''}`}
-              style={{ background: s.hex }}
-              onClick={() => set('paper', s.hex)}
-              title={`${s.name} · ${s.hex}`}
+      {isCmyk ? (
+        <>
+          {/* Paper stock */}
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Paper colour. What shows through where no dot lands, and the substrate inks multiply against."
+            >
+              Paper
+            </span>
+            <div className="control-cluster control-fixed">
+              <DeferredColorInput
+                value={config.paper}
+                showHexField
+                hexFieldWidth="72px"
+                onChange={(val) => set('paper', val)}
+              />
+            </div>
+          </div>
+          {!compact && (
+            <div className="print-paper-grid" style={{ marginBottom: '8px' }}>
+              {PAPER_STOCKS.map((s) => (
+                <button
+                  key={s.hex}
+                  type="button"
+                  className={`print-paper-chip ${config.paper.toLowerCase() === s.hex.toLowerCase() ? 'active' : ''}`}
+                  style={{ background: s.hex }}
+                  onClick={() => set('paper', s.hex)}
+                  title={`${s.name} · ${s.hex}`}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="tonal-subheading" style={{ marginTop: '6px', marginBottom: '6px' }}>
+            <span title="Analytical CMYK halftone parameters.">
+              Halftone Screen Settings
+            </span>
+          </div>
+
+          <div className="control-row" style={{ marginBottom: '6px' }}>
+            <span
+              className="control-label"
+              title="Halftone screen ruling (frequency of cells across image width). Higher = finer dot matrix."
+            >
+              Ruling
+              <span className="control-hint-dim"> · {rulingToLpi(config.cmykRuling ?? 50, (cols || 100) * proofSs)} lpi</span>
+            </span>
+            <PrecisionSlider
+              value={config.cmykRuling ?? 50}
+              sliderMin={10}
+              sliderMax={500}
+              hardMin={2}
+              hardMax={1000}
+              step={1}
+              resetTo={50}
+              onChange={(val) => set('cmykRuling', val)}
             />
-          ))}
-        </div>
-      )}
+          </div>
 
-      <div className="tonal-subheading" style={{ marginTop: '4px', marginBottom: '6px' }}>
-        <span title="Global color separation physics and multi-plate stochastic screening behavior.">
-          Separation & Screening
-        </span>
-      </div>
+          <div className="control-row" style={{ marginBottom: '8px' }}>
+            <span
+              className="control-label"
+              title="Dot scale / gain multiplier (0.5x to 2.0x). Enlarges or shrinks dot coverage for heavier or lighter print feel."
+            >
+              Dot Gain / Scale
+            </span>
+            <PrecisionSlider
+              value={config.cmykDotScale ?? 1.0}
+              sliderMin={0.5}
+              sliderMax={1.8}
+              hardMin={0.2}
+              hardMax={2.5}
+              step={0.05}
+              resetTo={1.0}
+              onChange={(val) => set('cmykDotScale', val)}
+            />
+          </div>
+
+          <div className="tonal-subheading" style={{ marginTop: '8px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span title="Process CMYK printing plates with standard rosette screen angles.">
+              Process CMYK Plates (4)
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              style={{ fontSize: '9px', padding: '1px 5px', height: '18px' }}
+              onClick={() => set('cmykAngles', { ...CMYK_DEFAULT_ANGLES })}
+              title="Reset screen angles to standard rosette convention (C:15°, M:75°, Y:0°, K:45°)"
+            >
+              <RotateCw size={9} style={{ marginRight: '3px' }} />
+              ROSETTE
+            </button>
+          </div>
+
+          {cmykPlates.map((ink, i) => {
+            const angleKey = (i === 0 ? 'c' : i === 1 ? 'm' : i === 2 ? 'y' : 'k') as 'c' | 'm' | 'y' | 'k';
+            const currentAngle = config.cmykAngles?.[angleKey] ?? (i === 0 ? 15 : i === 1 ? 75 : i === 2 ? 0 : 45);
+            return (
+              <div
+                className={`print-plate${!ink.enabled ? ' is-disabled-plate' : ''}`}
+                key={ink.id}
+                style={{ marginBottom: '4px' }}
+              >
+                <div className="print-plate-head">
+                  <span className="print-plate-index">{String(i + 1).padStart(2, '0')}</span>
+                  <span
+                    className="print-plate-swatch"
+                    style={{ background: ink.hex }}
+                    title={`${ink.hex}`}
+                  />
+                  <span className="print-plate-name" title={ink.name}>
+                    {ink.name}
+                  </span>
+                  <span className="print-plate-meta">
+                    {currentAngle}°
+                  </span>
+                  <button
+                    type="button"
+                    className={`btn btn-sm btn-micro ${!ink.hidden && ink.enabled ? 'btn-primary' : ''}`}
+                    style={ink.hidden || !ink.enabled ? { opacity: 0.5 } : undefined}
+                    onClick={() => {
+                      const newInks = config.inks.length >= 4 ? [...config.inks] : getFastCmykPlates(config);
+                      if (newInks[i]) {
+                        newInks[i] = { ...newInks[i], hidden: !ink.hidden };
+                        onChange({ ...config, inks: newInks });
+                      }
+                    }}
+                    title={ink.hidden ? 'Show this ink pass on paper' : 'Hide this ink pass from view'}
+                  >
+                    {ink.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
+                  </button>
+                  <ToggleSwitch
+                    checked={ink.enabled}
+                    onChange={(val) => {
+                      const newInks = config.inks.length >= 4 ? [...config.inks] : getFastCmykPlates(config);
+                      if (newInks[i]) {
+                        newInks[i] = { ...newInks[i], enabled: val };
+                        onChange({ ...config, inks: newInks });
+                      }
+                    }}
+                    title="Include in separation (ON) / Exclude from separation (OFF)"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </>
+      ) : (
+        <>
+          {/* Press profile */}
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Stamps ruling, screen family, dot shape, dot gain, paper and the 30-degree angle convention across the whole stack. A starting point, not a lock — change anything after."
+            >
+              Press
+            </span>
+          </div>
+          <div className="print-press-grid" style={{ marginBottom: '8px' }}>
+            {(Object.keys(PRESS_PROFILES) as PressProfile[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                className={`btn btn-sm btn-toggle ${config.press === id ? 'btn-primary' : ''}`}
+                onClick={() => applyPress(id)}
+                title={PRESS_PROFILES[id].description}
+              >
+                {PRESS_PROFILES[id].name}
+              </button>
+            ))}
+          </div>
+
+          {/* Paper stock */}
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Paper colour. What shows through where no dot lands, and the substrate inks multiply against."
+            >
+              Paper
+            </span>
+            <div className="control-cluster control-fixed">
+              <DeferredColorInput
+                value={config.paper}
+                showHexField
+                hexFieldWidth="72px"
+                onChange={(val) => set('paper', val)}
+              />
+            </div>
+          </div>
+          {!compact && (
+            <div className="print-paper-grid" style={{ marginBottom: '8px' }}>
+              {PAPER_STOCKS.map((s) => (
+                <button
+                  key={s.hex}
+                  type="button"
+                  className={`print-paper-chip ${config.paper.toLowerCase() === s.hex.toLowerCase() ? 'active' : ''}`}
+                  style={{ background: s.hex }}
+                  onClick={() => set('paper', s.hex)}
+                  title={`${s.name} · ${s.hex}`}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="tonal-subheading" style={{ marginTop: '4px', marginBottom: '6px' }}>
+            <span title="Global color separation physics and multi-plate stochastic screening behavior.">
+              Separation & Screening
+            </span>
+          </div>
 
       <div className="control-row" style={{ marginBottom: '8px' }}>
         <span
@@ -1120,6 +1304,8 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             <span>EXTRACT INKS FROM IMAGE</span>
           </button>
         </div>
+      )}
+        </>
       )}
     </>
   );

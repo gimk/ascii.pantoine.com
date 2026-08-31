@@ -29,6 +29,7 @@ import {
 import { applyDitherAlgorithm, DITHER_ALGORITHMS } from './ditherAlgorithms';
 import { traceVectorField, VectorColorResolver } from './vectorEngine';
 import { separatePrint, screenPlates, tierSupersample } from './printEngine';
+import { renderFastCmykFrame } from './fastCmykEngine';
 import { PRINT_CONFIG_DEFAULTS } from './printInks';
 
 export interface RawFrameBuffer {
@@ -1342,13 +1343,45 @@ export function processRasterFrame(
       }
     }
 
+    const ss = tierSupersample(printCfg, cols, rows, tier);
+
     /*
+     * Fast CMYK: Analytical rotated halftone screens (Stefan Gustavson / Shadertoy fdjyR1).
+     * Instant 60 FPS processing with zero heavy 3D LUT solving.
+     */
+    if (printCfg.engineMode === 'cmyk') {
+      const cmykFrame = renderFastCmykFrame({
+        rgbData: printTargetBuffer,
+        cols,
+        rows,
+        supersample: ss,
+        config: printCfg,
+        tier,
+      });
+
+      return {
+        text: '',
+        colors: null,
+        luminance: lumBuffer,
+        cols,
+        rows,
+        rasterMode: 'print',
+        bgColor: printCfg.paper || '#ffffff',
+        isColored: true,
+        vector: null,
+        print: cmykFrame,
+        histogram: histogramBuffer,
+        histogramOpaque,
+      };
+    }
+
+    /*
+     * Physical Simulation: Full multi-ink colorimetric separation & stochastic FM / AM screening.
      * The separation is tier-independent — it is the same colour solve at the
      * same table size whichever quality is being screened, which is what lets a
      * proof reuse the live frame's coverage rather than recomputing it.
      */
     const separation = separatePrint(printTargetBuffer, lumBuffer, cols, rows, printCfg);
-    const ss = tierSupersample(printCfg, cols, rows, tier);
 
     return {
       text: '',
@@ -1357,20 +1390,8 @@ export function processRasterFrame(
       cols,
       rows,
       rasterMode: 'print',
-      /*
-       * The paper is the ground, and it comes from the ink config rather than
-       * from `bgColor`. A print has no background in the CRT sense — the
-       * substrate is a term in the separation itself (printInks.ts), so letting
-       * the colour panel's background win here would show one paper and
-       * separate against another.
-       */
       bgColor: printCfg.paper,
       isColored: true,
-      /*
-       * Both fork fields are always present, so a painter can branch on either
-       * without an existence check — the same reason `emptyRasterResult` is one
-       * shared literal rather than four hand-copied ones.
-       */
       vector: null,
       print: screenPlates(separation, ss, tier),
       histogram: histogramBuffer,

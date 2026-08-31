@@ -659,7 +659,17 @@ export interface InkPlate {
   maxCoverage: number;
 }
 
+export type PrintEngineMode = 'cmyk' | 'simulation';
+
 export interface PrintConfig {
+  /** 'cmyk' for instant GPU/analytical CMYK rasterizer, 'simulation' for physical multi-ink press separation. */
+  engineMode?: PrintEngineMode;
+  /** Ruling (frequency across width) for fast CMYK engine */
+  cmykRuling?: number;
+  /** Dot scale multiplier (0.5 to 2.0, default 1.0) for fast CMYK engine */
+  cmykDotScale?: number;
+  /** Screen angles in degrees for CMYK plates */
+  cmykAngles?: { c: number; m: number; y: number; k: number };
   press: PressProfile;
   inks: InkPlate[];
   /**

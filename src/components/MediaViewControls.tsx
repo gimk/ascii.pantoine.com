@@ -342,10 +342,11 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   // 4. PRINT MODE: 1. Press and Inks -> 2. Press Settings & Proof
   // ---------------------------------------------------------------------------
   if (isPrint) {
+    const isCmyk = activePrintConfig.engineMode === 'cmyk';
     const pressName = activePrintConfig.press.toUpperCase();
-    const inkCount = activePrintConfig.inks.length;
-    const pressBadge = `${pressName} · ${inkCount} INK${inkCount === 1 ? '' : 'S'}`;
-    const proofBadge = `TAC ${activePrintConfig.tacLimit}% · YN ${activePrintConfig.yuleNielsen.toFixed(1)}`;
+    const inkCount = isCmyk ? 4 : activePrintConfig.inks.length;
+    const pressBadge = isCmyk ? 'FAST CMYK · 4 INKS' : `${pressName} · ${inkCount} INK${inkCount === 1 ? '' : 'S'}`;
+    const proofBadge = isCmyk ? `CMYK · ${activePrintConfig.cmykRuling ?? 50} RULING` : `TAC ${activePrintConfig.tacLimit}% · YN ${activePrintConfig.yuleNielsen.toFixed(1)}`;
 
     return (
       <div className="tab-content">
