@@ -9,6 +9,9 @@ import {
   UiThemeSettings,
   PostProcessConfig,
   VectorFrame,
+  PrintFrame,
+  PrintConfig,
+  PrintTier,
   CropRect,
   MediaConfig,
   ResamplingMode,
@@ -27,6 +30,7 @@ import { CropOverlay } from './CropOverlay';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT, MONOSPACE_CELL_ASPECT } from '../engine/renderer';
 import { resolvePhosphorTint } from '../engine/palettes';
 import { paintVectorFrame, vectorFrameErasesGround } from '../engine/vectorEngine';
+import { resolvePrintFrame } from '../engine/printEngine';
 import { resolveAutoResolution, shouldReplaceGrid, createAutoResController } from '../engine/autoResolution';
 import type { AutoResSignals } from '../engine/autoResolution';
 
@@ -126,7 +130,9 @@ export interface AsciiViewportHandle {
      * redraw one canvas in place every tick — a prop would either never look
      * changed, or force a React render per frame to say that it had.
      */
-    sourceLayer?: HTMLCanvasElement | null
+    sourceLayer?: HTMLCanvasElement | null,
+    /** The screened device raster, in print mode. Null in every other. */
+    print?: PrintFrame | null
   ) => void;
   getFrameText: () => string;
   autoFit: () => void;
@@ -245,6 +251,19 @@ interface AsciiViewportProps {
    */
   postProcess?: PostProcessConfig;
   rasterMode?: RasterOutputMode;
+  /**
+   * Print settings, for the two the painter can act on without re-screening:
+   * the Yule-Nielsen exponent and the soloed plate. See `printYuleNielsenRef`.
+   */
+  printConfig?: PrintConfig;
+  /**
+   * Which tier the frame on screen was screened at, for the status badge.
+   *
+   * A prop rather than read off the frame because the frame arrives through the
+   * imperative `setFrame` and the badge is React-rendered chrome; App already
+   * knows the tier because it chose it.
+   */
+  printTier?: { tier: PrintTier; supersample: number } | null;
 }
 
 export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>(({
@@ -297,6 +316,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   onMediaFileDrop,
   initialView = null,
   postProcess,
+  printConfig,
+  printTier = null,
 }, ref) => {
   const isTimelineDisabled = appMode === 'media' && mediaType === 'image';
   const containerRef = useRef<HTMLDivElement>(null);
@@ -324,7 +345,25 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
   const latestColorsRef = useRef<Uint8ClampedArray | null>(null);
   const latestBgColorRef = useRef<string | undefined>(undefined);
   const latestVectorRef = useRef<VectorFrame | null>(null);
-  
+  const latestPrintRef = useRef<PrintFrame | null>(null);
+
+  /*
+   * The two print settings the *painter* needs, mirrored into refs.
+   *
+   * Deliberately only these two. Everything else about a print — inks, screens,
+   * registration — is baked into `plateMask` by the engine and cannot be
+   * changed at paint time. The Yule-Nielsen exponent belongs to the
+   * downsample, and solo is a mask filter over bits that are already there, so
+   * both are free here and would cost a full re-screen anywhere else. Refs
+   * rather than props read directly because `drawPrint` runs from the animation
+   * loop.
+   */
+  const printYuleNielsenRef = useRef<number>(printConfig?.yuleNielsen ?? 1);
+  printYuleNielsenRef.current = printConfig?.yuleNielsen ?? 1;
+  const printSoloRef = useRef<string | null>(printConfig?.soloInk ?? null);
+  printSoloRef.current = printConfig?.soloInk ?? null;
+
+
   const [isColoredView, setIsColoredView] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const isDraggingRef = useRef<boolean>(false);
@@ -1060,6 +1099,182 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     []
   );
 
+  /**
+   * Paint a screened print.
+   *
+   * Shaped like the pixel branch below — resolve to an `ImageData` and blit —
+   * rather than like the vector one, because a print *is* a bitmap: the dots
+   * were burned onto a plate at a fixed device resolution and re-screening on
+   * zoom would move them, which is the one thing a press never does.
+   *
+   * The resolve target is the backing store, not the device raster, so the box
+   * filter inside `resolvePrintFrame` lands the whole reduction in one place.
+   * That matters: letting the browser scale an eight-times raster down beats
+   * against the dot lattice and produces false moire that reads as a bug in the
+   * screening. Past `MAX_BACKING_DIM` only the visible window is resolved,
+   * which is also the zoom at which someone is actually inspecting dots.
+   */
+  const drawPrint = useCallback(
+    (
+      canvas: HTMLCanvasElement,
+      container: HTMLDivElement,
+      frame: PrintFrame | null,
+      v: ViewTransform
+    ) => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      if (!frame || frame.width <= 0 || frame.height <= 0) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        lastDrawRef.current = null;
+        return;
+      }
+
+      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      const scale = v.scale;
+      /* Square cells, so one grid cell is one unit — same space as getContentSize. */
+      const unscaledW = Math.max(1, cols);
+      const unscaledH = Math.max(1, rows);
+      const viewW = container.clientWidth;
+      const viewH = container.clientHeight;
+      const totalCssW = Math.round(unscaledW * scale);
+      const totalCssH = Math.round(unscaledH * scale);
+      const culled =
+        Math.max(unscaledW, unscaledH) * scale * dpr > MAX_BACKING_DIM ||
+        totalCssW > viewW * 1.25 ||
+        totalCssH > viewH * 1.25;
+
+      const prev = lastDrawRef.current;
+      const sameContent =
+        prev !== null &&
+        prev.seq === frameSeqRef.current &&
+        prev.scale === scale &&
+        prev.mode === 'print' &&
+        prev.culled === culled &&
+        prev.cols === cols &&
+        prev.rows === rows &&
+        prev.post === postDrawKeyRef.current;
+
+      if (sameContent && !culled) {
+        const translate = `translate3d(${v.tx}px, ${v.ty}px, 0)`;
+        if (canvas.style.transform !== translate) canvas.style.transform = translate;
+        return;
+      }
+
+      lastDrawRef.current = {
+        seq: frameSeqRef.current,
+        scale,
+        mode: 'print',
+        culled,
+        cols,
+        rows,
+        post: postDrawKeyRef.current,
+      };
+
+      const cssW = culled ? viewW : totalCssW;
+      const cssH = culled ? viewH : totalCssH;
+      const cssWpx = `${cssW}px`;
+      const cssHpx = `${cssH}px`;
+      if (canvas.style.width !== cssWpx) canvas.style.width = cssWpx;
+      if (canvas.style.height !== cssHpx) canvas.style.height = cssHpx;
+      const translate = culled ? 'none' : `translate3d(${v.tx}px, ${v.ty}px, 0)`;
+      if (canvas.style.transform !== translate) canvas.style.transform = translate;
+
+      const backingW = Math.max(1, Math.round(cssW * dpr));
+      const backingH = Math.max(1, Math.round(cssH * dpr));
+      if (canvas.width !== backingW || canvas.height !== backingH) {
+        canvas.width = backingW;
+        canvas.height = backingH;
+      }
+
+      // What slice of the plate is on screen, and where it lands on the canvas.
+      let src: { x: number; y: number; w: number; h: number } | undefined;
+      let destX = 0;
+      let destY = 0;
+      let destW = backingW;
+      let destH = backingH;
+
+      if (culled) {
+        const clampG = (val: number, span: number) => Math.max(0, Math.min(span, val));
+        const gx0 = clampG(-v.tx / scale, unscaledW);
+        const gx1 = clampG((viewW - v.tx) / scale, unscaledW);
+        const gy0 = clampG(-v.ty / scale, unscaledH);
+        const gy1 = clampG((viewH - v.ty) / scale, unscaledH);
+        if (gx1 <= gx0 || gy1 <= gy0) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, backingW, backingH);
+          return;
+        }
+        /*
+         * Normalized, then scaled by the frame's own device size — not by
+         * `cols * supersample`. A draft frame is screened from a reduced contone
+         * grid, so its raster is smaller than the viewport's `cols` implies, and
+         * deriving the source rect from the props would sample the wrong region
+         * for exactly the frames that are on screen during a drag.
+         */
+        src = {
+          x: (gx0 / unscaledW) * frame.width,
+          y: (gy0 / unscaledH) * frame.height,
+          w: ((gx1 - gx0) / unscaledW) * frame.width,
+          h: ((gy1 - gy0) / unscaledH) * frame.height,
+        };
+        destX = Math.round((v.tx + gx0 * scale) * dpr);
+        destY = Math.round((v.ty + gy0 * scale) * dpr);
+        destW = Math.max(1, Math.round((gx1 - gx0) * scale * dpr));
+        destH = Math.max(1, Math.round((gy1 - gy0) * scale * dpr));
+      }
+
+      const img = resolvePrintFrame(
+        frame,
+        destW,
+        destH,
+        printYuleNielsenRef.current,
+        printSoloRef.current,
+        src
+      );
+
+      let buf = pixelBufferCanvasRef.current;
+      if (!buf) {
+        buf = document.createElement('canvas');
+        pixelBufferCanvasRef.current = buf;
+      }
+      if (buf.width !== img.width || buf.height !== img.height) {
+        buf.width = img.width;
+        buf.height = img.height;
+      }
+      const bctx = buf.getContext('2d');
+      if (!bctx) return;
+      bctx.putImageData(img, 0, 0);
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, backingW, backingH);
+
+      composePostProcess({
+        ctx,
+        width: backingW,
+        height: backingH,
+        stages: buildStages(postProcessRef.current, null),
+        scale: Math.max(1, scale * dpr),
+        /*
+         * No `paintBase`. A resolved print is opaque everywhere — the paper is
+         * part of the composite and a cut-out cell resolves to bare stock,
+         * which is what a press would actually produce. So there is no ground
+         * to paint under it, and invariant 10 has nothing to guard here.
+         */
+        paintRaster: (target) => {
+          target.setTransform(1, 0, 0, 1, 0, 0);
+          target.imageSmoothingEnabled = false;
+          target.drawImage(buf!, destX, destY);
+        },
+      });
+      ctx.restore();
+    },
+    [cols, rows]
+  );
+
   const drawCanvas = useCallback(
     (
       frameText: string,
@@ -1067,19 +1282,24 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       bgColor: string | undefined,
       v: ViewTransform,
       rasterMode: RasterOutputMode = 'ascii',
-      vector: VectorFrame | null = null
+      vector: VectorFrame | null = null,
+      print: PrintFrame | null = null
     ) => {
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (!canvas || !container) return;
 
       /*
-       * Vector output goes first, before the colour-buffer check below: it has
-       * no colour buffer by construction, and falling through would wipe the
-       * canvas and blank the beam.
+       * Vector and print output go first, before the colour-buffer check below:
+       * neither carries a colour buffer by construction, and falling through
+       * would wipe the canvas and blank the frame.
        */
       if (rasterMode === 'vector') {
         drawVector(canvas, container, vector, bgColor, v);
+        return;
+      }
+      if (rasterMode === 'print') {
+        drawPrint(canvas, container, print, v);
         return;
       }
 
@@ -1371,7 +1591,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       });
       ctx.restore();
     },
-    [cols, rows, getFrameLines]
+    [cols, rows, getFrameLines, drawVector, drawPrint]
   );
 
   /**
@@ -1420,11 +1640,14 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
    * translate moved, so the uncelled case stays free.
    */
   useEffect(() => {
-    // Vector carries no frame text, so gate on having geometry instead.
+    // Vector and print carry no frame text, so gate on their own payload.
+    const mode = latestRasterModeRef.current;
     const hasContent =
-      latestRasterModeRef.current === 'vector'
+      mode === 'vector'
         ? Boolean(latestVectorRef.current)
-        : Boolean(latestFrameTextRef.current);
+        : mode === 'print'
+          ? Boolean(latestPrintRef.current)
+          : Boolean(latestFrameTextRef.current);
     if (isColoredView && hasContent) {
       drawCanvas(
         latestFrameTextRef.current,
@@ -1432,7 +1655,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
         latestBgColorRef.current,
         view,
         latestRasterModeRef.current,
-        latestVectorRef.current
+        latestVectorRef.current,
+        latestPrintRef.current
       );
     }
   }, [view, drawCanvas, isColoredView, resizeTick]);
@@ -1447,7 +1671,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       bgColor?: string,
       rasterMode?: RasterOutputMode,
       vector?: VectorFrame | null,
-      sourceLayer?: HTMLCanvasElement | null
+      sourceLayer?: HTMLCanvasElement | null,
+      print?: PrintFrame | null
     ) => {
       // A new frame, by definition: invalidates the pan short-circuit in
       // drawCanvas regardless of whether the buffers came back identical.
@@ -1457,6 +1682,7 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       latestColorsRef.current = colors || null;
       latestBgColorRef.current = bgColor;
       latestVectorRef.current = vector || null;
+      latestPrintRef.current = print || null;
       if (rasterMode) {
         latestRasterModeRef.current = rasterMode;
         // Mirror into state so auto-resolution and auto-fit, which size the
@@ -1469,12 +1695,15 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
       }
 
       /*
-       * Which of the two output surfaces this frame belongs on. Vector always
-       * takes the canvas: it has no colour buffer and no text, so neither of
-       * the other two tests would catch it.
+       * Which of the two output surfaces this frame belongs on. Vector and
+       * print always take the canvas: neither has a colour buffer or text, so
+       * none of the other tests would catch them.
        */
       const isCanvasMode = Boolean(
-        (colors && colors.length > 0) || rasterMode === 'pixel' || rasterMode === 'vector'
+        (colors && colors.length > 0) ||
+          rasterMode === 'pixel' ||
+          rasterMode === 'vector' ||
+          rasterMode === 'print'
       );
 
       if (isCanvasMode) {
@@ -1489,7 +1718,8 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           // must never paint at a transform the view has already moved past.
           viewRef.current,
           rasterMode || latestRasterModeRef.current,
-          vector || null
+          vector || null,
+          print || null
         );
       } else {
         if (isColoredView) {
@@ -2146,9 +2376,23 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [autoFit, zoomAboutCenter, nudgeZoom, recenter, panBy]);
 
-  const showScanlines = crtConfig ? crtConfig.scanlines : true;
-  const showCrtGlow = crtConfig && !isColoredView ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false;
-  const showVignette = crtConfig ? crtConfig.vignette : false;
+  /*
+   * Print switches the CRT decorations off outright, which the other modes do
+   * not.
+   *
+   * They are CSS overlays here, so they cost nothing and pixel mode is welcome
+   * to them — but a print is a simulation of paper, and a scanline across a
+   * halftone is two incompatible screens beating against each other. Every
+   * export path already bypasses them in print (imageExporter, gif, video); the
+   * viewport agreeing is what keeps the screen and the file the same picture.
+   */
+  const printBypassesCrt = rasterMode === 'print';
+  const showScanlines = !printBypassesCrt && (crtConfig ? crtConfig.scanlines : true);
+  const showCrtGlow =
+    !printBypassesCrt && crtConfig && !isColoredView
+      ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false))
+      : false;
+  const showVignette = !printBypassesCrt && (crtConfig ? crtConfig.vignette : false);
   /*
    * The CRT bloom stands down while the post-processing glow drives, and the
    * blurred `<pre>` underlayer becomes that glow's rendering on this path.
@@ -2567,6 +2811,31 @@ export const AsciiViewport = forwardRef<AsciiViewportHandle, AsciiViewportProps>
           <span className="status-tag">
             T: <strong ref={timeSpanRef}>0s</strong>
           </span>
+          {/*
+            The plate the viewport is showing, beside the grid it came from.
+
+            Two numbers rather than a tier name, because the tier name was the
+            less useful half: what a user needs to know is how finely the dots
+            are drawn and how big the plate is, not which internal quality band
+            produced them. PROOF is called out because it is the one state the
+            user asked for and the one that goes stale.
+          */}
+          {rasterMode === 'print' && printTier && (
+            <span
+              className="status-tag res-tag"
+              title={
+                printTier.tier === 'proof'
+                  ? `Proof: ${printTier.supersample} device pixels per contone cell, a ${cols * printTier.supersample}x${rows * printTier.supersample} plate. This is what an export at 1x contains. Changing anything drops back to the live view.`
+                  : `Live view: ${printTier.supersample} device pixels per contone cell, a ${cols * printTier.supersample}x${rows * printTier.supersample} plate. Dot size, angle and tone are exact — only the dot outline is soft. RENDER PROOF screens it finer.`
+              }
+            >
+              {printTier.tier === 'proof' ? 'PROOF' : 'PLATE'}:{' '}
+              <strong>
+                &times;{printTier.supersample} · {cols * printTier.supersample}
+                &times;{rows * printTier.supersample}
+              </strong>
+            </span>
+          )}
           <span className="status-tag res-tag">
             RES: <strong>{cols}x{rows}</strong>
             {gridCap && (

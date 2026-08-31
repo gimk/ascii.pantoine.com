@@ -43,6 +43,27 @@ export type SeparationStyle =
   /** Coverage mask: black on white, what a press wants. Survives JPG. */
   | 'ink';
 
+/**
+ * Print mode's separation is a different object, and this is the seam.
+ *
+ * Everything above partitions *cells* by colour, which is the only separation a
+ * dithered cell mode can offer: one ink per cell, plates that never overlap,
+ * and the partition property (pipeline.md invariant 9) as the thing that makes
+ * them reassemble.
+ *
+ * A print frame has already been separated, colorimetrically, and screened. Its
+ * plates **overlap on purpose** — that is what overprinting is — so the
+ * partition property does not hold and must not be asserted. What holds instead
+ * is a *coverage* property: plate `p` is exactly the set of device pixels where
+ * bit `p` of `plateMask` is set, no cell arithmetic involved, nothing to mask.
+ *
+ * So print short-circuits the whole mechanism rather than reusing it. The
+ * refusals below cannot apply either: there is no `MAX_PLATES` ceiling (the ink
+ * count is capped at 8 by construction), no `mono` case (a print always carries
+ * inks), and no continuous-colour blow-up (the separation is the point).
+ */
+export const PRINT_SEPARATION_IS_NATIVE = true;
+
 export interface SeparationAnalysis {
   plates: SeparationPlate[];
   /** Total opaque cells in the frame. The plates partition exactly this. */
@@ -62,6 +83,7 @@ export interface SeparationAnalysis {
 /** Just the fields the separation reads, so tests need not build a whole frame. */
 export type SeparableFrame = Pick<ExportFrame, 'text' | 'colors' | 'luminance'> & {
   rasterMode?: ExportFrame['rasterMode'];
+  print?: ExportFrame['print'];
 };
 
 /**
@@ -92,6 +114,37 @@ export function analyzeSeparation(
    */
   if (frame.rasterMode === 'vector') {
     return { plates: [], opaqueCells: 0, refusal: 'vector', distinctColors: 0 };
+  }
+
+  /*
+   * Print never reaches the cell arithmetic below.
+   *
+   * Its plates are already screened and already overlap, so masking a shared
+   * cell buffer would be answering the wrong question — and the `colors === null`
+   * check below would otherwise fire and blame the colour panel for a mode that
+   * has no colour panel. Coverage comes straight off `plateMask`; the exporter
+   * reads it with `extractPlateBits`.
+   */
+  if (frame.rasterMode === 'print') {
+    const p = frame.print;
+    if (!p || p.inks.length === 0) {
+      return { plates: [], opaqueCells: 0, refusal: 'empty', distinctColors: 0 };
+    }
+    const devicePx = p.width * p.height;
+    return {
+      plates: p.inks.map((ink, i) => ({
+        hex: ink.hex,
+        r: parseInt(ink.hex.slice(1, 3), 16) || 0,
+        g: parseInt(ink.hex.slice(3, 5), 16) || 0,
+        b: parseInt(ink.hex.slice(5, 7), 16) || 0,
+        // Device pixels this ink actually covers. Not a partition — the shares
+        // sum past `opaqueCells` wherever inks overprint, which is the whole
+        // point of the mode.
+        cellCount: Math.round((p.coverage[i] ?? 0) * devicePx),
+      })),
+      opaqueCells: devicePx,
+      distinctColors: p.inks.length,
+    };
   }
 
   if (!colors || colors.length === 0) {

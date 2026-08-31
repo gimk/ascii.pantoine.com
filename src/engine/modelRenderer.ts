@@ -9,6 +9,8 @@ import {
   ImageAdjustConfig,
   MediaColorConfig,
   VectorConfig,
+  PrintConfig,
+  PrintTier,
 } from '../types/ascii';
 import { processRasterFrame, toPipelineAdjustments, emptyRasterResult, ProcessedRasterResult } from './rasterEngine';
 
@@ -26,6 +28,9 @@ export interface ModelRenderContext {
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
+  /** Render quality tier for print output. Machine state, never persisted. */
+  printTier?: PrintTier;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   /**
@@ -648,6 +653,8 @@ class HeadlessModelRenderer {
         ditherAlgorithm: ctx.algorithm || viewConfig.algorithm || 'none',
         ditherParams: ctx.ditherParams || viewConfig.ditherParams,
         vectorConfig: ctx.vectorConfig || viewConfig.vectorConfig,
+        printConfig: ctx.printConfig || viewConfig.printConfig,
+        printTier: ctx.printTier,
         toneConfig: ctx.toneConfig || viewConfig.toneConfig,
         colorConfig: ctx.colorConfig,
         monoTint: ctx.colorConfig?.monoTint,

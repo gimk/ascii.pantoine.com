@@ -7,6 +7,8 @@ import {
   MediaColorConfig,
   ImageAdjustConfig,
   VectorConfig,
+  PrintConfig,
+  PrintTier,
 } from '../types/ascii';
 import { evaluateParametricWave } from './math';
 import { processRasterFrame, toPipelineAdjustments, emptyRasterResult, ProcessedRasterResult } from './rasterEngine';
@@ -75,6 +77,9 @@ export interface SynthRenderOptions extends RenderContext {
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
+  /** Render quality tier for print output. Machine state, never persisted. */
+  printTier?: PrintTier;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
 }
@@ -98,6 +103,8 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
     algorithm = 'none',
     ditherParams,
     vectorConfig,
+    printConfig,
+    printTier,
     toneConfig,
     adjustConfig,
   } = ctx;
@@ -237,6 +244,8 @@ export function renderSynthFrameData(ctx: SynthRenderOptions): ProcessedRasterRe
       ditherAlgorithm: algorithm,
       ditherParams,
       vectorConfig,
+      printConfig,
+      printTier,
       toneConfig,
       colorConfig: ctx.colorConfig,
       monoTint: ctx.colorConfig?.monoTint,

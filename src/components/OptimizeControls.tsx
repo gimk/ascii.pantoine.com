@@ -18,11 +18,36 @@ interface OptimizeControlsProps {
   mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   mediaConfig?: MediaConfig;
   isPixelMode?: boolean;
+  isVectorMode?: boolean;
+  /**
+   * Print keeps pixel's square cells but not its DPI panel: its grid is the
+   * *contone* resolution, and the dots live below it at the screen resolution
+   * set in RENDER SETTINGS. A DPI readout here would describe neither.
+   */
+  isPrintMode?: boolean;
   /** Width/height of the viewfinder area; synth and model lock their grid to this. */
   viewfinderAspect?: number;
   dpi?: number;
   onChangeDpi?: (newDpi: number) => void;
 }
+
+const PRINT_COLS_PRESETS: { label: string; value: number }[] = [
+  { label: '180', value: 180 },
+  { label: '240', value: 240 },
+  { label: '320', value: 320 },
+  { label: '420', value: 420 },
+  { label: '560', value: 560 },
+  { label: '720', value: 720 },
+];
+
+const VECTOR_COLS_PRESETS: { label: string; value: number }[] = [
+  { label: '300', value: 300 },
+  { label: '400', value: 400 },
+  { label: '600', value: 600 },
+  { label: '800', value: 800 },
+  { label: '1200', value: 1200 },
+  { label: '1600', value: 1600 },
+];
 
 const NumberInput: React.FC<{
   value: number;
@@ -97,6 +122,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
   mediaElement,
   mediaConfig,
   isPixelMode = false,
+  isVectorMode = false,
+  isPrintMode = false,
   viewfinderAspect = 16 / 9,
   dpi = 72,
   onChangeDpi,
@@ -112,8 +139,8 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
     setDraftRows(rows);
   }, [cols, rows]);
 
-  // Monospace cell aspect ratio (0.55 for characters, 1.0 for 1:1 squared pixels)
-  const cellAspect = isPixelMode ? 1.0 : 0.55;
+  // Monospace cell aspect ratio (0.55 for characters, 1.0 for 1:1 squared pixels/print/vector)
+  const cellAspect = isPixelMode || isPrintMode || isVectorMode ? 1.0 : 0.55;
 
   /*
    * Source dimensions *as framed* -- crop applied, rotation's bounding box.
@@ -289,7 +316,7 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
       {appMode === 'media' ? (
         /* MEDIA SPECIFIC RESOLUTION & RENDER CONTROLS */
         <>
-          {isPixelMode ? (
+          {isPixelMode && !isPrintMode && !isVectorMode ? (
             /* 1. Pixel Mode: Simple DPI Slider & Canvas Output */
             <CollapsibleSection
               title="DPI / Resolution"
@@ -372,20 +399,24 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
               </div>
             </CollapsibleSection>
           ) : (
-            /* 1. ASCII Mode: Grid Resolution */
+            /* 1. ASCII, Print and Vector: grid resolution */
             <CollapsibleSection
-              title="Grid Resolution"
+              title={isPrintMode ? 'Contone Grid' : isVectorMode ? 'Beam Sampling' : 'Grid Resolution'}
               icon={<Grid size={12} />}
               badge={
                 <span className="collapsible-badge-inline">
-                  {cols}×{rows} ({totalCells.toLocaleString()} chars)
+                  {cols}×{rows} ({totalCells.toLocaleString()} {isPrintMode ? 'cells' : isVectorMode ? 'smp' : 'chars'})
                 </span>
               }
               persistKey="OptimizeControls-grid-resolution"
               defaultOpen={false}
               headerRight={
                 onToggleAutoRes && (
-                  <AutoResToggle active={autoRes} onToggle={onToggleAutoRes} noun="grid" />
+                  <AutoResToggle
+                    active={autoRes}
+                    onToggle={onToggleAutoRes}
+                    noun={isPrintMode ? 'contone grid' : isVectorMode ? 'sampling rate' : 'grid'}
+                  />
                 )
               }
             >
@@ -432,38 +463,63 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 </div>
               </div>
 
-              {/* Fractional Scale Presets (1/2, 1/4, 1/5, 1/6, 1/8, 1/16, 1/32, FIT) */}
+              {/* Presets */}
               <p className="control-hint control-row-spaced-below">
-                Scale resolutions proportional to image size with monospace aspect compensation:
+                {isPrintMode
+                  ? 'Contone grid presets (dots are screened at Screen Resolution device px/cell):'
+                  : isVectorMode
+                    ? 'Beam sampling resolution presets (polyline fidelity):'
+                    : 'Scale resolutions proportional to image size with monospace aspect compensation:'}
               </p>
 
-              <div className={`btn-grid-4 control-row-spaced-below`}>
-                {mediaFractionPresets.map((preset) => {
-                  const isActive = cols === preset.cols && rows === preset.rows;
+              <div className={`btn-grid-3 control-row-spaced-below`}>
+                {(isPrintMode ? PRINT_COLS_PRESETS : isVectorMode ? VECTOR_COLS_PRESETS : []).map((preset) => {
+                  const isActive = cols === preset.value;
                   return (
                     <button
                       key={preset.label}
+                      type="button"
                       className={`btn btn-sm btn-stacked ${isActive ? 'btn-primary' : ''}`}
-                      onClick={() => onChangeResolution(preset.cols, preset.rows)}
+                      onClick={() => handleMediaColsChange(preset.value)}
                     >
                       <span className="btn-stacked-main">{preset.label}</span>
                       <span className="btn-stacked-sub">
-                        {preset.cols}×{preset.rows}
+                        {preset.value}×{srcWidth > 0 ? Math.max(10, Math.round((preset.value * cellAspect) / srcAspect)) : rows}
                       </span>
                     </button>
                   );
                 })}
-                {onMatchViewfinderRatio && (
-                  <button
-                    className="btn btn-sm btn-stacked"
-                    onClick={onMatchViewfinderRatio}
-                    title="Fit viewport aspect ratio"
-                  >
-                    <span className="btn-stacked-main">FIT</span>
-                    <span className="btn-stacked-sub">VIEWPORT</span>
-                  </button>
-                )}
               </div>
+
+              {!isPrintMode && !isVectorMode && (
+                <div className={`btn-grid-4 control-row-spaced-below`}>
+                  {mediaFractionPresets.map((preset) => {
+                    const isActive = cols === preset.cols && rows === preset.rows;
+                    return (
+                      <button
+                        key={preset.label}
+                        className={`btn btn-sm btn-stacked ${isActive ? 'btn-primary' : ''}`}
+                        onClick={() => onChangeResolution(preset.cols, preset.rows)}
+                      >
+                        <span className="btn-stacked-main">{preset.label}</span>
+                        <span className="btn-stacked-sub">
+                          {preset.cols}×{preset.rows}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {onMatchViewfinderRatio && (
+                    <button
+                      className="btn btn-sm btn-stacked"
+                      onClick={onMatchViewfinderRatio}
+                      title="Fit viewport aspect ratio"
+                    >
+                      <span className="btn-stacked-main">FIT</span>
+                      <span className="btn-stacked-sub">VIEWPORT</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Match Aspect Ratio & Lock Ratio Toggle */}
               <div className="btn-group control-row-spaced-below">
@@ -537,11 +593,22 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
         <>
           {/* Resolution & Grid Dimensions */}
           <CollapsibleSection
-            title={isPixelMode ? 'Pixel Resolution' : 'Grid Resolution'}
+            title={
+              isPrintMode
+                ? 'Contone Grid'
+                : isVectorMode
+                  ? 'Beam Sampling'
+                  : isPixelMode
+                    ? 'Pixel Resolution'
+                    : 'Grid Resolution'
+            }
             icon={<Grid size={12} />}
-            badge={<><span className={`collapsible-badge-inline${isPixelMode ? ' is-accent' : ''}`}>
-                {cols}x{rows} ({totalCells.toLocaleString()} {isPixelMode ? 'px' : 'chars'})
-              </span></>}
+            badge={
+              <span className={`collapsible-badge-inline${isPixelMode ? ' is-accent' : ''}`}>
+                {cols}x{rows} ({totalCells.toLocaleString()}{' '}
+                {isPrintMode ? 'cells' : isVectorMode ? 'smp' : isPixelMode ? 'px' : 'chars'})
+              </span>
+            }
             persistKey="OptimizeControls-grid-resolution"
             defaultOpen={false}
             headerRight={
@@ -549,7 +616,15 @@ export const OptimizeControls: React.FC<OptimizeControlsProps> = ({
                 <AutoResToggle
                   active={autoRes}
                   onToggle={onToggleAutoRes}
-                  noun={isPixelMode ? 'pixel resolution' : 'grid'}
+                  noun={
+                    isPrintMode
+                      ? 'contone grid'
+                      : isVectorMode
+                        ? 'sampling rate'
+                        : isPixelMode
+                          ? 'pixel resolution'
+                          : 'grid'
+                  }
                 />
               )
             }

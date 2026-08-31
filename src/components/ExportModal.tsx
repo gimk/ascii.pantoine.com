@@ -23,6 +23,7 @@ import {
   MAX_PLATES,
 } from '../engine/separationExporter';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from '../engine/renderer';
+import { printExportCellSize, SUPERSAMPLE_PROOF_DEFAULT } from '../engine/printEngine';
 import * as THREE from 'three';
 import {
   WaveParams,
@@ -39,6 +40,7 @@ import {
   DitherAlgorithm,
   DitherParams,
   VectorConfig,
+  PrintConfig,
   ToneMappingConfig,
   ImageAdjustConfig,
   PostProcessConfig,
@@ -74,6 +76,7 @@ interface ExportModalProps {
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   /** The composite stage, forwarded to every export path. Invariant 4. */
@@ -90,6 +93,27 @@ interface ExportModalProps {
  * and the output is a picture.
  */
 export type ExportTab = 'image' | 'separation' | 'gif' | 'video';
+
+/**
+ * The scale chips, with a second label for print.
+ *
+ * Same values, different meaning: everywhere else the scale multiplies the grid,
+ * in print it multiplies the *plate*, so 1x is already several thousand pixels
+ * and "4x (4K)" would be misleading. Half and quarter are added because reducing
+ * a plate is a real thing to want — the resolve box-filters, which is the same
+ * correct downsample the viewport uses.
+ */
+const SCALE_CHIPS: { val: number; label: string; printLabel: string; printOnly?: boolean }[] = [
+  // Reductions are print-only: a plate is already thousands of pixels, and
+  // halving it is a real thing to want. The other modes start at 1x as before.
+  { val: 0.25, label: '0.25x', printLabel: '¼ plate', printOnly: true },
+  { val: 0.5, label: '0.5x', printLabel: '½ plate', printOnly: true },
+  { val: 1.0, label: '1x', printLabel: '1× plate' },
+  { val: 1.5, label: '1.5x', printLabel: '1.5×' },
+  { val: 2.0, label: '2x (HD)', printLabel: '2×' },
+  { val: 3.0, label: '3x', printLabel: '3×' },
+  { val: 4.0, label: '4x (4K)', printLabel: '4×' },
+];
 
 /**
  * Shortens a filename for display while keeping the extension.
@@ -139,6 +163,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   ditherAlgorithm,
   ditherParams,
   vectorConfig,
+  printConfig,
   toneConfig,
   adjustConfig,
   postProcess,
@@ -208,6 +233,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setCustomBaseName(defaultBaseName);
   }, [name, isOpen]);
 
+  /*
+   * Print opens on 1x, the plate's own resolution.
+   *
+   * The shared default of 2x is a sensible multiplier of a contone grid and a
+   * poor one of a plate: at a proof of x8 it asks for a 6720-pixel file before
+   * anyone has touched a control. Snapped only on entering print, and only from
+   * the shared default, so a scale the user picked themselves survives.
+   */
+  const isPrintMode =
+    (rasterMode || (appMode === 'media' ? mediaViewConfig?.rasterMode : undefined) || 'ascii') ===
+    'print';
+  useEffect(() => {
+    if (!isPrintMode || !isOpen) return;
+    setImageScale((s) => (s === 2.0 ? 1.0 : s));
+    setSepScale((s) => (s === 2.0 ? 1.0 : s));
+  }, [isPrintMode, isOpen]);
+
   const handleCaptureImage = useCallback(async () => {
     const effectiveRasterMode: RasterOutputMode =
       rasterMode || (appMode === 'media' ? mediaViewConfig?.rasterMode : undefined) || 'ascii';
@@ -250,6 +292,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         ditherAlgorithm,
         ditherParams,
         vectorConfig,
+        printConfig,
         toneConfig,
         adjustConfig,
         postProcess,
@@ -296,6 +339,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     ditherAlgorithm,
     ditherParams,
     vectorConfig,
+    printConfig,
     toneConfig,
     adjustConfig,
     imageUrl,
@@ -343,6 +387,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         ditherAlgorithm,
         ditherParams,
         vectorConfig,
+        printConfig,
         toneConfig,
         adjustConfig,
         postProcess,
@@ -364,7 +409,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     density, cols, rows, theme, customThemeColor, gradientConfig, crtConfig,
     appMode, modelConfig, modelViewConfig, geometry, mediaConfig,
     mediaViewConfig, mediaColorConfig, mediaElement, rasterMode,
-    ditherAlgorithm, ditherParams, vectorConfig, toneConfig, adjustConfig, postProcess,
+    ditherAlgorithm, ditherParams, vectorConfig, printConfig, toneConfig, adjustConfig, postProcess,
   ]);
 
   useEffect(() => {
@@ -426,31 +471,51 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     rasterMode || (appMode === 'media' ? mediaViewConfig?.rasterMode : undefined) || 'ascii';
   const isPixel = effectiveRasterMode === 'pixel';
   const isVector = effectiveRasterMode === 'vector';
+  const isPrint = effectiveRasterMode === 'print';
   /*
-   * Vector keeps the scale fractional where pixel rounds to whole pixels per
-   * cell: there are no cell edges to protect, and rounding would quantize the
-   * geometry the mode exists to keep continuous.
+   * Vector and print keep the scale fractional where pixel rounds to whole
+   * pixels per cell: neither has cell edges to protect, and rounding would
+   * quantize geometry vector exists to keep continuous. In print the scale is
+   * output pixels per *contone* cell, so matching it to the supersample gives
+   * one output pixel per device pixel — see `exportCellSize`.
    */
-  const cellSize = (sc: number) => (isVector ? sc : Math.max(1, Math.round(sc)));
+  /*
+   * Print's scale multiplies the plate, not the contone grid.
+   *
+   * Every other mode's cell size is a function of the scale alone; print's also
+   * needs the proof supersample, because 1x means "the plate at the resolution
+   * it was screened at". Treating it like the others produced a file four to
+   * eight times smaller than the plate — the screening silently discarded on
+   * the one output where the dots are the product.
+   */
+  const printProofSs = printConfig?.proofSupersample ?? SUPERSAMPLE_PROOF_DEFAULT;
+  const modeCell = (sc: number, monoCell: number) =>
+    isPrint
+      ? printExportCellSize(sc, printProofSs)
+      : isVector
+        ? sc
+        : isPixel
+          ? Math.max(1, Math.round(sc))
+          : monoCell * sc;
 
-  const stillCellW = isVector ? cellSize(imageScale) : isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_WIDTH * imageScale;
-  const stillCellH = isVector ? cellSize(imageScale) : isPixel ? Math.max(1, Math.round(imageScale)) : MONOSPACE_CELL_HEIGHT * imageScale;
+  const stillCellW = modeCell(imageScale, MONOSPACE_CELL_WIDTH);
+  const stillCellH = modeCell(imageScale, MONOSPACE_CELL_HEIGHT);
   const stillExportW = Math.round(cols * stillCellW);
   const stillExportH = Math.round(rows * stillCellH);
 
   // Same cell geometry as the still export, at this tab's own scale.
-  const sepCellW = isVector ? cellSize(sepScale) : isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_WIDTH * sepScale;
-  const sepCellH = isVector ? cellSize(sepScale) : isPixel ? Math.max(1, Math.round(sepScale)) : MONOSPACE_CELL_HEIGHT * sepScale;
+  const sepCellW = modeCell(sepScale, MONOSPACE_CELL_WIDTH);
+  const sepCellH = modeCell(sepScale, MONOSPACE_CELL_HEIGHT);
   const sepExportW = Math.round(cols * sepCellW);
   const sepExportH = Math.round(rows * sepCellH);
 
-  const gifCellW = isVector ? cellSize(gifScale) : isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_WIDTH * gifScale;
-  const gifCellH = isVector ? cellSize(gifScale) : isPixel ? Math.max(1, Math.round(gifScale)) : MONOSPACE_CELL_HEIGHT * gifScale;
+  const gifCellW = modeCell(gifScale, MONOSPACE_CELL_WIDTH);
+  const gifCellH = modeCell(gifScale, MONOSPACE_CELL_HEIGHT);
   const gifExportW = Math.round(cols * gifCellW);
   const gifExportH = Math.round(rows * gifCellH);
 
-  const videoCellW = isVector ? cellSize(videoScale) : isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_WIDTH * videoScale;
-  const videoCellH = isVector ? cellSize(videoScale) : isPixel ? Math.max(1, Math.round(videoScale)) : MONOSPACE_CELL_HEIGHT * videoScale;
+  const videoCellW = modeCell(videoScale, MONOSPACE_CELL_WIDTH);
+  const videoCellH = modeCell(videoScale, MONOSPACE_CELL_HEIGHT);
   const videoExportW = Math.round(cols * videoCellW);
   const videoExportH = Math.round(rows * videoCellH);
 
@@ -500,6 +565,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           ditherAlgorithm,
           ditherParams,
           vectorConfig,
+          printConfig,
           toneConfig,
           adjustConfig,
           postProcess,
@@ -559,6 +625,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           ditherAlgorithm,
           ditherParams,
           vectorConfig,
+          printConfig,
           toneConfig,
           adjustConfig,
           postProcess,
@@ -770,25 +837,46 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
                 {/* Resolution Scale */}
                 <div className="gif-config-item">
-                  <span className="gif-config-label">Resolution Scale ({stillExportW}×{stillExportH}px)</span>
+                  <span className="gif-config-label">
+                    {isPrint ? 'Plate Scale' : 'Resolution Scale'} ({stillExportW}×{stillExportH}px)
+                  </span>
                   <div className="gif-btn-group">
-                    {[
-                      { val: 1.0, label: '1x' },
-                      { val: 1.5, label: '1.5x' },
-                      { val: 2.0, label: '2x (HD)' },
-                      { val: 3.0, label: '3x' },
-                      { val: 4.0, label: '4x (4K)' },
-                    ].map((s) => (
+                    {SCALE_CHIPS.filter((s) => isPrint || !s.printOnly).map((s) => (
                       <button
                         key={s.val}
                         className={`btn ${imageScale === s.val ? 'btn-primary' : ''}`}
                         onClick={() => setImageScale(s.val)}
+                        title={
+                          isPrint
+                            ? s.val === 1
+                              ? `The plate at its own resolution — ${cols * printProofSs}×${rows * printProofSs}px, one output pixel per screened device pixel.`
+                              : s.val < 1
+                                ? 'Box-filtered down from the plate. Smooth and correct, but smaller than what was screened.'
+                                : 'Larger than the plate, so the dots magnify — what enlarging a coarse screen looks like.'
+                            : undefined
+                        }
                       >
-                        {s.label}
+                        {isPrint ? s.printLabel : s.label}
                       </button>
                     ))}
                   </div>
                 </div>
+
+                {/*
+                  Print's scale means something different, and saying so is
+                  cheaper than letting someone discover it by exporting a file a
+                  quarter the size of the plate they were looking at.
+                */}
+                {isPrint && (
+                  <div className="gif-config-item" style={{ gridColumn: '1 / -1' }}>
+                    <span className="control-hint">
+                      <Info size={10} style={{ verticalAlign: '-1px', marginRight: 4 }} />
+                      Scale is relative to the <strong>plate</strong>, not the contone grid — 1×
+                      is {cols * printProofSs}×{rows * printProofSs}px, exactly the dots that were
+                      screened. Raise <strong>Proof</strong> in RENDER SETTINGS for a bigger plate.
+                    </span>
+                  </div>
+                )}
 
                 {/* Background (PNG & SVG) or Quality (JPG) */}
                 {imageFormat === 'png' || imageFormat === 'svg' ? (
@@ -1022,6 +1110,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {/*
+                Print's separation is a different object and the panel has to
+                say so, because the words on every control here were written for
+                the cell modes. There a plate is a subset of the cells and the
+                plates partition them; here each plate is a screened halftone and
+                they *overlap*, which is what overprinting is. The stack-to-
+                rebuild workflow becomes genuinely correct rather than
+                approximate, and that is worth one sentence.
+              */}
+              {isPrint && (
+                <div className="gif-progress-box">
+                  <div style={{ fontSize: '11px', color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                    <strong style={{ color: 'var(--accent)' }}>PRESS SEPARATION.</strong>{' '}
+                    One screened plate per ink, in print order, at the plate&apos;s own device
+                    resolution — the same bits the viewport painted, not a re-screen. The plates
+                    <em> overlap</em>: stack them with <strong>multiply</strong> over the paper
+                    colour and they reproduce the print. Ink Plate style gives you the black-on-white
+                    masters a press wants.
+                  </div>
+                </div>
+              )}
 
               {/*
                 The generate action sits outside the grid. As a grid cell it was

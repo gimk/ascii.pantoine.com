@@ -18,6 +18,8 @@ import {
   ImageAdjustConfig,
   PostProcessConfig,
   VectorConfig,
+  PrintConfig,
+  PrintFrame,
   VectorFrame,
 } from '../types/ascii';
 import { renderSynthFrameData, MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT, MONOSPACE_CELL_ASPECT } from './renderer';
@@ -37,6 +39,23 @@ import { DEFAULT_WAVE_PARAMS } from './math';
 import { injectPngMetadata, injectJpegComment } from './mediaMetadata';
 import { drawPixelRasterToCanvas, exportPixelRasterToSvg } from './pixelRasterRenderer';
 import { paintVectorFrame, vectorFrameErasesGround, vectorFrameToSvg } from './vectorEngine';
+import {
+  resolvePrintFrame,
+  extractPlateBits,
+  printExportCellSize,
+  SUPERSAMPLE_PROOF_DEFAULT,
+} from './printEngine';
+
+/**
+ * Every export screens at the PROOF tier.
+ *
+ * A file is not a preview: DRAFT and WORKING exist only to keep a slider drag
+ * responsive, and a PNG that came out coarser than the proof on screen would be
+ * the exact failure invariant 4 exists to prevent. This is also what makes
+ * `RENDER PROOF` in the panel and an export the *same* screening call at the
+ * same supersample — what you proof is what you get.
+ */
+const PRINT_EXPORT_TIER = 'proof' as const;
 
 
 export interface ImageExportOptions {
@@ -73,6 +92,7 @@ export interface ImageExportOptions {
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   /** The composite stage. Invariant 4 applies: forward it or the file differs. */
@@ -150,6 +170,12 @@ export interface ExportFrame {
   /** Beam geometry in vector mode; null otherwise. Mutually exclusive with `text`. */
   vector: VectorFrame | null;
   /**
+   * The screened device raster in print mode; null otherwise. Also mutually
+   * exclusive with `text`, and the reason the separation exporter no longer has
+   * to partition cells: the plates are already here.
+   */
+  print: PrintFrame | null;
+  /**
    * The ungraded source, framed identically, for the post-processing overlay.
    * Null when the overlay is off, or in synth mode, which has no source
    * distinct from the field it already rendered.
@@ -157,12 +183,27 @@ export interface ExportFrame {
   sourceLayer: CanvasImageSource | null;
 }
 
-/** Output pixels per grid cell at a given export scale, per invariant 7. */
+/**
+ * Output pixels per grid cell at a given export scale, per invariant 7.
+ *
+ * `printProofSupersample` is required for print and ignored otherwise: print's
+ * scale multiplies the *plate*, not the contone grid, so the cell size depends
+ * on how finely the plate was screened. See `printExportCellSize`.
+ */
 export function exportCellSize(
   rasterMode: RasterOutputMode,
-  scale: number
+  scale: number,
+  printProofSupersample = SUPERSAMPLE_PROOF_DEFAULT
 ): { cellWidth: number; cellHeight: number } {
-  if (rasterMode === 'vector') return { cellWidth: scale, cellHeight: scale };
+  if (rasterMode === 'print') {
+    const s = printExportCellSize(scale, printProofSupersample);
+    return { cellWidth: s, cellHeight: s };
+  }
+  // Vector keeps the scale fractional: there are no cell edges to protect, and
+  // rounding would quantize the geometry the mode exists to keep continuous.
+  if (rasterMode === 'vector') {
+    return { cellWidth: scale, cellHeight: scale };
+  }
   if (rasterMode === 'pixel') {
     const s = Math.max(1, Math.round(scale));
     return { cellWidth: s, cellHeight: s };
@@ -271,6 +312,7 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
   let frameLuminance: Float32Array | null = null;
   let frameColors: Uint8ClampedArray | null = null;
   let frameVector: VectorFrame | null = null;
+  let framePrint: PrintFrame | null = null;
   let sourceLayer: CanvasImageSource | null = null;
   let effectiveBg = bg;
 
@@ -281,7 +323,8 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
    */
   const { cellWidth: exportCellW, cellHeight: exportCellH } = exportCellSize(
     rasterMode,
-    opts.scale ?? 2.0
+    opts.scale ?? 2.0,
+    opts.printConfig?.proofSupersample
   );
   const sourcePpc = overlaySourcePpc(opts.postProcess, exportCellW, exportCellH);
 
@@ -298,13 +341,16 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       algorithm: opts.ditherAlgorithm,
       ditherParams: opts.ditherParams,
       vectorConfig: opts.vectorConfig || opts.mediaViewConfig.vectorConfig,
+      printConfig: opts.printConfig || opts.mediaViewConfig.printConfig,
+      printTier: PRINT_EXPORT_TIER,
       toneConfig: opts.toneConfig,
     });
     frameText = res.text;
     frameLuminance = res.luminance;
     frameColors = res.colors;
     frameVector = res.vector || null;
-    if (res.isColored || res.vector) effectiveBg = res.bgColor;
+    framePrint = res.print || null;
+    if (res.isColored || res.vector || res.print) effectiveBg = res.bgColor;
   } else if (opts.appMode === 'model' && opts.geometry && opts.modelConfig && opts.modelViewConfig) {
     const res = renderModelFrameData({
       cols,
@@ -319,6 +365,8 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       algorithm: opts.ditherAlgorithm,
       ditherParams: opts.ditherParams,
       vectorConfig: opts.vectorConfig,
+      printConfig: opts.printConfig,
+      printTier: PRINT_EXPORT_TIER,
       toneConfig: opts.toneConfig,
       adjustConfig: opts.adjustConfig,
       sourceCapture: sourcePpc,
@@ -327,7 +375,8 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
     frameLuminance = res.luminance;
     frameColors = res.colors;
     frameVector = res.vector || null;
-    if (res.vector) effectiveBg = res.bgColor;
+    framePrint = res.print || null;
+    if (res.vector || res.print) effectiveBg = res.bgColor;
   } else {
     let customRenderFn: any;
     let prepareFn: any;
@@ -361,6 +410,8 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
       algorithm: opts.ditherAlgorithm,
       ditherParams: opts.ditherParams,
       vectorConfig: opts.vectorConfig,
+      printConfig: opts.printConfig,
+      printTier: PRINT_EXPORT_TIER,
       toneConfig: opts.toneConfig,
       adjustConfig: opts.adjustConfig,
     });
@@ -368,7 +419,8 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
     frameLuminance = res.luminance;
     frameColors = res.colors;
     frameVector = res.vector || null;
-    if (res.isColored || res.vector) effectiveBg = res.bgColor;
+    framePrint = res.print || null;
+    if (res.isColored || res.vector || res.print) effectiveBg = res.bgColor;
   }
 
   sourceLayer = overlaySourceLayer({
@@ -392,6 +444,7 @@ export function renderExportFrame(opts: ImageExportOptions): ExportFrame {
     fgColor,
     rasterMode,
     vector: frameVector,
+    print: framePrint,
     sourceLayer,
   };
 }
@@ -490,14 +543,18 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
   const rasterMode: RasterOutputMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
   const isPixel = rasterMode === 'pixel';
   const isVector = rasterMode === 'vector';
+  const isPrint = rasterMode === 'print';
   /*
-   * CRT effects are bypassed in both non-ASCII modes for the same reason: they
-   * are a screen artefact, and baking one into a crisp dither or a plotter path
-   * ruins exactly what that output is for.
+   * CRT effects are bypassed in every non-ASCII mode for the same reason: they
+   * are a screen artefact, and baking one into a crisp dither, a plotter path
+   * or a sheet of paper ruins exactly what that output is for. Print is the
+   * most obviously wrong of the three — a scanline across a halftone is two
+   * incompatible screens beating against each other.
    */
-  const showScanlines = !isPixel && !isVector && (opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true));
-  const showCrtGlow = !isPixel && !isVector && (opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false));
-  const showVignette = !isPixel && !isVector && (opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false));
+  const noCrt = isPixel || isVector || isPrint;
+  const showScanlines = !noCrt && (opts.includeScanlines ?? (crtConfig ? crtConfig.scanlines : true));
+  const showCrtGlow = !noCrt && (opts.includeCrtGlow ?? (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false));
+  const showVignette = !noCrt && (opts.includeVignette ?? (crtConfig ? crtConfig.vignette : false));
   /*
    * The legacy per-glyph bloom stands down while the post-processing glow is
    * driving. They are two implementations of one effect -- this one a
@@ -507,8 +564,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
    * the only one pixel and vector can have.
    */
   const showPhosphorBloom =
-    !isPixel &&
-    !isVector &&
+    !noCrt &&
     !glowActive(opts.postProcess) &&
     (opts.includePhosphorBloom ?? (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false));
 
@@ -519,6 +575,7 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
     bgColor: effectiveBg,
     fgColor: text,
     vector: frameVector,
+    print: framePrint,
     sourceLayer,
   } = renderExportFrame(opts);
 
@@ -576,6 +633,80 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
         url: URL.createObjectURL(svgBlob),
         width: vw,
         height: vh,
+        mimeType: 'image/svg+xml',
+        extension: '.svg',
+      };
+    }
+
+    /*
+     * Print SVG: real dot geometry, one path per ink.
+     *
+     * Each plate is already a binary bitmap of exactly what the press would
+     * burn, so this reuses `exportPixelRasterToSvg` wholesale — its cell merger
+     * collapses runs of ink into rectangles and then into a single `<path>` per
+     * fill, which for a one-ink plate is one node. That is what makes the file
+     * openable in Illustrator instead of being 200,000 rects.
+     *
+     * The plates are stacked as named layers with `mix-blend-mode: multiply`,
+     * which is the closest an SVG viewer gets to translucent ink overprinting —
+     * and it is what a designer would set up by hand anyway. The composite
+     * *rendering* is therefore an approximation here; the geometry is exact,
+     * which is what a press needs from this file.
+     */
+    if (isPrint && framePrint) {
+      /*
+       * Plate-relative, like the raster exports: at 1x the path coordinates are
+       * the plate's own device pixels, so the dots are exactly the geometry that
+       * was screened rather than a resampling of it.
+       */
+      const printSvgCell = printExportCellSize(scale, opts.printConfig?.proofSupersample ?? SUPERSAMPLE_PROOF_DEFAULT);
+      const pw = Math.round(cols * printSvgCell);
+      const ph = Math.round(rows * printSvgCell);
+      const layers: string[] = [];
+
+      for (let p = 0; p < framePrint.inks.length; p++) {
+        const ink = framePrint.inks[p];
+        if (framePrint.paperHex && opts.printConfig?.soloInk && opts.printConfig.soloInk !== ink.id) {
+          continue;
+        }
+        const bits = extractPlateBits(framePrint, p);
+        // The merger reads `luminance < 0` as absent, which is the same
+        // sentinel the whole pipeline uses (invariant 1).
+        const lum = new Float32Array(bits.length);
+        for (let i = 0; i < bits.length; i++) lum[i] = bits[i] ? 1 : -1;
+        layers.push(
+          exportPixelRasterToSvg({
+            cols: framePrint.width,
+            rows: framePrint.height,
+            luminance: lum,
+            colors: null,
+            bgColor: 'transparent',
+            fgColor: ink.hex,
+            width: pw,
+            height: ph,
+            groupId: `plate-${String(p + 1).padStart(2, '0')}-${ink.hex.slice(1)}`,
+            groupLabel: ink.name,
+          })
+        );
+      }
+
+      const doc = [
+        `<?xml version="1.0" encoding="UTF-8"?>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ` +
+          `viewBox="0 0 ${pw} ${ph}" width="${pw}" height="${ph}">`,
+        ...(transparentBg ? [] : [`  <rect width="100%" height="100%" fill="${framePrint.paperHex}"/>`]),
+        `  <g style="isolation:isolate">`,
+        ...layers.map((l) => l.replace('<g ', '<g style="mix-blend-mode:multiply" ')),
+        `  </g>`,
+        `</svg>`,
+      ].join('\n');
+
+      const printBlob = new Blob([doc], { type: 'image/svg+xml;charset=utf-8' });
+      return {
+        blob: printBlob,
+        url: URL.createObjectURL(printBlob),
+        width: pw,
+        height: ph,
         mimeType: 'image/svg+xml',
         extension: '.svg',
       };
@@ -674,8 +805,9 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
    * edges to protect and rounding would quantize the geometry it exists to keep
    * continuous.
    */
-  const charWidth = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
-  const charHeight = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
+  const printCell = printExportCellSize(scale, opts.printConfig?.proofSupersample ?? SUPERSAMPLE_PROOF_DEFAULT);
+  const charWidth = isPrint ? printCell : isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = isPrint ? printCell : isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -703,7 +835,39 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
    * here: an 8x export is genuinely 8x the detail, not an upscale of a 1x
    * raster, which is the one place this mode beats pixel outright.
    */
-  if (isVector) {
+  if (isPrint) {
+    /*
+     * One resolve at the export's own dimensions, through the same function the
+     * viewport paints with — so an export is the viewport magnified, not a
+     * second implementation of the composite that could drift from it.
+     *
+     * No `bgColor`: a resolved print is opaque everywhere because the paper is
+     * part of the composite, so `transparentBg` has nothing to expose. That is
+     * the honest answer rather than an omission — a sheet of paper does not have
+     * an alpha channel.
+     */
+    const img = framePrint
+      ? resolvePrintFrame(
+          framePrint,
+          width,
+          height,
+          opts.printConfig?.yuleNielsen ?? 1,
+          opts.printConfig?.soloInk ?? null
+        )
+      : null;
+
+    composePostProcess({
+      ctx,
+      width,
+      height,
+      stages: postStages,
+      scale,
+      paintRaster: (target) => {
+        if (!img) return;
+        target.putImageData(img, 0, 0);
+      },
+    });
+  } else if (isVector) {
     composePostProcess({
       ctx,
       width,

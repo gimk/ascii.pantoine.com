@@ -35,6 +35,9 @@ import {
   VectorConfig,
   VectorFrame,
   VECTOR_CONFIG_DEFAULTS,
+  PrintConfig,
+  PrintFrame,
+  PrintTier,
 } from './types/ascii';
 import { resolvePhosphorTint, DEFAULT_PHOSPHOR_TINT, BUILTIN_PALETTES } from './engine/palettes';
 import {
@@ -70,6 +73,14 @@ import { migratePostProcess, overlayActive, glowActive, aberrationActive } from 
 import { overlaySourceLayer, overlaySourcePpc, exportCellSize } from './engine/imageExporter';
 import { PostProcessControls } from './components/PostProcessControls';
 import { previewVectorConfig, scaleVectorFrame } from './engine/vectorEngine';
+import {
+  screenPlatesChunked,
+  lastPrintSeparation,
+  cloneSeparation,
+  estimatePrintCost,
+  tierSupersample,
+} from './engine/printEngine';
+import { defaultPrintConfig, PRESS_PROFILES, inksFromPalette } from './engine/printInks';
 import { choosePreviewDivisor, upscaleFrame } from './engine/framePreview';
 import { CHARSETS, renderSynthFrameData } from './engine/renderer';
 import {
@@ -107,6 +118,7 @@ import { DitherAlgorithmPicker } from './components/DitherAlgorithmPicker';
 import { OutputModeCards, outputModeForKey } from './components/outputModes';
 import { WorkflowStep } from './components/controlPrimitives';
 import { VectorControls } from './components/VectorControls';
+import { PrintControls } from './components/PrintControls';
 import { ExportModal, ExportTab } from './components/ExportModal';
 import { ShareModal } from './components/ShareModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
@@ -174,6 +186,26 @@ const MEDIA_DEFAULT_DPI = 100;
 const VECTOR_SAMPLE_COLS = 800;
 /** Radians of carrier phase per second of loop time. */
 const VECTOR_PHASE_RATE = 2.2;
+/*
+ * Contone width for print output — a quarter of vector's, and that is the point.
+ *
+ * The grid stops being a display raster here too, but in the opposite direction:
+ * it is the *coarsest* of the four modes because the dots live below it, at
+ * `supersample` device pixels per cell. 420 contone columns at a supersample of
+ * 8 is a 3360-pixel plate, which is a real print resolution; asking for vector's
+ * 800 would make it 6720 and spend four times the screening cost on detail no
+ * dot can carry.
+ */
+const PRINT_CONTONE_COLS = 420;
+
+/**
+ * The ink stack a session opens print mode with.
+ *
+ * Built once at module load rather than per render: `defaultPrintConfig` mints
+ * fresh plate ids, so calling it inline would hand React a new object with new
+ * keys on every pass and reset the expanded plate on every keystroke.
+ */
+const DEFAULT_PRINT_CONFIG = defaultPrintConfig();
 
 /**
  * How recently the last static render must have finished for the next change to
@@ -415,6 +447,7 @@ function buildRenderSettings(
     ditherAlgorithm: (isSynthShared && sharedState?.ditherAlgorithm) || savedSettings.synth?.ditherAlgorithm || 'none',
     ditherParams: (isSynthShared && sharedState?.ditherParams) || savedSettings.synth?.ditherParams,
     vectorConfig: (isSynthShared && sharedState?.vectorConfig) || savedSettings.synth?.vectorConfig,
+    printConfig: (isSynthShared && sharedState?.printConfig) || savedSettings.synth?.printConfig,
     toneConfig: (isSynthShared && sharedState?.toneConfig) || savedSettings.synth?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
     adjustConfig: (isSynthShared && sharedState?.adjustConfig) || savedSettings.synth?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
     /*
@@ -457,6 +490,7 @@ function buildRenderSettings(
     ditherAlgorithm: (isMediaShared && sharedState?.ditherAlgorithm) || savedSettings.media?.ditherAlgorithm || 'floyd-steinberg',
     ditherParams: (isMediaShared && sharedState?.ditherParams) || savedSettings.media?.ditherParams,
     vectorConfig: (isMediaShared && sharedState?.vectorConfig) || savedSettings.media?.vectorConfig,
+    printConfig: (isMediaShared && sharedState?.printConfig) || savedSettings.media?.printConfig,
     toneConfig: (isMediaShared && sharedState?.toneConfig) || savedSettings.media?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
     adjustConfig: (isMediaShared && sharedState?.adjustConfig) || savedSettings.media?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
     postProcess: migratePostProcess(
@@ -489,6 +523,7 @@ function buildRenderSettings(
     ditherAlgorithm: (isModelShared && sharedState?.ditherAlgorithm) || savedSettings.model?.ditherAlgorithm || 'none',
     ditherParams: (isModelShared && sharedState?.ditherParams) || savedSettings.model?.ditherParams,
     vectorConfig: (isModelShared && sharedState?.vectorConfig) || savedSettings.model?.vectorConfig,
+    printConfig: (isModelShared && sharedState?.printConfig) || savedSettings.model?.printConfig,
     toneConfig: (isModelShared && sharedState?.toneConfig) || savedSettings.model?.toneConfig || DEFAULT_TONE_MAPPING_CONFIG,
     adjustConfig: (isModelShared && sharedState?.adjustConfig) || savedSettings.model?.adjustConfig || DEFAULT_IMAGE_ADJUST_CONFIG,
     postProcess: migratePostProcess(
@@ -605,6 +640,52 @@ export const App: React.FC = () => {
   });
 
   const [mediaRenderTrigger, setMediaRenderTrigger] = useState<number>(0);
+
+  /*
+   * Which tier the frame on screen was screened at, for the viewport badge.
+   *
+   * State rather than a ref because it is chrome and has to re-render, but only
+   * ever written from a render path that has just produced a print frame — so a
+   * session that never opens print mode never sets it and never re-renders for
+   * it. `null` outside print mode, which is what hides the badge.
+   */
+  const [printTierBadge, setPrintTierBadge] = useState<{
+    tier: PrintTier;
+    supersample: number;
+  } | null>(null);
+
+  /**
+   * Write the badge only when it actually changed.
+   *
+   * `setPrintTierBadge` is called from the render loop, which runs sixty times a
+   * second. Handing React a fresh object literal each time is a fresh identity
+   * each time, so it would re-render the whole sidebar every frame to redraw two
+   * words that had not moved — the same class of waste the histogram tap is
+   * throttled to avoid (pipeline.md, Result). Returning `prev` on a match makes
+   * React bail out.
+   */
+  const reportPrintTier = useCallback((next: PrintFrame | null | undefined) => {
+    setPrintTierBadge((prev) => {
+      if (!next) return prev === null ? prev : null;
+      if (prev && prev.tier === next.tier && prev.supersample === next.supersample) return prev;
+      return { tier: next.tier, supersample: next.supersample };
+    });
+  }, []);
+
+  /**
+   * A running PROOF's cancel hook, and its progress line.
+   *
+   * The finished frame itself is deliberately NOT held here. A proof is seconds
+   * of work, so panning and zooming must not re-screen it — and they do not,
+   * because the viewport already holds the bitmap it was handed and `drawPrint`
+   * short-circuits a pure pan. A second copy in App would be state that only
+   * ever agreed with the viewport's, until the day it did not.
+   *
+   * What App does own is the ability to *stop* one: a proof spans many frames,
+   * and anything that invalidates the plates has to be able to abandon it.
+   */
+  const proofCancelRef = useRef<(() => void) | null>(null);
+  const [proofProgress, setProofProgress] = useState<string | null>(null);
   const triggerMediaRender = useCallback(() => setMediaRenderTrigger((v) => v + 1), []);
 
   // Active HTML image/video/canvas element reference for media rasterizer
@@ -1724,12 +1805,32 @@ export const App: React.FC = () => {
       renderSettingsByMode.media.rasterMode;
     const isPixel = effectiveMode === 'pixel';
     const isVector = effectiveMode === 'vector';
-    /* Vector shares pixel's square cells: polylines are geometry, not glyphs. */
-    const cellAspect = isPixel || isVector ? 1.0 : 0.55;
+    const isPrint = effectiveMode === 'print';
+    /*
+     * Pixel, vector and print all take square cells. The test is "are the cells
+     * square", which is `!== 'ascii'` — see invariant 7. Print's cells are
+     * contone samples subdivided into device pixels; a 0.6 cell would stretch
+     * every dot into an ellipse.
+     */
+    const cellAspect = isPixel || isVector || isPrint ? 1.0 : 0.55;
 
     let targetCols: number;
     let targetRows: number;
-    if (isVector) {
+    if (isPrint) {
+      /*
+       * The contone resolution, and deliberately modest.
+       *
+       * Detail in print output comes from the *supersample* and the ruling, not
+       * from this grid: coverage is smooth by construction (it comes out of a
+       * separation LUT), and every contone cell costs S^2 device pixels to
+       * screen and composite. So this is sized to the picture rather than to
+       * the source, and stays well below the pixel-mode default that a DPI
+       * mapping would produce.
+       */
+      const targetWidth = Math.min(PRINT_CONTONE_COLS, Math.max(160, w));
+      targetCols = Math.round(targetWidth);
+      targetRows = Math.max(10, Math.round(targetCols / srcAspect));
+    } else if (isVector) {
       /*
        * The grid is the beam's sampling resolution here, not a display raster,
        * so it wants to be generous — a coarse one makes a deflected line
@@ -2299,6 +2400,244 @@ export const App: React.FC = () => {
       />
     );
 
+  /*
+   * Print's live config, with a default materialised on first read.
+   *
+   * `printConfig` is optional on `RenderSettings` so that nothing written
+   * before print existed carries a stale ink stack, and so a session that never
+   * opens the mode never persists one. Everything downstream wants a real
+   * object, so the fallback lives here, once.
+   */
+  const activePrintConfig: PrintConfig =
+    (appMode === 'media' ? mediaViewConfig.printConfig : undefined) ||
+    currentRenderSettings.printConfig ||
+    DEFAULT_PRINT_CONFIG;
+
+  const handleChangePrintConfig = useCallback(
+    (next: PrintConfig) => {
+      /*
+       * Any change to the inks or the screens invalidates a held proof — the
+       * plates it contains are no longer the plates this config describes. The
+       * WORKING pass takes over on the next render, which is the same rule the
+       * settle timer already follows for the draft preview.
+       */
+      proofCancelRef.current?.();
+      setRenderSettingsByMode((prev) => ({
+        ...prev,
+        [appMode]: { ...prev[appMode], printConfig: next },
+      }));
+      if (appMode === 'media') {
+        setMediaViewConfig((prev) => ({ ...prev, printConfig: next }));
+      }
+    },
+    [appMode]
+  );
+
+  /**
+   * Replace the ink stack from a palette's colours.
+   *
+   * The palette library already carries real riso and process ink sets, so in
+   * print mode the COLORS panel stops being a colour model and becomes a source
+   * of ink stacks. `inksFromPalette` handles the one non-obvious part: the
+   * lightest entry becomes the *paper* rather than an ink, because printing
+   * near-white on near-white spends a whole pass on nothing.
+   */
+  const handleSeedInksFromPalette = useCallback(
+    (colors: string[]) => {
+      const seeded = inksFromPalette(colors, activePrintConfig.press);
+      handleChangePrintConfig({
+        ...activePrintConfig,
+        inks: seeded.inks,
+        paper: seeded.paper,
+        soloInk: null,
+      });
+    },
+    [activePrintConfig, handleChangePrintConfig]
+  );
+
+  /**
+   * Screen every plate at the full requested supersample, in bands.
+   *
+   * The one render path App drives itself rather than through the mode
+   * renderers, and it has to be: a proof at ×16 is tens of millions of device
+   * pixels and cannot run inside a render effect without freezing the tab. So
+   * it re-separates once, then walks `screenPlatesChunked` from a rAF loop,
+   * painting the partial frame as it goes — a proof in progress shows bare paper
+   * where it has not reached yet, which reads as progress rather than as a
+   * broken render.
+   */
+  const handleRenderProof = useCallback(() => {
+    const el = mediaElementRef.current;
+    if (appMode === 'media' && !el) return;
+
+    proofCancelRef.current?.();
+
+    const cfg = activePrintConfig;
+    const ss = tierSupersample(cfg, cols, rows, 'proof');
+
+    /*
+     * The separation the viewport is already showing, re-screened finer.
+     *
+     * Not a second run of the front of the pipeline: `lastPrintSeparation` hands
+     * back the coverage planes the current frame was built from, so a proof is
+     * guaranteed to be *the same separation* as the working frame it replaces,
+     * only screened at a higher supersample. Reimplementing steps 1-3 here would
+     * be two code paths that have to agree about every filter, curve and level.
+     *
+     * Cloned because the proof spans frames and the buffer is shared.
+     */
+    const live = lastPrintSeparation();
+    if (!live || live.inkCount === 0) return;
+    const separation = cloneSeparation(live);
+
+    const gen = screenPlatesChunked(separation, ss);
+    let raf = 0;
+    let cancelled = false;
+
+    const step = () => {
+      if (cancelled) return;
+      const t0 = performance.now();
+      let last: ReturnType<typeof gen.next> | null = null;
+      /*
+       * Several bands per frame, bounded by a time slice rather than a count:
+       * a band's cost scales with the raster width, so a fixed count is either
+       * a stutter on a wide plate or a needlessly slow crawl on a narrow one.
+       */
+      while (performance.now() - t0 < 12) {
+        last = gen.next();
+        if (last.done) break;
+      }
+      if (last?.done) {
+        setProofProgress(null);
+        reportPrintTier(last.value);
+        viewportRef.current?.setFrame('', 0, 0, null, cfg.paper, 'print', null, null, last.value);
+        proofCancelRef.current = null;
+        return;
+      }
+      if (last && !last.done) {
+        const p = last.value.progress;
+        setProofProgress(
+          `Plate ${p.plate}/${p.plateCount} · ${Math.round((p.row / p.totalRows) * 100)}%`
+        );
+        viewportRef.current?.setFrame('', 0, 0, null, cfg.paper, 'print', null, null, last.value.frame);
+      }
+      raf = requestAnimationFrame(step);
+    };
+
+    proofCancelRef.current = () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      setProofProgress(null);
+      proofCancelRef.current = null;
+    };
+    setProofProgress('Screening…');
+    raf = requestAnimationFrame(step);
+  }, [appMode, activePrintConfig, cols, rows]);
+
+  /**
+   * Opens the export dialog. When in print mode, kicks off a high-resolution
+   * proof render immediately so the full plate is screened and displayed.
+   */
+  const handleOpenExport = useCallback(
+    (tab: ExportTab = 'image') => {
+      if (currentRasterMode === 'print') {
+        handleRenderProof();
+      }
+      setExportInitialTab(tab);
+      setIsExportOpen(true);
+    },
+    [currentRasterMode, handleRenderProof]
+  );
+
+  /**
+   * The body of RENDER SETTINGS, whichever output mode is active.
+   *
+   * One element used by both the synth/model mount and the media mount. Those
+   * two had hand-copied copies of a two-way branch; adding print would have made
+   * it two hand-copied three-way branches, which is precisely how a control ends
+   * up present in ADVANCED and missing in the other tree. Same argument as
+   * `densityRampSection` above, and as `OUTPUT_MODES` being one array.
+   *
+   * The reductions here follow the BASIC/ADVANCED rule (pipeline.md §4): the
+   * dither picker is *hidden*, not disabled, and `ditherAlgorithm` stays in
+   * state so switching back to a cell mode restores it.
+   */
+  const renderSettingsBody =
+    currentRasterMode === 'print' ? (
+      <PrintControls
+        section="press"
+        config={activePrintConfig}
+        onChange={handleChangePrintConfig}
+        cols={cols}
+        rows={rows}
+        onRenderProof={appMode === 'media' ? handleRenderProof : undefined}
+        proofProgress={proofProgress}
+        tier={printTierBadge}
+        proofEstimateMs={estimatePrintCost(
+          cols,
+          rows,
+          tierSupersample(activePrintConfig, cols, rows, 'proof'),
+          activePrintConfig.inks.filter((k) => k.enabled).length
+        )}
+      />
+    ) : currentRasterMode === 'vector' ? (
+      <VectorControls
+        config={currentRenderSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS}
+        onChange={(next) => {
+          setRenderSettingsByMode((prev) => ({
+            ...prev,
+            [appMode]: { ...prev[appMode], vectorConfig: next },
+          }));
+        }}
+      />
+    ) : (
+      <DitherAlgorithmPicker
+        value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
+        onChange={(algo) => {
+          setRenderSettingsByMode((prev) => ({
+            ...prev,
+            [appMode]: { ...prev[appMode], ditherAlgorithm: algo },
+          }));
+        }}
+        params={currentRenderSettings.ditherParams}
+        onChangeParams={(next) => {
+          setRenderSettingsByMode((prev) => ({
+            ...prev,
+            [appMode]: { ...prev[appMode], ditherParams: next },
+          }));
+        }}
+      />
+    );
+
+  /** Badge and reset copy for the RENDER SETTINGS header, per output mode. */
+  const renderSettingsBadge =
+    currentRasterMode === 'print'
+      ? `${PRESS_PROFILES[activePrintConfig.press].name} · ${activePrintConfig.inks.filter((k) => k.enabled).length} ink${activePrintConfig.inks.filter((k) => k.enabled).length === 1 ? '' : 's'}`
+      : currentRasterMode === 'vector'
+        ? 'Beam Deflection'
+        : DITHER_ALGORITHMS.find(
+            (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
+          )?.name || 'Floyd-Steinberg';
+
+  const renderSettingsResetTitle =
+    currentRasterMode === 'print'
+      ? 'Reset the press, the ink stack and every screen'
+      : currentRasterMode === 'vector'
+        ? 'Reset every beam parameter'
+        : 'Reset dither algorithm and parameters';
+
+  /*
+   * A proof dies when the picture under it changes.
+   *
+   * Not only when the ink stack changes — `handleChangePrintConfig` covers that
+   * — but on the grid, the source and the grading too, because all three move
+   * the coverage the proof was screened from. Without this, a settled proof
+   * would sit on screen describing an image that is no longer loaded.
+   */
+  useEffect(() => {
+    proofCancelRef.current?.();
+  }, [cols, rows, appMode, mediaRenderTrigger, mediaViewConfig, currentRasterMode]);
+
   /**
    * Drop the grading a new source must not inherit, and hand back the view
    * config to record alongside it.
@@ -2812,6 +3151,23 @@ export const App: React.FC = () => {
             mediaViewConfig.vectorConfig || curSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS,
             divisor
           ),
+          printConfig: mediaViewConfig.printConfig || curSettings.printConfig,
+          /*
+           * The print tier rides the same preview/settle split, and needs no
+           * Print takes the same tier whether this is a preview pass or the
+           * settled one, and needs no `previewPrintConfig` counterpart to
+           * `previewVectorConfig` above.
+           *
+           * The reduction a draft needs is already supplied by `divisor`: a
+           * smaller contone grid at the same supersample is a proportionally
+           * cheaper frame, and because `ruling` is cells across the image
+           * *width*, the dots keep their size and position relative to the
+           * picture. So a preview is the same print with coarser image detail
+           * rather than a coarser screen — which is both faster and far easier
+           * to read than dropping the supersample as well, the arrangement this
+           * replaced.
+           */
+          printTier: 'live',
           toneConfig: curSettings.toneConfig,
         });
 
@@ -2838,10 +3194,20 @@ export const App: React.FC = () => {
            * physical size as the pass that replaces it.
            */
           const scaledVector = result.vector ? scaleVectorFrame(result.vector, cols, rows) : null;
-          viewportRef.current?.setFrame(scaled.text, 0, 0, scaled.colors, result.bgColor, result.rasterMode, scaledVector, sourceLayer);
+          /*
+           * The print frame is handed over unscaled, unlike the text, the colour
+           * buffer and the beam. `drawPrint` resolves it to the display box
+           * whatever its own device size is, so a draft frame lands at exactly
+           * the same on-screen size and dot pitch as the full pass — which is
+           * precisely the mid-drag jump `scaleVectorFrame` exists to prevent for
+           * geometry, arrived at for free here.
+           */
+          viewportRef.current?.setFrame(scaled.text, 0, 0, scaled.colors, result.bgColor, result.rasterMode, scaledVector, sourceLayer, result.print);
+          reportPrintTier(result.print);
         } else {
           captureHistogram(result);
-          viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode, result.vector, sourceLayer);
+          viewportRef.current?.setFrame(result.text, 0, 0, result.colors, result.bgColor, result.rasterMode, result.vector, sourceLayer, result.print);
+          reportPrintTier(result.print);
           lastStaticRenderMsRef.current = performance.now() - startedAt;
           /*
            * Full-resolution passes only. A draft preview renders a fraction of
@@ -2872,8 +3238,9 @@ export const App: React.FC = () => {
        */
       const sinceLast = performance.now() - lastStaticRenderEndRef.current;
       const isEditing = sinceLast < EDIT_BURST_MS;
-      const divisor =
+      const rawDivisor =
         isEditing && lowResPreview ? choosePreviewDivisor(lastStaticRenderMsRef.current) : 1;
+      const divisor = currentRasterMode === 'print' ? Math.min(2, rawDivisor) : rawDivisor;
 
       if (divisor > 1) {
         previewRaf = requestAnimationFrame(() => renderStaticFrame(divisor));
@@ -3009,6 +3376,7 @@ export const App: React.FC = () => {
       let frameColors: Uint8ClampedArray | null = null;
       let frameBgColor: string | undefined = undefined;
       let frameVector: VectorFrame | null = null;
+      let framePrint: PrintFrame | null = null;
       let frameLuminance: Float32Array | null = null;
 
       /*
@@ -3044,6 +3412,15 @@ export const App: React.FC = () => {
           algorithm: activeSettings.ditherAlgorithm || 'none',
           ditherParams: activeSettings.ditherParams,
           vectorConfig: animatedVectorConfig(activeSettings.vectorConfig),
+          printConfig: activeSettings.printConfig,
+          /*
+           * An animated frame screens at WORKING, never PROOF.
+           *
+           * A proof is seconds of work; at even 12fps the loop would fall
+           * indefinitely behind and the app would stop answering. Exports still
+           * screen every frame at PROOF, which is where the quality belongs.
+           */
+          printTier: 'live',
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
           sourceCapture: overlaySourcePpc(
@@ -3056,6 +3433,7 @@ export const App: React.FC = () => {
         frameText = res.text;
         frameColors = res.colors;
         frameVector = res.vector || null;
+        framePrint = res.print || null;
         frameLuminance = res.luminance;
       } else if (appMode === 'media') {
         const result = renderAsciiMediaFrameData({
@@ -3070,6 +3448,8 @@ export const App: React.FC = () => {
           algorithm: mediaViewConfig.algorithm || activeSettings.ditherAlgorithm || 'floyd-steinberg',
           ditherParams: mediaViewConfig.ditherParams || activeSettings.ditherParams,
           vectorConfig: animatedVectorConfig(mediaViewConfig.vectorConfig || activeSettings.vectorConfig),
+          printConfig: mediaViewConfig.printConfig || activeSettings.printConfig,
+          printTier: 'live',
           toneConfig: activeSettings.toneConfig,
         });
         captureHistogram(result);
@@ -3077,6 +3457,7 @@ export const App: React.FC = () => {
         frameColors = result.colors;
         frameBgColor = result.bgColor;
         frameVector = result.vector || null;
+        framePrint = result.print || null;
         frameLuminance = result.luminance;
       } else {
         const res = renderSynthFrameData({
@@ -3096,6 +3477,15 @@ export const App: React.FC = () => {
           algorithm: activeSettings.ditherAlgorithm || 'none',
           ditherParams: activeSettings.ditherParams,
           vectorConfig: animatedVectorConfig(activeSettings.vectorConfig),
+          printConfig: activeSettings.printConfig,
+          /*
+           * An animated frame screens at WORKING, never PROOF.
+           *
+           * A proof is seconds of work; at even 12fps the loop would fall
+           * indefinitely behind and the app would stop answering. Exports still
+           * screen every frame at PROOF, which is where the quality belongs.
+           */
+          printTier: 'live',
           toneConfig: activeSettings.toneConfig,
           adjustConfig: activeSettings.adjustConfig,
         });
@@ -3104,6 +3494,7 @@ export const App: React.FC = () => {
         frameColors = res.colors;
         frameBgColor = res.bgColor;
         frameVector = res.vector || null;
+        framePrint = res.print || null;
         frameLuminance = res.luminance;
       }
 
@@ -3118,8 +3509,10 @@ export const App: React.FC = () => {
         frameBgColor,
         appMode === 'media' ? (mediaViewConfig.rasterMode || activeSettings.rasterMode) : activeSettings.rasterMode,
         frameVector,
-        buildViewportSourceLayer(frameLuminance)
+        buildViewportSourceLayer(frameLuminance),
+        framePrint
       );
+      reportPrintTier(framePrint);
       animFrameId = requestAnimationFrame(loop);
     };
 
@@ -3290,6 +3683,15 @@ export const App: React.FC = () => {
       vectorConfig: appMode === 'media'
         ? (mediaViewConfig.vectorConfig || currentRenderSettings.vectorConfig)
         : currentRenderSettings.vectorConfig,
+      /*
+       * Written, not only read. A print's whole identity is its ink stack, and a
+       * link that dropped it would open on the recipient's default two-ink riso
+       * — plausible-looking and nothing like what was shared. This is the exact
+       * failure the note on FullAnimationState.postProcess records.
+       */
+      printConfig: appMode === 'media'
+        ? (mediaViewConfig.printConfig || currentRenderSettings.printConfig)
+        : currentRenderSettings.printConfig,
       toneConfig: currentRenderSettings.toneConfig,
       adjustConfig: currentRenderSettings.adjustConfig,
       /*
@@ -3662,10 +4064,7 @@ export const App: React.FC = () => {
 
           <button
             className="btn btn-sm btn-header-export"
-            onClick={() => {
-              setExportInitialTab('image');
-              setIsExportOpen(true);
-            }}
+            onClick={() => handleOpenExport('image')}
             title="Download the render as an image, colour plates, GIF or video"
           >
             <Download size={13} className="header-btn-icon" />
@@ -3733,6 +4132,8 @@ export const App: React.FC = () => {
           onMediaFileDrop={handleMediaFileUpload}
           initialView={sharedState?.view ?? null}
           postProcess={currentRenderSettings.postProcess}
+          printConfig={activePrintConfig}
+          printTier={printTierBadge}
 
           isLoading={appMode === 'model' && isModelLoading}
           loadingFileName={modelLoadingFileName}
@@ -3786,6 +4187,11 @@ export const App: React.FC = () => {
                   onEnterCrop={handleToggleCrop}
                   onResetFraming={handleResetFraming}
                   cropEditing={cropEditing}
+                  printConfigFallback={activePrintConfig}
+                  onRenderProof={handleRenderProof}
+                  proofProgress={proofProgress}
+                  printTier={printTierBadge}
+                  onSeedInksFromPalette={handleSeedInksFromPalette}
                 />
             ) : (
             <AccordionProvider autoCollapse={!!uiThemeSettings.autoCollapsePanels}>
@@ -3920,7 +4326,9 @@ export const App: React.FC = () => {
                 appMode={appMode}
                 mediaElement={mediaElementRef.current}
                 mediaConfig={mediaConfig}
-                isPixelMode={currentRasterMode !== 'ascii'}
+                isPixelMode={currentRasterMode === 'pixel'}
+                isVectorMode={currentRasterMode === 'vector'}
+                isPrintMode={currentRasterMode === 'print'}
                 viewfinderAspect={viewfinderAspect}
                 dpi={mediaViewConfig.dpi ?? 72}
                 onChangeDpi={(newDpi) => handleChangeMediaViewConfig({ ...mediaViewConfig, dpi: newDpi })}
@@ -3945,6 +4353,11 @@ export const App: React.FC = () => {
                   mediaColorConfig={mediaColorConfig}
                   onChangeMediaColorConfig={handleSelectMediaColorConfig}
                   appMode={appMode}
+                  onSeedInksFromPalette={handleSeedInksFromPalette}
+                  printSlot={renderSettingsBody}
+                  printBadge={renderSettingsBadge}
+                  cols={cols}
+                  rows={rows}
                 />
               )}
 
@@ -3959,13 +4372,7 @@ export const App: React.FC = () => {
                     <CollapsibleSection
                       title="RENDER SETTINGS"
                       icon={<Settings size={12} />}
-                      badge={
-                        currentRasterMode === 'vector'
-                          ? 'Beam Deflection'
-                          : DITHER_ALGORITHMS.find(
-                              (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
-                            )?.name || 'Floyd-Steinberg'
-                      }
+                      badge={renderSettingsBadge}
                       persistKey={`${appMode}-render-settings`}
                       onReset={() => {
                         setRenderSettingsByMode((prev) => ({
@@ -3975,52 +4382,13 @@ export const App: React.FC = () => {
                             ditherAlgorithm: 'floyd-steinberg',
                             ditherParams: undefined,
                             vectorConfig: undefined,
+                            printConfig: undefined,
                           },
                         }));
                       }}
-                      resetTitle={
-                        currentRasterMode === 'vector'
-                          ? 'Reset every beam parameter'
-                          : 'Reset dither algorithm and parameters'
-                      }
+                      resetTitle={renderSettingsResetTitle}
                     >
-                      {currentRasterMode === 'vector' ? (
-                        <VectorControls
-                          config={currentRenderSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS}
-                          onChange={(next) => {
-                            setRenderSettingsByMode((prev) => ({
-                              ...prev,
-                              [appMode]: {
-                                ...prev[appMode],
-                                vectorConfig: next,
-                              },
-                            }));
-                          }}
-                        />
-                      ) : (
-                        <DitherAlgorithmPicker
-                          value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
-                          onChange={(algo) => {
-                            setRenderSettingsByMode((prev) => ({
-                              ...prev,
-                              [appMode]: {
-                                ...prev[appMode],
-                                ditherAlgorithm: algo,
-                              },
-                            }));
-                          }}
-                          params={currentRenderSettings.ditherParams}
-                          onChangeParams={(next) => {
-                            setRenderSettingsByMode((prev) => ({
-                              ...prev,
-                              [appMode]: {
-                                ...prev[appMode],
-                                ditherParams: next,
-                              },
-                            }));
-                          }}
-                        />
-                      )}
+                      {renderSettingsBody}
                     </CollapsibleSection>
 
                     {(() => {
@@ -4036,6 +4404,8 @@ export const App: React.FC = () => {
                           mediaColorConfig={mediaColorConfig}
                           appMode={appMode}
                           isVectorMode={currentRasterMode === 'vector'}
+                          isPrintMode={currentRasterMode === 'print'}
+                          printBadge={activePrintConfig ? `${activePrintConfig.inks.length} INKS` : undefined}
                           paletteSlot={
                             <PaletteControls
                               currentTheme={theme}
@@ -4052,8 +4422,14 @@ export const App: React.FC = () => {
                                   tonalMapping: t,
                                 })
                               }
-                              isPixelMode={currentRasterMode !== 'ascii'}
+                              isPixelMode={currentRasterMode === 'pixel'}
                               isVectorMode={currentRasterMode === 'vector'}
+                              isPrintMode={currentRasterMode === 'print'}
+                              printConfig={activePrintConfig}
+                              onChangePrintConfig={handleChangePrintConfig}
+                              cols={cols}
+                              rows={rows}
+                              onSeedInksFromPalette={handleSeedInksFromPalette}
                               colorLevels={synthModelAdjustConfig.colorLevels}
                               onChangeColorLevels={(val) =>
                                 handleChangeAdjustConfig({
@@ -4110,13 +4486,7 @@ export const App: React.FC = () => {
                   <CollapsibleSection
                     title="RENDER SETTINGS"
                     icon={<Settings size={12} />}
-                    badge={
-                      currentRasterMode === 'vector'
-                        ? 'Beam Deflection'
-                        : DITHER_ALGORITHMS.find(
-                            (a) => a.id === (currentRenderSettings.ditherAlgorithm || 'floyd-steinberg')
-                          )?.name || 'Floyd-Steinberg'
-                    }
+                    badge={renderSettingsBadge}
                     persistKey={`${appMode}-render-settings`}
                     onReset={() => {
                       setRenderSettingsByMode((prev) => ({
@@ -4126,52 +4496,13 @@ export const App: React.FC = () => {
                           ditherAlgorithm: 'floyd-steinberg',
                           ditherParams: undefined,
                           vectorConfig: undefined,
+                          printConfig: undefined,
                         },
                       }));
                     }}
-                    resetTitle={
-                      currentRasterMode === 'vector'
-                        ? 'Reset every beam parameter'
-                        : 'Reset dither algorithm and parameters'
-                    }
+                    resetTitle={renderSettingsResetTitle}
                   >
-                    {currentRasterMode === 'vector' ? (
-                      <VectorControls
-                        config={currentRenderSettings.vectorConfig || VECTOR_CONFIG_DEFAULTS}
-                        onChange={(next) => {
-                          setRenderSettingsByMode((prev) => ({
-                            ...prev,
-                            [appMode]: {
-                              ...prev[appMode],
-                              vectorConfig: next,
-                            },
-                          }));
-                        }}
-                      />
-                    ) : (
-                      <DitherAlgorithmPicker
-                        value={currentRenderSettings.ditherAlgorithm || 'floyd-steinberg'}
-                        onChange={(algo) => {
-                          setRenderSettingsByMode((prev) => ({
-                            ...prev,
-                            [appMode]: {
-                              ...prev[appMode],
-                              ditherAlgorithm: algo,
-                            },
-                          }));
-                        }}
-                        params={currentRenderSettings.ditherParams}
-                        onChangeParams={(next) => {
-                          setRenderSettingsByMode((prev) => ({
-                            ...prev,
-                            [appMode]: {
-                              ...prev[appMode],
-                              ditherParams: next,
-                            },
-                          }));
-                        }}
-                      />
-                    )}
+                    {renderSettingsBody}
                   </CollapsibleSection>
 
                   {(() => {
@@ -4187,6 +4518,8 @@ export const App: React.FC = () => {
                         mediaColorConfig={mediaColorConfig}
                         appMode={appMode}
                         isVectorMode={currentRasterMode === 'vector'}
+                        isPrintMode={currentRasterMode === 'print'}
+                        printBadge={activePrintConfig ? `${activePrintConfig.inks.length} INKS` : undefined}
                         paletteSlot={
                           <PaletteControls
                             currentTheme={theme}
@@ -4203,8 +4536,14 @@ export const App: React.FC = () => {
                                 tonalMapping: t,
                               })
                             }
-                            isPixelMode={currentRasterMode !== 'ascii'}
+                            isPixelMode={currentRasterMode === 'pixel'}
                             isVectorMode={currentRasterMode === 'vector'}
+                            isPrintMode={currentRasterMode === 'print'}
+                            printConfig={activePrintConfig}
+                            onChangePrintConfig={handleChangePrintConfig}
+                            cols={cols}
+                            rows={rows}
+                            onSeedInksFromPalette={handleSeedInksFromPalette}
                             colorLevels={synthModelAdjustConfig.colorLevels}
                             onChangeColorLevels={(val) =>
                               handleChangeAdjustConfig({
@@ -4312,10 +4651,7 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 className="btn basic-export-primary"
-                onClick={() => {
-                  setExportInitialTab('image');
-                  setIsExportOpen(true);
-                }}
+                onClick={() => handleOpenExport('image')}
                 disabled={appMode === 'media' && !mediaElementRef.current}
                 title={appMode === 'media' && !mediaElementRef.current ? 'Import a file first' : 'Export as PNG, JPG or SVG'}
               >
@@ -4326,10 +4662,7 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => {
-                    setExportInitialTab('gif');
-                    setIsExportOpen(true);
-                  }}
+                  onClick={() => handleOpenExport('gif')}
                   disabled={appMode === 'media' && !mediaElementRef.current}
                   title="Export an animated GIF"
                 >
@@ -4338,10 +4671,7 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => {
-                    setExportInitialTab('video');
-                    setIsExportOpen(true);
-                  }}
+                  onClick={() => handleOpenExport('video')}
                   disabled={appMode === 'media' && !mediaElementRef.current}
                   title="Export a video file"
                 >
@@ -4350,10 +4680,7 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => {
-                    setExportInitialTab('separation');
-                    setIsExportOpen(true);
-                  }}
+                  onClick={() => handleOpenExport('separation')}
                   disabled={appMode === 'media' && !mediaElementRef.current}
                   title="Export one image per colour plate"
                 >
@@ -4414,6 +4741,7 @@ export const App: React.FC = () => {
         ditherAlgorithm={appMode === 'media' ? (mediaViewConfig.algorithm || currentRenderSettings.ditherAlgorithm) : currentRenderSettings.ditherAlgorithm}
         ditherParams={appMode === 'media' ? (mediaViewConfig.ditherParams || currentRenderSettings.ditherParams) : currentRenderSettings.ditherParams}
         vectorConfig={appMode === 'media' ? (mediaViewConfig.vectorConfig || currentRenderSettings.vectorConfig) : currentRenderSettings.vectorConfig}
+        printConfig={activePrintConfig}
         toneConfig={currentRenderSettings.toneConfig}
         adjustConfig={currentRenderSettings.adjustConfig}
         postProcess={currentRenderSettings.postProcess}
@@ -4424,10 +4752,7 @@ export const App: React.FC = () => {
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
         state={shareView ? { ...currentFullState, view: shareView } : currentFullState}
-        onOpenExport={() => {
-          setExportInitialTab('image');
-          setIsExportOpen(true);
-        }}
+        onOpenExport={() => handleOpenExport('image')}
       />
 
       {/* Keyboard & Pointer Reference */}

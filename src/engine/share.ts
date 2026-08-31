@@ -15,6 +15,7 @@ import {
   DitherAlgorithm,
   DitherParams,
   VectorConfig,
+  PrintConfig,
   ToneMappingConfig,
   ImageAdjustConfig,
   PostProcessConfig,
@@ -54,6 +55,19 @@ export interface FullAnimationState {
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  /**
+   * Inks, screens, registration and paper.
+   *
+   * The whole ink stack rides in one field for the same reason `postProcess`
+   * does — see the note below it. A print's entire identity is in here: drop it
+   * and the link opens on the recipient's default two-ink riso, which will look
+   * plausible and be nothing like what was shared. `currentFullState` must
+   * **write** it, not only the loader read it.
+   *
+   * `PrintConfig.supersample` travels with it; the render *tier* deliberately
+   * does not, because that describes the recipient's machine.
+   */
+  printConfig?: PrintConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   /**

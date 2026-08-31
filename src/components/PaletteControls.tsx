@@ -6,6 +6,7 @@ import {
   AppMode,
   TonalMappingType,
   PaletteMatchMode,
+  PrintConfig,
 } from '../types/ascii';
 import {
   BUILTIN_PALETTES,
@@ -17,6 +18,7 @@ import { DeferredColorInput, PrecisionSlider } from './controlPrimitives';
 import { QuantizeLevelsControl } from './ImageAdjustControls';
 import { paletteIsMonochrome } from '../engine/rasterEngine';
 import { ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { PrintInkStack } from './PrintControls';
 
 interface PaletteControlsProps {
   currentTheme: PhosphorTheme;
@@ -35,6 +37,17 @@ interface PaletteControlsProps {
    * itself is left in state, so switching back to a cell mode restores it.
    */
   isVectorMode?: boolean;
+  /**
+   * Print output has no palette at all — the ink stack is the colour model.
+   */
+  isPrintMode?: boolean;
+  printConfig?: PrintConfig;
+  onChangePrintConfig?: (cfg: PrintConfig) => void;
+  cols?: number;
+  rows?: number;
+  printInkSlot?: React.ReactNode;
+  /** Replace the ink stack from a palette's colours. Print mode only. */
+  onSeedInksFromPalette?: (colors: string[]) => void;
   /**
    * Turn the selected palette into an editable N-tone ramp.
    */
@@ -99,6 +112,13 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   onChangeTonalMapping,
   isPixelMode = false,
   isVectorMode = false,
+  isPrintMode = false,
+  printConfig,
+  onChangePrintConfig,
+  cols,
+  rows,
+  printInkSlot,
+  onSeedInksFromPalette,
   onEditPaletteAsRamp,
   rampEditorSlot,
   colorLevels = 0,
@@ -208,6 +228,73 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
     }
     return groups;
   }, []);
+
+  /*
+   * Print replaces this panel rather than disabling parts of it.
+   *
+   * Every control below answers "what colour should a cell be", and a press does
+   * not work that way: colour comes from which inks overprint at a point, so the
+   * ink stack in RENDER SETTINGS *is* the colour model. Leaving a palette tab up
+   * would offer a choice the engine ignores — the failure the vector notes above
+   * describe, one step further along.
+   *
+   * What is genuinely useful here is the reverse direction: the palette library
+   * already carries real riso and process ink sets (palettes.ts, category
+   * `print`), so it becomes a source of ink stacks instead of a colour mode.
+   */
+  if (isPrintMode) {
+    if (printInkSlot) {
+      return <div className="palette-controls-container">{printInkSlot}</div>;
+    }
+    if (printConfig && onChangePrintConfig) {
+      return (
+        <div className="palette-controls-container">
+          <PrintInkStack
+            config={printConfig}
+            onChange={onChangePrintConfig}
+            cols={cols}
+            rows={rows}
+            onSeedInksFromPalette={onSeedInksFromPalette}
+          />
+        </div>
+      );
+    }
+    const printPalettes = BUILTIN_PALETTES.filter((p) => p.category === 'print');
+    return (
+      <div className="palette-controls-container">
+        <div className="control-hint control-row-spaced-below">
+          Colour comes from the ink stack — which inks overprint at a point, and the paper showing through.
+        </div>
+        {onSeedInksFromPalette && printPalettes.length > 0 && (
+          <>
+            <div className="tonal-subheading">
+              <span title="Replaces the ink stack with this set. The lightest entry becomes the paper rather than an ink — printing near-white on near-white would spend a whole pass on nothing.">
+                Load Preset Ink Set
+              </span>
+            </div>
+            <div className="print-ink-library">
+              {printPalettes.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="print-ink-chip"
+                  onClick={() => onSeedInksFromPalette(p.colors)}
+                  title={`${p.name} — ${p.colors.length} colours`}
+                >
+                  <span className="control-cluster">
+                    {p.colors.map((c) => (
+                      <span key={c} className="print-ink-chip-dot" style={{ background: c }} />
+                    ))}
+                  </span>
+                  <span>{p.name}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="palette-controls-container">

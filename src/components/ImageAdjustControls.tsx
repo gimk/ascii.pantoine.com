@@ -1470,6 +1470,8 @@ export interface ColorAdjustControlsProps {
   mediaColorConfig?: MediaColorConfig;
   appMode?: AppMode;
   isVectorMode?: boolean;
+  isPrintMode?: boolean;
+  printBadge?: string;
 }
 
 export const ColorAdjustControls: React.FC<ColorAdjustControlsProps> = ({
@@ -1483,8 +1485,13 @@ export const ColorAdjustControls: React.FC<ColorAdjustControlsProps> = ({
   mediaColorConfig,
   appMode = 'media',
   isVectorMode = false,
+  isPrintMode = false,
+  printBadge,
 }) => {
   const colorBadge = useMemo(() => {
+    if (isPrintMode) {
+      return printBadge || 'INK STACK';
+    }
     const isRgbDisabled = appMode === 'synth' || isVectorMode;
     const effectivePaletteMode =
       mediaColorConfig?.paletteMode === 'content' && isRgbDisabled
@@ -1504,6 +1511,8 @@ export const ColorAdjustControls: React.FC<ColorAdjustControlsProps> = ({
     }
     return '1-COLOR';
   }, [
+    isPrintMode,
+    printBadge,
     mediaColorConfig?.paletteMode,
     mediaColorConfig?.activePaletteId,
     config.tonalMapping,

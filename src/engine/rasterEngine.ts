@@ -17,6 +17,9 @@ import {
   VectorConfig,
   VectorFrame,
   VECTOR_CONFIG_DEFAULTS,
+  PrintConfig,
+  PrintFrame,
+  PrintTier,
 } from '../types/ascii';
 import {
   BUILTIN_PALETTES,
@@ -25,6 +28,8 @@ import {
 } from './palettes';
 import { applyDitherAlgorithm, DITHER_ALGORITHMS } from './ditherAlgorithms';
 import { traceVectorField, VectorColorResolver } from './vectorEngine';
+import { separatePrint, screenPlates, tierSupersample } from './printEngine';
+import { PRINT_CONFIG_DEFAULTS } from './printInks';
 
 export interface RawFrameBuffer {
   width: number;
@@ -43,6 +48,17 @@ export interface UnifiedPipelineOptions {
   ditherParams?: DitherParams;
   /** Beam deflection. Read only when `rasterMode === 'vector'`. */
   vectorConfig?: VectorConfig;
+  /** Inks, screens and press. Read only when `rasterMode === 'print'`. */
+  printConfig?: PrintConfig;
+  /**
+   * Which quality tier to screen at. Print only; defaults to `working`.
+   *
+   * Deliberately not part of `printConfig`: it describes the machine rendering
+   * the frame, not the artwork, so it must never ride along inside a preset or
+   * a shared link. Same reasoning as `lowResPreview` living on the UI settings
+   * rather than on `OptimizeConfig` (pipeline.md 4.5).
+   */
+  printTier?: PrintTier;
   density: string;
   toneConfig?: ToneMappingConfig;
   colorConfig?: MediaColorConfig;
@@ -449,6 +465,13 @@ export interface ProcessedRasterResult {
    */
   vector?: VectorFrame | null;
   /**
+   * A screened device raster, in print mode only. Null in every other mode,
+   * and `text` is empty whenever this is set — the same mutual exclusion as
+   * `vector`, and the same requirement that a painter branch on it rather than
+   * assume both are populated.
+   */
+  print?: PrintFrame | null;
+  /**
    * Distribution of the luminance entering the levels stage, 256 bins.
    *
    * Live module buffer, not a copy -- the same contract as `luminance`. Read
@@ -491,6 +514,21 @@ let cachedLines: string[] = [];
 let lineBuffer: string[] = [];
 
 /**
+ * Graded source RGB for the print separation, three bytes per contone cell.
+ *
+ * Its own buffer rather than `colorsBuffer`, which is the *output* of step 4
+ * and would be written by a later frame in a cell mode. Sized on demand instead
+ * of in `ensureBufferCapacity` so a session that never opens print mode never
+ * allocates it.
+ */
+let printTargetBuffer = new Uint8ClampedArray(0);
+
+function ensurePrintTargetCapacity(totalCells: number): void {
+  const need = totalCells * 3;
+  if (printTargetBuffer.length < need) printTargetBuffer = new Uint8ClampedArray(need);
+}
+
+/**
  * Distribution of the luminance entering the levels stage, 256 bins. Fixed
  * size, so unlike the per-cell buffers it never reallocates.
  *
@@ -525,6 +563,7 @@ export function emptyRasterResult(rasterMode: RasterOutputMode = 'ascii'): Proce
     bgColor: '#0a0a0a',
     isColored: false,
     vector: null,
+    print: null,
     histogram: EMPTY_HISTOGRAM,
     histogramOpaque: 0,
   };
@@ -1226,6 +1265,119 @@ export function processRasterFrame(
    */
   const rampStops = resolveRampStops(options);
 
+  /*
+   * Ratio between the graded luminance and the source luminance for one cell.
+   *
+   * The colour modes that sample source RGB — 'content', the chromatic branch
+   * of 'indexed', and the print separation — used to read straight from the
+   * untouched pixel data, so every filter, the tone curve, levels,
+   * brightness/contrast and the dither pass were all invisible there: they only
+   * ever moved lumBuffer. Scaling the sampled RGB by this ratio puts those
+   * cells back under the same grading as every other mode while keeping their
+   * hue.
+   *
+   * Declared here rather than beside step 4 because print forks at 3.5 and
+   * needs it too. One copy: a second one beside the fork would drift the moment
+   * the near-black fallback below is retuned, and the symptom would be print
+   * mode quietly ignoring the tone curve in the shadows.
+   */
+  const gradeRatio = (i: number): number => {
+    const graded = lumBuffer[i];
+    if (graded < 0) return 1;
+    const src = srcLumBuffer[i];
+    if (src <= 0.004) return graded <= 0.004 ? 1 : 1 + graded * 4;
+    return graded / src;
+  };
+
+  // -------------------------------------------------------------------------
+  // The print fork
+  // -------------------------------------------------------------------------
+  /*
+   * Print output leaves here, for the same reason vector does: steps 1-3 are
+   * exactly the field a press wants to read, so print inherits the tone curve,
+   * levels, AUTO LEVELS, blur, sharpen and Sobel edges without a line of new
+   * code. Everything below — depth resolution, the band warp, the dither, the
+   * colour buffer, the glyph ramp — is cell machinery, and a press has no cells.
+   * It has *plates*, and they overlap.
+   *
+   * The one thing print needs that vector does not is graded source *colour*,
+   * because the separation is colorimetric. That is what `gradeRatio` above is
+   * doing here.
+   */
+  if ((options.rasterMode || 'ascii') === 'print') {
+    const printCfg = options.printConfig || PRINT_CONFIG_DEFAULTS;
+    const tier: PrintTier = options.printTier || 'live';
+
+    ensurePrintTargetCapacity(totalCells);
+
+    /*
+     * The colour the press is asked to hit, per contone cell.
+     *
+     * Synth mode has no RGBA buffer at all (pipeline.md 1.1), so its target is
+     * neutral grey from the graded luminance. That is not a degraded path and
+     * not a refusal — a greyscale field separated onto two or three spot inks
+     * is a duotone, which is one of the things this mode is for.
+     */
+    const hasRgba = data && data.length >= totalCells * 4;
+    for (let i = 0; i < totalCells; i++) {
+      const o = i * 3;
+      if (lumBuffer[i] < 0) {
+        // Sentinel cells get no ink on any plate; `separatePrint` skips them.
+        printTargetBuffer[o] = 0;
+        printTargetBuffer[o + 1] = 0;
+        printTargetBuffer[o + 2] = 0;
+        continue;
+      }
+      if (hasRgba) {
+        const p = i * 4;
+        const k = gradeRatio(i);
+        printTargetBuffer[o] = data[p] * k;
+        printTargetBuffer[o + 1] = data[p + 1] * k;
+        printTargetBuffer[o + 2] = data[p + 2] * k;
+      } else {
+        const v = lumBuffer[i] * 255;
+        printTargetBuffer[o] = v;
+        printTargetBuffer[o + 1] = v;
+        printTargetBuffer[o + 2] = v;
+      }
+    }
+
+    /*
+     * The separation is tier-independent — it is the same colour solve at the
+     * same table size whichever quality is being screened, which is what lets a
+     * proof reuse the live frame's coverage rather than recomputing it.
+     */
+    const separation = separatePrint(printTargetBuffer, lumBuffer, cols, rows, printCfg);
+    const ss = tierSupersample(printCfg, cols, rows, tier);
+
+    return {
+      text: '',
+      colors: null,
+      luminance: lumBuffer,
+      cols,
+      rows,
+      rasterMode: 'print',
+      /*
+       * The paper is the ground, and it comes from the ink config rather than
+       * from `bgColor`. A print has no background in the CRT sense — the
+       * substrate is a term in the separation itself (printInks.ts), so letting
+       * the colour panel's background win here would show one paper and
+       * separate against another.
+       */
+      bgColor: printCfg.paper,
+      isColored: true,
+      /*
+       * Both fork fields are always present, so a painter can branch on either
+       * without an existence check — the same reason `emptyRasterResult` is one
+       * shared literal rather than four hand-copied ones.
+       */
+      vector: null,
+      print: screenPlates(separation, ss, tier),
+      histogram: histogramBuffer,
+      histogramOpaque,
+    };
+  }
+
   // -------------------------------------------------------------------------
   // The vector fork
   // -------------------------------------------------------------------------
@@ -1288,6 +1440,7 @@ export function processRasterFrame(
       bgColor,
       isColored: false,
       vector: traceVectorField(lumBuffer, cols, rows, vectorCfg, resolveColor, bgColor),
+      print: null,
       histogram: histogramBuffer,
       histogramOpaque,
     };
@@ -1387,24 +1540,6 @@ export function processRasterFrame(
       else if (v > 1) lumBuffer[i] = 1;
     }
   }
-
-  /*
-   * Ratio between the graded luminance and the source luminance for one cell.
-   *
-   * The colour modes that sample source RGB — 'content', and the chromatic
-   * branch of 'indexed' — used to read straight from the untouched pixel data,
-   * so every filter, the tone curve, levels, brightness/contrast and the
-   * dither pass were all invisible there: they only ever moved lumBuffer.
-   * Scaling the sampled RGB by this ratio puts those cells back under the same
-   * grading as every other mode while keeping their hue.
-   */
-  const gradeRatio = (i: number): number => {
-    const graded = lumBuffer[i];
-    if (graded < 0) return 1;
-    const src = srcLumBuffer[i];
-    if (src <= 0.004) return graded <= 0.004 ? 1 : 1 + graded * 4;
-    return graded / src;
-  };
 
   // -------------------------------------------------------------------------
   // Step 4: Color Extraction & Retro Palette Quantization
@@ -1666,6 +1801,7 @@ export function processRasterFrame(
     bgColor,
     isColored: Boolean(colorsOut && colorsOut.length > 0),
     vector: null,
+    print: null,
     histogram: histogramBuffer,
     histogramOpaque,
   };

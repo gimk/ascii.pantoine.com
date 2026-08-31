@@ -1427,9 +1427,15 @@ html, body, #root {
 
 /* Render Output Mode Selector — the same command cards as the content picker,
    rendered from `OutputModeCards` in both UI modes. */
+/* Two columns, not four. The row held three modes on one line at 360px; PRINT
+   made it four, and four tiles in that column leaves ~82px each — enough for
+   the mini card's name but not for the full card's description, which is the
+   only thing distinguishing PIXEL from PRINT before you have used either. A 2x2
+   block keeps both variants on the same geometry, which is the whole point of
+   rendering them from one component. */
 .render-mode-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
@@ -1443,7 +1449,7 @@ html, body, #root {
    Same card as above, and deliberately so: it inherits every hover and active
    rule, so the accent fill on the icon and the glow on selection are the ones
    ADVANCED already taught. What comes off is the description, the corner badge
-   and the ACTIVE/READY footer — about half the height and, at three tiles in a
+   and the ACTIVE/READY footer — about half the height and, in a 2x2 block in a
    360px column, none of the meaning. The live dot survives, moved to the
    corner the badge vacated.
    --------------------------------------------------------------------------- */
@@ -5666,4 +5672,252 @@ select:disabled {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+/* ===========================================================================
+   PRINT mode — press, ink stack, plate decks
+
+   Everything here is inside RENDER SETTINGS, so it inherits `.control-row`,
+   `.btn-toggle` and the rest of that vocabulary and only adds what the ink
+   stack genuinely needs: a list whose rows expand, and swatch chips.
+   =========================================================================== */
+
+/* Four presses on two lines. Four across at 360px leaves ~80px per tile, which
+   SCREENPRINT does not fit into. */
+.print-press-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.print-press-grid .btn {
+  min-width: 0;
+}
+
+/* Six dot shapes, same reasoning at a shorter label. */
+.print-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.print-shape-grid .btn {
+  min-width: 0;
+}
+
+/* Paper stock shortcuts: colour is the whole label, so they are swatches. */
+.print-stock-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.print-stock-chip {
+  flex: 1;
+  height: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.print-stock-chip.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+   The proof card
+
+   Boxed, unlike everything around it, and that is deliberate: it is the one
+   control here that *starts work* rather than describing the artwork, and it
+   costs seconds. Reading as a button-with-a-price rather than as another row is
+   the point.
+   --------------------------------------------------------------------------- */
+.print-proof-card {
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: var(--bg-control);
+  padding: 8px;
+  margin: 10px 0;
+}
+
+.print-proof-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-bottom: 6px;
+}
+
+/* The comparison line: what a proof would actually change. Sits between the
+   heading and the button because it is the reason to press it. */
+.print-proof-explain {
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+
+.print-proof-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.print-proof-body .control-hint {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   One printing pass
+   --------------------------------------------------------------------------- */
+.print-plate {
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  margin-bottom: 4px;
+  background: var(--bg-control);
+}
+
+.print-plate.is-open {
+  border-color: var(--accent);
+}
+
+.print-plate-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px;
+  min-height: 30px;
+}
+
+.print-plate-disclose {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.print-plate-index {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.print-plate-swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* The name absorbs the row and ellipsizes; the screen summary holds its width,
+   because it is the number you scan the stack for. */
+.print-plate-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.print-plate-meta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.print-plate-body {
+  padding: 2px 8px 8px 8px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.print-plate-body .tonal-subheading {
+  margin-top: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   Warnings and the ink library
+   --------------------------------------------------------------------------- */
+.print-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.print-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.print-ink-library {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  margin-bottom: 8px;
+}
+
+.print-ink-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 5px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-primary);
+  text-align: left;
+  min-width: 0;
+  font-family: inherit;
+}
+
+.print-ink-chip:hover {
+  border-color: var(--accent);
+}
+
+.print-ink-chip > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.print-ink-chip-dot {
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  flex-shrink: 0;
 }

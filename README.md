@@ -7,9 +7,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
 A brutalist, terminal-styled dithering studio in the browser. Feed it an image, a video, a 3D
-model or a procedural wave field, and it rasterizes into ASCII, Braille, halftone screens,
-1-bit pixel art or a deflected CRT beam — then exports as vector SVG, PNG, GIF, video or
-print-ready colour plates.
+model or a procedural wave field, and it rasterizes into ASCII, Braille, 1-bit pixel art, a
+deflected CRT beam, or a genuine halftone separated onto the inks of your choice — then
+exports as vector SVG, PNG, GIF, video or press-ready plates.
 
 **No install, no account: [studio.pantoine.com](https://studio.pantoine.com)**
 
@@ -30,7 +30,8 @@ print-ready colour plates.
 
 ### Rasterizer
 
-- **Three output modes** — glyph grid (ASCII), square-pixel dither, or vector beam.
+- **Four output modes** — glyph grid (ASCII), square-pixel dither, vector beam, or a real
+  press separation (PRINT).
 - **20+ character ramps** — density, blocks, quadrants, box-drawing, Braille, hex, math.
 - **44 dither algorithms** — error diffusion (Floyd–Steinberg, Atkinson, Stucki, Sierra,
   Ostromoukhov…), ordered matrices (Bayer, clustered dot, crosshatch, spiral), blue noise
@@ -62,9 +63,35 @@ returns polylines — curves, not squares, all the way to the SVG.
   bleeding into each other.
 - Five presets: Unknown Pleasures, Oscilloscope, Pulsar, Contour, Rutt-Etra.
 
+### Print mode
+
+A press, not a filter. Pick the inks and the paper; the engine derives one plate per ink,
+screens each at its own angle, and overprints them the way ink actually sits on a sheet.
+
+- **Colorimetric separation.** Coverage is solved per ink by constrained least squares
+  against your actual ink set and substrate, in linear light, through a Beer–Lambert model.
+  Two things fall out of the arithmetic rather than being bolted on: black generation is
+  automatic where a black ink exists, and out-of-gamut pigments — fluorescent pink, sun
+  yellow — work because nothing anywhere assumes a CMY basis. Paper is a term in the solve,
+  so the same photograph separates differently on cream and on white.
+- **Real screens.** AM halftones from a spot function at any angle, ruling and sub-cell
+  phase, in six dot shapes; FM masters through the full 44-algorithm dither registry; or
+  flat spot blocks. Each dot shape is calibrated to its own area percentile, so a plate
+  asked for 50% coverage prints 50% — whichever shape you pick.
+- **Press behaviour under your hand.** Per-plate registration offset and rotation drift,
+  dot gain that peaks at midtone and leaves paper and solids alone, ink limits, film
+  solidity, and the Yule–Nielsen exponent for optical gain from light scattering inside
+  the paper. Space the screens 30° apart for a rosette, or don't, and watch it beat.
+- **Four presses and the real ink library.** Offset, newsprint, screenprint and Riso, each
+  stamping ruling, screen family, dot gain, paper and the angle convention across the
+  stack. Eighteen Risograph drum colours plus process inks, at their published values.
+- **Solo any pass** to see one plate alone on the paper, then export the separation: one
+  screened plate per ink, in print order, as PNG masters or as SVG with real vector dot
+  geometry — one merged path per ink, not two hundred thousand rectangles.
+
 ### Compositing
 
-The stage after the raster, shared by all three output modes.
+The stage after the raster, shared by every output mode.
 
 - **Source overlay** — the original composited back over its own rasterization, under or
   over, with any of the sixteen CSS blend modes, an opacity and a Gaussian blur. Framed
@@ -110,8 +137,11 @@ Zero-allocation single-pass raster pipeline. No backend, no telemetry.
 
 Every mode and every export funnels through one function, `processRasterFrame`.
 [`pipeline.md`](pipeline.md) documents its six stages, the buffers, and the invariants that
-break rendering when violated; [`vector-pipeline.md`](vector-pipeline.md) covers the beam
-fork and why the effect cannot be a member of the dither family.
+break rendering when violated. Two modes fork out of it before quantization, each with its
+own companion document explaining why the look cannot be a member of the dither family:
+[`vector-pipeline.md`](vector-pipeline.md) for the beam, and
+[`print-pipeline.md`](print-pipeline.md) for the press — where the reason is that a dither
+picks one colour per cell and a press lays down every ink at once.
 
 ---
 

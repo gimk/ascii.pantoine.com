@@ -1,12 +1,12 @@
 import React from 'react';
-import { Grid, Type, Activity } from 'lucide-react';
+import { Grid, Type, Activity, Printer } from 'lucide-react';
 import { RasterOutputMode } from '../types/ascii';
 
 /**
  * The output rasterization modes, as data.
  *
- * Lives here rather than in App so BASIC and ADVANCED render the same three
- * cards from the same source: ADVANCED as full command cards at the top of the
+ * Lives here rather than in App so BASIC and ADVANCED render the same cards
+ * from the same source: ADVANCED as full command cards at the top of the
  * RENDER block, BASIC as the `.source-card-mini` variant of them. Two copies
  * of this list is how the two modes drift into looking like two apps.
  */
@@ -26,8 +26,9 @@ export interface OutputModeSpec {
  * This array is the single definition of both. The number keys are read as an
  * index into it (App's key handler), the card tooltips number themselves from
  * the same index, and the shortcuts sheet lists it directly — so re-ordering
- * these three entries moves the row, the tooltips, the sheet and the actual
- * bindings together, and there is no second list to update or forget.
+ * these entries moves the row, the tooltips, the sheet and the actual bindings
+ * together, and there is no second list to update or forget. Adding PRINT as a
+ * fourth entry is what bound it to `4` — nothing else had to be told.
  */
 export const OUTPUT_MODES: OutputModeSpec[] = [
   {
@@ -53,6 +54,14 @@ export const OUTPUT_MODES: OutputModeSpec[] = [
     description: 'Rutt-Etra Scanline Relief',
     icon: Activity,
     title: 'Oscilloscope beam deflection and carrier modulation, as polylines',
+  },
+  {
+    id: 'print',
+    name: 'PRINT',
+    badge: 'INK',
+    description: 'Halftone & Riso Separation',
+    icon: Printer,
+    title: 'Colorimetric ink separation, screened per plate and overprinted on paper',
   },
 ];
 
@@ -88,7 +97,7 @@ interface OutputModeCardsProps {
   compact?: boolean;
 }
 
-/** The three output modes as selectable cards. */
+/** Every output mode as a selectable card. */
 export const OutputModeCards: React.FC<OutputModeCardsProps> = ({ value, onChange, compact }) => (
   <div className={`render-mode-grid${compact ? ' render-mode-grid-compact' : ''}`}>
     {OUTPUT_MODES.map((mode) => {

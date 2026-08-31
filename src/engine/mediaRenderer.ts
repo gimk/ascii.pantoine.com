@@ -9,6 +9,9 @@ import {
   ToneMappingConfig,
   ResamplingMode,
   VectorConfig,
+  PrintConfig,
+  PrintTier,
+  PrintFrame,
   VectorFrame,
   CropRect,
   CROP_FULL,
@@ -32,6 +35,9 @@ export interface RenderMediaContext {
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
+  /** Render quality tier for print output. Machine state, never persisted. */
+  printTier?: PrintTier;
   toneConfig?: ToneMappingConfig;
 }
 
@@ -47,6 +53,8 @@ export interface AsciiMediaFrameResult {
   rasterMode?: RasterOutputMode;
   /** Beam geometry in vector mode; null in the cell modes. See ProcessedRasterResult. */
   vector?: VectorFrame | null;
+  /** Screened plates in print mode; null otherwise. See ProcessedRasterResult. */
+  print?: PrintFrame | null;
   /** See ProcessedRasterResult: 256 bins of pre-levels luminance, live buffer. */
   histogram: Uint32Array;
   histogramOpaque: number;
@@ -447,6 +455,8 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
     algorithm = viewConfig.algorithm ?? 'floyd-steinberg',
     ditherParams,
     vectorConfig,
+    printConfig,
+    printTier,
     toneConfig,
   } = context;
 
@@ -507,6 +517,8 @@ export function renderAsciiMediaFrameData(context: RenderMediaContext): AsciiMed
       ditherAlgorithm: algorithm,
       ditherParams: ditherParams || viewConfig.ditherParams,
       vectorConfig: vectorConfig || viewConfig.vectorConfig,
+      printConfig: printConfig || viewConfig.printConfig,
+      printTier,
       toneConfig: toneConfig || viewConfig.toneConfig,
       colorConfig,
       monoTint: colorConfig?.monoTint,

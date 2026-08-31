@@ -246,14 +246,23 @@ export const CROP_MIN_SPAN = 0.02;
  * What a processed frame is made of.
  *
  * `ascii` and `pixel` are both *cell* modes: one glyph or one block per grid
- * cell, tone quantized to the grid. `vector` is not — it leaves the raster
- * pipeline at step 3.5 and returns polylines in continuous grid space. See
- * vector-pipeline.md for why the deflection look cannot be a dither algorithm.
+ * cell, tone quantized to the grid. The other two are not, and both leave the
+ * raster pipeline at step 3.5:
+ *
+ *  - `vector` returns polylines in continuous grid space. See
+ *    vector-pipeline.md for why the deflection look cannot be a dither
+ *    algorithm.
+ *  - `print` returns a *device raster* — a halftone screened at S sub-pixels
+ *    per grid cell, with one overprinting plate per ink. The grid becomes the
+ *    contone resolution and the dots live below it. See print-pipeline.md for
+ *    why a press separation cannot be a dither algorithm either: dither picks
+ *    one colour per cell, and a press overprints every ink at once.
  */
 export type RasterOutputMode =
   | 'ascii'
   | 'pixel'
-  | 'vector';
+  | 'vector'
+  | 'print';
 
 export type DitherFamily = 'error-diffusion' | 'ordered' | 'blue-noise' | 'algorithmic' | 'modulation';
 
@@ -505,6 +514,232 @@ export const VECTOR_CONFIG_DEFAULTS: VectorConfig = {
   strokeWidth: 1,
   chroma: 0,
 };
+
+// --- Print: halftone and risograph separation (print-pipeline.md) ---
+
+/**
+ * Inks a single frame can carry.
+ *
+ * Eight because `PrintFrame.plateMask` gives each ink one bit of one byte per
+ * device pixel, which is what keeps a 30-megapixel proof inside 30 MB instead
+ * of four times that. It is also past any real press: four-colour process plus
+ * two spots is six, and a riso studio swapping eight drums through one sheet is
+ * a day's work.
+ */
+export const MAX_INKS = 8;
+
+/**
+ * A press, as a set of defaults rather than as a branch in the engine.
+ *
+ * Every profile drives the same machinery — separation, screening, overprint.
+ * They differ only in ruling, screen family, ink solidity and which angles the
+ * stack is spaced on. Keeping them as data is what stopped HALFTONE and RISO
+ * from becoming two render types with two copies of the same pipeline.
+ */
+export type PressProfile = 'offset' | 'newsprint' | 'screenprint' | 'riso';
+
+/**
+ * How a plate turns continuous coverage into ink or no ink.
+ *
+ *  - `am` amplitude modulation: fixed lattice pitch, the dot grows. Offset,
+ *    newsprint, screenprint, and the riso driver's own default.
+ *  - `fm` frequency modulation: fixed dot size, the *count* varies. Runs the
+ *    coverage plane through the existing dither registry, which is what a riso
+ *    thermal master often does.
+ *  - `solid` no screen at all — ink wherever coverage passes half. Line art
+ *    and spot blocks.
+ */
+export type ScreenFamily = 'am' | 'fm' | 'solid';
+
+/**
+ * Spot function, i.e. the order ink fills a screen cell.
+ *
+ * `round` is the Euclidean dot a real offset screen lays down: a round dot in
+ * the highlights, a checkerboard at 50%, an inverse round hole in the shadows.
+ * The others are the classic alternatives a printer would ask for by name.
+ */
+export type DotShape = 'round' | 'ellipse' | 'square' | 'diamond' | 'line' | 'cross';
+
+/**
+ * One printing pass.
+ *
+ * Deliberately flat and deliberately not an extension of `DitherParams` — same
+ * argument as `VectorConfig`. A plate carries screen geometry, press error and
+ * ink physics, three things a dither mask has no notion of, and there are up to
+ * eight of them at once.
+ */
+export interface InkPlate {
+  /**
+   * Stable across reorder, because array order *is* print order and the UI
+   * lets it be dragged. Keying rows or `soloInk` by index instead would make a
+   * reorder silently retarget them.
+   */
+  id: string;
+  name: string;
+  /** The ink at 100% coverage on white paper. */
+  hex: string;
+  /**
+   * Film solidity, 0..1: how much of its own density the ink reaches at full
+   * coverage. Riso soy ink is thin, around 0.8; process ink is near opaque at
+   * 0.95. This is the term that makes overprints mix rather than just darken.
+   */
+  opacity: number;
+  /**
+   * Composite src-over in print order instead of multiplying.
+   *
+   * Off for every translucent ink, which is nearly all of them — and off is
+   * what makes the overprint order-independent. On for a genuinely opaque ink
+   * (white or metallic on dark stock), where laying it down second is the
+   * whole point and print order starts to matter.
+   */
+  opaque: boolean;
+  enabled: boolean;
+
+  // --- screen geometry ---
+  screen: ScreenFamily;
+  /**
+   * Screen ruling as **halftone cells across the image width**, not LPI.
+   *
+   * Resolution-free on purpose, and it is load-bearing three times over: the
+   * dot keeps its size when the contone grid changes, when a crop re-solves
+   * the grid, and — the important one — across the DRAFT / WORKING / PROOF
+   * render tiers, which differ only in device pixels per cell. Store LPI here
+   * instead and every one of those silently resizes the dots.
+   *
+   * The UI shows the derived LPI beside it, because a printer thinks in LPI.
+   */
+  ruling: number;
+  /** Screen rotation in degrees. 30° apart across the stack gives a rosette. */
+  angle: number;
+  /**
+   * Dot-lattice phase, in screen cells. Fractional and wrapping.
+   *
+   * Distinct from `regX`/`regY`: this slides the dots *within* a stationary
+   * plate, which is what turns a dot-centred rosette into a clear-centred one.
+   * Registration slides the whole plate, dots and image together.
+   */
+  shiftX: number;
+  shiftY: number;
+  dotShape: DotShape;
+  /** Ellipse elongation, or line duty. 1 is round/square. */
+  dotAspect: number;
+  /**
+   * Which of the existing 44 algorithms screens this plate when `screen` is
+   * `fm`. The whole registry and its parameter machinery apply per plate, so
+   * FM screening cost no new dithering code.
+   */
+  fmAlgorithm: DitherAlgorithm;
+
+  // --- press error and ink physics ---
+  /**
+   * Registration error in **contone cells**, so it is grid-relative and
+   * survives a resolution change the way `ruling` does.
+   */
+  regX: number;
+  regY: number;
+  /** Plate rotation drift in degrees. Adds to the effective screen angle. */
+  regAngle: number;
+  /**
+   * Tone value increase at 50% coverage, in coverage units.
+   *
+   * Applied as `a + gain·sin(pi·a)`, which peaks at midtone and vanishes at
+   * both ends — so paper stays paper and a solid stays solid, which is what
+   * physical dot growth actually does.
+   */
+  dotGain: number;
+  /** Coverage transfer endpoints — this plate's ink limits. */
+  minCoverage: number;
+  maxCoverage: number;
+}
+
+export interface PrintConfig {
+  press: PressProfile;
+  inks: InkPlate[];
+  /**
+   * Substrate colour, and a real term in the separation rather than a
+   * background fill. Translucent ink over cream paper is a different colour
+   * than the same ink over white, so the solve starts from here.
+   */
+  paper: string;
+  /** Total area coverage cap, summed across inks, in percent. 0 = unlimited. */
+  tacLimit: number;
+  /**
+   * Yule-Nielsen n: optical dot gain from light scattering sideways inside the
+   * paper, applied when the device raster is box-filtered down. 1 is off, ~1.7
+   * is coated stock, 2-3 uncoated.
+   */
+  yuleNielsen: number;
+  /**
+   * Device pixels per contone cell for everything the viewport draws itself.
+   *
+   * Still clamped down by a budget on a very large grid, so an enormous contone
+   * grid degrades rather than stalling — but otherwise this is the number, and
+   * it is the one the user drags. Kept low enough that zooming stays
+   * responsive, because zooming re-resolves the composite at the new size.
+   */
+  supersample: number;
+  /**
+   * Device pixels per contone cell for RENDER PROOF and for every export.
+   *
+   * Separate from `supersample` because the two answer different questions —
+   * "how fast should the viewport be" against "how good should the file be" —
+   * and tying them together left the proof barely distinguishable from the live
+   * view, which is exactly how it was reported.
+   */
+  proofSupersample: number;
+  /** `InkPlate.id` to render alone on paper, or null for the full composite. */
+  soloInk: string | null;
+}
+
+/**
+ * A screened device raster: what a press would actually put on the sheet.
+ *
+ * The composite is **not** stored. `plateMask` plus the ink table is enough to
+ * derive it, and `resolvePrintFrame` does so on demand — one buffer instead of
+ * two, and the only place a composite exists, so the viewport and every export
+ * cannot disagree about what the paper looks like.
+ */
+export interface PrintFrame {
+  /** Device raster size: `cols * supersample` by `rows * supersample`. */
+  width: number;
+  height: number;
+  supersample: number;
+  /**
+   * One byte per device pixel; bit `i` set means ink `i` of `inks` was
+   * deposited there. Plates overlap freely — that is the whole difference from
+   * a colour separation (pipeline.md invariant 9).
+   */
+  plateMask: Uint8Array;
+  /** The enabled inks, in print order. `plateMask` bits index this array. */
+  inks: InkPlate[];
+  paperHex: string;
+  /** Inked fraction per ink, parallel to `inks`. Drives the UI readout. */
+  coverage: number[];
+  /** Which tier produced this frame, for the viewport badge. */
+  tier: PrintTier;
+}
+
+/**
+ * Render quality tiers. Two, deliberately.
+ *
+ * `live` is everything the viewport shows on its own — during a drag and after
+ * it settles alike. `proof` is the explicit, slower render behind a button, and
+ * what every export produces.
+ *
+ * This started as three, with a separate coarser supersample while dragging,
+ * and that was wrong twice over: the draft was too crude to read (at the budget
+ * it often solved to one device pixel per cell, where a dot degenerates to a
+ * threshold and the screen effectively vanishes), while the settled tier was
+ * high enough to make zooming lag. The reduction the draft needs is already
+ * supplied by the *contone divisor* the static-render path applies — a smaller
+ * grid at the same supersample is a cheaper frame whose dots keep their shape.
+ * So the supersample stays put and only the grid moves, which is both faster
+ * and far more legible.
+ *
+ * The reason a tier switch is not disorienting is unchanged: `ruling` is
+ * resolution-free, so it moves no dot.
+ */
+export type PrintTier = 'live' | 'proof';
 
 // --- Post-processing (the composite stage, after the raster) ---
 
@@ -888,6 +1123,7 @@ export interface MediaViewConfig extends ImageAdjustConfig {
   ditherParams?: DitherParams;
   rasterMode?: RasterOutputMode;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
   dpi?: number; // 10 to 300, default 72
   /*
    * Levels lives in toneConfig above, as levelsBlack / levelsMidtones /
@@ -974,6 +1210,7 @@ export interface ModelViewConfig {
   algorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
   toneConfig?: ToneMappingConfig;
 }
 
@@ -1013,6 +1250,7 @@ export interface RenderSettings {
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   /**

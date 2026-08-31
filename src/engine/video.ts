@@ -17,6 +17,8 @@ import {
   ToneMappingConfig,
   ImageAdjustConfig,
   VectorConfig,
+  PrintConfig,
+  PrintFrame,
   PostProcessConfig,
   VectorFrame,
 } from '../types/ascii';
@@ -27,6 +29,7 @@ import { renderAsciiMediaFrameData } from './mediaRenderer';
 import { DEFAULT_WAVE_PARAMS } from './math';
 import { drawPixelRasterToCanvas } from './pixelRasterRenderer';
 import { paintVectorFrame, vectorFrameErasesGround } from './vectorEngine';
+import { resolvePrintFrame, printExportCellSize, SUPERSAMPLE_PROOF_DEFAULT } from './printEngine';
 import { overlaySourceLayer, overlaySourcePpc } from './imageExporter';
 import { buildStages, composePostProcess, glowActive } from './postProcess';
 
@@ -60,6 +63,7 @@ export interface VideoExportOptions {
   ditherAlgorithm?: DitherAlgorithm;
   ditherParams?: DitherParams;
   vectorConfig?: VectorConfig;
+  printConfig?: PrintConfig;
   toneConfig?: ToneMappingConfig;
   adjustConfig?: ImageAdjustConfig;
   /** The composite stage. Invariant 4 applies here as much as to a still. */
@@ -75,6 +79,8 @@ export interface VideoExportResult {
 /** Minimal shape every render mode returns, used to paint export frames. */
 type ExportFrameResult = Pick<ProcessedRasterResult, 'text' | 'colors' | 'bgColor' | 'isColored'> & {
   luminance?: Float32Array | null;
+  /** Screened plates in print mode. Resolved instead of text or cells. */
+  print?: PrintFrame | null;
   /** Beam geometry in vector mode. Painted instead of text or cells. */
   vector?: VectorFrame | null;
 };
@@ -177,13 +183,15 @@ export async function exportVideoAnimation(
   const rasterMode = opts.rasterMode || opts.mediaViewConfig?.rasterMode || 'ascii';
   const isPixel = rasterMode === 'pixel';
   const isVector = rasterMode === 'vector';
-  const showScanlines = !isPixel && !isVector && (crtConfig ? crtConfig.scanlines : true);
-  const showCrtGlow = !isPixel && !isVector && (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
-  const showVignette = !isPixel && !isVector && (crtConfig ? crtConfig.vignette : false);
+  const isPrint = rasterMode === 'print';
+  /* Same call as the still export: a screen artefact on paper is exactly wrong. */
+  const noCrt = isPixel || isVector || isPrint;
+  const showScanlines = !noCrt && (crtConfig ? crtConfig.scanlines : true);
+  const showCrtGlow = !noCrt && (crtConfig ? (crtConfig.crtGlow ?? (crtConfig.glow ?? false)) : false);
+  const showVignette = !noCrt && (crtConfig ? crtConfig.vignette : false);
   /* Stands down while the post-processing glow drives -- see imageExporter. */
   const showPhosphorBloom =
-    !isPixel &&
-    !isVector &&
+    !noCrt &&
     !glowActive(opts.postProcess) &&
     (crtConfig ? (crtConfig.phosphorBloom ?? (crtConfig.glow ?? false)) : false);
 
@@ -197,8 +205,10 @@ export async function exportVideoAnimation(
   const frameIntervalMs = 1000 / fps;
 
   // Character cell dimensions on canvas (1:1 square for pixel mode, 0.6015 monospace aspect for ASCII)
-  const charWidth = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
-  const charHeight = isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
+  const printProofSs = opts.printConfig?.proofSupersample ?? SUPERSAMPLE_PROOF_DEFAULT;
+  const printCell = printExportCellSize(scale, printProofSs);
+  const charWidth = isPrint ? printCell : isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_WIDTH * scale;
+  const charHeight = isPrint ? printCell : isVector ? scale : isPixel ? Math.max(1, Math.round(scale)) : MONOSPACE_CELL_HEIGHT * scale;
   const width = Math.round(cols * charWidth);
   const height = Math.round(rows * charHeight);
 
@@ -302,6 +312,8 @@ export async function exportVideoAnimation(
         algorithm: opts.ditherAlgorithm,
         ditherParams: opts.ditherParams,
         vectorConfig: opts.vectorConfig,
+        printConfig: opts.printConfig,
+        printTier: 'proof',
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
         sourceCapture: sourcePpc,
@@ -319,6 +331,8 @@ export async function exportVideoAnimation(
         algorithm: opts.ditherAlgorithm,
         ditherParams: opts.ditherParams,
         vectorConfig: opts.vectorConfig || opts.mediaViewConfig.vectorConfig,
+        printConfig: opts.printConfig || opts.mediaViewConfig.printConfig,
+        printTier: 'proof',
         toneConfig: opts.toneConfig,
       });
     } else {
@@ -338,6 +352,8 @@ export async function exportVideoAnimation(
         algorithm: opts.ditherAlgorithm,
         ditherParams: opts.ditherParams,
         vectorConfig: opts.vectorConfig,
+        printConfig: opts.printConfig,
+        printTier: 'proof',
         toneConfig: opts.toneConfig,
         adjustConfig: opts.adjustConfig,
       });
@@ -345,7 +361,8 @@ export async function exportVideoAnimation(
 
     const lines = (frameResult?.text || '').split('\n');
     const isColored = Boolean(frameResult?.isColored && frameResult?.colors);
-    const effectiveBg = isColored && frameResult ? frameResult.bgColor : bg;
+    /* A print's ground is its paper, which the frame already carries. */
+    const effectiveBg = (isColored || isPrint) && frameResult ? frameResult.bgColor : bg;
 
     const stages = buildStages(
       opts.postProcess,
@@ -363,7 +380,33 @@ export async function exportVideoAnimation(
       })
     );
 
-    if (isVector) {
+    if (isPrint) {
+      /*
+       * Every animated frame is a proof render, resolved through the same
+       * function the viewport and the still export use. Slow by nature —
+       * screening scales with device pixels and there is no reusing a plate
+       * between frames, because the image under it moved.
+       */
+      const img = frameResult?.print
+        ? resolvePrintFrame(
+            frameResult.print,
+            width,
+            height,
+            opts.printConfig?.yuleNielsen ?? 1,
+            opts.printConfig?.soloInk ?? null
+          )
+        : null;
+      composePostProcess({
+        ctx,
+        width,
+        height,
+        stages,
+        scale,
+        paintRaster: (target) => {
+          if (img) target.putImageData(img, 0, 0);
+        },
+      });
+    } else if (isVector) {
       /*
        * Re-strokes per frame at export scale. Phase is advanced by the caller
        * through vectorConfig, so the carrier and ripple drift across the

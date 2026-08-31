@@ -11,7 +11,9 @@ import {
   ImageExportOptions,
   renderExportFrame,
   PrintPlateResult,
+  ExportFrame,
 } from './imageExporter';
+import { extractPlateBits, printExportCellSize, SUPERSAMPLE_PROOF_DEFAULT } from './printEngine';
 import { MONOSPACE_CELL_WIDTH, MONOSPACE_CELL_HEIGHT } from './renderer';
 import { drawPixelRasterToCanvas, exportPixelRasterToSvg } from './pixelRasterRenderer';
 import { createZip, ZipEntry } from './zip';
@@ -142,11 +144,38 @@ export async function exportColorSeparation(
    */
   const frame = renderExportFrame({ ...opts, postProcess: undefined });
   const isPixel = frame.rasterMode === 'pixel';
+  const isPrint = frame.rasterMode === 'print';
   const analysis = analyzeSeparation(frame, cols, rows);
 
-  const cell = cellSize(isPixel, scale);
+  const printProofSs = opts.printConfig?.proofSupersample ?? SUPERSAMPLE_PROOF_DEFAULT;
+  const printCell = printExportCellSize(scale, printProofSs);
+  const cell = isPrint ? { w: printCell, h: printCell } : cellSize(isPixel, scale);
   const width = Math.round(cols * cell.w);
   const height = Math.round(rows * cell.h);
+
+  /*
+   * Print takes its own path entirely, and it is the shortest one here: the
+   * plates exist on the frame already, screened, so there is no cell to mask
+   * and no partition to preserve. One bitmap per ink, straight off `plateMask`.
+   *
+   * This is also the one separation whose plates legitimately *overlap*. See
+   * PRINT_SEPARATION_IS_NATIVE in separation.ts for why invariant 9 is
+   * suspended rather than quietly violated.
+   */
+  if (isPrint) {
+    return exportPrintSeparation({
+      frame,
+      analysis,
+      name,
+      format,
+      quality,
+      width,
+      height,
+      style: format === 'jpg' ? 'ink' : style,
+      layeredSvg,
+      paperHex: opts.printConfig?.paper || frame.bgColor,
+    });
+  }
 
   if (analysis.refusal) {
     return {
@@ -283,6 +312,220 @@ export async function exportColorSeparation(
     width,
     height,
   };
+}
+
+/**
+ * One file per ink, off a screened print frame.
+ *
+ * Every plate is `bit p` of `plateMask` — literally the bits the viewport
+ * painted — so a separation and the composite on screen cannot disagree about
+ * where the dots are. Nothing re-screens, and there is no per-plate re-render to
+ * let the dither land differently (the concern that shaped the cell path above);
+ * here it is not even possible.
+ *
+ * `ink` style is what a press wants: black coverage on white, which is what a
+ * plate *is*. `color` puts each ink in its own hue on transparency so the plates
+ * stack back into the print — and in print mode that stack is genuinely correct
+ * rather than approximate, because the composite really is an overprint.
+ */
+async function exportPrintSeparation(args: {
+  frame: ExportFrame;
+  analysis: SeparationAnalysis;
+  name: string;
+  format: 'png' | 'jpg' | 'svg';
+  quality: number;
+  width: number;
+  height: number;
+  style: SeparationStyle;
+  layeredSvg: boolean;
+  paperHex: string;
+}): Promise<SeparationResult> {
+  const { frame, analysis, name, format, quality, width, height, style, layeredSvg, paperHex } = args;
+  const print = frame.print;
+
+  if (!print || print.inks.length === 0) {
+    return {
+      analysis,
+      plates: [],
+      blob: null,
+      url: null,
+      fileName: `${name}-plates`,
+      width,
+      height,
+    };
+  }
+
+  const isInk = style === 'ink';
+  const results: PrintPlateResult[] = [];
+  const files: ZipEntry[] = [];
+  const svgGroups: string[] = [];
+
+  for (let p = 0; p < print.inks.length; p++) {
+    const ink = print.inks[p];
+    const index = String(p + 1).padStart(2, '0');
+    /*
+     * Numbered by print order, not by density. The cell path sorts dark to
+     * light because that is the order a printer stacks arbitrary colours; here
+     * the order is already known and meaningful — it is the sequence the drums
+     * go through the machine in — so renumbering it would be losing
+     * information, not adding it.
+     */
+    const slug = `plate-${index}-${ink.hex.slice(1)}`;
+    const bits = extractPlateBits(print, p);
+
+    if (format === 'svg') {
+      // `luminance < 0` is absent, the sentinel the merger already reads.
+      const lum = new Float32Array(bits.length);
+      for (let i = 0; i < bits.length; i++) lum[i] = bits[i] ? 1 : -1;
+      const svg = exportPixelRasterToSvg({
+        cols: print.width,
+        rows: print.height,
+        luminance: lum,
+        colors: null,
+        bgColor: layeredSvg ? 'transparent' : isInk ? '#ffffff' : 'transparent',
+        fgColor: isInk ? '#000000' : ink.hex,
+        width,
+        height,
+        ...(layeredSvg ? { groupId: slug, groupLabel: `${index} ${ink.name}` } : {}),
+      });
+
+      if (layeredSvg) {
+        svgGroups.push(svg);
+        continue;
+      }
+      const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+      files.push({ name: `${slug}.svg`, data: new Uint8Array(await blob.arrayBuffer()) });
+      results.push({ name: slug, colorHex: ink.hex, blob, url: URL.createObjectURL(blob) });
+      continue;
+    }
+
+    const blob = await paintPrintPlate({
+      bits,
+      srcW: print.width,
+      srcH: print.height,
+      width,
+      height,
+      fg: isInk ? '#000000' : ink.hex,
+      bg: isInk ? '#ffffff' : null,
+      format,
+      quality,
+    });
+    files.push({
+      name: `${slug}.${format === 'jpg' ? 'jpg' : 'png'}`,
+      data: new Uint8Array(await blob.arrayBuffer()),
+    });
+    results.push({ name: slug, colorHex: ink.hex, blob, url: URL.createObjectURL(blob) });
+  }
+
+  if (format === 'svg' && layeredSvg) {
+    const doc = [
+      `<?xml version="1.0" encoding="UTF-8"?>`,
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ` +
+        `viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`,
+      /*
+       * The paper goes on the root, not in a layer — and for colour plates it is
+       * the *stock*, not white. Stacking translucent inks over the wrong ground
+       * is the single most common way a riso mock-up looks nothing like the
+       * print, so the substrate ships with the file.
+       */
+      `  <rect width="100%" height="100%" fill="${isInk ? '#ffffff' : paperHex}"/>`,
+      `  <g style="isolation:isolate">`,
+      ...svgGroups.map((g) => (isInk ? g : g.replace('<g ', '<g style="mix-blend-mode:multiply" '))),
+      `  </g>`,
+      `</svg>`,
+    ].join('\n');
+    const blob = new Blob([doc], { type: 'image/svg+xml;charset=utf-8' });
+    return {
+      analysis,
+      plates: results,
+      blob,
+      url: URL.createObjectURL(blob),
+      fileName: `${name}-plates.svg`,
+      width,
+      height,
+    };
+  }
+
+  const zip = createZip(files);
+  return {
+    analysis,
+    plates: results,
+    blob: zip,
+    url: URL.createObjectURL(zip),
+    fileName: `${name}-plates.zip`,
+    width,
+    height,
+  };
+}
+
+/**
+ * One binary plate onto a canvas at export size.
+ *
+ * Blits at the device raster's own resolution and lets `drawImage` scale, rather
+ * than resolving through `resolvePrintFrame`: a plate is one flat ink, so there
+ * is nothing to composite and no Yule-Nielsen averaging to do — that models
+ * light scattering between *overprinted* inks and has no meaning on a single
+ * separation. Smoothing stays on for the downscale, which is the right call
+ * here: a plate destined for a press wants its dot edges anti-aliased rather
+ * than aliased into a false pattern, same reason the resolve box-filters.
+ */
+function paintPrintPlate(args: {
+  bits: Uint8Array;
+  srcW: number;
+  srcH: number;
+  width: number;
+  height: number;
+  fg: string;
+  bg: string | null;
+  format: 'png' | 'jpg' | 'svg';
+  quality: number;
+}): Promise<Blob> {
+  const { bits, srcW, srcH, width, height, fg, bg, format, quality } = args;
+
+  const src = document.createElement('canvas');
+  src.width = srcW;
+  src.height = srcH;
+  const sctx = src.getContext('2d');
+  if (!sctx) return Promise.reject(new Error('Could not create 2D canvas context'));
+
+  const img = sctx.createImageData(srcW, srcH);
+  const data = img.data;
+  const [fr, fg2, fb] = [
+    parseInt(fg.slice(1, 3), 16) || 0,
+    parseInt(fg.slice(3, 5), 16) || 0,
+    parseInt(fg.slice(5, 7), 16) || 0,
+  ];
+  for (let i = 0; i < bits.length; i++) {
+    if (!bits[i]) continue;
+    const o = i * 4;
+    data[o] = fr;
+    data[o + 1] = fg2;
+    data[o + 2] = fb;
+    data[o + 3] = 255;
+  }
+  sctx.putImageData(img, 0, 0);
+
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = height;
+  const octx = out.getContext('2d');
+  if (!octx) return Promise.reject(new Error('Could not create 2D canvas context'));
+  if (bg) {
+    octx.fillStyle = bg;
+    octx.fillRect(0, 0, width, height);
+  }
+  octx.imageSmoothingEnabled = true;
+  octx.imageSmoothingQuality = 'high';
+  octx.drawImage(src, 0, 0, srcW, srcH, 0, 0, width, height);
+
+  const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
+  return new Promise<Blob>((resolve, reject) => {
+    out.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('Failed to generate plate blob'))),
+      mimeType,
+      format === 'jpg' ? quality : undefined
+    );
+  });
 }
 
 interface PaintPlateArgs {

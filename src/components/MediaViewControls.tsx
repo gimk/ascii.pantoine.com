@@ -38,6 +38,20 @@ interface MediaViewControlsProps {
   onChangeMediaColorConfig?: (config: MediaColorConfig) => void;
   appMode?: AppMode;
   rasterMode?: RasterOutputMode;
+  /** Replace the ink stack from a palette. Print mode only. */
+  onSeedInksFromPalette?: (colors: string[]) => void;
+  /**
+   * The print panel, passed in rather than built here.
+   *
+   * App owns the ink stack — BASIC and ADVANCED must edit the same one — and it
+   * also owns the proof runner, which needs the grid and the viewport handle.
+   * Handing the whole element down keeps this component from having to know
+   * about any of that.
+   */
+  printSlot?: React.ReactNode;
+  printBadge?: string;
+  cols?: number;
+  rows?: number;
 }
 
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
@@ -51,10 +65,16 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   onChangeMediaColorConfig,
   appMode = 'media',
   rasterMode,
+  onSeedInksFromPalette,
+  printSlot,
+  printBadge,
+  cols,
+  rows,
 }) => {
   const effectiveRasterMode = rasterMode || config.rasterMode;
   const isPixelMode = effectiveRasterMode === 'pixel';
   const isVector = effectiveRasterMode === 'vector';
+  const isPrint = effectiveRasterMode === 'print';
 
   const resetRenderSettings = () => {
     onChangeConfig({
@@ -62,6 +82,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
       algorithm: DEFAULT_MEDIA_VIEW_CONFIG.algorithm,
       ditherParams: undefined,
       vectorConfig: undefined,
+      printConfig: undefined,
       resampling: DEFAULT_MEDIA_VIEW_CONFIG.resampling,
     });
   };
@@ -96,17 +117,21 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         title="RENDER SETTINGS"
         icon={<Settings size={12} />}
         badge={
-          isVector
-            ? 'Beam Deflection'
-            : DITHER_ALGORITHMS.find((a) => a.id === (config.algorithm || 'floyd-steinberg'))?.name ||
-              'Floyd-Steinberg'
+          isPrint
+            ? printBadge
+            : isVector
+              ? 'Beam Deflection'
+              : DITHER_ALGORITHMS.find((a) => a.id === (config.algorithm || 'floyd-steinberg'))?.name ||
+                'Floyd-Steinberg'
         }
         persistKey="MediaViewControls-render-settings"
         onReset={resetRenderSettings}
         resetTitle={
-          isVector
-            ? 'Reset resampling filter and every beam parameter'
-            : 'Reset resampling filter and dither algorithm'
+          isPrint
+            ? 'Reset resampling filter, the press and the whole ink stack'
+            : isVector
+              ? 'Reset resampling filter and every beam parameter'
+              : 'Reset resampling filter and dither algorithm'
         }
       >
         {/* Resampling */}
@@ -130,8 +155,14 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
           </div>
         </div>
 
-        {/* Dither or Vector */}
-        {isVector ? (
+        {/* Whatever the active output mode puts in this slot. The three are
+            mutually exclusive: print and vector both leave the pipeline before
+            quantization, so a dither algorithm has nothing to act on. Hidden
+            rather than disabled, and `algorithm` stays in state so switching
+            back to a cell mode restores it. */}
+        {isPrint && printSlot ? (
+          printSlot
+        ) : isVector ? (
           <VectorControls
             config={config.vectorConfig || VECTOR_CONFIG_DEFAULTS}
             onChange={(next) => update('vectorConfig', next)}
@@ -155,6 +186,8 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
         mediaColorConfig={mediaColorConfig}
         appMode={appMode}
         isVectorMode={isVector}
+        isPrintMode={isPrint}
+        printBadge={config.printConfig ? `${config.printConfig.inks.length} INKS` : undefined}
         paletteSlot={
           onChangeTheme ? (
             <PaletteControls
@@ -169,6 +202,12 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
               onChangeTonalMapping={(t) => onChangeConfig({ ...config, tonalMapping: t })}
               isPixelMode={isPixelMode || isVector}
               isVectorMode={isVector}
+              isPrintMode={isPrint}
+              printConfig={config.printConfig}
+              onChangePrintConfig={(p) => update('printConfig', p)}
+              cols={cols}
+              rows={rows}
+              onSeedInksFromPalette={onSeedInksFromPalette}
               colorLevels={config.colorLevels}
               onChangeColorLevels={(val) => update('colorLevels', val)}
               rampEditorSlot={

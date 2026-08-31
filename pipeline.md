@@ -16,9 +16,10 @@ produce the raw frame that goes in, and in how the result is painted afterwards.
                  └───────────────────┘    │    └───────────────┘
                           ▲               └───────────────────────────► colour separation
                           │                                             (bypasses it: inv. 9)
-                    ascii | pixel run all six. **vector** forks after step 3
-                    and returns polylines instead — see §2.3.6.
-                    all state arrives as
+                    ascii | pixel run all six. Two modes fork after step 3
+                    instead: **vector** returns polylines (§2.3.6), **print**
+                    returns a screened device raster of overprinting plates
+                    (§2.3.7). all state arrives as
                     UnifiedPipelineOptions
 
   A shared link is the same contract by another route: it carries the state that
@@ -481,6 +482,49 @@ compare against, and a beam's colour is a property of the whole run.
 Full argument, the divergences from the reference studio, and every call site the
 third output mode touched: [`vector-pipeline.md`](vector-pipeline.md).
 
+#### The print fork
+
+**Print output leaves here too**, immediately after the vector fork, and for the
+same reason: steps 1–3 are exactly the field a press wants to read, so print
+inherits the tone curve, levels, AUTO LEVELS, blur, sharpen and Sobel edges
+without a line of new code. It returns a `PrintFrame` — a *device raster* of
+overprinting plates — instead of `text` and `colors`, and `luminance` /
+`histogram` still ride out, so the histogram tap keeps working.
+
+The one thing print needs that vector does not is **graded source colour**,
+because its separation is colorimetric rather than tonal. That is why
+`gradeRatio` is declared *above* both forks rather than beside step 4 where it
+used to sit: one copy, and print mode cannot quietly diverge from `content`
+colour about how much the pipeline darkened a cell.
+
+**Two resolutions, and this is the whole trick.** `cols × rows` becomes the
+*contone* resolution — where per-ink coverage lives — and the dots live below it
+at `supersample` device pixels per cell, exactly the way a RIP holds continuous
+tone at a few hundred ppi and screens at a few thousand dpi. So every stage above
+this line runs over the same grid it always did, and only the screening and the
+composite see the big raster.
+
+That is also why print's grid is the *coarsest* of the four modes rather than the
+finest: detail comes from the ruling and the supersample, not from the contone
+grid, and coverage is smooth by construction because it comes out of a separation
+table. `SHAPE_BOUNDS.print` caps it at 150k cells against vector's 500k.
+
+Three properties worth carrying in your head, because a lot depends on them:
+
+- **`ruling` is stored as halftone cells across the image width, not LPI.** So dot
+  size and position survive a grid change, a crop, a shared link, and a render
+  tier switch. The last of those is what makes the DRAFT / WORKING / PROOF
+  escalation move no dot.
+- **The plates overlap.** Colour comes from which inks overprint at a point, not
+  from choosing one per cell — which is why this cannot be a dither algorithm and
+  why invariant 9 is explicitly suspended here (see below).
+- **A resolved print is opaque.** The paper is part of the composite and a
+  transparent source cell resolves to bare stock, so print paints no separate
+  ground and invariant 10 has nothing to guard.
+
+Full argument, the physics, the measured costs, and every call site the fourth
+output mode touched: [`print-pipeline.md`](print-pipeline.md).
+
 ---
 
 ### Step 4 — Colour
@@ -583,7 +627,7 @@ viewport relies on this.
 
 ```ts
 { text, colors, luminance, cols, rows, rasterMode, bgColor, isColored,
-  histogram, histogramOpaque }
+  vector, print, histogram, histogramOpaque }
 ```
 
 `luminance` and `histogram` are the live module buffers — not copies. Consumers must
@@ -603,10 +647,10 @@ engine.
 
 ### 3.1 Viewport ([`AsciiViewport.tsx`](src/components/AsciiViewport.tsx))
 
-Three mutually exclusive paths. `isColoredView` picks DOM from canvas, and it
+Four mutually exclusive paths. `isColoredView` picks DOM from canvas, and it
 is true whenever the frame carries a colour buffer **or** the raster mode is
-pixel or vector — vector has no colour buffer at all, so neither of the other
-tests would catch it.
+pixel, vector or print — the last two have no colour buffer at all, so neither of
+the other tests would catch them.
 
 **Mono → DOM.** `text` is written to a `<pre>`, CSS-scaled by zoom. Colour comes from
 CSS custom properties, which is what makes phosphor tints, gradients, glow, bloom,
@@ -622,6 +666,18 @@ fall back to a viewport-sized canvas that repaints as it moves. CSS CRT effects
 do not reach a canvas, so the phosphor halo is `ctx.shadowBlur` instead, scaled
 by the zoom because canvas measures shadow radius in device pixels and ignores
 the transform.
+
+**Print → canvas, resolved and blitted.** `drawPrint` is shaped like the pixel
+branch rather than like the vector one, because a print genuinely *is* a bitmap:
+the dots were burned onto a plate at a fixed device resolution, and re-screening
+on zoom would move them — the one thing a press never does. The resolve target is
+the backing store, so `resolvePrintFrame`'s box filter does the whole reduction in
+one place; letting the browser scale an eight-times raster down beats against the
+dot lattice and produces false moiré that reads as a bug in the screening. Past
+`MAX_BACKING_DIM` only the visible window is resolved, which is also the zoom at
+which someone is inspecting dots. CRT overlays are switched off here — unlike
+pixel and vector, which keep them — because a scanline across a halftone is two
+incompatible screens beating against each other.
 
 **Coloured → canvas.** `drawCanvas` has two branches:
 
@@ -715,13 +771,29 @@ image than the viewport.
     (`cellWidth = cellHeight = Math.max(1, Math.round(scale))`).
     $1\times$ scale maps to $1\text{px/cell}$ ($cols \times rows$ native match with the viewfinder).
     Canvas size is `cols * cellWidth` by `rows * cellHeight`, ensuring pixel art is undistorted.
-- **CRT Effects in Pixel Mode**: CRT effects (scanlines, CRT glow, vignette, phosphor bloom) are
-  strictly bypassed/disabled in Pixel mode across all export engines (PNG, JPG, SVG, GIF, MP4/WebM),
-  ensuring raw dithered pixels remain crisp and unblurred.
+  - *Print mode*: square cells like vector, and the scale means output pixels per
+    **contone** cell. Setting it equal to `printConfig.supersample` gives one output
+    pixel per device pixel and the dots come out exactly as screened; below that the
+    resolve box-filters down, above it they magnify — which is what a large print off a
+    coarse screen actually looks like. Every export screens at the **PROOF** tier, so a
+    file is never coarser than what the panel proofed.
+- **CRT Effects in the non-ASCII modes**: CRT effects (scanlines, CRT glow, vignette,
+  phosphor bloom) are strictly bypassed in pixel, vector and print across all export
+  engines (PNG, JPG, SVG, GIF, MP4/WebM) — raw dithered pixels, plotter paths and
+  halftones each have their own reason not to carry a screen artefact.
 - **SVG** — ASCII emits `<text>` runs; pixel goes through `exportPixelRasterToSvg`
-  (see below).
+  (see below). **Print** reuses that same function once per ink, feeding it each plate's
+  binary bitmask, so the cell merger collapses the dots into one `<path>` per ink — real
+  vector dot geometry, and openable in Illustrator rather than 200,000 rects. The layers
+  are stacked with `mix-blend-mode: multiply` over the paper colour, which is the closest
+  an SVG viewer gets to translucent overprinting; the geometry is exact, the composite is
+  an approximation.
 - **PNG/JPG** — ASCII draws text to a canvas; pixel goes through
-  `drawPixelRasterToCanvas` with square cell dimensions. JPG forces an opaque background.
+  `drawPixelRasterToCanvas` with square cell dimensions. **Print** is one
+  `resolvePrintFrame` call at the export's own dimensions — the same function the
+  viewport paints with, so an export is the viewport magnified rather than a second
+  implementation of the composite. `transparentBg` has nothing to expose there: a sheet
+  of paper has no alpha channel. JPG forces an opaque background.
 
 `pixelRasterRenderer.ts` skips a cell only on `lum < 0`. A brightness threshold there
 would punch holes through the shadows, the same class of bug as step 5.
@@ -804,6 +876,13 @@ bare `<g>` rather than a whole document, so the plates can be stacked into one f
 as named layers — what Illustrator and Figma read on import. The background rect is
 skipped in group mode; a layer painting its own opaque ground would hide everything
 beneath it. An ink-style layered SVG gets its white ground on the root instead.
+
+**Print does not use any of this.** Its plates are already separated — colorimetrically
+— and already screened, so `analyzeSeparation` short-circuits and the exporter reads
+`plateMask` directly: no masking, no re-render, no cap, and none of the refusals below.
+It is the one separation whose plates legitimately *overlap*, which is why invariant 9
+carries an explicit exception rather than being quietly violated. See
+[`print-pipeline.md`](print-pipeline.md) §8.
 
 **Refusals carry a reason** rather than producing an empty archive:
 
@@ -1388,6 +1467,21 @@ is generous on purpose: a slow grid renders a few times a second, and a tighter
 one would classify mid-drag as idle and go back to full passes — the stall this
 exists to avoid.
 
+**Print rides the same split, as a third tier.** `printTier` is `draft` on a
+preview pass and `working` on the full one, and there is deliberately no
+`previewPrintConfig` counterpart to `previewVectorConfig` — because `ruling` is
+stored as cells across the image *width*, a coarser contone grid changes how many
+device pixels a dot is drawn with but not where the dot is or how big it is
+relative to the picture. So a draft print is the same print, softer: nothing to
+retune going in, and nothing to scale coming back out either, since `drawPrint`
+resolves whatever device size it is handed to the display box.
+
+Print adds one thing the other modes do not have: a third, explicit **PROOF**
+tier behind a button, because screening at the full supersample is seconds of work
+and cannot run on a settle timer. It runs in row bands from a rAF loop, is
+cancelled by anything that invalidates the plates, and is held once finished.
+`print-pipeline.md` §6 has the measured costs and the reasoning.
+
 **It can be switched off.** Viewfinder Settings -> Performance -> *Draft
 Preview While Editing*. The setting lives on `UiThemeSettings`
 (`lowResPreview`, localStorage, default on) rather than on `OptimizeConfig`,
@@ -1693,8 +1787,9 @@ Things that will silently break rendering if violated.
 3. **`srcLumBuffer` is the only pre-filter record.** The grade ratio and the sentinel
    restore both read it. It must be snapshotted before step 2 and never written
    afterwards.
-4. **Every path out must forward all five render settings** — `rasterMode`,
-   `ditherAlgorithm`, `toneConfig`, `adjustConfig`, `postProcess`. Missing one
+4. **Every path out must forward all the render settings** — `rasterMode`,
+   `ditherAlgorithm`, `toneConfig`, `adjustConfig`, `postProcess`, plus
+   `vectorConfig` and `printConfig` for the two forking modes. Missing one
    produces an export, or a shared link, that differs from what the user sees. This
    is why the still and separation exports share `renderExportFrame` rather than each
    dispatching to the mode renderers themselves, why the GIF and video exporters
@@ -1719,12 +1814,19 @@ Things that will silently break rendering if violated.
 8. **Media grading has exactly one home** (`mediaViewConfig`). A second `adjustConfig`
    field on the media context will shadow it with neutral defaults. Levels is the
    documented exception and lives in `toneConfig` for every mode; see §4.
-9. **A separation's plates partition the opaque cells exactly.** Every opaque cell in
-   exactly one plate, no plate empty, no transparent cell included. Anything else and
-   the plates no longer reassemble into the image, which is the only thing they are
-   for. This is why `exportColorSeparation` is the one export that *strips*
-   `postProcess`: a source overlay belongs to no ink, and a bloom or an aberration
-   spreads colour across plate boundaries.
+9. **A separation's plates partition the opaque cells exactly — in the cell modes.**
+   Every opaque cell in exactly one plate, no plate empty, no transparent cell
+   included. Anything else and the plates no longer reassemble into the image, which is
+   the only thing they are for. This is why `exportColorSeparation` is the one export
+   that *strips* `postProcess`: a source overlay belongs to no ink, and a bloom or an
+   aberration spreads colour across plate boundaries.
+
+   **Print is the documented exception, not a violation.** Its plates overlap on
+   purpose — that is what overprinting is — so the partition property is false there by
+   design and must not be asserted. What holds instead is a *coverage* property: plate
+   `p` is exactly the set of device pixels where bit `p` of `plateMask` is set. The
+   seam is marked by `PRINT_SEPARATION_IS_NATIVE` in
+   [`separation.ts`](src/engine/separation.ts) so that the two cannot be confused.
 10. **The raster layer paints no ground while a post stage is active.** The ground is
     the base layer, below the composite — an opaque plate left inside the raster
     layer sits on top of an `under` overlay and hides it completely. Every paint site
@@ -1799,11 +1901,16 @@ Things that will silently break rendering if violated.
 - **`content` colour cannot be separated** without quantizing first — it is
   continuous, so it blows past the 64-plate cap. Quantize Levels or an indexed
   palette is the workaround; automatic k-means clustering down to N inks would be the
-  fix.
-- Halftone *geometry* (dot/diamond/square screens, SVG dot output) was removed with
-  the dead output modes and has not returned; §3.4 covers ink separation but not
-  screening. Recoverable from git history:
-  `git show <sha>:src/engine/halftoneRenderer.ts`.
+  fix. Note that print mode answers the same *want* by a different route: it separates
+  continuous colour onto a fixed ink set colorimetrically, with no cap and no
+  quantization step.
+- ~~Halftone *geometry* was removed with the dead output modes and has not returned;
+  §3.4 covers ink separation but not screening.~~ **Closed** by the `print` output mode:
+  real AM and FM screening with arbitrary angle, ruling and sub-cell phase, and SVG dot
+  geometry as one merged path per ink. See [`print-pipeline.md`](print-pipeline.md).
+  Its own remaining gaps are listed there — press dirt (mottle, roller streaks, paper
+  tooth), rational-tangent angle snapping, spectral ink mixing, and an `under` overlay
+  being hidden behind opaque paper.
 - The share link has no route for locally-uploaded media or models. They exist only
   in browser memory, and `ShareModal` says so rather than producing a link that
   cannot work.

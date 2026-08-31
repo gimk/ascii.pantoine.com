@@ -20,12 +20,15 @@ import {
   ImageAdjustConfig,
   PostProcessConfig,
   VECTOR_CONFIG_DEFAULTS,
+  PrintConfig,
+  PrintTier,
 } from '../types/ascii';
 import { MediaUploadControls } from './MediaFileControls';
 import { cropActive, measureFramedMedia } from '../engine/mediaRenderer';
 import { OutputModeCards } from './outputModes';
 import { DitherAlgorithmPicker } from './DitherAlgorithmPicker';
 import { VectorControls } from './VectorControls';
+import { PrintControls } from './PrintControls';
 import { PaletteControls } from './PaletteControls';
 import { NToneRampEditor } from './NToneRampEditor';
 import { CHARSETS } from '../engine/renderer';
@@ -57,6 +60,24 @@ const ASCII_CELL_ASPECT = 0.55;
  * automatic path.
  */
 const cellAspectFor = (mode: RasterOutputMode) => (mode === 'ascii' ? ASCII_CELL_ASPECT : 1.0);
+
+/**
+ * Print's contone grid, and the tightest range of the four.
+ *
+ * Deliberately far below vector's, for the opposite reason: this grid is
+ * subdivided into `supersample` device pixels before anything is painted, so
+ * every column costs S^2 pixels to screen. Detail comes from the ruling and the
+ * screen resolution, not from here, and coverage is smooth by construction
+ * anyway — it comes out of a separation table.
+ */
+const PRINT_COLS_PRESETS: { label: string; value: number }[] = [
+  { label: '180', value: 180 },
+  { label: '240', value: 240 },
+  { label: '320', value: 320 },
+  { label: '420', value: 420 },
+  { label: '560', value: 560 },
+  { label: '720', value: 720 },
+];
 
 /** Resolution presets: DPI for Pixel mode, Columns for ASCII mode */
 const DPI_PRESETS: { label: string; value: number }[] = [
@@ -143,6 +164,18 @@ interface BasicPanelProps {
   onResetFraming?: () => void;
   /** True while the marquee is open, so the button can show it. */
   cropEditing?: boolean;
+
+  /*
+   * Print. Passed in rather than defaulted here because App owns the ink stack:
+   * BASIC and ADVANCED must edit the same one, or switching panels would look
+   * like losing your inks.
+   */
+  printConfigFallback: PrintConfig;
+  onRenderProof?: () => void;
+  proofProgress?: string | null;
+  printTier?: { tier: PrintTier; supersample: number } | null;
+  /** Replace the ink stack from a palette. Print mode only. */
+  onSeedInksFromPalette?: (colors: string[]) => void;
 }
 
 /**
@@ -179,9 +212,15 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   onEnterCrop,
   onResetFraming,
   cropEditing = false,
+  printConfigFallback,
+  onRenderProof,
+  proofProgress,
+  printTier,
+  onSeedInksFromPalette,
 }) => {
   const isPixel = rasterMode === 'pixel';
   const isVector = rasterMode === 'vector';
+  const isPrint = rasterMode === 'print';
   /* Only ASCII uses a glyph ramp; the other two label their step differently. */
   const isAscii = rasterMode === 'ascii';
   const hasSource = Boolean(mediaConfig.fileData);
@@ -225,10 +264,12 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
   /*
    * The ceiling is per-mode for the same reason the presets are: 400 columns is
    * already an enormous wall of glyphs and a third of what a beam wants to
-   * sample at. Vector stops at the shared grid budget instead.
+   * sample at. Vector and print stop at the shared grid budget instead — one
+   * because it samples, the other because its cells are subdivided below the
+   * grid rather than displayed at it.
    */
   const handleColsChange = (newCols: number) => {
-    const ceiling = isVector ? MAX_GRID_COLS : 400;
+    const ceiling = isVector || isPrint ? MAX_GRID_COLS : 400;
     const clamped = Math.max(20, Math.min(ceiling, Math.round(newCols)));
     const nextRows = Math.max(10, Math.round((clamped * cellAspectFor(rasterMode)) / srcAspect));
     onChangeResolution(clamped, nextRows);
@@ -403,25 +444,29 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
               title={
                 isVector
                   ? 'How finely the beam reads the image. Nothing quantizes to this grid, so it is a sampling rate rather than a visible resolution.'
-                  : undefined
+                  : isPrint
+                    ? 'Contone resolution: how finely the separation reads colour. The dots live below it, at Screen Res device pixels per cell, so this is not the size of the print.'
+                    : undefined
               }
             >
               {isPixel
                 ? 'Resolution (DPI)'
                 : isVector
                   ? 'Beam Sampling'
-                  : 'Grid Size'}
+                  : isPrint
+                    ? 'Contone Grid'
+                    : 'Grid Size'}
             </span>
 
             <span className="basic-sub-actions">
               <span className="control-static-value">
-                {cols} &times; {rows} {isPixel ? 'px' : isVector ? 'smp' : 'chars'}
+                {cols} &times; {rows} {isPixel ? 'px' : isVector ? 'smp' : isPrint ? 'cells' : 'chars'}
               </span>
               {onToggleAutoRes && (
                 <AutoResToggle
                   active={autoRes}
                   onToggle={onToggleAutoRes}
-                  noun={isPixel ? 'DPI' : isVector ? 'sampling rate' : 'grid'}
+                  noun={isPixel ? 'DPI' : isVector ? 'sampling rate' : isPrint ? 'contone grid' : 'grid'}
                 />
               )}
             </span>
@@ -429,7 +474,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
 
           {/* 3x2 Grid Resolution Chips */}
           <div className="basic-chip-grid">
-            {(isPixel ? DPI_PRESETS : isVector ? VECTOR_COLS_PRESETS : COLS_PRESETS).map((preset) => {
+            {(isPixel ? DPI_PRESETS : isVector ? VECTOR_COLS_PRESETS : isPrint ? PRINT_COLS_PRESETS : COLS_PRESETS).map((preset) => {
               const isActive = isPixel ? dpi === preset.value : cols === preset.value;
               return (
                 <button
@@ -444,12 +489,14 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
                       ? `${preset.value} DPI`
                       : isVector
                         ? `Sample the beam at ${preset.value} columns across`
-                        : `${preset.value} columns wide`
+                        : isPrint
+                          ? `Separate colour at ${preset.value} contone cells across`
+                          : `${preset.value} columns wide`
                   }
                 >
                   <span className="chip-val">{preset.label}</span>
                   <span className="chip-unit">
-                    {isPixel ? 'DPI' : isVector ? 'SMP' : 'COL'}
+                    {isPixel ? 'DPI' : isVector ? 'SMP' : isPrint ? 'CTN' : 'COL'}
                   </span>
                 </button>
               );
@@ -528,11 +575,29 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           {/* Dithering Algorithm or Beam Controls */}
           <div className="basic-sub-header">
             <span className="basic-sub-title">
-              {isVector ? 'Beam Deflection' : isPixel ? 'Dither Pattern' : 'Dithering Engine'}
+              {isPrint
+                ? 'Press & Inks'
+                : isVector
+                  ? 'Beam Deflection'
+                  : isPixel
+                    ? 'Dither Pattern'
+                    : 'Dithering Engine'}
             </span>
           </div>
 
-          {isVector ? (
+          {isPrint ? (
+            <PrintControls
+              compact
+              section="press"
+              config={viewConfig.printConfig || printConfigFallback}
+              onChange={(next) => updateView('printConfig', next)}
+              cols={cols}
+              rows={rows}
+              onRenderProof={onRenderProof}
+              proofProgress={proofProgress}
+              tier={printTier}
+            />
+          ) : isVector ? (
             <VectorControls
               compact
               config={viewConfig.vectorConfig || VECTOR_CONFIG_DEFAULTS}
@@ -547,7 +612,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
           )}
 
           <div className="basic-sub-header" style={{ marginTop: '6px' }}>
-            <span className="basic-sub-title">Color &amp; Theme</span>
+            <span className="basic-sub-title">{isPrint ? 'Inks & Color' : 'Color & Theme'}</span>
           </div>
 
           <PaletteControls
@@ -562,6 +627,12 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
             onChangeTonalMapping={(t) => updateView('tonalMapping', t)}
             isPixelMode={isPixel}
             isVectorMode={isVector}
+            isPrintMode={isPrint}
+            printConfig={viewConfig.printConfig || printConfigFallback}
+            onChangePrintConfig={(next) => updateView('printConfig', next)}
+            cols={cols}
+            rows={rows}
+            onSeedInksFromPalette={onSeedInksFromPalette}
             colorLevels={viewConfig.colorLevels}
             onChangeColorLevels={(val) => updateView('colorLevels', val)}
             rampEditorSlot={
