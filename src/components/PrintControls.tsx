@@ -7,6 +7,7 @@ import {
   ScreenFamily,
   PrintTier,
   MAX_INKS,
+  DitherAlgorithm,
 } from '../types/ascii';
 import { PrecisionSlider, ToggleSwitch, DeferredColorInput } from './controlPrimitives';
 import {
@@ -17,6 +18,7 @@ import {
   applyPressAngles,
   findMoireConflicts,
   MOIRE_ANGLE_TOLERANCE,
+  extractImageInks,
 } from '../engine/printInks';
 import {
   rulingToLpi,
@@ -34,9 +36,11 @@ import {
   Eye,
   AlertTriangle,
   Play,
+  Pipette,
 } from 'lucide-react';
 
 import { BUILTIN_PALETTES } from '../engine/palettes';
+import { DITHER_ALGORITHMS } from '../engine/ditherAlgorithms';
 
 /**
  * Press, inks and screens — print mode's replacement for the dither picker.
@@ -70,11 +74,13 @@ export interface PrintInkStackProps {
   onChange: (config: PrintConfig) => void;
   cols?: number;
   rows?: number;
+  mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   onSeedInksFromPalette?: (colors: string[]) => void;
 }
 
 export interface PrintControlsProps extends PrintPressControlsProps {
   section?: 'all' | 'press' | 'inks';
+  mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   onSeedInksFromPalette?: (colors: string[]) => void;
 }
 
@@ -218,6 +224,15 @@ const SCREEN_FAMILIES: { id: ScreenFamily; label: string; hint: string }[] = [
   { id: 'am', label: 'AM', hint: 'Amplitude modulation: fixed lattice, the dot grows. Offset, newsprint, screenprint and the riso driver default.' },
   { id: 'fm', label: 'FM', hint: 'Frequency modulation: fixed dot, the count varies. Runs this plate through the dither registry — what a riso thermal master often does.' },
   { id: 'solid', label: 'SOLID', hint: 'No screen. Ink wherever coverage passes half, for line art and spot blocks.' },
+];
+
+const FM_TOP_ALGORITHMS: { id: DitherAlgorithm; label: string; hint: string }[] = [
+  { id: 'atkinson', label: 'ATKINSON', hint: 'MacPaint 1984 8-neighbor diffusion (75% error): clean highlights and crisp, non-fuzzy borders.' },
+  { id: 'blue-noise', label: 'BLUE NOISE', hint: 'High-frequency blue noise stipple: organic, isotropic distribution with zero directional error drag.' },
+  { id: 'void-cluster', label: 'VOID-CLUSTER', hint: 'Ulichney void-and-cluster stochastic mask: smoothly dispersed organic dot placement.' },
+  { id: 'bayer-8x8', label: 'BAYER 8×8', hint: '64-level smooth ordered matrix: clean, regular geometric micro-grid.' },
+  { id: 'sierra-2', label: 'SIERRA-2', hint: 'Two-row Sierra: smooth tones with a compact diffusion kernel.' },
+  { id: 'floyd-steinberg', label: 'FLOYD-ST', hint: 'Classic 1976 balanced 4-neighbor error diffusion.' },
 ];
 
 /**
@@ -437,6 +452,37 @@ export const PrintPressControls: React.FC<PrintPressControlsProps> = ({
               onChange={(val) => set('yuleNielsen', val)}
             />
           </div>
+
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Ink purity / crosstalk suppression (0 to 100%): Suppresses secondary ink bleed and faint crosstalk in areas where a primary ink dominates, keeping flat colors and solid fields completely clean on their own plate."
+            >
+              Ink Purity
+            </span>
+            <PrecisionSlider
+              value={config.inkPurity ?? 0.5}
+              sliderMin={0}
+              sliderMax={1}
+              step={0.01}
+              resetTo={0.5}
+              onChange={(val) => set('inkPurity', val)}
+            />
+          </div>
+
+          <div className="control-row">
+            <span
+              className="control-label"
+              title="Grain interlock (joint screening): When enabled, stochastic FM dots on adjacent plates interlock into each other's negative space in gradient transitions, eliminating accidental white paper voids between overlapping colors."
+            >
+              Grain Interlock
+            </span>
+            <ToggleSwitch
+              checked={config.grainInterlock !== false}
+              onChange={(val) => set('grainInterlock', val)}
+              title="Interlock dots in gradients to prevent white paper bleed"
+            />
+          </div>
         </>
       )}
 
@@ -499,6 +545,7 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
   onChange,
   cols = 420,
   rows = 315,
+  mediaElement,
   onSeedInksFromPalette,
 }) => {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -585,6 +632,59 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             CLEAR SOLO
           </button>
         )}
+      </div>
+
+      {mediaElement && (
+        <div className="control-row control-row-spaced" style={{ marginBottom: '8px' }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            style={{ width: '100%', justifyContent: 'center', gap: '6px' }}
+            onClick={() => {
+              const res = extractImageInks(mediaElement, config.press, MAX_INKS);
+              onChange({
+                ...config,
+                paper: res.paper,
+                inks: res.inks,
+              });
+            }}
+            title="Samples the loaded image, finds its dominant colors, sets the paper stock, and creates matching ink plates."
+          >
+            <Pipette size={11} />
+            <span>EXTRACT INKS FROM IMAGE</span>
+          </button>
+        </div>
+      )}
+
+      <div className="control-row" style={{ marginBottom: '8px' }}>
+        <span
+          className="control-label"
+          title="Ink purity / crosstalk suppression (0% to 100%): Suppresses secondary ink bleed in tones where a dominant ink is active, keeping flat color fields clean and solid on their own plate."
+        >
+          Ink Purity
+        </span>
+        <PrecisionSlider
+          value={config.inkPurity ?? 0.5}
+          sliderMin={0}
+          sliderMax={1}
+          step={0.01}
+          resetTo={0.5}
+          onChange={(val) => set('inkPurity', val)}
+        />
+      </div>
+
+      <div className="control-row" style={{ marginBottom: '8px' }}>
+        <span
+          className="control-label"
+          title="Grain interlock (joint screening): When enabled, stochastic FM dots on adjacent plates interlock into each other's negative space in gradient transitions, eliminating accidental white paper voids between overlapping colors."
+        >
+          Grain Interlock
+        </span>
+        <ToggleSwitch
+          checked={config.grainInterlock !== false}
+          onChange={(val) => set('grainInterlock', val)}
+          title="Interlock dots in gradients to prevent white paper bleed"
+        />
       </div>
 
       {conflicts.length > 0 && (
@@ -736,10 +836,75 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
                 )}
 
                 {ink.screen === 'fm' && (
-                  <div className="control-hint control-row">
-                    Screened by the {ink.fmAlgorithm} error diffusion at device resolution — the
-                    thermal-master path. Ruling and angle do not apply.
-                  </div>
+                  <>
+                    <div className="control-row">
+                      <span
+                        className="control-label"
+                        title="Dither algorithm used to generate the stochastic grain pattern for this plate."
+                      >
+                        Algorithm
+                      </span>
+                      <select
+                        className="number-input stepper-select"
+                        value={ink.fmAlgorithm || 'atkinson'}
+                        onChange={(e) => setInk(ink.id, { fmAlgorithm: e.target.value as DitherAlgorithm })}
+                      >
+                        {DITHER_ALGORITHMS.map((algo) => (
+                          <option key={algo.id} value={algo.id}>
+                            {algo.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="print-shape-grid">
+                      {FM_TOP_ALGORITHMS.map((a) => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          className={`btn btn-sm btn-toggle btn-toggle-narrow ${(ink.fmAlgorithm || 'atkinson') === a.id ? 'btn-primary' : ''}`}
+                          onClick={() => setInk(ink.id, { fmAlgorithm: a.id })}
+                          title={a.hint}
+                        >
+                          {a.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="control-row">
+                      <span
+                        className="control-label"
+                        title="Grain cluster size: 1× is ultra-fine single device pixels; 2× clusters pixels to emulate physical ~300 DPI Riso stencil holes (less digital, cleaner borders); 3× and 4× create bold photocopy/zine grain."
+                      >
+                        Grain Size
+                      </span>
+                      <div className="btn-group">
+                        {[
+                          { val: 1, label: '1× Fine', hint: 'Single device pixel (photographic stipple)' },
+                          { val: 2, label: '2× Riso', hint: 'Physical stencil dot cluster (~300 DPI)' },
+                          { val: 3, label: '3× Coarse', hint: 'Photocopy texture' },
+                          { val: 4, label: '4× Chunky', hint: 'Bold zine grain' },
+                        ].map((s) => (
+                          <button
+                            key={s.val}
+                            type="button"
+                            className={`btn btn-sm btn-toggle btn-toggle-narrow ${(ink.fmScale || 1) === s.val ? 'btn-primary' : ''}`}
+                            onClick={() => setInk(ink.id, { fmScale: s.val })}
+                            title={s.hint}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="control-hint control-row">
+                      {(ink.fmAlgorithm === 'atkinson' || !ink.fmAlgorithm)
+                        ? 'Atkinson diffuses 75% error, keeping borders crisp and highlights clean without fuzzy halos.'
+                        : ink.fmAlgorithm === 'blue-noise' || ink.fmAlgorithm === 'void-cluster'
+                        ? 'Blue noise stipples without error dragging, ensuring sharp shape boundaries.'
+                        : `Screened with ${DITHER_ALGORITHMS.find((a) => a.id === ink.fmAlgorithm)?.name || ink.fmAlgorithm} at ${ink.fmScale || 1}× grain scale.`}
+                    </div>
+                  </>
                 )}
 
                 <div className="tonal-subheading">
@@ -881,6 +1046,7 @@ export const PrintControls: React.FC<PrintControlsProps> = ({
         onChange={props.onChange}
         cols={props.cols}
         rows={props.rows}
+        mediaElement={props.mediaElement}
         onSeedInksFromPalette={props.onSeedInksFromPalette}
       />
     );
@@ -893,6 +1059,7 @@ export const PrintControls: React.FC<PrintControlsProps> = ({
         onChange={props.onChange}
         cols={props.cols}
         rows={props.rows}
+        mediaElement={props.mediaElement}
         onSeedInksFromPalette={props.onSeedInksFromPalette}
       />
     </>

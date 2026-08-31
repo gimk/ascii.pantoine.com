@@ -4358,6 +4358,7 @@ export const App: React.FC = () => {
                   printBadge={renderSettingsBadge}
                   cols={cols}
                   rows={rows}
+                  mediaElement={mediaElementRef.current}
                 />
               )}
 

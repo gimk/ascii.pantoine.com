@@ -52,6 +52,7 @@ interface MediaViewControlsProps {
   printBadge?: string;
   cols?: number;
   rows?: number;
+  mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
 }
 
 export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
@@ -70,6 +71,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
   printBadge,
   cols,
   rows,
+  mediaElement,
 }) => {
   const effectiveRasterMode = rasterMode || config.rasterMode;
   const isPixelMode = effectiveRasterMode === 'pixel';
@@ -207,6 +209,7 @@ export const MediaViewControls: React.FC<MediaViewControlsProps> = ({
               onChangePrintConfig={(p) => update('printConfig', p)}
               cols={cols}
               rows={rows}
+              mediaElement={mediaElement}
               onSeedInksFromPalette={onSeedInksFromPalette}
               colorLevels={config.colorLevels}
               onChangeColorLevels={(val) => update('colorLevels', val)}

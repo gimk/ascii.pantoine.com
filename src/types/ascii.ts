@@ -629,6 +629,11 @@ export interface InkPlate {
    * FM screening cost no new dithering code.
    */
   fmAlgorithm: DitherAlgorithm;
+  /**
+   * Grain scale for FM screening: 1 = fine (1px device tap), 2 = medium (Riso stencil ~300 DPI),
+   * 3 = coarse grain, 4 = chunky newsprint grain.
+   */
+  fmScale?: number;
 
   // --- press error and ink physics ---
   /**
@@ -663,6 +668,18 @@ export interface PrintConfig {
   paper: string;
   /** Total area coverage cap, summed across inks, in percent. 0 = unlimited. */
   tacLimit: number;
+  /**
+   * Ink purity / crosstalk suppression (0.0 to 1.0, default 0.5):
+   * Suppresses secondary ink bleed and faint crosstalk in areas where a primary ink dominates,
+   * keeping flat colors and solid fields completely clean on their own plate.
+   */
+  inkPurity?: number;
+  /**
+   * Grain interlock (joint screening):
+   * When enabled (default true), stochastic FM dots on adjacent plates interlock into each other's
+   * negative space in gradient blends, eliminating accidental white paper voids between overlapping colors.
+   */
+  grainInterlock?: boolean;
   /**
    * Yule-Nielsen n: optical dot gain from light scattering sideways inside the
    * paper, applied when the device raster is box-filtered down. 1 is off, ~1.7

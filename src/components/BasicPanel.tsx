@@ -632,6 +632,7 @@ export const BasicPanel: React.FC<BasicPanelProps> = ({
             onChangePrintConfig={(next) => updateView('printConfig', next)}
             cols={cols}
             rows={rows}
+            mediaElement={mediaElement}
             onSeedInksFromPalette={onSeedInksFromPalette}
             colorLevels={viewConfig.colorLevels}
             onChangeColorLevels={(val) => updateView('colorLevels', val)}

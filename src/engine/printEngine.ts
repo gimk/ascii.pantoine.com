@@ -32,7 +32,7 @@ import {
   encodeSrgb,
   LUT_SIZE_FULL,
 } from './printInks';
-import { applyDitherAlgorithm } from './ditherAlgorithms';
+import { applyDitherAlgorithm, maskFor } from './ditherAlgorithms';
 
 // ---------------------------------------------------------------------------
 // Quality tiers
@@ -98,21 +98,16 @@ export function solveSupersample(
   inkCount = 1
 ): number {
   const isProof = tier === 'proof';
-  const want =
-    requested > 0 ? requested : isProof ? SUPERSAMPLE_PROOF_DEFAULT : SUPERSAMPLE_LIVE_DEFAULT;
+  if (requested > 0) {
+    return Math.max(SUPERSAMPLE_MIN, Math.min(SUPERSAMPLE_MAX, requested));
+  }
+  const want = isProof ? SUPERSAMPLE_PROOF_DEFAULT : SUPERSAMPLE_LIVE_DEFAULT;
   const cells = Math.max(1, cols * rows) * Math.max(1, inkCount);
-  const budget = isProof ? PROOF_PLATE_PX_BUDGET : LIVE_PLATE_PX_BUDGET;
+  const budget = isProof ? PROOF_PLATE_PX_BUDGET : 60_000_000;
 
   // Largest integer S whose plate-pixel count fits the budget.
   const fits = Math.floor(Math.sqrt(budget / cells));
-  const s = Math.min(want, SUPERSAMPLE_MAX, Math.max(1, fits));
-  /*
-   * Floored at 1, which can exceed the budget. On a grid so large that even one
-   * device pixel per cell blows it, S=1 degenerates to a plain threshold —
-   * coarse, but it renders. Refusing instead would leave the viewport blank at
-   * exactly the resolutions someone setting up an export is most likely to use.
-   */
-  return Math.max(1, s);
+  return Math.max(SUPERSAMPLE_MIN, Math.min(want, SUPERSAMPLE_MAX, Math.max(1, fits)));
 }
 
 /**
@@ -183,6 +178,7 @@ export interface PrintSeparation {
   cols: number;
   rows: number;
   paperHex: string;
+  grainInterlock?: boolean;
 }
 
 let covBuffer = new Float32Array(0);
@@ -236,7 +232,13 @@ export function separatePrint(
    * differed between a preview and the pass replacing it, which is precisely
    * the kind of "same picture, two answers" the fork is built to avoid.
    */
-  const lut = buildSeparationLut(inks, config.paper, config.tacLimit, LUT_SIZE_FULL);
+  const lut = buildSeparationLut(
+    inks,
+    config.paper,
+    config.tacLimit,
+    LUT_SIZE_FULL,
+    config.inkPurity ?? 0.5
+  );
 
   for (let i = 0; i < total; i++) {
     if (lum && lum[i] < 0) {
@@ -261,7 +263,15 @@ export function separatePrint(
     }
   }
 
-  lastSeparation = { coverage, inks, inkCount: n, cols, rows, paperHex: config.paper };
+  lastSeparation = {
+    coverage,
+    inks,
+    inkCount: n,
+    cols,
+    rows,
+    paperHex: config.paper,
+    grainInterlock: config.grainInterlock ?? true,
+  };
   return lastSeparation;
 }
 
@@ -757,7 +767,11 @@ function screenPlateFm(
   const bit = 1 << p;
 
   const bandH = y1 - y0;
-  const need = width * bandH;
+  const scale = Math.max(1, Math.min(8, ink.fmScale || 1));
+  const dWidth = Math.ceil(width / scale);
+  const dBandH = Math.ceil(bandH / scale);
+  const need = dWidth * dBandH;
+
   if (fmScratch.length < need) {
     fmScratch = new Float32Array(need);
     fmScratchOut = new Float32Array(need);
@@ -770,18 +784,109 @@ function screenPlateFm(
   const cy = frame.height / 2;
   const offX = ink.regX * ss;
   const offY = ink.regY * ss;
-  const dSx = cosR / ss;
-  const dSy = -sinR / ss;
+  const dSx = (cosR * scale) / ss;
+  const dSy = (-sinR * scale) / ss;
 
-  for (let Y = y0; Y < y1; Y++) {
+  const mask = maskFor(ink.fmAlgorithm || 'atkinson');
+  const isInterlock = sep.grainInterlock !== false;
+
+  if (mask && isInterlock) {
+    // Interlocking / joint screening with threshold mask:
+    // Plate p is active on threshold interval [S_prev, S_prev + c_p] modulo 1.0.
+    // In a multi-color gradient (e.g. Pink to Blue), dots interlock into adjacent negative spaces
+    // with 0% accidental white paper gaps!
+    const maskW = mask.width;
+    const maskH = mask.height;
+    const offsets = mask.offsets;
+    const totalInks = sep.inkCount;
+
+    for (let dY = 0; dY < dBandH; dY++) {
+      const Y = y0 + dY * scale;
+      const bx = -offX - cx;
+      const by = Y - offY - cy;
+      const px0 = cx + bx * cosR + by * sinR;
+      const py0 = cy - bx * sinR + by * cosR;
+      let sx = px0 / ss;
+      let sy = py0 / ss;
+
+      const my = ((dY % maskH) + maskH) % maskH;
+      const maskRow = my * maskW;
+
+      for (let dX = 0; dX < dWidth; dX++) {
+        const raw = sampleCoverage(coverage, base, cols, rows, sx, sy);
+        if (raw >= 0) {
+          const cp = transferCoverage(raw, ink.minCoverage, ink.maxCoverage, ink.dotGain);
+          if (cp > 0) {
+            let active = false;
+            if (cp >= 1) {
+              active = true;
+            } else {
+              let sPrev = 0;
+              let sTotal = 0;
+              for (let k = 0; k < totalInks; k++) {
+                const kRaw = sampleCoverage(coverage, k * cols * rows, cols, rows, sx, sy);
+                if (kRaw > 0) {
+                  const kCov = transferCoverage(kRaw, sep.inks[k].minCoverage, sep.inks[k].maxCoverage, sep.inks[k].dotGain);
+                  if (k < p) sPrev += kCov;
+                  sTotal += kCov;
+                }
+              }
+
+              let effCp = cp;
+              let effPrev = sPrev;
+              if (sTotal > 0.55 && sTotal < 1.0) {
+                const norm = 1.0 / sTotal;
+                effCp = Math.min(1, cp * norm);
+                effPrev = sPrev * norm;
+              }
+
+              const mx = ((dX % maskW) + maskW) % maskW;
+              const threshold = offsets[maskRow + mx] + 0.5;
+              const start = effPrev % 1.0;
+              const end = start + effCp;
+              if (end <= 1.0) {
+                active = threshold >= start && threshold < end;
+              } else {
+                active = threshold >= start || threshold < (end - 1.0);
+              }
+            }
+
+            if (active) {
+              if (scale === 1) {
+                if (Y < y1) plateMask[Y * width + dX] |= bit;
+              } else {
+                for (let sy0 = 0; sy0 < scale; sy0++) {
+                  const py = Y + sy0;
+                  if (py >= y1) break;
+                  const pRow = py * width;
+                  const baseX = dX * scale;
+                  for (let sx0 = 0; sx0 < scale; sx0++) {
+                    const px = baseX + sx0;
+                    if (px < width) plateMask[pRow + px] |= bit;
+                  }
+                }
+              }
+            }
+          }
+        }
+        sx += dSx;
+        sy += dSy;
+      }
+    }
+    return;
+  }
+
+  // Non-mask / error diffusion path:
+  for (let dY = 0; dY < dBandH; dY++) {
+    const Y = y0 + dY * scale;
     const bx = -offX - cx;
     const by = Y - offY - cy;
     const px0 = cx + bx * cosR + by * sinR;
     const py0 = cy - bx * sinR + by * cosR;
     let sx = px0 / ss;
     let sy = py0 / ss;
-    const rowOff = (Y - y0) * width;
-    for (let X = 0; X < width; X++) {
+    const rowOff = dY * dWidth;
+    for (let dX = 0; dX < dWidth; dX++) {
       const raw = sampleCoverage(coverage, base, cols, rows, sx, sy);
       /*
        * The sentinel goes straight through rather than being clamped to zero.
@@ -790,7 +895,7 @@ function screenPlateFm(
        * diffused error — which is what stops the error from piling up against
        * the silhouette and dumping a dark fringe along it.
        */
-      fmScratch[rowOff + X] =
+      fmScratch[rowOff + dX] =
         raw < 0 ? -1 : transferCoverage(raw, ink.minCoverage, ink.maxCoverage, ink.dotGain);
       sx += dSx;
       sy += dSy;
@@ -800,16 +905,46 @@ function screenPlateFm(
   applyDitherAlgorithm(
     fmScratch.subarray(0, need),
     fmScratchOut.subarray(0, need),
-    width,
-    bandH,
-    ink.fmAlgorithm,
-    2
+    dWidth,
+    dBandH,
+    ink.fmAlgorithm || 'atkinson',
+    2,
+    {
+      seed: p * 47 + (p % 2 === 1 ? 23 : 0),
+      angle: ink.angle,
+      serpentine: true,
+    }
   );
 
-  for (let i = 0; i < need; i++) {
-    if (fmScratchOut[i] > 0.5) {
-      const Y = y0 + ((i / width) | 0);
-      plateMask[Y * width + (i % width)] |= bit;
+  if (scale === 1) {
+    for (let i = 0; i < need; i++) {
+      if (fmScratchOut[i] > 0.5) {
+        const Y = y0 + ((i / dWidth) | 0);
+        if (Y < y1) {
+          plateMask[Y * width + (i % dWidth)] |= bit;
+        }
+      }
+    }
+  } else {
+    for (let dY = 0; dY < dBandH; dY++) {
+      const baseY = y0 + dY * scale;
+      const rowOff = dY * dWidth;
+      for (let dX = 0; dX < dWidth; dX++) {
+        if (fmScratchOut[rowOff + dX] > 0.5) {
+          const baseX = dX * scale;
+          for (let sy = 0; sy < scale; sy++) {
+            const py = baseY + sy;
+            if (py >= y1) break;
+            const pRow = py * width;
+            for (let sx = 0; sx < scale; sx++) {
+              const px = baseX + sx;
+              if (px < width) {
+                plateMask[pRow + px] |= bit;
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -45,6 +45,7 @@ interface PaletteControlsProps {
   onChangePrintConfig?: (cfg: PrintConfig) => void;
   cols?: number;
   rows?: number;
+  mediaElement?: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null;
   printInkSlot?: React.ReactNode;
   /** Replace the ink stack from a palette's colours. Print mode only. */
   onSeedInksFromPalette?: (colors: string[]) => void;
@@ -117,6 +118,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
   onChangePrintConfig,
   cols,
   rows,
+  mediaElement,
   printInkSlot,
   onSeedInksFromPalette,
   onEditPaletteAsRamp,
@@ -254,6 +256,7 @@ export const PaletteControls: React.FC<PaletteControlsProps> = ({
             onChange={onChangePrintConfig}
             cols={cols}
             rows={rows}
+            mediaElement={mediaElement}
             onSeedInksFromPalette={onSeedInksFromPalette}
           />
         </div>

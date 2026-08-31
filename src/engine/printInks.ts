@@ -276,7 +276,8 @@ export function makeInkPlate(
     shiftY: 0,
     dotShape: p.dotShape,
     dotAspect: 1,
-    fmAlgorithm: 'floyd-steinberg',
+    fmAlgorithm: 'atkinson',
+    fmScale: 1,
 
     regX: 0,
     regY: 0,
@@ -357,6 +358,8 @@ export function defaultPrintConfig(): PrintConfig {
     ],
     paper: p.paper,
     tacLimit: p.tacLimit,
+    inkPurity: 0.5,
+    grainInterlock: true,
     yuleNielsen: p.yuleNielsen,
     /*
      * The viewport at 4, the proof at 8 — and the gap between them is the
@@ -533,9 +536,9 @@ export interface SeparationLut {
  */
 export const LUT_SIZE_FULL = 33;
 
-function lutKey(inks: InkPlate[], paper: string, tac: number, size: number): string {
+function lutKey(inks: InkPlate[], paper: string, tac: number, size: number, purity: number): string {
   const ik = inks.map((k) => `${k.hex}:${k.opacity.toFixed(3)}`).join('|');
-  return `${size}/${paper}/${tac}/${ik}`;
+  return `${size}/${paper}/${tac}/${purity.toFixed(2)}/${ik}`;
 }
 
 let cachedLut: SeparationLut | null = null;
@@ -557,9 +560,10 @@ export function buildSeparationLut(
   inks: InkPlate[],
   paper: string,
   tacLimit: number,
-  size: number = LUT_SIZE_FULL
+  size: number = LUT_SIZE_FULL,
+  purity: number = 0.5
 ): SeparationLut {
-  const key = lutKey(inks, paper, tacLimit, size);
+  const key = lutKey(inks, paper, tacLimit, size, purity);
   if (cachedLut && cachedLut.key === key && cachedLut.inkCount === inks.length) {
     return cachedLut;
   }
@@ -636,6 +640,37 @@ export function buildSeparationLut(
             b4[3] = lambda * tac;
             a.fill(0);
             solveCoverage(A4, b4, n, 4, a);
+          }
+        }
+
+        // Parametric ink purity:
+        // Suppresses secondary ink crosstalk when one ink dominates a color,
+        // while preserving intentional multi-ink gradient blends where two inks have comparable strength.
+        if (purity > 0) {
+          let maxCoverage = 0;
+          for (let i = 0; i < n; i++) {
+            if (a[i] > maxCoverage) maxCoverage = a[i];
+          }
+
+          if (maxCoverage > 0.08) {
+            const ratioCutoff = purity * 0.35;
+            const absoluteCutoff = purity * 0.08;
+
+            for (let i = 0; i < n; i++) {
+              const cov = a[i];
+              if (cov <= 0 || cov === maxCoverage) continue;
+
+              const ratio = cov / maxCoverage;
+              if (ratio < ratioCutoff || cov < absoluteCutoff) {
+                const low = ratioCutoff * 0.3;
+                if (ratio <= low) {
+                  a[i] = 0;
+                } else {
+                  const t = (ratio - low) / (ratioCutoff - low);
+                  a[i] = cov * (t * t * (3 - 2 * t));
+                }
+              }
+            }
           }
         }
 
@@ -766,4 +801,177 @@ export function findMoireConflicts(inks: InkPlate[]): [InkPlate, InkPlate][] {
     }
   }
   return out;
+}
+
+/**
+ * Extracts the dominant distinct colors from an image / media element and builds
+ * an ink stack + paper stock matching the artwork.
+ */
+export function extractImageInks(
+  element: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement,
+  press: PressProfile = 'riso',
+  maxInks: number = 4
+): { paper: string; inks: InkPlate[] } {
+  const canvas = document.createElement('canvas');
+  const w = 120;
+  const h = 90;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return {
+      paper: '#ffffff',
+      inks: PRESS_PROFILES[press].angles.slice(0, 2).map((a, i) =>
+        makeInkPlate(INK_LIBRARY[i], press, a)
+      ),
+    };
+  }
+
+  try {
+    ctx.drawImage(element, 0, 0, w, h);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    const totalPixels = w * h;
+
+    // Check corners for paper / background color
+    const cornerOffsets = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4];
+    const cornerColors: [number, number, number][] = [];
+    for (const off of cornerOffsets) {
+      if (data[off + 3] >= 128) {
+        cornerColors.push([data[off], data[off + 1], data[off + 2]]);
+      }
+    }
+
+    // 5-bit RGB histogram (32x32x32 buckets)
+    const bins = new Map<number, { r: number; g: number; b: number; count: number }>();
+    for (let i = 0; i < totalPixels; i++) {
+      const idx = i * 4;
+      const a = data[idx + 3];
+      if (a < 128) continue;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+
+      const binKey = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+      const existing = bins.get(binKey);
+      if (existing) {
+        existing.r += r;
+        existing.g += g;
+        existing.b += b;
+        existing.count++;
+      } else {
+        bins.set(binKey, { r, g, b, count: 1 });
+      }
+    }
+
+    // Convert bins to cluster centroids
+    const clusters: { hex: string; rgb: [number, number, number]; lum: number; count: number }[] = [];
+    for (const b of bins.values()) {
+      const r = Math.round(b.r / b.count);
+      const g = Math.round(b.g / b.count);
+      const bl = Math.round(b.b / b.count);
+      const hex = '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+      const lum = 0.2126 * (r / 255) + 0.7152 * (g / 255) + 0.0722 * (bl / 255);
+      clusters.push({ hex, rgb: [r, g, bl], lum, count: b.count });
+    }
+
+    // Sort by popularity
+    clusters.sort((a, b) => b.count - a.count);
+
+    // Merge visually similar clusters (distance threshold ~36 in RGB space)
+    const merged: typeof clusters = [];
+    for (const c of clusters) {
+      let isDuplicate = false;
+      for (const m of merged) {
+        const dr = c.rgb[0] - m.rgb[0];
+        const dg = c.rgb[1] - m.rgb[1];
+        const db = c.rgb[2] - m.rgb[2];
+        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+        if (dist < 36) {
+          m.count += c.count;
+          isDuplicate = true;
+          break;
+        }
+      }
+      if (!isDuplicate) {
+        merged.push(c);
+      }
+    }
+
+    if (merged.length === 0) {
+      return {
+        paper: '#ffffff',
+        inks: [makeInkPlate(INK_LIBRARY[0], press, 15)],
+      };
+    }
+
+    let paperHex = '#ffffff';
+    let inkCandidates = [...merged];
+
+    // Find the lightest candidate with significant presence (> 3% of pixels)
+    const lightCandidates = merged.filter((c) => c.lum > 0.85 && c.count > totalPixels * 0.03);
+    if (lightCandidates.length > 0) {
+      lightCandidates.sort((a, b) => b.lum - a.lum);
+      paperHex = lightCandidates[0].hex;
+      inkCandidates = inkCandidates.filter((c) => c.hex !== paperHex);
+    } else {
+      if (cornerColors.length > 0) {
+        const avgR = Math.round(cornerColors.reduce((s, c) => s + c[0], 0) / cornerColors.length);
+        const avgG = Math.round(cornerColors.reduce((s, c) => s + c[1], 0) / cornerColors.length);
+        const avgB = Math.round(cornerColors.reduce((s, c) => s + c[2], 0) / cornerColors.length);
+        const cornerLum = 0.2126 * (avgR / 255) + 0.7152 * (avgG / 255) + 0.0722 * (avgB / 255);
+        if (cornerLum > 0.8) {
+          paperHex = '#' + ((1 << 24) + (avgR << 16) + (avgG << 8) + avgB).toString(16).slice(1);
+        }
+      }
+    }
+
+    // Filter out candidates that are nearly identical to paper
+    const [pr, pg, pb] = linearizeHex(paperHex);
+    inkCandidates = inkCandidates.filter((c) => {
+      const [cr, cg, cb] = linearizeHex(c.hex);
+      const dr = (cr - pr) * 255;
+      const dg = (cg - pg) * 255;
+      const db = (cb - pb) * 255;
+      return Math.sqrt(dr * dr + dg * dg + db * db) > 28;
+    });
+
+    const selectedInks = inkCandidates.slice(0, Math.max(1, Math.min(MAX_INKS, maxInks)));
+    if (selectedInks.length === 0) {
+      selectedInks.push(merged[0]);
+    }
+
+    const angles = PRESS_PROFILES[press].angles;
+    const newInks = selectedInks.map((c, idx) => {
+      let bestName = `Ink ${idx + 1}`;
+      let bestDist = Infinity;
+      for (const spec of INK_LIBRARY) {
+        const [sr, sg, sb] = linearizeHex(spec.hex);
+        const [cr, cg, cb] = linearizeHex(c.hex);
+        const d = Math.sqrt(Math.pow((sr - cr) * 255, 2) + Math.pow((sg - cg) * 255, 2) + Math.pow((sb - cb) * 255, 2));
+        if (d < bestDist) {
+          bestDist = d;
+          if (d < 40) {
+            bestName = spec.name;
+          }
+        }
+      }
+
+      return makeInkPlate(
+        { name: bestName, hex: c.hex },
+        press,
+        angles[Math.min(idx, angles.length - 1)]
+      );
+    });
+
+    return {
+      paper: paperHex,
+      inks: applyPressAngles(newInks, press),
+    };
+  } catch {
+    return {
+      paper: '#ffffff',
+      inks: [makeInkPlate(INK_LIBRARY[0], press, 15)],
+    };
+  }
 }

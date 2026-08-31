@@ -900,7 +900,7 @@ const TEXTURE_MASK_SOURCES: Partial<Record<DitherAlgorithm, () => DitherMask>> =
 };
 
 /** The tiling mask an algorithm samples, if it samples one at all. */
-function maskFor(algorithm: DitherAlgorithm): DitherMask | undefined {
+export function maskFor(algorithm: DitherAlgorithm): DitherMask | undefined {
   const matrix = ORDERED_MASK_SOURCES[algorithm];
   if (matrix) return toDitherMask(matrix);
   const texture = TEXTURE_MASK_SOURCES[algorithm];
