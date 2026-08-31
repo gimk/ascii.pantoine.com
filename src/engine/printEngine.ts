@@ -1143,6 +1143,12 @@ export function resolvePrintFrame(
   if (soloInk) {
     const i = frame.inks.findIndex((k) => k.id === soloInk);
     keep = i >= 0 ? 1 << i : 0;
+  } else {
+    for (let i = 0; i < frame.inks.length; i++) {
+      if (frame.inks[i].hidden) {
+        keep &= ~(1 << i);
+      }
+    }
   }
 
   const table = buildCompositeTable(frame, yuleNielsen);

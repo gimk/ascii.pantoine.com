@@ -666,8 +666,12 @@ export async function exportAsciiImage(opts: ImageExportOptions): Promise<ImageE
 
       for (let p = 0; p < framePrint.inks.length; p++) {
         const ink = framePrint.inks[p];
-        if (framePrint.paperHex && opts.printConfig?.soloInk && opts.printConfig.soloInk !== ink.id) {
-          continue;
+        if (framePrint.paperHex) {
+          if (opts.printConfig?.soloInk) {
+            if (opts.printConfig.soloInk !== ink.id) continue;
+          } else if (ink.hidden) {
+            continue;
+          }
         }
         const bits = extractPlateBits(framePrint, p);
         // The merger reads `luminance < 0` as absent, which is the same

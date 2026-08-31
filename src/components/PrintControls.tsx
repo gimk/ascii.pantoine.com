@@ -35,9 +35,11 @@ import {
   ArrowUp,
   ArrowDown,
   Eye,
+  EyeOff,
   AlertTriangle,
   Pipette,
   RotateCw,
+  GripVertical,
 } from 'lucide-react';
 
 import { BUILTIN_PALETTES } from '../engine/palettes';
@@ -446,6 +448,10 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragPosition, setDragPosition] = useState<'above' | 'below' | null>(null);
+
   const proofSs = tierSupersample(config, cols, rows, 'proof');
 
   const set = <K extends keyof PrintConfig>(key: K, value: PrintConfig[K]) => {
@@ -483,6 +489,14 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
     if (to < 0 || to >= config.inks.length) return;
     const next = [...config.inks];
     const [row] = next.splice(index, 1);
+    next.splice(to, 0, row);
+    onChange({ ...config, inks: next });
+  };
+
+  const moveInkToIndex = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= config.inks.length || to >= config.inks.length) return;
+    const next = [...config.inks];
+    const [row] = next.splice(from, 1);
     next.splice(to, 0, row);
     onChange({ ...config, inks: next });
   };
@@ -652,7 +666,6 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
 
       {config.inks.map((ink, i) => {
         const isOpen = expanded === ink.id;
-        const isSolo = config.soloInk === ink.id;
         /*
          * Interlock only exists for a threshold mask — the plates share out one
          * threshold interval between them — so with it on, every error
@@ -664,9 +677,75 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
         const interlockOn = config.grainInterlock !== false;
         const fmAlgorithm = ink.fmAlgorithm || 'atkinson';
         const fmInterlocks = hasThresholdMask(fmAlgorithm);
+        const isDragging = draggedIndex === i;
+        const isDragOver = dragOverIndex === i && draggedIndex !== i;
         return (
-          <div className={`print-plate${isOpen ? ' is-open' : ''}`} key={ink.id}>
-            <div className="print-plate-head">
+          <div
+            className={`print-plate${isOpen ? ' is-open' : ''}${!ink.enabled ? ' is-disabled-plate' : ''}${isDragging ? ' is-dragging' : ''}${isDragOver && dragPosition ? ` is-drag-over drag-over-${dragPosition}` : ''}`}
+            key={ink.id}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              const rect = e.currentTarget.getBoundingClientRect();
+              const isTop = e.clientY < rect.top + rect.height / 2;
+              const pos = isTop ? 'above' : 'below';
+              if (dragOverIndex !== i || dragPosition !== pos) {
+                setDragOverIndex(i);
+                setDragPosition(pos);
+              }
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                if (dragOverIndex === i) {
+                  setDragOverIndex(null);
+                  setDragPosition(null);
+                }
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (draggedIndex !== null && draggedIndex !== i) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const isTopHalf = e.clientY < rect.top + rect.height / 2;
+                let targetIndex = i;
+                if (draggedIndex < i) {
+                  targetIndex = isTopHalf ? Math.max(0, i - 1) : i;
+                } else if (draggedIndex > i) {
+                  targetIndex = isTopHalf ? i : Math.min(config.inks.length - 1, i + 1);
+                }
+                moveInkToIndex(draggedIndex, targetIndex);
+              }
+              setDraggedIndex(null);
+              setDragOverIndex(null);
+              setDragPosition(null);
+            }}
+          >
+            <div
+              className="print-plate-head"
+              draggable
+              onDragStart={(e) => {
+                const target = e.target as HTMLElement;
+                if (target.closest('button, input, select, .toggle-switch, .switch-track')) {
+                  e.preventDefault();
+                  return;
+                }
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', ink.id);
+                setDraggedIndex(i);
+              }}
+              onDragEnd={() => {
+                setDraggedIndex(null);
+                setDragOverIndex(null);
+                setDragPosition(null);
+              }}
+            >
+              <span
+                className="print-plate-handle"
+                title="Drag to reorder print pass"
+                aria-label="Drag to reorder print pass"
+              >
+                <GripVertical size={11} />
+              </span>
               <button
                 type="button"
                 className="print-plate-disclose"
@@ -689,16 +768,17 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
               </span>
               <button
                 type="button"
-                className={`btn btn-sm btn-micro ${isSolo ? 'btn-primary' : ''}`}
-                onClick={() => set('soloInk', isSolo ? null : ink.id)}
-                title="Show this pass alone on paper. Free — it filters bits that are already screened, so it is the exact contribution this plate makes to the composite."
+                className={`btn btn-sm btn-micro ${!ink.hidden && ink.enabled ? 'btn-primary' : ''}`}
+                style={ink.hidden || !ink.enabled ? { opacity: 0.5 } : undefined}
+                onClick={() => setInk(ink.id, { hidden: !ink.hidden })}
+                title={ink.hidden ? 'Show this ink pass on paper' : 'Hide this ink pass from view'}
               >
-                <Eye size={10} />
+                {ink.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
               </button>
               <ToggleSwitch
                 checked={ink.enabled}
                 onChange={(val) => setInk(ink.id, { enabled: val })}
-                title="Include this pass"
+                title="Include in separation (ON) / Exclude from separation (OFF)"
               />
             </div>
 

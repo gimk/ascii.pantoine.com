@@ -171,14 +171,11 @@ const MIN_ASCII_CELL_AREA_CSS = 95;
 const MIN_PIXEL_CELL_DEVICE_PX = 2;
 const MIN_VECTOR_CELL_DEVICE_PX = 1;
 /*
- * A print cell is not a display cell — it is subdivided into `supersample`
- * device pixels before anything is painted, so the perceptual limit is on the
- * *dot*, not on the cell. Asking for one contone cell per screen pixel would
- * multiply into a raster tens of times larger than the display and spend all of
- * it below the resolution of the eye. Eight css pixels per contone cell leaves
- * a screened dot comfortably visible while keeping the device raster sane.
+ * A print cell is subdivided into `supersample` device pixels for halftoning and
+ * separation. Setting the device floor to 2px (matching pixel mode) ensures the
+ * contone grid stays sharp and detailed rather than being aggressively downscaled.
  */
-const MIN_PRINT_CELL_DEVICE_PX = 8;
+const MIN_PRINT_CELL_DEVICE_PX = 2;
 
 /**
  * Source pixels a single cell should cover, below which the grid is inventing
@@ -190,13 +187,7 @@ const MIN_SRC_PX_PER_CELL: Record<RasterOutputMode, number> = {
   ascii: 4,
   pixel: 1,
   vector: 1,
-  /*
-   * A contone cell is an average over a patch, like a glyph — and unlike a
-   * pixel-mode cell it is never displayed directly, so resolving it 1:1 with
-   * the source buys nothing a dot could show. Two keeps the separation reading
-   * real colour rather than interpolated colour.
-   */
-  print: 2,
+  print: 1,
 };
 
 /** Bounds that keep each output mode looking like itself, whatever the numbers say. */
@@ -220,16 +211,11 @@ const SHAPE_BOUNDS: Record<
    */
   vector: { minCols: 96, minRows: 64, maxCols: 1600, maxCells: 500000 },
   /*
-   * The tightest ceiling of the four, and for the opposite reason to ascii's.
-   *
-   * This grid is the *contone* resolution; the screen lives below it at
-   * `supersample` device pixels per cell, so 150k cells is already a 5-to-10
-   * megapixel raster to screen and composite. Coverage is also smooth by
-   * construction — it comes out of a separation LUT — so extra contone cells
-   * buy far less here than they do in any other mode. Detail comes from the
-   * supersample and from the ruling, not from this number.
+   * Contone grid resolution for separation and screening. Raised to 600,000 cells
+   * (e.g. 800x600 / 1024x576) so auto-res allocates a rich, crisp contone grid
+   * without choking the screening pipeline.
    */
-  print: { minCols: 64, minRows: 48, maxCols: 1024, maxCells: 150000 },
+  print: { minCols: 64, minRows: 48, maxCols: 1600, maxCells: 600000 },
 };
 
 /**
@@ -260,15 +246,7 @@ const BASE_MS_PER_CELL: Record<RasterOutputMode, number> = {
   ascii: 0.0012,
   pixel: 0.00035,
   vector: 0.00005,
-  /*
-   * By far the highest prior, because a print cell is not one unit of work: it
-   * is screened at S^2 device pixels and then composited, per ink. At the
-   * WORKING tier's budget that lands near 25 device pixels of screening and
-   * resolving per contone cell, which is where this figure comes from. The
-   * measured value replaces it within a second either way — the prior only has
-   * to stop the first solve asking for a grid that takes four seconds.
-   */
-  print: 0.0025,
+  print: 0.0008,
 };
 
 /** Cores the priors above were written against. */
@@ -811,9 +789,10 @@ function performanceCeiling(input: AutoResInput): number {
   const msPerCell = estimateMsPerCell(input);
   if (!(msPerCell > 0)) return Infinity;
 
+  const isPrint = input.output === 'print';
   const budget = input.animated
-    ? (1000 / (input.targetFps > 0 ? input.targetFps : 60)) * FRAME_UTILISATION
-    : STATIC_BUDGET_MS;
+    ? (1000 / (input.targetFps > 0 ? input.targetFps : 60)) * (isPrint ? 0.75 : FRAME_UTILISATION)
+    : (isPrint ? 350 : STATIC_BUDGET_MS);
 
   /*
    * Only what the grid can actually buy.

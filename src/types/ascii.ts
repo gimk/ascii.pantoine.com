@@ -594,6 +594,8 @@ export interface InkPlate {
    */
   opaque: boolean;
   enabled: boolean;
+  /** Hidden from screen/render view without recalculating the color separation. */
+  hidden?: boolean;
 
   // --- screen geometry ---
   screen: ScreenFamily;
