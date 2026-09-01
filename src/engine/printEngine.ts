@@ -117,12 +117,18 @@ export function solveSupersample(
  * cannot quote a number the engine then declines to honour.
  */
 export function tierSupersample(cfg: PrintConfig, cols: number, rows: number, tier: PrintTier) {
+  /*
+   * Fast CMYK screens a fixed stack of four process plates and never touches
+   * `cfg.inks`, so budgeting it against the press-sim stack would hand a
+   * one-spot-ink setup twice the raster it needs and starve an eight-ink one.
+   */
+  const plateCount = cfg.engineMode === 'cmyk' ? 4 : cfg.inks.filter((k) => k.enabled).length;
   return solveSupersample(
     cols,
     rows,
     tier === 'proof' ? cfg.proofSupersample : cfg.supersample,
     tier,
-    cfg.inks.filter((k) => k.enabled).length
+    plateCount
   );
 }
 

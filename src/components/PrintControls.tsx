@@ -668,17 +668,15 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
               className="btn btn-sm btn-ghost"
               style={{ fontSize: '9px', padding: '1px 5px', height: '18px' }}
               onClick={() => {
-                const def = getFastCmykPlates();
+                /*
+                 * The factory's own defaults are the standard process stack, so
+                 * reset writes exactly what an untouched config renders rather
+                 * than a second hand-copied set of hexes and angles to drift.
+                 */
                 onChange({
                   ...config,
                   cmykAngles: { ...CMYK_DEFAULT_ANGLES },
-                  cmykPlates: def.map((p, i) => ({
-                    ...p,
-                    hex: i === 0 ? '#00a3e0' : i === 1 ? '#ec008c' : i === 2 ? '#ffed00' : '#1d1d1b',
-                    intensity: 1.0,
-                    opacity: 1.0,
-                    angle: i === 0 ? 15 : i === 1 ? 75 : i === 2 ? 0 : 45,
-                  })),
+                  cmykPlates: getFastCmykPlates(),
                 });
               }}
               title="Reset screen angles, colors, and intensities to standard process CMYK"
@@ -693,7 +691,7 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             const angleKey = (i === 0 ? 'c' : i === 1 ? 'm' : i === 2 ? 'y' : 'k') as 'c' | 'm' | 'y' | 'k';
             const defaultAngle = i === 0 ? 15 : i === 1 ? 75 : i === 2 ? 0 : 45;
             const currentAngle = typeof ink.angle === 'number' ? ink.angle : (config.cmykAngles?.[angleKey] ?? defaultAngle);
-            const intensityPct = Math.round((typeof ink.intensity === 'number' ? ink.intensity : (typeof ink.opacity === 'number' ? ink.opacity : 1.0)) * 100);
+            const intensityPct = Math.round((typeof ink.intensity === 'number' ? ink.intensity : 1.0) * 100);
 
             const updatePlate = (patch: Partial<InkPlate>, extra?: Partial<PrintConfig>) => {
               const current = getFastCmykPlates(config);
@@ -767,12 +765,18 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
                         Intensity
                       </span>
                       <PrecisionSlider
-                        value={typeof ink.intensity === 'number' ? ink.intensity : (typeof ink.opacity === 'number' ? ink.opacity : 1.0)}
+                        value={typeof ink.intensity === 'number' ? ink.intensity : 1.0}
                         sliderMin={0}
                         sliderMax={2}
                         step={0.05}
                         resetTo={1.0}
-                        onChange={(val) => updatePlate({ intensity: val, opacity: val })}
+                        /*
+                         * Intensity is dot area only. Writing `opacity` here too
+                         * meant turning it down both shrank the dot and thinned
+                         * the ink, while turning it up past 1 moved only half of
+                         * that — `buildCompositeTable` clamps opacity to 1.
+                         */
+                        onChange={(val) => updatePlate({ intensity: val })}
                       />
                     </div>
 
