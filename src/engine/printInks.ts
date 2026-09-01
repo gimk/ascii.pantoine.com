@@ -377,34 +377,39 @@ function inkLuma(hex: string): number {
 }
 
 /**
- * Puts a stack into press order: darkest ink down first, lightest last.
+ * Puts a stack into print order: lightest ink down first, **darkest last**.
  *
- * This is the KCMY rule generalised to a spot stack. On press the first ink
- * down wants the highest tack and the largest area of dry paper to trap to,
- * which is the darkest, heaviest ink; a transparent light ink laid last adds
- * depth almost like a varnish. ISO 12647-2 says the same thing for process
- * work — CMY in sequence, black first or last.
+ * Index 0 is the first pass on the press, so the key ink is the final one down
+ * — CMYK rather than KCMY. ISO 12647-2 allows black at either end (CMY is the
+ * part that must stay in sequence), so this is a choice, and it is made on what
+ * the separation does rather than on tradition.
  *
- * It is not cosmetic. `solveCoverage` is cyclic coordinate descent over the ink
- * columns in array order, and the box-constrained system is underdetermined
- * once there are more than three inks, so the *first* ink gets first claim on
- * the density it can carry. Darkest first is therefore what makes the solve
- * reach for one dark ink on a neutral instead of stacking three chromatic ones
- * — grey component replacement out of the ordering rather than a separate
- * stage. Reordering by hand and watching the shadows clean up is the same
- * effect, arrived at manually.
+ * The array order is not cosmetic here: `solveCoverage` is cyclic coordinate
+ * descent over the ink columns in that order, and the box-constrained system is
+ * underdetermined past three inks, so the *first* ink gets first claim on the
+ * density it can carry. Put black first and it wins every neutral outright —
+ * a mid grey separates to 40% black and nothing else:
  *
- * Luma is the proxy for "darkest", which is right for spot inks and only
- * approximate for process ones: it would order a CMY set M before C. The
- * process stack does not come through here — it is declared explicitly in
- * press order in `fastCmykEngine`, where the C-M-Y trap sequence is a rule
- * rather than a consequence of sorting.
+ *     black first:  grey 128 -> K 40%              1 plate,  40% ink
+ *     black last:   grey 128 -> C 28% M 24% Y 23%  3 plates, 75% ink
  *
- * Angles are not touched: `applyPressAngles` and friends assign by position, so
- * call this **before** them.
+ * which is a lower fitting error and a worse print. One plate cannot make a
+ * rosette, and a 40% screen of one ink shows mostly paper where an overprint
+ * would have laid ink — the greys go thin and white. Black last leaves the
+ * chromatic inks to build the colour and lets black settle the residual, which
+ * is what keeps the overprint, the rosette, and the weight on the sheet.
+ *
+ * Luma is the proxy, and what it settles is where the *key* ink goes — which is
+ * the part the evidence is about. It has nothing to say about a trap sequence:
+ * on a process set it would lead with yellow, since yellow is the lightest.
+ * That set never comes through here — `fastCmykEngine` declares C, M, Y, K
+ * explicitly, where the sequence is a rule rather than a by-product of sorting.
+ *
+ * Angles are unaffected either way: `assignAngles` ranks by luma itself, so the
+ * darkest ink keeps 45° wherever it sits in the stack.
  */
 export function orderInksForPress(inks: InkPlate[]): InkPlate[] {
-  return [...inks].sort((a, b) => inkLuma(a.hex) - inkLuma(b.hex));
+  return [...inks].sort((a, b) => inkLuma(b.hex) - inkLuma(a.hex));
 }
 
 function isYellowish(hex: string): boolean {
@@ -436,13 +441,13 @@ export function defaultPrintConfig(): PrintConfig {
     cmykAngles: { c: 15, m: 75, y: 0, k: 45 },
     press,
     /*
-     * Press order: the darker blue lays down first, the lighter pink last. See
+     * Print order: the lighter pink lays down first, the darker blue last. See
      * `orderInksForPress` — the sequence is what the separation solve reads,
      * not just what a printer would set up on the press.
      */
     inks: [
-      makeInkPlate({ name: 'Federal Blue', hex: '#0078bf' }, press, 75),
       makeInkPlate({ name: 'Fluorescent Pink', hex: '#ff48b0' }, press, 45),
+      makeInkPlate({ name: 'Federal Blue', hex: '#0078bf' }, press, 75),
     ],
     paper: p.paper,
     tacLimit: p.tacLimit,
@@ -488,9 +493,9 @@ export function inksFromPalette(
 
   const angles = PRESS_PROFILES[press].angles;
   /*
-   * `sorted` is already darkest-first, which is press order — but the helper is
-   * the one place that rule is stated, so go through it rather than depend on
-   * a sort three statements up staying that way.
+   * `sorted` runs darkest-first, which is the opposite of print order. The
+   * helper is the one place that rule is stated, so go through it rather than
+   * hand-reverse a sort three statements up.
    */
   const inks = orderInksForPress(
     pool.slice(0, MAX_INKS).map((hex, i) =>
@@ -1319,9 +1324,10 @@ export function extractImageInks(
 
     /*
      * Extraction ranks clusters by how much of the picture they cover, which is
-     * the right order to *choose* inks in and the wrong one to print them in —
-     * it routinely left the darkest ink last, with the last claim on density in
-     * the solve. Press order is applied once the choice is made.
+     * the right order to *choose* inks in and says nothing about the order to
+     * print them in. Print order is applied once the choice is made, so the key
+     * ink lands last and settles the residual rather than claiming the neutrals
+     * outright.
      */
     return { paper: paperHex, inks: applyPressAngles(orderInksForPress(plates), press) };
   } catch {

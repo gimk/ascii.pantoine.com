@@ -4,11 +4,11 @@
  * The screen geometry is the Stefan Gustavson / Shadertoy (`fdjyR1`) analytical
  * rotated halftone: no mask, no accumulation — a device pixel finds its cell in
  * a rotated lattice and asks whether it falls inside that cell's dot. Four
- * plates in press order, on the conventional angles:
- *   - Black:   45°
+ * plates in print order, on the conventional angles:
  *   - Cyan:    15°
  *   - Magenta: 75°
  *   - Yellow:   0°
+ *   - Black:   45°
  *
  * Three separate questions, kept separate because conflating them is what makes
  * a halftone engine wrong rather than merely fast:
@@ -38,21 +38,12 @@ export const CMYK_DEFAULT_ANGLES = {
 export type CmykChannel = 'c' | 'm' | 'y' | 'k';
 
 /**
- * The four process plates, in press order, with **stable** ids.
+ * The four process plates, in print order, with **stable** ids.
  *
- * **The stack is KCMY, not CMYK** — black down first, yellow last. That is the
- * standard sheetfed offset sequence, and ISO 12647-2 states it as CMY with
- * black acceptable either first or last: black first gives cyan a larger area
- * of dry, uninked paper to trap to, and the transparent high-coverage yellow
- * laid last reads almost like a gloss varnish. The one rule not to break is
- * C before M before Y, which is what keeps the traps right.
- *
- * It is not only a convention here. `solveCoverage` is cyclic coordinate
- * descent over the ink columns in array order, so with a box-constrained,
- * non-unique solution set the *first* ink gets first claim on density. Darkest
- * first is what turns that into grey component replacement instead of a muddy
- * three-ink neutral — the same effect as dragging black to the bottom of the
- * press-sim stack by hand.
+ * Black is the last pass, matching `orderInksForPress` on the press-sim side.
+ * ISO 12647-2 allows black at either end — C before M before Y is the part that
+ * has to hold — and black last is what keeps the chromatic overprint, and with
+ * it the rosette, instead of letting black claim every neutral on its own.
  *
  * The ids matter more than they look: `makeInkPlate` mints a fresh
  * `ink-<n>-<timestamp>` on every call, and this factory is called both per
@@ -71,36 +62,40 @@ export const CMYK_INKS: Array<{
   hex: string;
   angle: number;
 }> = [
-  { id: 'cmyk_k', channel: 'k', name: 'Process Black', hex: '#1d1d1b', angle: 45 },
   { id: 'cmyk_c', channel: 'c', name: 'Process Cyan', hex: '#00a3e0', angle: 15 },
   { id: 'cmyk_m', channel: 'm', name: 'Process Magenta', hex: '#ec008c', angle: 75 },
   { id: 'cmyk_y', channel: 'y', name: 'Process Yellow', hex: '#ffed00', angle: 0 },
+  { id: 'cmyk_k', channel: 'k', name: 'Process Black', hex: '#1d1d1b', angle: 45 },
 ];
 
-/** Press-order index of each channel, for callers holding a c/m/y/k key. */
+/** Print-order index of each channel, for callers holding a c/m/y/k key. */
 export const CMYK_PLATE_INDEX: Record<CmykChannel, number> = {
-  k: 0,
-  c: 1,
-  m: 2,
-  y: 3,
+  c: 0,
+  m: 1,
+  y: 2,
+  k: 3,
 };
 
-/** The order plates were stored in before the stack was put into press order. */
+/**
+ * Positions for a stored config too old to carry plate ids. Same as the current
+ * order — the KCMY arrangement only ever existed in configs that do carry ids,
+ * so those are re-seated by id and this is the identity for everything else.
+ */
 const LEGACY_PLATE_ORDER: CmykChannel[] = ['c', 'm', 'y', 'k'];
 
-/** Build standard 4-plate InkPlate array for Fast CMYK mode, in press order. */
+/** Build standard 4-plate InkPlate array for Fast CMYK mode, in print order. */
 export function getFastCmykPlates(config?: Partial<PrintConfig>): InkPlate[] {
   const angles = config?.cmykAngles || CMYK_DEFAULT_ANGLES;
 
   const stored = config?.cmykPlates;
   if (stored && stored.length === 4) {
     /*
-     * Stored plates are re-seated into press order by channel rather than read
-     * positionally. A config written before the stack was KCMY holds them in
-     * CMYK order, so trusting the position would relabel cyan as the black
-     * plate and repaint the picture with the user's own colours in the wrong
-     * channels. Plates saved with ids are matched on those; older ones without
-     * fall back to the legacy CMYK positions they must have been written in.
+     * Stored plates are re-seated by channel rather than read positionally, so
+     * a config saved under any past stack order keeps each custom colour and
+     * angle on the plate it was chosen for. Trusting the position instead would
+     * relabel cyan as the black plate and repaint the picture with the user's
+     * own colours in the wrong channels. Plates saved with ids are matched on
+     * those; older ones fall back to their write-time positions.
      */
     const byChannel = new Map<CmykChannel, InkPlate>();
     stored.forEach((p, i) => {
@@ -243,8 +238,8 @@ function plateOptics(ink: InkPlate): PlateOptics {
  * is the only way the printed tone matches the picture. Fifty percent black
  * area on white paper reads sRGB 189; hitting a mid grey takes 79%.
  *
- * Four inks are peeled off **in press order**, which is the second reason the
- * stack is KCMY and not a cosmetic one:
+ * The four inks are peeled off in stack order, black last — the same order
+ * they print in, and for the same reason it is worth having:
  *
  *  - Black takes the neutral floor — the least any channel has to fall — scaled
  *    by `blackGen`. At 1 it is full GCR and a grey prints on the black plate
@@ -454,8 +449,8 @@ export function renderFastCmykFrame(input: FastCmykInput): PrintFrame {
 
     /*
      * Angle and separation role come from the plate's identity, not from `p`.
-     * The stack is ordered for the press (KCMY), so position no longer implies
-     * which separation a plate carries.
+     * The stack is ordered for the press, so position does not imply which
+     * separation a plate carries.
      */
     const angleDeg = typeof ink.angle === 'number' ? ink.angle : CMYK_INKS[p].angle;
     const rad = (angleDeg * Math.PI) / 180;

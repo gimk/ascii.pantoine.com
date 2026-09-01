@@ -708,7 +708,7 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             const isOpen = expanded === ink.id || expanded === `cmyk_${i}`;
             /*
              * Channel from the plate spec, not from the row index — the stack is
-             * in press order (KCMY), so row 0 is black.
+             * in print order, so the last row is black.
              */
             const angleKey = CMYK_INKS[i].channel;
             const defaultAngle = CMYK_INKS[i].angle;
@@ -835,7 +835,7 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             {/*
               * Keyed by channel rather than by position, so a preset cannot
               * silently land its black in the cyan plate if the stack order
-              * changes again. Applied and drawn in press order (K, C, M, Y).
+              * changes again. Applied and drawn in print order (C, M, Y, K).
               */}
             {[
               { name: 'Standard Process', k: '#1d1d1b', c: '#00a3e0', m: '#ec008c', y: '#ffed00' },
