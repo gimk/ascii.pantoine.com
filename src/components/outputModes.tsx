@@ -17,6 +17,8 @@ export interface OutputModeSpec {
   description: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   title: string;
+  /** Still settling — says so on the card's status line. */
+  beta?: boolean;
 }
 
 /*
@@ -62,6 +64,7 @@ export const OUTPUT_MODES: OutputModeSpec[] = [
     description: 'Halftone & Riso Separation',
     icon: Printer,
     title: 'Colorimetric ink separation, screened per plate and overprinted on paper',
+    beta: true,
   },
 ];
 
@@ -124,7 +127,10 @@ export const OutputModeCards: React.FC<OutputModeCardsProps> = ({ value, onChang
           {!compact && (
             <div className="source-card-footer">
               <span className="source-card-dot" />
-              <span className="source-card-status">{isActive ? 'ACTIVE' : 'READY'}</span>
+              <span className="source-card-status">
+                {isActive ? 'ACTIVE' : 'READY'}
+                {mode.beta && ' (BETA)'}
+              </span>
             </div>
           )}
         </button>
