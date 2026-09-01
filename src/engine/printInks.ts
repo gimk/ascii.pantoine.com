@@ -376,6 +376,37 @@ function inkLuma(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+/**
+ * Puts a stack into press order: darkest ink down first, lightest last.
+ *
+ * This is the KCMY rule generalised to a spot stack. On press the first ink
+ * down wants the highest tack and the largest area of dry paper to trap to,
+ * which is the darkest, heaviest ink; a transparent light ink laid last adds
+ * depth almost like a varnish. ISO 12647-2 says the same thing for process
+ * work — CMY in sequence, black first or last.
+ *
+ * It is not cosmetic. `solveCoverage` is cyclic coordinate descent over the ink
+ * columns in array order, and the box-constrained system is underdetermined
+ * once there are more than three inks, so the *first* ink gets first claim on
+ * the density it can carry. Darkest first is therefore what makes the solve
+ * reach for one dark ink on a neutral instead of stacking three chromatic ones
+ * — grey component replacement out of the ordering rather than a separate
+ * stage. Reordering by hand and watching the shadows clean up is the same
+ * effect, arrived at manually.
+ *
+ * Luma is the proxy for "darkest", which is right for spot inks and only
+ * approximate for process ones: it would order a CMY set M before C. The
+ * process stack does not come through here — it is declared explicitly in
+ * press order in `fastCmykEngine`, where the C-M-Y trap sequence is a rule
+ * rather than a consequence of sorting.
+ *
+ * Angles are not touched: `applyPressAngles` and friends assign by position, so
+ * call this **before** them.
+ */
+export function orderInksForPress(inks: InkPlate[]): InkPlate[] {
+  return [...inks].sort((a, b) => inkLuma(a.hex) - inkLuma(b.hex));
+}
+
 function isYellowish(hex: string): boolean {
   const [r, g, b] = hexToBytes(hex);
   return r > 180 && g > 140 && b < 120;
@@ -403,9 +434,14 @@ export function defaultPrintConfig(): PrintConfig {
     cmykDotScale: 1.0,
     cmykAngles: { c: 15, m: 75, y: 0, k: 45 },
     press,
+    /*
+     * Press order: the darker blue lays down first, the lighter pink last. See
+     * `orderInksForPress` — the sequence is what the separation solve reads,
+     * not just what a printer would set up on the press.
+     */
     inks: [
-      makeInkPlate({ name: 'Fluorescent Pink', hex: '#ff48b0' }, press, 45),
       makeInkPlate({ name: 'Federal Blue', hex: '#0078bf' }, press, 75),
+      makeInkPlate({ name: 'Fluorescent Pink', hex: '#ff48b0' }, press, 45),
     ],
     paper: p.paper,
     tacLimit: p.tacLimit,
@@ -450,11 +486,18 @@ export function inksFromPalette(
   }
 
   const angles = PRESS_PROFILES[press].angles;
-  const inks = pool.slice(0, MAX_INKS).map((hex, i) =>
-    makeInkPlate(
-      { name: findInkSpec(hex)?.name || `Ink ${i + 1}`, hex },
-      press,
-      angles[Math.min(i, angles.length - 1)]
+  /*
+   * `sorted` is already darkest-first, which is press order — but the helper is
+   * the one place that rule is stated, so go through it rather than depend on
+   * a sort three statements up staying that way.
+   */
+  const inks = orderInksForPress(
+    pool.slice(0, MAX_INKS).map((hex, i) =>
+      makeInkPlate(
+        { name: findInkSpec(hex)?.name || `Ink ${i + 1}`, hex },
+        press,
+        angles[Math.min(i, angles.length - 1)]
+      )
     )
   );
   return { inks: applyPressAngles(inks, press), paper };
@@ -1273,7 +1316,13 @@ export function extractImageInks(
       return makeInkPlate({ name, hex: c.hex }, press, angles[Math.min(idx, angles.length - 1)]);
     });
 
-    return { paper: paperHex, inks: applyPressAngles(plates, press) };
+    /*
+     * Extraction ranks clusters by how much of the picture they cover, which is
+     * the right order to *choose* inks in and the wrong one to print them in —
+     * it routinely left the darkest ink last, with the last claim on density in
+     * the solve. Press order is applied once the choice is made.
+     */
+    return { paper: paperHex, inks: applyPressAngles(orderInksForPress(plates), press) };
   } catch {
     return fallback();
   }

@@ -20,6 +20,7 @@ import {
   findMoireConflicts,
   MOIRE_ANGLE_TOLERANCE,
   extractImageInks,
+  orderInksForPress,
 } from '../engine/printInks';
 import {
   rulingToLpi,
@@ -44,7 +45,7 @@ import {
 
 import { BUILTIN_PALETTES } from '../engine/palettes';
 import { DITHER_ALGORITHMS, hasThresholdMask } from '../engine/ditherAlgorithms';
-import { getFastCmykPlates, CMYK_DEFAULT_ANGLES } from '../engine/fastCmykEngine';
+import { getFastCmykPlates, CMYK_DEFAULT_ANGLES, CMYK_INKS } from '../engine/fastCmykEngine';
 
 /**
  * Press, inks and screens — print mode's replacement for the dither picker.
@@ -688,8 +689,12 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
 
           {cmykPlates.map((ink, i) => {
             const isOpen = expanded === ink.id || expanded === `cmyk_${i}`;
-            const angleKey = (i === 0 ? 'c' : i === 1 ? 'm' : i === 2 ? 'y' : 'k') as 'c' | 'm' | 'y' | 'k';
-            const defaultAngle = i === 0 ? 15 : i === 1 ? 75 : i === 2 ? 0 : 45;
+            /*
+             * Channel from the plate spec, not from the row index — the stack is
+             * in press order (KCMY), so row 0 is black.
+             */
+            const angleKey = CMYK_INKS[i].channel;
+            const defaultAngle = CMYK_INKS[i].angle;
             const currentAngle = typeof ink.angle === 'number' ? ink.angle : (config.cmykAngles?.[angleKey] ?? defaultAngle);
             const intensityPct = Math.round((typeof ink.intensity === 'number' ? ink.intensity : 1.0) * 100);
 
@@ -810,12 +815,20 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             </span>
           </div>
           <div className="print-ink-library">
+            {/*
+              * Keyed by channel rather than by position, so a preset cannot
+              * silently land its black in the cyan plate if the stack order
+              * changes again. Applied and drawn in press order (K, C, M, Y).
+              */}
             {[
-              { name: 'Standard Process', colors: ['#00a3e0', '#ec008c', '#ffed00', '#1d1d1b'] },
-              { name: 'Warm Vintage', colors: ['#007a87', '#e03a27', '#e5a93b', '#2b1810'] },
-              { name: 'Neon Cyberpunk', colors: ['#00f0ff', '#ff007f', '#f5ff00', '#12002b'] },
-              { name: 'Retro Newsprint', colors: ['#2c5282', '#c53030', '#d69e2e', '#1a202c'] },
-            ].map((p) => (
+              { name: 'Standard Process', k: '#1d1d1b', c: '#00a3e0', m: '#ec008c', y: '#ffed00' },
+              { name: 'Warm Vintage', k: '#2b1810', c: '#007a87', m: '#e03a27', y: '#e5a93b' },
+              { name: 'Neon Cyberpunk', k: '#12002b', c: '#00f0ff', m: '#ff007f', y: '#f5ff00' },
+              { name: 'Retro Newsprint', k: '#1a202c', c: '#2c5282', m: '#c53030', y: '#d69e2e' },
+            ].map((preset) => ({
+              name: preset.name,
+              colors: CMYK_INKS.map((spec) => preset[spec.channel]),
+            })).map((p) => (
               <button
                 key={p.name}
                 type="button"
@@ -1371,7 +1384,7 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
                     onChange({
                       ...config,
                       paper,
-                      inks: applyPressAngles(newInks, config.press),
+                      inks: applyPressAngles(orderInksForPress(newInks), config.press),
                     });
                   }
                 }}

@@ -25,8 +25,24 @@ export const CMYK_DEFAULT_ANGLES = {
   k: 45,
 };
 
+export type CmykChannel = 'c' | 'm' | 'y' | 'k';
+
 /**
- * The four process plates, with **stable** ids.
+ * The four process plates, in press order, with **stable** ids.
+ *
+ * **The stack is KCMY, not CMYK** — black down first, yellow last. That is the
+ * standard sheetfed offset sequence, and ISO 12647-2 states it as CMY with
+ * black acceptable either first or last: black first gives cyan a larger area
+ * of dry, uninked paper to trap to, and the transparent high-coverage yellow
+ * laid last reads almost like a gloss varnish. The one rule not to break is
+ * C before M before Y, which is what keeps the traps right.
+ *
+ * It is not only a convention here. `solveCoverage` is cyclic coordinate
+ * descent over the ink columns in array order, so with a box-constrained,
+ * non-unique solution set the *first* ink gets first claim on density. Darkest
+ * first is what turns that into grey component replacement instead of a muddy
+ * three-ink neutral — the same effect as dragging black to the bottom of the
+ * press-sim stack by hand.
  *
  * The ids matter more than they look: `makeInkPlate` mints a fresh
  * `ink-<n>-<timestamp>` on every call, and this factory is called both per
@@ -35,37 +51,75 @@ export const CMYK_DEFAULT_ANGLES = {
  * panel's `expanded` id was stale one render later), and it would have resolved
  * a soloed plate to bare paper, since `resolvePrintFrame` finds the solo plate
  * by id in `frame.inks`. Process CMYK is a fixed stack of four, so it gets
- * fixed names.
+ * fixed names — and those names, not the array position, are what say which
+ * channel a plate carries.
  */
-export const CMYK_INKS: Array<{ id: string; name: string; hex: string; angle: number }> = [
-  { id: 'cmyk_c', name: 'Process Cyan', hex: '#00a3e0', angle: 15 },
-  { id: 'cmyk_m', name: 'Process Magenta', hex: '#ec008c', angle: 75 },
-  { id: 'cmyk_y', name: 'Process Yellow', hex: '#ffed00', angle: 0 },
-  { id: 'cmyk_k', name: 'Process Black', hex: '#1d1d1b', angle: 45 },
+export const CMYK_INKS: Array<{
+  id: string;
+  channel: CmykChannel;
+  name: string;
+  hex: string;
+  angle: number;
+}> = [
+  { id: 'cmyk_k', channel: 'k', name: 'Process Black', hex: '#1d1d1b', angle: 45 },
+  { id: 'cmyk_c', channel: 'c', name: 'Process Cyan', hex: '#00a3e0', angle: 15 },
+  { id: 'cmyk_m', channel: 'm', name: 'Process Magenta', hex: '#ec008c', angle: 75 },
+  { id: 'cmyk_y', channel: 'y', name: 'Process Yellow', hex: '#ffed00', angle: 0 },
 ];
 
-const CMYK_ANGLE_KEYS: Array<'c' | 'm' | 'y' | 'k'> = ['c', 'm', 'y', 'k'];
+/** Press-order index of each channel, for callers holding a c/m/y/k key. */
+export const CMYK_PLATE_INDEX: Record<CmykChannel, number> = {
+  k: 0,
+  c: 1,
+  m: 2,
+  y: 3,
+};
 
-/** Build standard 4-plate InkPlate array for Fast CMYK mode. */
+/** The order plates were stored in before the stack was put into press order. */
+const LEGACY_PLATE_ORDER: CmykChannel[] = ['c', 'm', 'y', 'k'];
+
+/** Build standard 4-plate InkPlate array for Fast CMYK mode, in press order. */
 export function getFastCmykPlates(config?: Partial<PrintConfig>): InkPlate[] {
   const angles = config?.cmykAngles || CMYK_DEFAULT_ANGLES;
 
-  if (config?.cmykPlates && config.cmykPlates.length === 4) {
-    return config.cmykPlates.map((p, i) => ({
-      ...p,
-      /*
-       * Ids are re-stamped rather than trusted: a config stored before they were
-       * stable carries four random ones, and the panel and the engine have to
-       * agree on them.
-       */
-      id: CMYK_INKS[i].id,
-      angle: typeof p.angle === 'number' ? p.angle : angles[CMYK_ANGLE_KEYS[i]],
-      intensity: typeof p.intensity === 'number' ? p.intensity : 1,
-    }));
+  const stored = config?.cmykPlates;
+  if (stored && stored.length === 4) {
+    /*
+     * Stored plates are re-seated into press order by channel rather than read
+     * positionally. A config written before the stack was KCMY holds them in
+     * CMYK order, so trusting the position would relabel cyan as the black
+     * plate and repaint the picture with the user's own colours in the wrong
+     * channels. Plates saved with ids are matched on those; older ones without
+     * fall back to the legacy CMYK positions they must have been written in.
+     */
+    const byChannel = new Map<CmykChannel, InkPlate>();
+    stored.forEach((p, i) => {
+      const spec = CMYK_INKS.find((s) => s.id === p.id);
+      const channel = spec ? spec.channel : LEGACY_PLATE_ORDER[i];
+      if (!byChannel.has(channel)) byChannel.set(channel, p);
+    });
+
+    return CMYK_INKS.map((spec) => {
+      const p = byChannel.get(spec.channel);
+      if (!p) {
+        return {
+          ...makeInkPlate({ name: spec.name, hex: spec.hex }, 'offset', angles[spec.channel]),
+          id: spec.id,
+          opacity: 1,
+          intensity: 1,
+        };
+      }
+      return {
+        ...p,
+        id: spec.id,
+        angle: typeof p.angle === 'number' ? p.angle : angles[spec.channel],
+        intensity: typeof p.intensity === 'number' ? p.intensity : 1,
+      };
+    });
   }
 
-  return CMYK_INKS.map((spec, i) => ({
-    ...makeInkPlate({ name: spec.name, hex: spec.hex }, 'offset', angles[CMYK_ANGLE_KEYS[i]]),
+  return CMYK_INKS.map((spec) => ({
+    ...makeInkPlate({ name: spec.name, hex: spec.hex }, 'offset', angles[spec.channel]),
     id: spec.id,
     /*
      * Solid ink, full intensity — so the untouched default and what the panel's
@@ -176,6 +230,12 @@ export function renderFastCmykFrame(input: FastCmykInput): PrintFrame {
     const ink = inks[p];
     if (!ink || !ink.enabled) continue;
 
+    /*
+     * The channel comes from the plate's identity, not from `p`. The stack is
+     * ordered for the press (KCMY), so position no longer implies which
+     * separation a plate carries.
+     */
+    const channel = CMYK_INKS[p].channel;
     const angleDeg = typeof ink.angle === 'number' ? ink.angle : CMYK_INKS[p].angle;
     const rad = (angleDeg * Math.PI) / 180;
     const cosT = Math.cos(rad);
@@ -235,12 +295,12 @@ export function renderFastCmykFrame(input: FastCmykInput): PrintFrame {
           const k = Math.min(c, Math.min(m, yChan));
 
           let channelVal: number;
-          if (p === 3) {
+          if (channel === 'k') {
             channelVal = k;
           } else if (k >= 1) {
             channelVal = 0;
           } else {
-            channelVal = ((p === 0 ? c : p === 1 ? m : yChan) - k) / (1 - k);
+            channelVal = ((channel === 'c' ? c : channel === 'm' ? m : yChan) - k) / (1 - k);
           }
 
           channelVal *= intensity;
