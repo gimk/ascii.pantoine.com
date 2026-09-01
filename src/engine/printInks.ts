@@ -432,6 +432,7 @@ export function defaultPrintConfig(): PrintConfig {
     engineMode: 'simulation',
     cmykRuling: 50,
     cmykDotScale: 1.0,
+    cmykBlackGen: 0.8,
     cmykAngles: { c: 15, m: 75, y: 0, k: 45 },
     press,
     /*

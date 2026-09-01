@@ -660,6 +660,23 @@ export const PrintInkStack: React.FC<PrintInkStackProps> = ({
             />
           </div>
 
+          <div className="control-row" style={{ marginBottom: '8px' }}>
+            <span
+              className="control-label"
+              title="How much of a colour's neutral floor the black plate carries. At 100% a grey prints on black alone (full GCR) and neutrals show no rosette, because there is nothing to rosette with. Lower it to leave a skeleton black and hand the rest to cyan, magenta and yellow — that is what puts the four-plate rosette back into the greys."
+            >
+              Black Generation
+            </span>
+            <PrecisionSlider
+              value={config.cmykBlackGen ?? 0.8}
+              sliderMin={0}
+              sliderMax={1}
+              step={0.05}
+              resetTo={0.8}
+              onChange={(val) => set('cmykBlackGen', val)}
+            />
+          </div>
+
           <div className="tonal-subheading" style={{ marginTop: '8px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span title="Process CMYK printing plates. Customize ink colors, screen angles, and channel intensities.">
               Process CMYK Plates (4)

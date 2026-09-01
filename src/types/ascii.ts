@@ -670,6 +670,16 @@ export interface PrintConfig {
   cmykRuling?: number;
   /** Dot scale multiplier (0.5 to 2.0, default 1.0) for fast CMYK engine */
   cmykDotScale?: number;
+  /**
+   * Black generation for the fast CMYK engine, 0 to 1 (default 0.8).
+   *
+   * How much of a colour's neutral floor the black plate takes. At 1 it is full
+   * GCR — a grey prints on black alone, and there is no rosette in neutrals
+   * because there is nothing to rosette with. Lower values leave a skeleton
+   * black and hand the rest to CMY, which is what puts the four-plate overprint
+   * back into the greys.
+   */
+  cmykBlackGen?: number;
   /** Screen angles in degrees for CMYK plates */
   cmykAngles?: { c: number; m: number; y: number; k: number };
   /** Custom 4-plate array for Fast CMYK mode (custom colors, angles, intensities) */
